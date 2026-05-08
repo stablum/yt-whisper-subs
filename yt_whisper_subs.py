@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """Download a video, generate local Whisper subtitles, and optionally play it.
 
-This script does not depend on YouTube captions. It downloads a YouTube video
-with yt-dlp or accepts a local video file, extracts 16 kHz mono WAV audio with
-ffmpeg, runs OpenAI Whisper locally, writes an SRT file, and can open the video
-in mpv with the generated subtitle file attached.
+This script does not depend on YouTube captions. It downloads a compressed
+YouTube video with yt-dlp or accepts a local video file, extracts small lossy
+16 kHz mono audio with ffmpeg, runs OpenAI Whisper locally, writes an SRT file,
+and can open the video in mpv with the generated subtitle file attached.
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ MODEL_CHOICES = (
     "large-v3",
     "turbo",
 )
+DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
+AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,15 +48,38 @@ def parse_args() -> argparse.Namespace:
     source_group.add_argument("--url", help="YouTube/video URL to download with yt-dlp.")
     source_group.add_argument("--video-file", help="Local video file to subtitle.")
 
-    parser.add_argument("--out-dir", default="yt-whisper-output", help="Output directory.")
+    parser.add_argument(
+        "--out-dir",
+        help=f"Output root directory. Default: {DEFAULT_OUTPUT_DIR}",
+    )
     parser.add_argument(
         "--language",
         default="nl",
         help="Whisper language code, or 'auto' to let Whisper detect it. Default: nl.",
     )
-    parser.add_argument("--model", choices=MODEL_CHOICES, default="medium")
+    parser.add_argument("--model", choices=MODEL_CHOICES, default="turbo")
     parser.add_argument("--task", choices=("transcribe", "translate"), default="transcribe")
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+    parser.add_argument(
+        "--audio-format",
+        choices=AUDIO_FORMAT_CHOICES,
+        default="opus",
+        help="Lossy audio format to keep for Whisper input. Default: opus.",
+    )
+    parser.add_argument(
+        "--video-format",
+        default="bv*+ba/b",
+        help=(
+            "yt-dlp format selector. The default stores YouTube's already-lossy "
+            "compressed A/V streams without creating a lossless video."
+        ),
+    )
+    parser.add_argument(
+        "--merge-output-format",
+        choices=("mkv", "mp4", "webm"),
+        default="mkv",
+        help="Container for downloaded video streams. Default: mkv.",
+    )
     parser.add_argument(
         "--torch-index-url",
         default="https://download.pytorch.org/whl/cu124",
@@ -68,11 +93,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--install-python-deps",
         action="store_true",
-        help="Create/update the private Python venv and install torch, yt-dlp, and openai-whisper.",
+        help="Create/update .venv beside this script with uv and install torch, yt-dlp, and openai-whisper.",
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
     parser.add_argument("--force", action="store_true", help="Regenerate subtitles even if they already exist.")
-    parser.add_argument("--keep-audio", action="store_true", help="Keep the temporary extracted WAV file.")
+    audio_group = parser.add_mutually_exclusive_group()
+    audio_group.add_argument(
+        "--keep-audio",
+        dest="keep_audio",
+        action="store_true",
+        default=True,
+        help="Keep the extracted lossy audio file. This is the default.",
+    )
+    audio_group.add_argument(
+        "--delete-audio",
+        dest="keep_audio",
+        action="store_false",
+        help="Delete the extracted audio after subtitles are generated.",
+    )
     parser.add_argument(
         "--cookies-from-browser",
         help="Pass through to yt-dlp, for example: firefox, chrome, edge.",
@@ -97,23 +135,14 @@ def looks_like_url(value: str) -> bool:
     return lowered.startswith(("http://", "https://"))
 
 
-def local_app_data() -> Path:
-    local_appdata = os.environ.get("LOCALAPPDATA")
-    if local_appdata:
-        return Path(local_appdata)
-    if os.name == "nt":
-        return Path.home() / "AppData" / "Local"
-    return Path.home() / ".local" / "share"
-
-
 def venv_paths() -> dict[str, Path]:
-    tool_dir = local_app_data() / "yt-whisper-subs"
-    venv_dir = tool_dir / "venv"
+    script_dir = Path(__file__).resolve().parent
+    venv_dir = script_dir / ".venv"
     scripts_dir = venv_dir / ("Scripts" if os.name == "nt" else "bin")
     exe_suffix = ".exe" if os.name == "nt" else ""
 
     return {
-        "tool_dir": tool_dir,
+        "script_dir": script_dir,
         "venv_dir": venv_dir,
         "python": scripts_dir / f"python{exe_suffix}",
         "whisper": scripts_dir / f"whisper{exe_suffix}",
@@ -146,26 +175,26 @@ def require_command(name: str) -> None:
 
 def install_tools() -> None:
     if shutil.which("scoop") is None:
-        raise RuntimeError("scoop not found. Install ffmpeg and mpv manually, or install scoop first.")
-    run(["scoop", "install", "ffmpeg", "mpv"])
-    run(["scoop", "update", "ffmpeg", "mpv"])
+        raise RuntimeError("scoop not found. Install uv, ffmpeg, and mpv manually, or install scoop first.")
+    run(["scoop", "install", "uv", "ffmpeg", "mpv"])
+    run(["scoop", "update", "uv", "ffmpeg", "mpv"])
 
 
 def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None:
-    paths["tool_dir"].mkdir(parents=True, exist_ok=True)
-
     if args.install_python_deps or not paths["python"].exists():
+        require_command("uv")
         print(f"Creating/updating Python venv in: {paths['venv_dir']}")
         if not paths["python"].exists():
-            run([sys.executable, "-m", "venv", paths["venv_dir"]])
+            run(["uv", "venv", paths["venv_dir"]])
 
-        run([paths["python"], "-m", "pip", "install", "--upgrade", "pip", "wheel", "setuptools"])
+        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "wheel", "setuptools"])
 
         torch_cmd = [
-            paths["python"],
-            "-m",
+            "uv",
             "pip",
             "install",
+            "--python",
+            paths["python"],
             "--upgrade",
             "torch",
             "torchvision",
@@ -175,10 +204,10 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
             torch_cmd += ["--index-url", args.torch_index_url]
         run(torch_cmd)
 
-        run([paths["python"], "-m", "pip", "install", "--upgrade", "yt-dlp", "openai-whisper"])
+        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "yt-dlp", "openai-whisper"])
 
     if not paths["python"].exists():
-        raise RuntimeError(f"Whisper Python venv not found at {paths['venv_dir']}. Re-run with --install-python-deps.")
+        raise RuntimeError(f"Whisper .venv not found at {paths['venv_dir']}. Re-run with --install-python-deps.")
     if not paths["whisper"].exists():
         raise RuntimeError("Whisper executable not found. Re-run with --install-python-deps.")
 
@@ -204,11 +233,10 @@ def resolve_video_path(video_file: str) -> Path:
     return video_path
 
 
-def download_video(url: str, out_dir: Path, paths: dict[str, Path], cookies_from_browser: str | None) -> Path:
-    media_dir = out_dir / "media"
-    media_dir.mkdir(parents=True, exist_ok=True)
+def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argparse.Namespace) -> Path:
+    video_dir.mkdir(parents=True, exist_ok=True)
 
-    template = media_dir / "%(title).180B [%(id)s].%(ext)s"
+    template = video_dir / "%(title).180B [%(id)s].%(ext)s"
     cmd: list[str | os.PathLike[str]] = [
         paths["python"],
         "-m",
@@ -216,17 +244,17 @@ def download_video(url: str, out_dir: Path, paths: dict[str, Path], cookies_from
         "--no-playlist",
         "--windows-filenames",
         "-f",
-        "bv*+ba/b",
+        args.video_format,
         "--merge-output-format",
-        "mkv",
+        args.merge_output_format,
         "--print",
         "after_move:filepath",
         "-o",
         template,
     ]
 
-    if cookies_from_browser:
-        cmd += ["--cookies-from-browser", cookies_from_browser]
+    if args.cookies_from_browser:
+        cmd += ["--cookies-from-browser", args.cookies_from_browser]
 
     cmd.append(url)
     result = run(cmd, capture_stdout=True)
@@ -237,7 +265,17 @@ def download_video(url: str, out_dir: Path, paths: dict[str, Path], cookies_from
     return existing_paths[-1].resolve()
 
 
-def extract_audio(video_path: Path, audio_path: Path, force: bool) -> None:
+def audio_codec_args(audio_format: str) -> list[str]:
+    if audio_format == "opus":
+        return ["-c:a", "libopus", "-b:a", "48k", "-vbr", "on"]
+    if audio_format == "m4a":
+        return ["-c:a", "aac", "-b:a", "64k"]
+    if audio_format == "mp3":
+        return ["-c:a", "libmp3lame", "-b:a", "64k"]
+    raise ValueError(f"unsupported audio format: {audio_format}")
+
+
+def extract_audio(video_path: Path, audio_path: Path, audio_format: str, force: bool) -> None:
     if audio_path.exists() and not force:
         return
 
@@ -254,6 +292,7 @@ def extract_audio(video_path: Path, audio_path: Path, force: bool) -> None:
             "1",
             "-ar",
             "16000",
+            *audio_codec_args(audio_format),
             audio_path,
         ]
     )
@@ -300,6 +339,12 @@ def play_video(video_path: Path, srt_path: Path) -> None:
     run(["mpv", f"--sub-file={srt_path}", "--sub-auto=no", video_path])
 
 
+def resolve_output_dir(out_dir: str | None) -> Path:
+    if out_dir:
+        return Path(out_dir).expanduser().resolve()
+    return DEFAULT_OUTPUT_DIR.resolve()
+
+
 def main() -> int:
     args = parse_args()
     paths = venv_paths()
@@ -322,21 +367,23 @@ def main() -> int:
                 "or re-run with --device cpu."
             )
 
-        out_dir = Path(args.out_dir).expanduser().resolve()
+        out_dir = resolve_output_dir(args.out_dir)
+        video_dir = out_dir / "videos"
         audio_dir = out_dir / "audio"
-        subs_dir = out_dir / "subs"
+        subs_dir = out_dir / "subtitles"
+        video_dir.mkdir(parents=True, exist_ok=True)
         audio_dir.mkdir(parents=True, exist_ok=True)
         subs_dir.mkdir(parents=True, exist_ok=True)
 
         if args.url:
             print()
-            print("Downloading video...")
-            video_path = download_video(args.url, out_dir, paths, args.cookies_from_browser)
+            print("Downloading compressed lossy video stream...")
+            video_path = download_video(args.url, video_dir, paths, args)
         else:
             video_path = resolve_video_path(args.video_file)
 
         video_base = video_path.stem
-        audio_path = audio_dir / f"{video_base}.wav"
+        audio_path = audio_dir / f"{video_base}.{args.audio_format}"
         srt_path = subs_dir / f"{video_base}.srt"
 
         print()
@@ -349,8 +396,8 @@ def main() -> int:
             print("Subtitle file already exists. Use --force to regenerate.")
         else:
             print()
-            print("Extracting mono 16 kHz WAV audio...")
-            extract_audio(video_path, audio_path, args.force)
+            print(f"Extracting mono 16 kHz lossy {args.audio_format} audio...")
+            extract_audio(video_path, audio_path, args.audio_format, args.force)
 
             print()
             print("Running Whisper...")
@@ -363,6 +410,7 @@ def main() -> int:
             print()
             print("Done.")
             print(f"Video: {video_path}")
+            print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
             print(f"Subs:  {srt_path}")
         else:
             print()
