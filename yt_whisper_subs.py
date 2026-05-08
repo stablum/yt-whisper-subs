@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,7 +29,10 @@ MODEL_CHOICES = (
     "turbo",
 )
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
+DEFAULT_PYTHON_VERSION = "3.12"
+DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--torch-index-url",
-        default="https://download.pytorch.org/whl/cu124",
+        default=DEFAULT_TORCH_INDEX_URL,
         help="PyTorch package index URL used when installing CUDA wheels.",
     )
     parser.add_argument(
@@ -94,6 +98,14 @@ def parse_args() -> argparse.Namespace:
         "--install-python-deps",
         action="store_true",
         help="Create/update .venv beside this script with uv and install torch, yt-dlp, and openai-whisper.",
+    )
+    parser.add_argument(
+        "--python-version",
+        default=DEFAULT_PYTHON_VERSION,
+        help=(
+            "Python version for uv-managed .venv creation. "
+            f"Default: {DEFAULT_PYTHON_VERSION}, because PyTorch CUDA wheels are not available for Python 3.14."
+        ),
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
     parser.add_argument("--force", action="store_true", help="Regenerate subtitles even if they already exist.")
@@ -153,6 +165,12 @@ def command_text(cmd: list[str | os.PathLike[str]]) -> str:
     return " ".join(str(part) for part in cmd)
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def run(cmd: list[str | os.PathLike[str]], *, capture_stdout: bool = False) -> subprocess.CompletedProcess[str]:
     print()
     print(f"> {command_text(cmd)}")
@@ -161,6 +179,8 @@ def run(cmd: list[str | os.PathLike[str]], *, capture_stdout: bool = False) -> s
         [str(part) for part in cmd],
         check=False,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=stdout,
     )
     if result.returncode != 0:
@@ -180,14 +200,47 @@ def install_tools() -> None:
     run(["scoop", "update", "uv", "ffmpeg", "mpv"])
 
 
+def get_python_minor_version(python_exe: Path) -> str | None:
+    if not python_exe.exists():
+        return None
+
+    result = subprocess.run(
+        [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip()
+
+
+def requested_python_minor_version(version: str) -> str:
+    parts = version.split(".")
+    if len(parts) < 2:
+        return version
+    return ".".join(parts[:2])
+
+
 def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None:
     if args.install_python_deps or not paths["python"].exists():
         require_command("uv")
+        requested_minor = requested_python_minor_version(args.python_version)
+        current_minor = get_python_minor_version(paths["python"])
         print(f"Creating/updating Python venv in: {paths['venv_dir']}")
-        if not paths["python"].exists():
-            run(["uv", "venv", paths["venv_dir"]])
+
+        if paths["venv_dir"].exists() and current_minor != requested_minor:
+            current_label = current_minor or "unknown"
+            print(f"Recreating .venv with Python {args.python_version}; existing Python is {current_label}.")
+            run(["uv", "venv", "--python", args.python_version, "--clear", paths["venv_dir"]])
+        elif not paths["python"].exists():
+            run(["uv", "venv", "--python", args.python_version, paths["venv_dir"]])
 
         run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "wheel", "setuptools"])
+        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "yt-dlp", "openai-whisper"])
 
         torch_cmd = [
             "uv",
@@ -197,14 +250,10 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
             paths["python"],
             "--upgrade",
             "torch",
-            "torchvision",
-            "torchaudio",
         ]
         if args.device == "cuda":
             torch_cmd += ["--index-url", args.torch_index_url]
         run(torch_cmd)
-
-        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "yt-dlp", "openai-whisper"])
 
     if not paths["python"].exists():
         raise RuntimeError(f"Whisper .venv not found at {paths['venv_dir']}. Re-run with --install-python-deps.")
@@ -233,6 +282,32 @@ def resolve_video_path(video_file: str) -> Path:
     return video_path
 
 
+def clean_output_line(line: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", line).strip().strip('"')
+
+
+def youtube_video_id(url: str) -> str | None:
+    if "youtu.be/" in url:
+        return url.split("youtu.be/", 1)[1].split("?", 1)[0].split("&", 1)[0].strip("/") or None
+    if "v=" in url:
+        return url.split("v=", 1)[1].split("&", 1)[0].split("#", 1)[0] or None
+    return None
+
+
+def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
+    video_id = youtube_video_id(url)
+    files = [path for path in video_dir.iterdir() if path.is_file()]
+
+    if video_id:
+        id_matches = [path for path in files if f"[{video_id}]" in path.stem]
+        if id_matches:
+            return max(id_matches, key=lambda path: path.stat().st_mtime).resolve()
+
+    if files:
+        return max(files, key=lambda path: path.stat().st_mtime).resolve()
+    return None
+
+
 def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argparse.Namespace) -> Path:
     video_dir.mkdir(parents=True, exist_ok=True)
 
@@ -258,11 +333,16 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
 
     cmd.append(url)
     result = run(cmd, capture_stdout=True)
-    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]
     existing_paths = [Path(line) for line in lines if Path(line).exists()]
-    if not existing_paths:
-        raise RuntimeError("could not determine downloaded video path from yt-dlp output")
-    return existing_paths[-1].resolve()
+    if existing_paths:
+        return existing_paths[-1].resolve()
+
+    fallback_path = latest_downloaded_video(video_dir, url)
+    if fallback_path:
+        return fallback_path
+
+    raise RuntimeError("could not determine downloaded video path from yt-dlp output")
 
 
 def audio_codec_args(audio_format: str) -> list[str]:
@@ -346,6 +426,7 @@ def resolve_output_dir(out_dir: str | None) -> Path:
 
 
 def main() -> int:
+    configure_stdio()
     args = parse_args()
     paths = venv_paths()
 
