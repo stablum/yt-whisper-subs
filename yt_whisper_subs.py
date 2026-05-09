@@ -4,7 +4,9 @@
 This script does not depend on YouTube captions. It downloads a compressed
 YouTube video with yt-dlp or accepts a local video file, extracts small lossy
 16 kHz mono audio with ffmpeg, runs OpenAI Whisper locally, writes an SRT file,
-and can open the video in mpv with the generated subtitle file attached.
+and can open the video in mpv with the generated subtitle file attached. The
+primary SRT is written as a sidecar next to the video so mpv can auto-detect it
+on later opens.
 """
 
 from __future__ import annotations
@@ -415,6 +417,23 @@ def run_whisper(
         shutil.move(str(generated_srt), str(srt_path))
 
 
+def seed_sidecar_from_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
+    if sidecar_srt_path.exists() or not archive_srt_path.exists():
+        return False
+
+    sidecar_srt_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(archive_srt_path, sidecar_srt_path)
+    return True
+
+
+def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> None:
+    if not sidecar_srt_path.exists() or sidecar_srt_path.resolve() == archive_srt_path.resolve():
+        return
+
+    archive_srt_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(sidecar_srt_path, archive_srt_path)
+
+
 def play_video(video_path: Path, srt_path: Path) -> None:
     run(["mpv", f"--sub-file={srt_path}", "--sub-auto=no", video_path])
 
@@ -465,16 +484,23 @@ def main() -> int:
 
         video_base = video_path.stem
         audio_path = audio_dir / f"{video_base}.{args.audio_format}"
-        srt_path = subs_dir / f"{video_base}.srt"
+        sidecar_srt_path = video_path.with_suffix(".srt")
+        archive_srt_path = subs_dir / f"{video_base}.srt"
+
+        if not args.force and seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
+            print()
+            print("Copied existing subtitle archive next to the video for mpv auto-detection.")
 
         print()
         print(f"Video: {video_path}")
         print(f"Audio: {audio_path}")
-        print(f"SRT:   {srt_path}")
+        print(f"SRT:   {sidecar_srt_path}")
+        print(f"Archive SRT: {archive_srt_path}")
 
-        if srt_path.exists() and not args.force:
+        if sidecar_srt_path.exists() and not args.force:
             print()
             print("Subtitle file already exists. Use --force to regenerate.")
+            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
         else:
             print()
             print(f"Extracting mono 16 kHz lossy {args.audio_format} audio...")
@@ -482,7 +508,8 @@ def main() -> int:
 
             print()
             print("Running Whisper...")
-            run_whisper(audio_path, srt_path, subs_dir, paths, args)
+            run_whisper(audio_path, sidecar_srt_path, subs_dir, paths, args)
+            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
 
         if not args.keep_audio and audio_path.exists():
             audio_path.unlink()
@@ -492,11 +519,12 @@ def main() -> int:
             print("Done.")
             print(f"Video: {video_path}")
             print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
-            print(f"Subs:  {srt_path}")
+            print(f"Subs:  {sidecar_srt_path}")
+            print(f"Archive Subs: {archive_srt_path}")
         else:
             print()
             print("Opening in mpv with subtitles...")
-            play_video(video_path, srt_path)
+            play_video(video_path, sidecar_srt_path)
 
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
