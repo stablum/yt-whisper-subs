@@ -12,6 +12,7 @@ on later opens.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
 import shutil
@@ -471,6 +472,7 @@ def run_whisper(
     task = task or args.task
     language = args.language if language is None else language
     model = model or args.model
+    remove_invalid_whisper_model_cache(paths, model)
 
     whisper_cmd: list[str | os.PathLike[str]] = [
         paths["whisper"],
@@ -502,6 +504,66 @@ def run_whisper(
         if srt_path.exists():
             srt_path.unlink()
         shutil.move(str(generated_srt), str(srt_path))
+
+
+def whisper_cache_root() -> Path:
+    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "whisper"
+
+
+def whisper_model_url(paths: dict[str, Path], model: str) -> str | None:
+    result = subprocess.run(
+        [
+            str(paths["python"]),
+            "-c",
+            "import sys, whisper; print(whisper._MODELS[sys.argv[1]])",
+            model,
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def remove_invalid_whisper_model_cache(paths: dict[str, Path], model: str) -> None:
+    url = whisper_model_url(paths, model)
+    if not url:
+        return
+
+    url_parts = url.rstrip("/").split("/")
+    if len(url_parts) < 2:
+        return
+
+    expected_sha256 = url_parts[-2].casefold()
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        return
+
+    cache_path = whisper_cache_root() / url_parts[-1]
+    if not cache_path.exists():
+        return
+
+    if cache_path.stat().st_size == 0:
+        cache_path.unlink()
+        print(f"Removed empty Whisper model cache file: {cache_path}")
+        return
+
+    actual_sha256 = sha256_file(cache_path).casefold()
+    if actual_sha256 != expected_sha256:
+        cache_path.unlink()
+        print(f"Removed corrupt Whisper model cache file: {cache_path}")
 
 
 def seed_sidecar_from_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
