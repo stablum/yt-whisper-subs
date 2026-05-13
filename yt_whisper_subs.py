@@ -521,6 +521,23 @@ def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> Non
     shutil.copy2(sidecar_srt_path, archive_srt_path)
 
 
+def hydrate_subtitle_pair(label: str, sidecar_srt_path: Path, archive_srt_path: Path, *, force: bool) -> None:
+    if force:
+        return
+
+    if seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
+        print()
+        print(f"Copied existing {label} subtitle archive next to the video for mpv auto-detection.")
+    elif sidecar_srt_path.exists() and not archive_srt_path.exists():
+        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+        print()
+        print(f"Copied existing {label} subtitle sidecar into the subtitle archive.")
+
+
+def subtitle_pair_ready(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
+    return sidecar_srt_path.exists() and archive_srt_path.exists()
+
+
 def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace) -> None:
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
     existing_srt_paths = [srt_path for srt_path in srt_paths if srt_path.exists()]
@@ -547,6 +564,47 @@ def resolve_output_dir(out_dir: str | None) -> Path:
     return DEFAULT_OUTPUT_DIR.resolve()
 
 
+def print_yield_paths(
+    video_path: Path,
+    audio_path: Path,
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    *,
+    make_english_subs: bool,
+    english_sidecar_srt_path: Path,
+    english_archive_srt_path: Path,
+) -> None:
+    print()
+    print(f"Video: {video_path}")
+    print(f"Audio: {audio_path}")
+    print(f"SRT:   {sidecar_srt_path}")
+    print(f"Archive SRT: {archive_srt_path}")
+    if make_english_subs:
+        print(f"English SRT: {english_sidecar_srt_path}")
+        print(f"English Archive SRT: {english_archive_srt_path}")
+
+
+def print_done(
+    video_path: Path,
+    audio_path: Path,
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    *,
+    make_english_subs: bool,
+    english_sidecar_srt_path: Path,
+    english_archive_srt_path: Path,
+) -> None:
+    print()
+    print("Done.")
+    print(f"Video: {video_path}")
+    print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
+    print(f"Subs:  {sidecar_srt_path}")
+    print(f"Archive Subs: {archive_srt_path}")
+    if make_english_subs:
+        print(f"English Subs: {english_sidecar_srt_path}")
+        print(f"English Archive Subs: {english_archive_srt_path}")
+
+
 def main() -> int:
     configure_stdio()
     args = parse_args()
@@ -556,19 +614,8 @@ def main() -> int:
         if args.install_tools:
             install_tools()
 
-        require_command("ffmpeg")
         if not args.no_play:
             require_command("mpv")
-
-        ensure_python_deps(paths, args)
-
-        print()
-        print("Checking PyTorch CUDA visibility...")
-        if args.device == "cuda" and not check_cuda(paths):
-            raise RuntimeError(
-                "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
-                "or re-run with --device cpu."
-            )
 
         out_dir = resolve_output_dir(args.out_dir)
         video_dir = out_dir / "videos"
@@ -577,11 +624,20 @@ def main() -> int:
         video_dir.mkdir(parents=True, exist_ok=True)
         audio_dir.mkdir(parents=True, exist_ok=True)
         subs_dir.mkdir(parents=True, exist_ok=True)
+        python_deps_ready = False
 
         if args.url:
-            print()
-            print("Downloading compressed lossy video stream...")
-            video_path = download_video(args.url, video_dir, paths, args)
+            video_path = latest_downloaded_video(video_dir, args.url)
+            if video_path:
+                print()
+                print(f"Found existing video yield: {video_path}")
+            else:
+                ensure_python_deps(paths, args)
+                python_deps_ready = True
+                require_command("ffmpeg")
+                print()
+                print("Downloading compressed lossy video stream...")
+                video_path = download_video(args.url, video_dir, paths, args)
         else:
             video_path = resolve_video_path(args.video_file)
 
@@ -593,30 +649,74 @@ def main() -> int:
         english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
         english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
 
-        if not args.force and seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
-            print()
-            print("Copied existing subtitle archive next to the video for mpv auto-detection.")
+        hydrate_subtitle_pair("primary", sidecar_srt_path, archive_srt_path, force=args.force)
+        if make_english_subs:
+            hydrate_subtitle_pair("English", english_sidecar_srt_path, english_archive_srt_path, force=args.force)
 
-        if make_english_subs and not args.force and seed_sidecar_from_archive(
+        print_yield_paths(
+            video_path,
+            audio_path,
+            sidecar_srt_path,
+            archive_srt_path,
+            make_english_subs=make_english_subs,
+            english_sidecar_srt_path=english_sidecar_srt_path,
+            english_archive_srt_path=english_archive_srt_path,
+        )
+
+        primary_ready = subtitle_pair_ready(sidecar_srt_path, archive_srt_path)
+        english_ready = (not make_english_subs) or subtitle_pair_ready(
             english_sidecar_srt_path,
             english_archive_srt_path,
-        ):
+        )
+        all_yields_ready = video_path.exists() and primary_ready and english_ready
+
+        if all_yields_ready and not args.force:
+            if args.install_python_deps and not python_deps_ready:
+                ensure_python_deps(paths, args)
+                python_deps_ready = True
+
             print()
-            print("Copied existing English subtitle archive next to the video for mpv auto-detection.")
+            print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, and Whisper.")
+
+            if not args.keep_audio and audio_path.exists():
+                audio_path.unlink()
+
+            if args.no_play:
+                print_done(
+                    video_path,
+                    audio_path,
+                    sidecar_srt_path,
+                    archive_srt_path,
+                    make_english_subs=make_english_subs,
+                    english_sidecar_srt_path=english_sidecar_srt_path,
+                    english_archive_srt_path=english_archive_srt_path,
+                )
+            else:
+                print()
+                print("Opening in mpv with subtitles...")
+                srt_paths = [sidecar_srt_path]
+                if make_english_subs:
+                    srt_paths.append(english_sidecar_srt_path)
+                play_video(video_path, srt_paths, args)
+
+            return 0
+
+        if not python_deps_ready:
+            ensure_python_deps(paths, args)
+            python_deps_ready = True
+        require_command("ffmpeg")
 
         print()
-        print(f"Video: {video_path}")
-        print(f"Audio: {audio_path}")
-        print(f"SRT:   {sidecar_srt_path}")
-        print(f"Archive SRT: {archive_srt_path}")
-        if make_english_subs:
-            print(f"English SRT: {english_sidecar_srt_path}")
-            print(f"English Archive SRT: {english_archive_srt_path}")
+        print("Checking PyTorch CUDA visibility...")
+        if args.device == "cuda" and not check_cuda(paths):
+            raise RuntimeError(
+                "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
+                "or re-run with --device cpu."
+            )
 
-        if sidecar_srt_path.exists() and not args.force:
+        if primary_ready and not args.force:
             print()
             print("Subtitle file already exists. Use --force to regenerate.")
-            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
         else:
             print()
             print(f"Extracting mono 16 kHz lossy {args.audio_format} audio...")
@@ -628,10 +728,9 @@ def main() -> int:
             sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
 
         if make_english_subs:
-            if english_sidecar_srt_path.exists() and not args.force:
+            if subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) and not args.force:
                 print()
                 print("English subtitle file already exists. Use --force to regenerate.")
-                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
             else:
                 print()
                 print("Generating English subtitles from Dutch audio...")
@@ -652,15 +751,15 @@ def main() -> int:
             audio_path.unlink()
 
         if args.no_play:
-            print()
-            print("Done.")
-            print(f"Video: {video_path}")
-            print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
-            print(f"Subs:  {sidecar_srt_path}")
-            print(f"Archive Subs: {archive_srt_path}")
-            if make_english_subs:
-                print(f"English Subs: {english_sidecar_srt_path}")
-                print(f"English Archive Subs: {english_archive_srt_path}")
+            print_done(
+                video_path,
+                audio_path,
+                sidecar_srt_path,
+                archive_srt_path,
+                make_english_subs=make_english_subs,
+                english_sidecar_srt_path=english_sidecar_srt_path,
+                english_archive_srt_path=english_archive_srt_path,
+            )
         else:
             print()
             print("Opening in mpv with subtitles...")
