@@ -710,6 +710,20 @@ def compact_srt_content(content: str, args: argparse.Namespace) -> str:
     return render_srt(compact_cues(parse_srt(content), args), args)
 
 
+def uncompacted_backup_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}.uncompact{path.suffix}")
+
+
+def save_uncompacted_backup(path: Path, content: str, *, label: str) -> Path | None:
+    backup_path = uncompacted_backup_path(path)
+    if backup_path.exists():
+        return None
+
+    backup_path.write_text(content, encoding="utf-8", newline="\n")
+    print(f"Saved {label} uncompacted subtitle backup: {backup_path}")
+    return backup_path
+
+
 def compact_srt_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
     if not path.exists():
         return False
@@ -722,6 +736,7 @@ def compact_srt_file(path: Path, args: argparse.Namespace, *, label: str) -> boo
     if original.replace("\r\n", "\n") == compacted:
         return False
 
+    save_uncompacted_backup(path, original, label=label)
     path.write_text(compacted, encoding="utf-8", newline="\n")
     print(f"Compacted {label} subtitles: {path}")
     return True
@@ -739,18 +754,22 @@ def ensure_compacted_subtitle_pair(
     if force or not should_compact_subtitles(args, is_english=is_english):
         return False
 
-    changed = False
     if sidecar_srt_path.exists():
-        changed = compact_srt_file(sidecar_srt_path, args, label=f"{label} sidecar") or changed
-        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
-    elif archive_srt_path.exists():
-        changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive") or changed
-        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
+        sidecar_changed = compact_srt_file(sidecar_srt_path, args, label=f"{label} sidecar")
+    else:
+        sidecar_changed = False
 
     if archive_srt_path.exists():
-        changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive") or changed
-        if sidecar_srt_path.exists():
-            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+        archive_changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive")
+    else:
+        archive_changed = False
+
+    changed = sidecar_changed or archive_changed
+
+    if sidecar_srt_path.exists():
+        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+    elif archive_srt_path.exists():
+        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
 
     return changed
 
