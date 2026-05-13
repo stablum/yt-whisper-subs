@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -65,6 +66,14 @@ def parse_args() -> argparse.Namespace:
         help="Whisper language code, or 'auto' to let Whisper detect it. Default: nl.",
     )
     parser.add_argument("--model", choices=MODEL_CHOICES, default="turbo")
+    parser.add_argument(
+        "--english-model",
+        choices=MODEL_CHOICES,
+        help=(
+            "Model for Dutch-to-English subtitle translation. Defaults to medium "
+            "when --model is turbo, otherwise defaults to --model."
+        ),
+    )
     parser.add_argument("--task", choices=("transcribe", "translate"), default="transcribe")
     parser.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
     parser.add_argument(
@@ -112,6 +121,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
     parser.add_argument("--force", action="store_true", help="Regenerate subtitles even if they already exist.")
+    parser.add_argument(
+        "--no-english-for-dutch",
+        dest="english_for_dutch",
+        action="store_false",
+        default=True,
+        help="Do not create an additional English .en.srt when --language is Dutch.",
+    )
     audio_group = parser.add_mutually_exclusive_group()
     audio_group.add_argument(
         "--keep-audio",
@@ -148,6 +164,20 @@ def parse_args() -> argparse.Namespace:
 def looks_like_url(value: str) -> bool:
     lowered = value.lower()
     return lowered.startswith(("http://", "https://"))
+
+
+def is_dutch_language(language: str | None) -> bool:
+    if not language:
+        return False
+    return language.casefold() in {"nl", "dutch", "nederlands"}
+
+
+def english_model(args: argparse.Namespace) -> str:
+    if args.english_model:
+        return args.english_model
+    if args.model == "turbo":
+        return "medium"
+    return args.model
 
 
 def venv_paths() -> dict[str, Path]:
@@ -406,34 +436,44 @@ def run_whisper(
     subs_dir: Path,
     paths: dict[str, Path],
     args: argparse.Namespace,
+    *,
+    task: str | None = None,
+    language: str | None = None,
+    model: str | None = None,
 ) -> None:
+    task = task or args.task
+    language = args.language if language is None else language
+    model = model or args.model
+
     whisper_cmd: list[str | os.PathLike[str]] = [
         paths["whisper"],
         audio_path,
         "--model",
-        args.model,
+        model,
         "--task",
-        args.task,
+        task,
         "--output_format",
         "srt",
-        "--output_dir",
-        subs_dir,
         "--device",
         args.device,
         "--fp16",
         "True" if args.device == "cuda" else "False",
     ]
 
-    if args.language and args.language != "auto":
-        whisper_cmd += ["--language", args.language]
+    if language and language != "auto":
+        whisper_cmd += ["--language", language]
 
-    run(whisper_cmd)
+    with tempfile.TemporaryDirectory(prefix="whisper-", dir=subs_dir) as tmp_dir:
+        tmp_output_dir = Path(tmp_dir)
+        whisper_cmd += ["--output_dir", tmp_output_dir]
+        run(whisper_cmd)
 
-    generated_srt = subs_dir / f"{audio_path.stem}.srt"
-    if not generated_srt.exists():
-        raise RuntimeError(f"Whisper finished, but no .srt file was found at: {generated_srt}")
+        generated_srt = tmp_output_dir / f"{audio_path.stem}.srt"
+        if not generated_srt.exists():
+            raise RuntimeError(f"Whisper finished, but no .srt file was found at: {generated_srt}")
 
-    if generated_srt.resolve() != srt_path.resolve():
+        if srt_path.exists():
+            srt_path.unlink()
         shutil.move(str(generated_srt), str(srt_path))
 
 
@@ -454,8 +494,13 @@ def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> Non
     shutil.copy2(sidecar_srt_path, archive_srt_path)
 
 
-def play_video(video_path: Path, srt_path: Path) -> None:
-    run(["mpv", f"--sub-file={srt_path}", "--sub-auto=no", video_path])
+def play_video(video_path: Path, srt_paths: list[Path]) -> None:
+    cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
+    for srt_path in srt_paths:
+        if srt_path.exists():
+            cmd.append(f"--sub-file={srt_path}")
+    cmd.append(video_path)
+    run(cmd)
 
 
 def resolve_output_dir(out_dir: str | None) -> Path:
@@ -506,16 +551,29 @@ def main() -> int:
         audio_path = audio_dir / f"{video_base}.{args.audio_format}"
         sidecar_srt_path = video_path.with_suffix(".srt")
         archive_srt_path = subs_dir / f"{video_base}.srt"
+        make_english_subs = args.english_for_dutch and args.task == "transcribe" and is_dutch_language(args.language)
+        english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
+        english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
 
         if not args.force and seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
             print()
             print("Copied existing subtitle archive next to the video for mpv auto-detection.")
+
+        if make_english_subs and not args.force and seed_sidecar_from_archive(
+            english_sidecar_srt_path,
+            english_archive_srt_path,
+        ):
+            print()
+            print("Copied existing English subtitle archive next to the video for mpv auto-detection.")
 
         print()
         print(f"Video: {video_path}")
         print(f"Audio: {audio_path}")
         print(f"SRT:   {sidecar_srt_path}")
         print(f"Archive SRT: {archive_srt_path}")
+        if make_english_subs:
+            print(f"English SRT: {english_sidecar_srt_path}")
+            print(f"English Archive SRT: {english_archive_srt_path}")
 
         if sidecar_srt_path.exists() and not args.force:
             print()
@@ -531,6 +589,27 @@ def main() -> int:
             run_whisper(audio_path, sidecar_srt_path, subs_dir, paths, args)
             sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
 
+        if make_english_subs:
+            if english_sidecar_srt_path.exists() and not args.force:
+                print()
+                print("English subtitle file already exists. Use --force to regenerate.")
+                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
+            else:
+                print()
+                print("Generating English subtitles from Dutch audio...")
+                extract_audio(video_path, audio_path, args.audio_format, args.force)
+                run_whisper(
+                    audio_path,
+                    english_sidecar_srt_path,
+                    subs_dir,
+                    paths,
+                    args,
+                    task="translate",
+                    language=args.language,
+                    model=english_model(args),
+                )
+                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
+
         if not args.keep_audio and audio_path.exists():
             audio_path.unlink()
 
@@ -541,10 +620,16 @@ def main() -> int:
             print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
             print(f"Subs:  {sidecar_srt_path}")
             print(f"Archive Subs: {archive_srt_path}")
+            if make_english_subs:
+                print(f"English Subs: {english_sidecar_srt_path}")
+                print(f"English Archive Subs: {english_archive_srt_path}")
         else:
             print()
             print("Opening in mpv with subtitles...")
-            play_video(video_path, sidecar_srt_path)
+            srt_paths = [sidecar_srt_path]
+            if make_english_subs:
+                srt_paths.append(english_sidecar_srt_path)
+            play_video(video_path, srt_paths)
 
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
