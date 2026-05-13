@@ -35,6 +35,7 @@ DEFAULT_PYTHON_VERSION = "3.12"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
 
 
 def parse_args() -> argparse.Namespace:
@@ -173,7 +174,12 @@ def configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def run(cmd: list[str | os.PathLike[str]], *, capture_stdout: bool = False) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: list[str | os.PathLike[str]],
+    *,
+    capture_stdout: bool = False,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
     print()
     print(f"> {command_text(cmd)}")
     stdout = subprocess.PIPE if capture_stdout else None
@@ -185,7 +191,7 @@ def run(cmd: list[str | os.PathLike[str]], *, capture_stdout: bool = False) -> s
         errors="replace",
         stdout=stdout,
     )
-    if result.returncode != 0:
+    if check and result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}: {cmd[0]}")
     return result
 
@@ -298,7 +304,15 @@ def youtube_video_id(url: str) -> str | None:
 
 def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
     video_id = youtube_video_id(url)
-    files = [path for path in video_dir.iterdir() if path.is_file()]
+    media_suffixes = {".mkv", ".mp4", ".webm"}
+    files = [
+        path
+        for path in video_dir.iterdir()
+        if path.is_file()
+        and path.suffix.lower() in media_suffixes
+        and not path.name.endswith(".part")
+        and not INTERMEDIATE_FORMAT_RE.search(path.name)
+    ]
 
     if video_id:
         id_matches = [path for path in files if f"[{video_id}]" in path.stem]
@@ -320,6 +334,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         "yt_dlp",
         "--no-playlist",
         "--windows-filenames",
+        "--no-part",
         "-f",
         args.video_format,
         "--merge-output-format",
@@ -334,7 +349,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
 
     cmd.append(url)
-    result = run(cmd, capture_stdout=True)
+    result = run(cmd, capture_stdout=True, check=False)
     lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]
     existing_paths = [Path(line) for line in lines if Path(line).exists()]
     if existing_paths:
@@ -342,7 +357,12 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
 
     fallback_path = latest_downloaded_video(video_dir, url)
     if fallback_path:
+        if result.returncode != 0:
+            print(f"yt-dlp exited with {result.returncode}, but found final video: {fallback_path}")
         return fallback_path
+
+    if result.returncode != 0:
+        raise RuntimeError(f"yt-dlp failed with exit code {result.returncode}")
 
     raise RuntimeError("could not determine downloaded video path from yt-dlp output")
 
