@@ -19,6 +19,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -38,9 +40,25 @@ DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066FF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
+DEFAULT_COMPACT_GAP = 0.6
+DEFAULT_COMPACT_MAX_DURATION = 7.0
+DEFAULT_COMPACT_MAX_CHARS = 140
+DEFAULT_COMPACT_MAX_CPS = 22.0
+DEFAULT_COMPACT_LINE_WIDTH = 42
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
+SRT_TIME_RE = re.compile(
+    r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
+)
+STRONG_PUNCTUATION_RE = re.compile(r"[.!?][\"')\]]*$")
+
+
+@dataclass(frozen=True)
+class SubtitleCue:
+    start_ms: int
+    end_ms: int
+    text: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -156,6 +174,49 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_DUAL_SUB_SECONDARY_POS,
         help=f"mpv --secondary-sub-pos value for the secondary subtitles. Default: {DEFAULT_DUAL_SUB_SECONDARY_POS}.",
     )
+    parser.add_argument(
+        "--compact-subs",
+        choices=("english", "all", "none"),
+        default="english",
+        help="Compact fragmented SRT cues after generation and on existing files. Default: english.",
+    )
+    parser.add_argument(
+        "--no-compact-subs",
+        dest="compact_subs",
+        action="store_const",
+        const="none",
+        help="Disable subtitle compaction.",
+    )
+    parser.add_argument(
+        "--compact-gap",
+        type=float,
+        default=DEFAULT_COMPACT_GAP,
+        help=f"Maximum cue gap in seconds that may be merged. Default: {DEFAULT_COMPACT_GAP}.",
+    )
+    parser.add_argument(
+        "--compact-max-duration",
+        type=float,
+        default=DEFAULT_COMPACT_MAX_DURATION,
+        help=f"Maximum merged cue duration in seconds. Default: {DEFAULT_COMPACT_MAX_DURATION}.",
+    )
+    parser.add_argument(
+        "--compact-max-chars",
+        type=int,
+        default=DEFAULT_COMPACT_MAX_CHARS,
+        help=f"Maximum merged cue text length. Default: {DEFAULT_COMPACT_MAX_CHARS}.",
+    )
+    parser.add_argument(
+        "--compact-max-cps",
+        type=float,
+        default=DEFAULT_COMPACT_MAX_CPS,
+        help=f"Maximum merged cue reading speed in characters per second. Default: {DEFAULT_COMPACT_MAX_CPS}.",
+    )
+    parser.add_argument(
+        "--compact-line-width",
+        type=int,
+        default=DEFAULT_COMPACT_LINE_WIDTH,
+        help=f"Target subtitle line width when rewriting compacted cues. Default: {DEFAULT_COMPACT_LINE_WIDTH}.",
+    )
     audio_group = parser.add_mutually_exclusive_group()
     audio_group.add_argument(
         "--keep-audio",
@@ -206,6 +267,14 @@ def english_model(args: argparse.Namespace) -> str:
     if args.model == "turbo":
         return "medium"
     return args.model
+
+
+def should_compact_subtitles(args: argparse.Namespace, *, is_english: bool) -> bool:
+    if args.compact_subs == "none":
+        return False
+    if args.compact_subs == "all":
+        return True
+    return is_english
 
 
 def venv_paths() -> dict[str, Path]:
@@ -506,6 +575,207 @@ def run_whisper(
         shutil.move(str(generated_srt), str(srt_path))
 
 
+def parse_srt_timestamp(value: str) -> int:
+    hours = int(value[0:2])
+    minutes = int(value[3:5])
+    seconds = int(value[6:8])
+    milliseconds = int(value[9:12])
+    return (((hours * 60) + minutes) * 60 + seconds) * 1000 + milliseconds
+
+
+def format_srt_timestamp(milliseconds: int) -> str:
+    milliseconds = max(0, milliseconds)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+
+
+def normalize_subtitle_text(lines: list[str]) -> str:
+    return re.sub(r"\s+", " ", " ".join(line.strip() for line in lines)).strip()
+
+
+def parse_srt(content: str) -> list[SubtitleCue]:
+    normalized = content.replace("\ufeff", "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        return []
+
+    cues: list[SubtitleCue] = []
+    for block in re.split(r"\n\s*\n", normalized):
+        lines = [line.strip() for line in block.split("\n") if line.strip()]
+        if not lines:
+            continue
+        if lines[0].isdigit():
+            lines = lines[1:]
+        if len(lines) < 2:
+            continue
+
+        match = SRT_TIME_RE.search(lines[0])
+        if not match:
+            continue
+
+        text = normalize_subtitle_text(lines[1:])
+        if not text:
+            continue
+
+        cues.append(
+            SubtitleCue(
+                start_ms=parse_srt_timestamp(match.group("start")),
+                end_ms=parse_srt_timestamp(match.group("end")),
+                text=text,
+            )
+        )
+
+    return cues
+
+
+def cue_reading_speed(text: str, start_ms: int, end_ms: int) -> float:
+    duration_seconds = max((end_ms - start_ms) / 1000, 0.001)
+    return len(text) / duration_seconds
+
+
+def cue_text_for_merge(first: str, second: str) -> str:
+    return normalize_subtitle_text([first, second])
+
+
+def may_merge_cues(first: SubtitleCue, second: SubtitleCue, args: argparse.Namespace) -> bool:
+    gap_seconds = (second.start_ms - first.end_ms) / 1000
+    if gap_seconds > args.compact_gap:
+        return False
+    if STRONG_PUNCTUATION_RE.search(first.text):
+        return False
+
+    combined_text = cue_text_for_merge(first.text, second.text)
+    combined_duration = (second.end_ms - first.start_ms) / 1000
+    if combined_duration > args.compact_max_duration:
+        return False
+    if len(combined_text) > args.compact_max_chars:
+        return False
+    if cue_reading_speed(combined_text, first.start_ms, second.end_ms) > args.compact_max_cps:
+        return False
+
+    return True
+
+
+def compact_cues(cues: list[SubtitleCue], args: argparse.Namespace) -> list[SubtitleCue]:
+    if not cues:
+        return []
+
+    compacted: list[SubtitleCue] = []
+    current = cues[0]
+
+    for next_cue in cues[1:]:
+        if may_merge_cues(current, next_cue, args):
+            current = SubtitleCue(
+                start_ms=current.start_ms,
+                end_ms=next_cue.end_ms,
+                text=cue_text_for_merge(current.text, next_cue.text),
+            )
+        else:
+            compacted.append(current)
+            current = next_cue
+
+    compacted.append(current)
+    return compacted
+
+
+def wrap_subtitle_text(text: str, line_width: int) -> str:
+    width = max(10, line_width)
+    return "\n".join(
+        textwrap.wrap(
+            text,
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+    )
+
+
+def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
+    blocks = []
+    for index, cue in enumerate(cues, start=1):
+        blocks.append(
+            "\n".join(
+                [
+                    str(index),
+                    f"{format_srt_timestamp(cue.start_ms)} --> {format_srt_timestamp(cue.end_ms)}",
+                    wrap_subtitle_text(cue.text, args.compact_line_width),
+                ]
+            )
+        )
+    return "\n\n".join(blocks) + ("\n" if blocks else "")
+
+
+def compact_srt_content(content: str, args: argparse.Namespace) -> str:
+    return render_srt(compact_cues(parse_srt(content), args), args)
+
+
+def compact_srt_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
+    if not path.exists():
+        return False
+
+    original = path.read_text(encoding="utf-8-sig")
+    compacted = compact_srt_content(original, args)
+    if not compacted:
+        return False
+
+    if original.replace("\r\n", "\n") == compacted:
+        return False
+
+    path.write_text(compacted, encoding="utf-8", newline="\n")
+    print(f"Compacted {label} subtitles: {path}")
+    return True
+
+
+def ensure_compacted_subtitle_pair(
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    is_english: bool,
+    label: str,
+    force: bool,
+) -> bool:
+    if force or not should_compact_subtitles(args, is_english=is_english):
+        return False
+
+    changed = False
+    if sidecar_srt_path.exists():
+        changed = compact_srt_file(sidecar_srt_path, args, label=f"{label} sidecar") or changed
+        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+    elif archive_srt_path.exists():
+        changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive") or changed
+        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
+
+    if archive_srt_path.exists():
+        changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive") or changed
+        if sidecar_srt_path.exists():
+            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+
+    return changed
+
+
+def finalize_subtitle_pair(
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    is_english: bool,
+    label: str,
+) -> None:
+    if should_compact_subtitles(args, is_english=is_english):
+        ensure_compacted_subtitle_pair(
+            sidecar_srt_path,
+            archive_srt_path,
+            args,
+            is_english=is_english,
+            label=label,
+            force=False,
+        )
+    else:
+        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+
+
 def whisper_cache_root() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "whisper"
 
@@ -715,6 +985,24 @@ def main() -> int:
         if make_english_subs:
             hydrate_subtitle_pair("English", english_sidecar_srt_path, english_archive_srt_path, force=args.force)
 
+        ensure_compacted_subtitle_pair(
+            sidecar_srt_path,
+            archive_srt_path,
+            args,
+            is_english=False,
+            label="primary",
+            force=args.force,
+        )
+        if make_english_subs:
+            ensure_compacted_subtitle_pair(
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                is_english=True,
+                label="English",
+                force=args.force,
+            )
+
         print_yield_paths(
             video_path,
             audio_path,
@@ -787,7 +1075,13 @@ def main() -> int:
             print()
             print("Running Whisper...")
             run_whisper(audio_path, sidecar_srt_path, subs_dir, paths, args)
-            sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+            finalize_subtitle_pair(
+                sidecar_srt_path,
+                archive_srt_path,
+                args,
+                is_english=False,
+                label="primary",
+            )
 
         if make_english_subs:
             if subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) and not args.force:
@@ -807,7 +1101,13 @@ def main() -> int:
                     language=args.language,
                     model=english_model(args),
                 )
-                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
+                finalize_subtitle_pair(
+                    english_sidecar_srt_path,
+                    english_archive_srt_path,
+                    args,
+                    is_english=True,
+                    label="English",
+                )
 
         if not args.keep_audio and audio_path.exists():
             audio_path.unlink()
