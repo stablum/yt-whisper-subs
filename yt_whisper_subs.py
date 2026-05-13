@@ -34,6 +34,9 @@ MODEL_CHOICES = (
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
 DEFAULT_PYTHON_VERSION = "3.12"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
+DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066FF"
+DEFAULT_DUAL_SUB_PRIMARY_POS = 100
+DEFAULT_DUAL_SUB_SECONDARY_POS = 8
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
@@ -127,6 +130,30 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         default=True,
         help="Do not create an additional English .en.srt when --language is Dutch.",
+    )
+    parser.add_argument(
+        "--no-dual-subs",
+        dest="dual_subs",
+        action="store_false",
+        default=True,
+        help="Load multiple subtitles as selectable tracks instead of displaying two at once in mpv.",
+    )
+    parser.add_argument(
+        "--dual-sub-primary-color",
+        default=DEFAULT_DUAL_SUB_PRIMARY_COLOR,
+        help=f"mpv color for the primary subtitle track when dual subtitles are shown. Default: {DEFAULT_DUAL_SUB_PRIMARY_COLOR}.",
+    )
+    parser.add_argument(
+        "--dual-sub-primary-pos",
+        type=float,
+        default=DEFAULT_DUAL_SUB_PRIMARY_POS,
+        help=f"mpv --sub-pos value for the primary subtitles. Default: {DEFAULT_DUAL_SUB_PRIMARY_POS}.",
+    )
+    parser.add_argument(
+        "--dual-sub-secondary-pos",
+        type=float,
+        default=DEFAULT_DUAL_SUB_SECONDARY_POS,
+        help=f"mpv --secondary-sub-pos value for the secondary subtitles. Default: {DEFAULT_DUAL_SUB_SECONDARY_POS}.",
     )
     audio_group = parser.add_mutually_exclusive_group()
     audio_group.add_argument(
@@ -494,11 +521,22 @@ def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> Non
     shutil.copy2(sidecar_srt_path, archive_srt_path)
 
 
-def play_video(video_path: Path, srt_paths: list[Path]) -> None:
+def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace) -> None:
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
-    for srt_path in srt_paths:
-        if srt_path.exists():
-            cmd.append(f"--sub-file={srt_path}")
+    existing_srt_paths = [srt_path for srt_path in srt_paths if srt_path.exists()]
+
+    for srt_path in existing_srt_paths:
+        cmd.append(f"--sub-file={srt_path}")
+
+    if args.dual_subs and len(existing_srt_paths) >= 2:
+        cmd += [
+            "--sid=1",
+            "--secondary-sid=2",
+            f"--sub-color={args.dual_sub_primary_color}",
+            f"--sub-pos={args.dual_sub_primary_pos:g}",
+            f"--secondary-sub-pos={args.dual_sub_secondary_pos:g}",
+        ]
+
     cmd.append(video_path)
     run(cmd)
 
@@ -629,7 +667,7 @@ def main() -> int:
             srt_paths = [sidecar_srt_path]
             if make_english_subs:
                 srt_paths.append(english_sidecar_srt_path)
-            play_video(video_path, srt_paths)
+            play_video(video_path, srt_paths, args)
 
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
