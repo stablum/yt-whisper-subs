@@ -220,7 +220,7 @@ def parse_args() -> argparse.Namespace:
         "--dual-sub-font-size",
         type=float,
         default=DEFAULT_DUAL_SUB_FONT_SIZE,
-        help=f"ASS subtitle font size used for both dual subtitle tracks. Default: {DEFAULT_DUAL_SUB_FONT_SIZE}.",
+        help=f"Subtitle font size used for both dual subtitle tracks. Default: {DEFAULT_DUAL_SUB_FONT_SIZE}.",
     )
     parser.add_argument(
         "--compact-subs",
@@ -1115,21 +1115,38 @@ def subtitle_pair_ready(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
     return sidecar_srt_path.exists() and archive_srt_path.exists()
 
 
-def css_color_to_ass_color(value: str) -> str:
+def parse_css_color(value: str) -> tuple[int, int, int, int]:
     hex_value = value.strip()
     if hex_value.startswith("#"):
         hex_value = hex_value[1:]
 
     if len(hex_value) == 6:
         red, green, blue = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4))
-        ass_alpha = 0
+        alpha = 255
     elif len(hex_value) == 8:
-        red, green, blue, css_alpha = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4, 6))
-        ass_alpha = 255 - css_alpha
+        red, green, blue, alpha = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4, 6))
     else:
         raise ValueError
 
+    return red, green, blue, alpha
+
+
+def css_color_to_ass_color(value: str) -> str:
+    red, green, blue, css_alpha = parse_css_color(value)
+    ass_alpha = 255 - css_alpha
     return f"&H{ass_alpha:02X}{blue:02X}{green:02X}{red:02X}"
+
+
+def css_color_to_mpv_color(value: str) -> str:
+    red, green, blue, alpha = parse_css_color(value)
+    return f"#{alpha:02X}{red:02X}{green:02X}{blue:02X}"
+
+
+def mpv_subtitle_color(value: str) -> str:
+    try:
+        return css_color_to_mpv_color(value)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid subtitle color '{value}'; use #RRGGBB or #RRGGBBAA") from exc
 
 
 def ass_timestamp(milliseconds: int) -> str:
@@ -1219,16 +1236,8 @@ def write_ass_subtitle(
 
 
 def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace, temp_dir: Path) -> list[Path]:
-    primary_ass = temp_dir / f"{srt_paths[0].stem}.primary.ass"
     secondary_ass = temp_dir / f"{srt_paths[1].stem}.secondary.ass"
 
-    write_ass_subtitle(
-        srt_paths[0],
-        primary_ass,
-        color=args.dual_sub_primary_color,
-        position=args.dual_sub_primary_pos,
-        font_size=args.dual_sub_font_size,
-    )
     write_ass_subtitle(
         srt_paths[1],
         secondary_ass,
@@ -1237,7 +1246,7 @@ def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace
         font_size=args.dual_sub_font_size,
     )
 
-    return [primary_ass, secondary_ass, *srt_paths[2:]]
+    return [srt_paths[0], secondary_ass, *srt_paths[2:]]
 
 
 def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace) -> None:
@@ -1260,7 +1269,9 @@ def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace
             cmd += [
                 "--sid=1",
                 "--secondary-sid=2",
-                "--sub-ass-override=no",
+                f"--sub-color={mpv_subtitle_color(args.dual_sub_primary_color)}",
+                f"--sub-font-size={args.dual_sub_font_size:g}",
+                f"--sub-pos={args.dual_sub_primary_pos:g}",
                 "--secondary-sub-ass-override=no",
             ]
 
