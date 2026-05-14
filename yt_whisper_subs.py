@@ -42,6 +42,7 @@ DEFAULT_DUAL_SUB_SECONDARY_COLOR = "#66D9EF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
 DEFAULT_DUAL_SUB_FONT_SIZE = 105
+DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE = 0.4
 DEFAULT_COMPACT_GAP = 0.9
 DEFAULT_COMPACT_MAX_DURATION = 9.0
 DEFAULT_COMPACT_MAX_CHARS = 180
@@ -220,7 +221,27 @@ def parse_args() -> argparse.Namespace:
         "--dual-sub-font-size",
         type=float,
         default=DEFAULT_DUAL_SUB_FONT_SIZE,
-        help=f"Subtitle font size used for both dual subtitle tracks. Default: {DEFAULT_DUAL_SUB_FONT_SIZE}.",
+        help=(
+            "Visual subtitle font-size target for dual subtitles. The primary mpv-native "
+            "track is scaled to match the secondary ASS track. "
+            f"Default: {DEFAULT_DUAL_SUB_FONT_SIZE}."
+        ),
+    )
+    parser.add_argument(
+        "--dual-sub-primary-font-size",
+        type=float,
+        help=(
+            "Override the native mpv font size for the primary subtitle track. "
+            "By default this is derived from --dual-sub-font-size."
+        ),
+    )
+    parser.add_argument(
+        "--dual-sub-secondary-font-size",
+        type=float,
+        help=(
+            "Override the ASS font size for the secondary subtitle track. "
+            "By default this is --dual-sub-font-size."
+        ),
     )
     parser.add_argument(
         "--compact-subs",
@@ -1115,6 +1136,18 @@ def subtitle_pair_ready(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
     return sidecar_srt_path.exists() and archive_srt_path.exists()
 
 
+def dual_sub_primary_font_size(args: argparse.Namespace) -> float:
+    if args.dual_sub_primary_font_size is not None:
+        return args.dual_sub_primary_font_size
+    return args.dual_sub_font_size * DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE
+
+
+def dual_sub_secondary_font_size(args: argparse.Namespace) -> float:
+    if args.dual_sub_secondary_font_size is not None:
+        return args.dual_sub_secondary_font_size
+    return args.dual_sub_font_size
+
+
 def parse_css_color(value: str) -> tuple[int, int, int, int]:
     hex_value = value.strip()
     if hex_value.startswith("#"):
@@ -1243,7 +1276,7 @@ def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace
         secondary_ass,
         color=args.dual_sub_secondary_color,
         position=args.dual_sub_secondary_pos,
-        font_size=args.dual_sub_font_size,
+        font_size=dual_sub_secondary_font_size(args),
     )
 
     return [srt_paths[0], secondary_ass, *srt_paths[2:]]
@@ -1270,7 +1303,7 @@ def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace
                 "--sid=1",
                 "--secondary-sid=2",
                 f"--sub-color={mpv_subtitle_color(args.dual_sub_primary_color)}",
-                f"--sub-font-size={args.dual_sub_font_size:g}",
+                f"--sub-font-size={dual_sub_primary_font_size(args):g}",
                 f"--sub-pos={args.dual_sub_primary_pos:g}",
                 "--secondary-sub-ass-override=no",
             ]
