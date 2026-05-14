@@ -40,11 +40,12 @@ DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066FF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
-DEFAULT_COMPACT_GAP = 0.75
-DEFAULT_COMPACT_MAX_DURATION = 8.0
-DEFAULT_COMPACT_MAX_CHARS = 160
-DEFAULT_COMPACT_MAX_CPS = 24.0
-DEFAULT_COMPACT_LINE_WIDTH = 48
+DEFAULT_COMPACT_GAP = 0.9
+DEFAULT_COMPACT_MAX_DURATION = 9.0
+DEFAULT_COMPACT_MAX_CHARS = 180
+DEFAULT_COMPACT_MAX_CPS = 25.0
+DEFAULT_COMPACT_LINE_WIDTH = 50
+DEFAULT_COMPACT_SOFT_PERIODS = "english"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
@@ -52,6 +53,34 @@ SRT_TIME_RE = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
 STRONG_PUNCTUATION_RE = re.compile(r"[.!?][\"')\]]*$")
+TERMINAL_PERIOD_RE = re.compile(r"\.(?P<trailer>[\"')\]]*)$")
+WORD_RE = re.compile(r"[A-Za-z][A-Za-z']*")
+FALSE_PERIOD_END_WORDS = frozenset(
+    """
+    a about after against although among an and are around as at be because
+    been before being between but by can could did do does during for from
+    had has have how if in into is may might must of on or shall should since
+    so than that the through to under unless until was were what when
+    where whether which while who whom whose why will with within without
+    would
+    """.split()
+)
+FALSE_PERIOD_START_WORDS = frozenset(
+    """
+    about after although and are as at because been before being but by can
+    could did do does for from had has have how if in into is not of on or
+    shall should since so than that through to under unless until was were what
+    when where whether which while who whom whose why will with within without
+    would
+    """.split()
+)
+COORDINATING_SOFT_PERIOD_START_WORDS = frozenset("and but or so".split())
+LOWERCASE_AFTER_SOFT_PERIOD_WORDS = FALSE_PERIOD_START_WORDS | frozenset(
+    """
+    a an the their them there these they this those it its our we you your he
+    her his she
+    """.split()
+)
 
 
 @dataclass(frozen=True)
@@ -188,6 +217,22 @@ def parse_args() -> argparse.Namespace:
         help="Disable subtitle compaction.",
     )
     parser.add_argument(
+        "--compact-soft-periods",
+        choices=("english", "all", "none"),
+        default=DEFAULT_COMPACT_SOFT_PERIODS,
+        help=(
+            "Treat likely false period boundaries as mergeable during compaction. "
+            f"Default: {DEFAULT_COMPACT_SOFT_PERIODS}."
+        ),
+    )
+    parser.add_argument(
+        "--no-compact-soft-periods",
+        dest="compact_soft_periods",
+        action="store_const",
+        const="none",
+        help="Do not merge across period boundaries during subtitle compaction.",
+    )
+    parser.add_argument(
         "--compact-gap",
         type=float,
         default=DEFAULT_COMPACT_GAP,
@@ -273,6 +318,15 @@ def should_compact_subtitles(args: argparse.Namespace, *, is_english: bool) -> b
     if args.compact_subs == "none":
         return False
     if args.compact_subs == "all":
+        return True
+    return is_english
+
+
+def should_soften_period_boundaries(args: argparse.Namespace, *, is_english: bool) -> bool:
+    mode = getattr(args, "compact_soft_periods", DEFAULT_COMPACT_SOFT_PERIODS)
+    if mode == "none":
+        return False
+    if mode == "all":
         return True
     return is_english
 
@@ -634,18 +688,103 @@ def cue_reading_speed(text: str, start_ms: int, end_ms: int) -> float:
     return len(text) / duration_seconds
 
 
-def cue_text_for_merge(first: str, second: str) -> str:
+def words_in_text(text: str) -> list[str]:
+    return WORD_RE.findall(text)
+
+
+def first_word(text: str) -> str:
+    words = words_in_text(text)
+    return words[0].casefold() if words else ""
+
+
+def last_word(text: str) -> str:
+    words = words_in_text(text)
+    return words[-1].casefold() if words else ""
+
+
+def terminal_period_is_soft(first: str, second: str, args: argparse.Namespace, *, is_english: bool) -> bool:
+    if not should_soften_period_boundaries(args, is_english=is_english):
+        return False
+    if not TERMINAL_PERIOD_RE.search(first.strip()):
+        return False
+
+    first_tail = last_word(first)
+    second_head = first_word(second)
+    if not first_tail or not second_head:
+        return False
+    first_words = words_in_text(first)
+    if first_tail in FALSE_PERIOD_END_WORDS:
+        return True
+    if len(first_words) <= 1:
+        return False
+    if second_head in COORDINATING_SOFT_PERIOD_START_WORDS:
+        return False
+
+    return second_head in FALSE_PERIOD_START_WORDS
+
+
+def should_force_lowercase_after_soft_period(first: str) -> bool:
+    return last_word(first) in FALSE_PERIOD_END_WORDS
+
+
+def remove_terminal_period(text: str) -> str:
+    stripped = text.rstrip()
+    match = TERMINAL_PERIOD_RE.search(stripped)
+    if not match:
+        return stripped
+
+    return f"{stripped[: match.start()]}{match.group('trailer')}".strip()
+
+
+def lowercase_soft_period_continuation(text: str, *, force: bool = False) -> str:
+    stripped = text.lstrip()
+    leading_space = text[: len(text) - len(stripped)]
+    match = re.match(r"(?P<prefix>[\"'(\[]*)(?P<word>[A-Za-z][A-Za-z']*)(?P<rest>.*)", stripped, re.DOTALL)
+    if not match:
+        return text
+
+    word = match.group("word")
+    if word.casefold() not in LOWERCASE_AFTER_SOFT_PERIOD_WORDS and not force:
+        return text
+    if len(word) > 1 and word.isupper():
+        return text
+    if force and word.casefold() not in LOWERCASE_AFTER_SOFT_PERIOD_WORDS:
+        following_words = words_in_text(match.group("rest"))
+        if not following_words or following_words[0][:1].isupper():
+            return text
+
+    lowered_word = word[:1].lower() + word[1:]
+    return f"{leading_space}{match.group('prefix')}{lowered_word}{match.group('rest')}"
+
+
+def cue_text_for_merge(
+    first: str,
+    second: str,
+    *,
+    soft_period: bool = False,
+    force_lowercase: bool = False,
+) -> str:
+    if soft_period:
+        first = remove_terminal_period(first)
+        second = lowercase_soft_period_continuation(second, force=force_lowercase)
     return normalize_subtitle_text([first, second])
 
 
-def may_merge_cues(first: SubtitleCue, second: SubtitleCue, args: argparse.Namespace) -> bool:
+def may_merge_cues(first: SubtitleCue, second: SubtitleCue, args: argparse.Namespace, *, is_english: bool) -> bool:
     gap_seconds = (second.start_ms - first.end_ms) / 1000
     if gap_seconds > args.compact_gap:
         return False
-    if STRONG_PUNCTUATION_RE.search(first.text):
+
+    soft_period = terminal_period_is_soft(first.text, second.text, args, is_english=is_english)
+    if STRONG_PUNCTUATION_RE.search(first.text) and not soft_period:
         return False
 
-    combined_text = cue_text_for_merge(first.text, second.text)
+    combined_text = cue_text_for_merge(
+        first.text,
+        second.text,
+        soft_period=soft_period,
+        force_lowercase=should_force_lowercase_after_soft_period(first.text),
+    )
     combined_duration = (second.end_ms - first.start_ms) / 1000
     if combined_duration > args.compact_max_duration:
         return False
@@ -657,7 +796,7 @@ def may_merge_cues(first: SubtitleCue, second: SubtitleCue, args: argparse.Names
     return True
 
 
-def compact_cues(cues: list[SubtitleCue], args: argparse.Namespace) -> list[SubtitleCue]:
+def compact_cues(cues: list[SubtitleCue], args: argparse.Namespace, *, is_english: bool = False) -> list[SubtitleCue]:
     if not cues:
         return []
 
@@ -665,11 +804,17 @@ def compact_cues(cues: list[SubtitleCue], args: argparse.Namespace) -> list[Subt
     current = cues[0]
 
     for next_cue in cues[1:]:
-        if may_merge_cues(current, next_cue, args):
+        if may_merge_cues(current, next_cue, args, is_english=is_english):
+            soft_period = terminal_period_is_soft(current.text, next_cue.text, args, is_english=is_english)
             current = SubtitleCue(
                 start_ms=current.start_ms,
                 end_ms=next_cue.end_ms,
-                text=cue_text_for_merge(current.text, next_cue.text),
+                text=cue_text_for_merge(
+                    current.text,
+                    next_cue.text,
+                    soft_period=soft_period,
+                    force_lowercase=should_force_lowercase_after_soft_period(current.text),
+                ),
             )
         else:
             compacted.append(current)
@@ -706,8 +851,8 @@ def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
-def compact_srt_content(content: str, args: argparse.Namespace) -> str:
-    return render_srt(compact_cues(parse_srt(content), args), args)
+def compact_srt_content(content: str, args: argparse.Namespace, *, is_english: bool = False) -> str:
+    return render_srt(compact_cues(parse_srt(content), args, is_english=is_english), args)
 
 
 def uncompacted_backup_path(path: Path) -> Path:
@@ -740,7 +885,7 @@ def restore_subtitle_from_uncompacted_backup(
 
     backup_content = backup_path.read_text(encoding="utf-8-sig")
     if should_compact_subtitles(args, is_english=is_english):
-        restored_content = compact_srt_content(backup_content, args)
+        restored_content = compact_srt_content(backup_content, args, is_english=is_english)
         action = "Rebuilt compacted"
     else:
         restored_content = backup_content.replace("\r\n", "\n").replace("\r", "\n")
@@ -755,12 +900,12 @@ def restore_subtitle_from_uncompacted_backup(
     return True
 
 
-def compact_srt_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
+def compact_srt_file(path: Path, args: argparse.Namespace, *, is_english: bool, label: str) -> bool:
     if not path.exists():
         return False
 
     original = path.read_text(encoding="utf-8-sig")
-    compacted = compact_srt_content(original, args)
+    compacted = compact_srt_content(original, args, is_english=is_english)
     if not compacted:
         return False
 
@@ -786,12 +931,22 @@ def ensure_compacted_subtitle_pair(
         return False
 
     if sidecar_srt_path.exists():
-        sidecar_changed = compact_srt_file(sidecar_srt_path, args, label=f"{label} sidecar")
+        sidecar_changed = compact_srt_file(
+            sidecar_srt_path,
+            args,
+            is_english=is_english,
+            label=f"{label} sidecar",
+        )
     else:
         sidecar_changed = False
 
     if archive_srt_path.exists():
-        archive_changed = compact_srt_file(archive_srt_path, args, label=f"{label} archive")
+        archive_changed = compact_srt_file(
+            archive_srt_path,
+            args,
+            is_english=is_english,
+            label=f"{label} archive",
+        )
     else:
         archive_changed = False
 
