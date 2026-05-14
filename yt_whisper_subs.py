@@ -41,7 +41,7 @@ DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
 DEFAULT_DUAL_SUB_SECONDARY_COLOR = "#66D9EF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
-DEFAULT_DUAL_SUB_FONT_SIZE = 42
+DEFAULT_DUAL_SUB_FONT_SIZE = 105
 DEFAULT_COMPACT_GAP = 0.9
 DEFAULT_COMPACT_MAX_DURATION = 9.0
 DEFAULT_COMPACT_MAX_CHARS = 180
@@ -215,6 +215,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_DUAL_SUB_SECONDARY_POS,
         help=f"Subtitle position hint for the secondary subtitles. Default: {DEFAULT_DUAL_SUB_SECONDARY_POS}.",
+    )
+    parser.add_argument(
+        "--dual-sub-font-size",
+        type=float,
+        default=DEFAULT_DUAL_SUB_FONT_SIZE,
+        help=f"ASS subtitle font size used for both dual subtitle tracks. Default: {DEFAULT_DUAL_SUB_FONT_SIZE}.",
     )
     parser.add_argument(
         "--compact-subs",
@@ -1166,6 +1172,7 @@ def write_ass_subtitle(
     *,
     color: str,
     position: float,
+    font_size: float,
 ) -> None:
     try:
         primary_color = css_color_to_ass_color(color)
@@ -1192,7 +1199,7 @@ def write_ass_subtitle(
             "MarginL, MarginR, MarginV, Encoding"
         ),
         (
-            f"Style: Default,Segoe UI,{DEFAULT_DUAL_SUB_FONT_SIZE},{primary_color},"
+            f"Style: Default,Segoe UI,{font_size:g},{primary_color},"
             "&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,0,0,1,3,1,"
             f"{alignment},40,40,{margin_v},1"
         ),
@@ -1220,12 +1227,14 @@ def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace
         primary_ass,
         color=args.dual_sub_primary_color,
         position=args.dual_sub_primary_pos,
+        font_size=args.dual_sub_font_size,
     )
     write_ass_subtitle(
         srt_paths[1],
         secondary_ass,
         color=args.dual_sub_secondary_color,
         position=args.dual_sub_secondary_pos,
+        font_size=args.dual_sub_font_size,
     )
 
     return [primary_ass, secondary_ass, *srt_paths[2:]]
