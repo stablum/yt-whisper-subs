@@ -37,9 +37,11 @@ MODEL_CHOICES = (
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
 DEFAULT_PYTHON_VERSION = "3.12"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
-DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066FF"
+DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
+DEFAULT_DUAL_SUB_SECONDARY_COLOR = "#66D9EF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
+DEFAULT_DUAL_SUB_FONT_SIZE = 42
 DEFAULT_COMPACT_GAP = 0.9
 DEFAULT_COMPACT_MAX_DURATION = 9.0
 DEFAULT_COMPACT_MAX_CHARS = 180
@@ -189,19 +191,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dual-sub-primary-color",
         default=DEFAULT_DUAL_SUB_PRIMARY_COLOR,
-        help=f"mpv color for the primary subtitle track when dual subtitles are shown. Default: {DEFAULT_DUAL_SUB_PRIMARY_COLOR}.",
+        help=(
+            "Text color for the primary subtitle track when dual subtitles are shown, "
+            f"as #RRGGBB or #RRGGBBAA. Default: {DEFAULT_DUAL_SUB_PRIMARY_COLOR}."
+        ),
+    )
+    parser.add_argument(
+        "--dual-sub-secondary-color",
+        default=DEFAULT_DUAL_SUB_SECONDARY_COLOR,
+        help=(
+            "Text color for the secondary subtitle track when dual subtitles are shown, "
+            f"as #RRGGBB or #RRGGBBAA. Default: {DEFAULT_DUAL_SUB_SECONDARY_COLOR}."
+        ),
     )
     parser.add_argument(
         "--dual-sub-primary-pos",
         type=float,
         default=DEFAULT_DUAL_SUB_PRIMARY_POS,
-        help=f"mpv --sub-pos value for the primary subtitles. Default: {DEFAULT_DUAL_SUB_PRIMARY_POS}.",
+        help=f"Subtitle position hint for the primary subtitles. Default: {DEFAULT_DUAL_SUB_PRIMARY_POS}.",
     )
     parser.add_argument(
         "--dual-sub-secondary-pos",
         type=float,
         default=DEFAULT_DUAL_SUB_SECONDARY_POS,
-        help=f"mpv --secondary-sub-pos value for the secondary subtitles. Default: {DEFAULT_DUAL_SUB_SECONDARY_POS}.",
+        help=f"Subtitle position hint for the secondary subtitles. Default: {DEFAULT_DUAL_SUB_SECONDARY_POS}.",
     )
     parser.add_argument(
         "--compact-subs",
@@ -1096,24 +1109,157 @@ def subtitle_pair_ready(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
     return sidecar_srt_path.exists() and archive_srt_path.exists()
 
 
+def css_color_to_ass_color(value: str) -> str:
+    hex_value = value.strip()
+    if hex_value.startswith("#"):
+        hex_value = hex_value[1:]
+
+    if len(hex_value) == 6:
+        red, green, blue = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4))
+        ass_alpha = 0
+    elif len(hex_value) == 8:
+        red, green, blue, css_alpha = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4, 6))
+        ass_alpha = 255 - css_alpha
+    else:
+        raise ValueError
+
+    return f"&H{ass_alpha:02X}{blue:02X}{green:02X}{red:02X}"
+
+
+def ass_timestamp(milliseconds: int) -> str:
+    milliseconds = max(0, milliseconds)
+    hours, remainder = divmod(milliseconds, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    seconds, milliseconds = divmod(remainder, 1000)
+    centiseconds = milliseconds // 10
+    return f"{hours}:{minutes:02}:{seconds:02}.{centiseconds:02}"
+
+
+def ass_escape_text(text: str) -> str:
+    return (
+        text.replace("\\", "\\\\")
+        .replace("{", "\\{")
+        .replace("}", "\\}")
+        .replace("\n", r"\N")
+    )
+
+
+def ass_alignment_from_sub_pos(position: float) -> int:
+    if position <= 33:
+        return 8
+    if position >= 67:
+        return 2
+    return 5
+
+
+def ass_margin_v_from_sub_pos(position: float) -> int:
+    if position <= 33:
+        return max(30, round(1080 * max(position, 0) / 100))
+    if position >= 67:
+        return max(35, round(1080 * max(100 - min(position, 100), 0) / 100))
+    return 0
+
+
+def write_ass_subtitle(
+    srt_path: Path,
+    ass_path: Path,
+    *,
+    color: str,
+    position: float,
+) -> None:
+    try:
+        primary_color = css_color_to_ass_color(color)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid subtitle color '{color}'; use #RRGGBB or #RRGGBBAA") from exc
+
+    cues = parse_srt(srt_path.read_text(encoding="utf-8-sig"))
+    alignment = ass_alignment_from_sub_pos(position)
+    margin_v = ass_margin_v_from_sub_pos(position)
+    ass_path.parent.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "PlayResX: 1920",
+        "PlayResY: 1080",
+        "ScaledBorderAndShadow: yes",
+        "",
+        "[V4+ Styles]",
+        (
+            "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, "
+            "OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, "
+            "ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, "
+            "MarginL, MarginR, MarginV, Encoding"
+        ),
+        (
+            f"Style: Default,Segoe UI,{DEFAULT_DUAL_SUB_FONT_SIZE},{primary_color},"
+            "&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,0,0,1,3,1,"
+            f"{alignment},40,40,{margin_v},1"
+        ),
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+
+    for cue in cues:
+        lines.append(
+            "Dialogue: "
+            f"0,{ass_timestamp(cue.start_ms)},{ass_timestamp(cue.end_ms)},"
+            f"Default,,0,0,0,,{ass_escape_text(cue.text)}"
+        )
+
+    ass_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+
+
+def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace, temp_dir: Path) -> list[Path]:
+    primary_ass = temp_dir / f"{srt_paths[0].stem}.primary.ass"
+    secondary_ass = temp_dir / f"{srt_paths[1].stem}.secondary.ass"
+
+    write_ass_subtitle(
+        srt_paths[0],
+        primary_ass,
+        color=args.dual_sub_primary_color,
+        position=args.dual_sub_primary_pos,
+    )
+    write_ass_subtitle(
+        srt_paths[1],
+        secondary_ass,
+        color=args.dual_sub_secondary_color,
+        position=args.dual_sub_secondary_pos,
+    )
+
+    return [primary_ass, secondary_ass, *srt_paths[2:]]
+
+
 def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace) -> None:
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
     existing_srt_paths = [srt_path for srt_path in srt_paths if srt_path.exists()]
 
-    for srt_path in existing_srt_paths:
-        cmd.append(f"--sub-file={srt_path}")
+    temp_dir_context = None
+    try:
+        if args.dual_subs and len(existing_srt_paths) >= 2:
+            temp_dir_context = tempfile.TemporaryDirectory(prefix="yt-whisper-subs-ass-")
+            temp_dir = Path(temp_dir_context.__enter__())
+            subtitle_paths = dual_subtitle_playback_paths(existing_srt_paths, args, temp_dir)
+        else:
+            subtitle_paths = existing_srt_paths
 
-    if args.dual_subs and len(existing_srt_paths) >= 2:
-        cmd += [
-            "--sid=1",
-            "--secondary-sid=2",
-            f"--sub-color={args.dual_sub_primary_color}",
-            f"--sub-pos={args.dual_sub_primary_pos:g}",
-            f"--secondary-sub-pos={args.dual_sub_secondary_pos:g}",
-        ]
+        for subtitle_path in subtitle_paths:
+            cmd.append(f"--sub-file={subtitle_path}")
 
-    cmd.append(video_path)
-    run(cmd)
+        if args.dual_subs and len(existing_srt_paths) >= 2:
+            cmd += [
+                "--sid=1",
+                "--secondary-sid=2",
+                "--sub-ass-override=no",
+                "--secondary-sub-ass-override=no",
+            ]
+
+        cmd.append(video_path)
+        run(cmd)
+    finally:
+        if temp_dir_context is not None:
+            temp_dir_context.__exit__(None, None, None)
 
 
 def resolve_output_dir(out_dir: str | None) -> Path:
