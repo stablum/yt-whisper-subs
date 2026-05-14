@@ -40,11 +40,11 @@ DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066FF"
 DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
-DEFAULT_COMPACT_GAP = 0.6
-DEFAULT_COMPACT_MAX_DURATION = 7.0
-DEFAULT_COMPACT_MAX_CHARS = 140
-DEFAULT_COMPACT_MAX_CPS = 22.0
-DEFAULT_COMPACT_LINE_WIDTH = 42
+DEFAULT_COMPACT_GAP = 0.75
+DEFAULT_COMPACT_MAX_DURATION = 8.0
+DEFAULT_COMPACT_MAX_CHARS = 160
+DEFAULT_COMPACT_MAX_CPS = 24.0
+DEFAULT_COMPACT_LINE_WIDTH = 48
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
@@ -724,6 +724,37 @@ def save_uncompacted_backup(path: Path, content: str, *, label: str) -> Path | N
     return backup_path
 
 
+def restore_subtitle_from_uncompacted_backup(
+    path: Path,
+    args: argparse.Namespace,
+    *,
+    is_english: bool,
+    label: str,
+) -> bool:
+    if path.exists():
+        return False
+
+    backup_path = uncompacted_backup_path(path)
+    if not backup_path.exists():
+        return False
+
+    backup_content = backup_path.read_text(encoding="utf-8-sig")
+    if should_compact_subtitles(args, is_english=is_english):
+        restored_content = compact_srt_content(backup_content, args)
+        action = "Rebuilt compacted"
+    else:
+        restored_content = backup_content.replace("\r\n", "\n").replace("\r", "\n")
+        action = "Restored"
+
+    if not restored_content:
+        return False
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(restored_content, encoding="utf-8", newline="\n")
+    print(f"{action} {label} subtitles from uncompacted backup: {path}")
+    return True
+
+
 def compact_srt_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
     if not path.exists():
         return False
@@ -872,9 +903,30 @@ def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> Non
     shutil.copy2(sidecar_srt_path, archive_srt_path)
 
 
-def hydrate_subtitle_pair(label: str, sidecar_srt_path: Path, archive_srt_path: Path, *, force: bool) -> None:
+def hydrate_subtitle_pair(
+    label: str,
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    is_english: bool,
+    force: bool,
+) -> None:
     if force:
         return
+
+    restore_subtitle_from_uncompacted_backup(
+        sidecar_srt_path,
+        args,
+        is_english=is_english,
+        label=f"{label} sidecar",
+    )
+    restore_subtitle_from_uncompacted_backup(
+        archive_srt_path,
+        args,
+        is_english=is_english,
+        label=f"{label} archive",
+    )
 
     if seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
         print()
@@ -1000,9 +1052,23 @@ def main() -> int:
         english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
         english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
 
-        hydrate_subtitle_pair("primary", sidecar_srt_path, archive_srt_path, force=args.force)
+        hydrate_subtitle_pair(
+            "primary",
+            sidecar_srt_path,
+            archive_srt_path,
+            args,
+            is_english=False,
+            force=args.force,
+        )
         if make_english_subs:
-            hydrate_subtitle_pair("English", english_sidecar_srt_path, english_archive_srt_path, force=args.force)
+            hydrate_subtitle_pair(
+                "English",
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                is_english=True,
+                force=args.force,
+            )
 
         ensure_compacted_subtitle_pair(
             sidecar_srt_path,
