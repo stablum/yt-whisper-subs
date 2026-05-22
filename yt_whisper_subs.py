@@ -405,10 +405,39 @@ def run(
     cmd: list[str | os.PathLike[str]],
     *,
     capture_stdout: bool = False,
+    stream_stdout: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     print()
     print(f"> {command_text(cmd)}")
+    if capture_stdout and stream_stdout:
+        process = subprocess.Popen(
+            [str(part) for part in cmd],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+        )
+        captured_parts: list[str] = []
+        assert process.stdout is not None
+        while True:
+            chunk = process.stdout.read(1)
+            if not chunk:
+                break
+            captured_parts.append(chunk)
+            sys.stdout.write(chunk)
+            if chunk in {"\n", "\r"}:
+                sys.stdout.flush()
+        returncode = process.wait()
+        result = subprocess.CompletedProcess(
+            [str(part) for part in cmd],
+            returncode,
+            stdout="".join(captured_parts),
+        )
+        if check and result.returncode != 0:
+            raise RuntimeError(f"command failed with exit code {result.returncode}: {cmd[0]}")
+        return result
+
     stdout = subprocess.PIPE if capture_stdout else None
     result = subprocess.run(
         [str(part) for part in cmd],
@@ -592,6 +621,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         "--no-playlist",
         "--windows-filenames",
         "--no-part",
+        "--progress",
         "-f",
         args.video_format,
         "--merge-output-format",
@@ -608,7 +638,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
 
     cmd.append(url)
-    result = run(cmd, capture_stdout=True, check=False)
+    result = run(cmd, capture_stdout=True, stream_stdout=True, check=False)
     lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]
     existing_paths = [Path(line) for line in lines if Path(line).exists()]
     if existing_paths:
