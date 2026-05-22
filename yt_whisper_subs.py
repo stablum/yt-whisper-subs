@@ -176,7 +176,11 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
-    parser.add_argument("--force", action="store_true", help="Regenerate subtitles even if they already exist.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-download URL videos and regenerate subtitles even if yields already exist.",
+    )
     parser.add_argument(
         "--no-english-for-dutch",
         dest="english_for_dutch",
@@ -597,6 +601,8 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         "-o",
         template,
     ]
+    if args.force:
+        cmd.append("--force-overwrites")
 
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
@@ -609,7 +615,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         return existing_paths[-1].resolve()
 
     fallback_path = latest_downloaded_video(video_dir, url)
-    if fallback_path:
+    if fallback_path and (result.returncode == 0 or not args.force):
         if result.returncode != 0:
             print(f"yt-dlp exited with {result.returncode}, but found final video: {fallback_path}")
         return fallback_path
@@ -1416,7 +1422,7 @@ def main() -> int:
         python_deps_ready = False
 
         if args.url:
-            video_path = latest_downloaded_video(video_dir, args.url)
+            video_path = None if args.force else latest_downloaded_video(video_dir, args.url)
             if video_path:
                 print()
                 print(f"Found existing video yield: {video_path}")
