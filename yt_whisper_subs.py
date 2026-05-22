@@ -44,6 +44,7 @@ DEFAULT_DUAL_SUB_PRIMARY_POS = 100
 DEFAULT_DUAL_SUB_SECONDARY_POS = 8
 DEFAULT_DUAL_SUB_FONT_SIZE = 105
 DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE = 0.4
+DEFAULT_DOWNLOAD_PROGRESS_DELTA = 1.0
 DEFAULT_COMPACT_GAP = 0.9
 DEFAULT_COMPACT_MAX_DURATION = 9.0
 DEFAULT_COMPACT_MAX_CHARS = 180
@@ -151,6 +152,12 @@ def parse_args() -> argparse.Namespace:
         choices=("mkv", "mp4", "webm"),
         default="mkv",
         help="Container for downloaded video streams. Default: mkv.",
+    )
+    parser.add_argument(
+        "--download-progress-delta",
+        type=float,
+        default=DEFAULT_DOWNLOAD_PROGRESS_DELTA,
+        help=f"Minimum seconds between yt-dlp progress updates. Default: {DEFAULT_DOWNLOAD_PROGRESS_DELTA:g}.",
     )
     parser.add_argument(
         "--torch-index-url",
@@ -622,6 +629,8 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         "--windows-filenames",
         "--no-part",
         "--progress",
+        "--progress-delta",
+        f"{args.download_progress_delta:g}",
         "-f",
         args.video_format,
         "--merge-output-format",
