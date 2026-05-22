@@ -22,6 +22,7 @@ import tempfile
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 
 MODEL_CHOICES = (
@@ -56,6 +57,7 @@ SRT_TIME_RE = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
 STRONG_PUNCTUATION_RE = re.compile(r"[.!?][\"')\]]*$")
+YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 TERMINAL_PERIOD_RE = re.compile(r"\.(?P<trailer>[\"')\]]*)$")
 WORD_RE = re.compile(r"[A-Za-z][A-Za-z']*")
 FALSE_PERIOD_END_WORDS = frozenset(
@@ -515,11 +517,43 @@ def clean_output_line(line: str) -> str:
     return ANSI_ESCAPE_RE.sub("", line).strip().strip('"')
 
 
+def normalize_youtube_video_id(value: str | None) -> str | None:
+    if not value:
+        return None
+
+    candidate = value.strip().strip("/")
+    if YOUTUBE_VIDEO_ID_RE.fullmatch(candidate):
+        return candidate
+    return None
+
+
 def youtube_video_id(url: str) -> str | None:
-    if "youtu.be/" in url:
-        return url.split("youtu.be/", 1)[1].split("?", 1)[0].split("&", 1)[0].strip("/") or None
-    if "v=" in url:
-        return url.split("v=", 1)[1].split("&", 1)[0].split("#", 1)[0] or None
+    parsed = urlparse(url)
+    host = parsed.netloc.casefold()
+    if host.startswith("www."):
+        host = host[4:]
+
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if host == "youtu.be":
+        return normalize_youtube_video_id(path_parts[0] if path_parts else None)
+
+    youtube_hosts = {
+        "youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+        "youtube-nocookie.com",
+    }
+    if host not in youtube_hosts:
+        return None
+
+    query_video_ids = parse_qs(parsed.query).get("v", [])
+    query_video_id = normalize_youtube_video_id(query_video_ids[0] if query_video_ids else None)
+    if query_video_id:
+        return query_video_id
+
+    if len(path_parts) >= 2 and path_parts[0] in {"embed", "live", "shorts", "v"}:
+        return normalize_youtube_video_id(path_parts[1])
+
     return None
 
 
@@ -536,12 +570,10 @@ def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
     ]
 
     if video_id:
-        id_matches = [path for path in files if f"[{video_id}]" in path.stem]
+        id_matches = [path for path in files if path.stem.endswith(f"[{video_id}]")]
         if id_matches:
             return max(id_matches, key=lambda path: path.stat().st_mtime).resolve()
 
-    if files:
-        return max(files, key=lambda path: path.stat().st_mtime).resolve()
     return None
 
 
