@@ -10,10 +10,6 @@ This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
 script without rediscovering all of the local decisions.
 
-Placement note: this README was written to be moved into a dedicated project
-directory. If it is still sitting next to unrelated scripts, do not assume that
-location is the final project layout.
-
 ## Current Intent
 
 The script is optimized for this workflow:
@@ -1111,6 +1107,11 @@ ASS is Advanced SubStation Alpha, a subtitle format with styling. The script
 creates a temporary ASS file for the secondary subtitle track so it can have a
 different color, position, and font size. These temporary files are not the
 authoritative subtitle yields.
+
+## License
+
+This repository is licensed under the GNU General Public License version 3. See
+[LICENSE](LICENSE).
 
 ## Known Limitations
 
