@@ -490,15 +490,25 @@ def run(
         )
         captured_parts: list[str] = []
         assert process.stdout is not None
-        while True:
-            chunk = process.stdout.read(1)
-            if not chunk:
-                break
-            captured_parts.append(chunk)
-            sys.stdout.write(chunk)
-            if chunk in {"\n", "\r"}:
-                sys.stdout.flush()
-        returncode = process.wait()
+        try:
+            while True:
+                chunk = process.stdout.read(1)
+                if not chunk:
+                    break
+                captured_parts.append(chunk)
+                sys.stdout.write(chunk)
+                if chunk in {"\n", "\r"}:
+                    sys.stdout.flush()
+            returncode = process.wait()
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
         result = subprocess.CompletedProcess(
             [str(part) for part in cmd],
             returncode,
@@ -698,7 +708,7 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         "yt_dlp",
         "--no-playlist",
         "--windows-filenames",
-        "--no-part",
+        "--part",
         "--progress",
         "--progress-delta",
         f"{args.download_progress_delta:g}",
@@ -713,6 +723,8 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
     ]
     if args.force:
         cmd.append("--force-overwrites")
+    else:
+        cmd.append("--continue")
 
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]

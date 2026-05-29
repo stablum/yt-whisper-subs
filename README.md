@@ -332,7 +332,8 @@ The download command is built around yt-dlp:
 python -m yt_dlp
   --no-playlist
   --windows-filenames
-  --no-part
+  --part
+  --continue
   --progress
   --progress-delta <seconds>
   -f <format selector>
@@ -345,8 +346,8 @@ Design notes:
 
 - `--no-playlist` avoids accidentally downloading an entire playlist.
 - `--windows-filenames` prevents filenames that are awkward on Windows.
-- `--no-part` avoids `.part` rename problems seen on Windows when another
-  process or terminal interaction interferes with a partial file.
+- `--part` and `--continue` keep yt-dlp's normal resume behavior explicit, so
+  interrupted downloads can continue instead of fetching the same bytes again.
 - `--progress-delta` defaults to `1`, so progress output is visible but not too
   noisy.
 - `--print after_move:filepath` gives the script the final filename.
@@ -866,11 +867,20 @@ The script avoids lossless video and audio yields. YouTube streams are already
 lossy, and Whisper only needs compact speech audio. This keeps disk use under
 control.
 
-### `--no-part` For yt-dlp
+### Resumable yt-dlp Downloads
 
-Windows has shown rename failures with `.part` files when a process still has a
-handle open. `--no-part` trades some resume behavior for fewer confusing
-`WinError 32` failures during normal use.
+The script uses yt-dlp's `.part` files and `--continue` behavior. This keeps
+interrupted downloads resumable: if the script is stopped during the download
+or before yt-dlp finishes merging streams, the next run can reuse the partial
+state instead of downloading the video bytes again.
+
+When the wrapper is interrupted while streaming yt-dlp output, it explicitly
+terminates the child process before exiting. That prevents a second run from
+starting a duplicate download while an orphaned yt-dlp process is still active.
+
+The cache lookup still treats only final merged media files as durable video
+yields. Partial files and yt-dlp intermediate stream files are left for yt-dlp
+to resume or clean up on the next download attempt.
 
 ### Full-SRT OpenAI Translation
 
