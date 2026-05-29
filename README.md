@@ -18,7 +18,7 @@ The script is optimized for this workflow:
 2. Keep a local lossy video file under `~/Videos/yt-whisper-subs/videos`.
 3. Generate Dutch subtitles locally with Whisper.
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read.
-5. Send the full compacted Dutch SRT to the OpenAI API in one request.
+5. Send the compacted Dutch SRT to the OpenAI API in bounded chunks.
 6. Receive natural English translations with the exact same cue count and time
    markings as the compacted Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
@@ -41,10 +41,12 @@ These defaults are hard-coded near the top of the script:
 | Whisper language | `nl` |
 | Primary Whisper model | `turbo` |
 | English translation provider | `openai` |
-| OpenAI translation model | `gpt-5.5` |
-| OpenAI reasoning effort | `xhigh` |
+| OpenAI translation model | `gpt-5-mini` |
+| OpenAI reasoning effort | `none` |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
+| OpenAI translation chunk size | `120` cues |
+| OpenAI translation context | `3` neighboring cues |
 | OpenAI env file | `.env` beside the script |
 | Device | `cuda` |
 | Python version for uv venv | `3.14` |
@@ -462,10 +464,16 @@ SRT after primary compaction has occurred.
 The contract is:
 
 1. The Dutch SRT is parsed into cues.
-2. The complete compacted Dutch SRT is placed into one prompt.
+2. The complete compacted Dutch SRT is split into chunks when it is longer than
+   the configured OpenAI chunk size.
 3. The prompt asks for natural idiomatic English.
 4. The prompt forbids merging, splitting, adding, or omitting cues.
-5. The API is asked for strict JSON:
+5. Each chunk includes a small amount of neighboring text as context, but the
+   model is asked to translate only the current chunk.
+6. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
+   to the English sidecar, so an interrupted or failed run can resume without
+   paying for already translated chunks again.
+7. The API is asked for strict JSON:
 
    ```json
    {
@@ -478,13 +486,13 @@ The contract is:
    }
    ```
 
-6. The script validates that:
+8. The script validates that:
    - the JSON parses,
    - `translations` is a list,
-   - the list length equals the source cue count,
+   - the list length equals the current chunk cue count,
    - each index is exactly the expected 1-based cue number,
    - each text value is a non-empty string.
-7. The script renders a new English SRT by pairing each translated text with the
+9. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
@@ -500,10 +508,10 @@ with:
 
 ```json
 {
-  "model": "gpt-5.5",
-  "input": "...complete prompt and SRT...",
+  "model": "gpt-5-mini",
+  "input": "...prompt and current SRT chunk...",
   "reasoning": {
-    "effort": "xhigh"
+    "effort": "none"
   },
   "text": {
     "format": {
@@ -523,12 +531,16 @@ HTTP responses such as 429 or 5xx. Authentication, model, schema, and validation
 errors still fail immediately or after the API returns a final non-retryable
 response.
 
+Set `--openai-translation-chunk-cues 0` to restore the older single-request
+full-SRT behavior. The chunked default is more resilient for longer videos and
+avoids connection resets seen with large JSON responses.
+
 The exact default model and effort are configurable:
 
 ```powershell
 python .\yt_whisper_subs.py `
-  --openai-translation-model gpt-5.5 `
-  --openai-reasoning-effort xhigh `
+  --openai-translation-model gpt-5-mini `
+  --openai-reasoning-effort none `
   "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
@@ -549,14 +561,25 @@ OPENAI_API_KEY='...'
 
 It skips blank lines and comments.
 
-Privacy note: this mode sends the entire compacted subtitle text to OpenAI in
-one request. That is deliberate for translation quality and full-context
-coherence, but it is still a cloud API call containing the transcript.
+Privacy note: this mode sends the compacted subtitle text to OpenAI. That is
+deliberate for translation quality, but it is still a cloud API call containing
+the transcript.
 
-Cost note: one request over a long SRT can be large. The script currently does
-not chunk long videos, because chunking would reduce the whole-document context
-that motivated this mode. Very long videos may exceed model context limits or
-be expensive.
+Cost note: long videos may require multiple OpenAI requests because the script
+now chunks translation work by cue count. This avoids oversized responses but
+can still be expensive for long transcripts.
+
+Cost controls are intentionally conservative by default:
+
+- `gpt-5-mini` is used instead of frontier models such as `gpt-5.5`.
+- reasoning effort defaults to `none`, because subtitle translation is a
+  well-scoped transformation rather than a hard reasoning task.
+- only three neighboring cues are sent as context around each chunk.
+- token usage is printed after each successful OpenAI response when the API
+  returns usage metadata.
+
+Raise the model, reasoning effort, or context window only when quality demands
+it for a specific source.
 
 ### Fallback: Whisper Audio Translation
 
@@ -761,10 +784,12 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--no-english-for-dutch` | off | Disable automatic English subtitles for Dutch input. |
 | `--english-translation-provider openai|whisper` | `openai` | Select OpenAI SRT translation or Whisper audio translation. |
 | `--english-model MODEL` | conditional | Whisper model for the `whisper` provider only. |
-| `--openai-translation-model MODEL` | `gpt-5.5` | Model for OpenAI SRT translation. |
-| `--openai-reasoning-effort EFFORT` | `xhigh` | Reasoning effort for OpenAI SRT translation. |
+| `--openai-translation-model MODEL` | `gpt-5-mini` | Model for OpenAI SRT translation. |
+| `--openai-reasoning-effort EFFORT` | `none` | Reasoning effort for OpenAI SRT translation. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
+| `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full-SRT request. |
+| `--openai-translation-context-cues INT` | `3` | Neighboring cues sent as context around each chunk. |
 | `--openai-env-file PATH` | `.env` beside script | Env file to load for `OPENAI_API_KEY`. |
 
 OpenAI reasoning effort choices:
@@ -892,13 +917,16 @@ to resume or clean up on the next download attempt.
 
 ### Full-SRT OpenAI Translation
 
-The OpenAI path sends the whole compacted SRT in one request. This is not the
-cheapest possible architecture, but it is the quality-oriented one:
+The OpenAI path translates the compacted SRT in bounded chunks. Each chunk keeps
+the script's strict cue-count contract and includes neighboring cue context for
+terminology continuity. This is the resilient version of the original
+whole-document architecture:
 
-- The model can see the entire discourse.
+- The model sees enough surrounding discourse for local consistency.
 - It can translate recurring terms consistently.
 - It can avoid locally plausible but globally wrong choices.
-- It avoids cross-chunk style drift.
+- It avoids the large single response that can trigger remote connection resets.
+- Completed chunks are checkpointed and reused on rerun.
 
 The script then validates the structured output and applies translations to the
 original compacted cue timings itself. The model is not trusted to output final
@@ -1007,7 +1035,7 @@ python .\yt_whisper_subs.py --help
 Mock the OpenAI translation path without making an API call:
 
 ```powershell
-python -c "import argparse, tempfile, json; from pathlib import Path; import yt_whisper_subs as y; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); y.openai_responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='xhigh', compact_line_width=50); y.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
+python -c "import argparse, tempfile, json; from pathlib import Path; import yt_whisper_subs as y; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); y.openai_responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='none', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); y.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
 ```
 
 Expected property: the English output should retain the exact two timestamp
@@ -1071,10 +1099,17 @@ backoff. Increase retries for flaky connections:
 python .\yt_whisper_subs.py --openai-max-retries 5 <source>
 ```
 
+If failures persist with longer videos, reduce the OpenAI chunk size:
+
+```powershell
+python .\yt_whisper_subs.py --openai-translation-chunk-cues 60 <source>
+```
+
 If the failure happened after the primary SRT was generated, rerunning normally
 should reuse the downloaded video and primary subtitles, then retry only the
-missing English subtitle yield. Avoid `--force` unless you intentionally want to
-redownload and regenerate everything.
+missing English subtitle yield. If a `.en.partial.json` checkpoint exists, the
+script also reuses completed OpenAI translation chunks. Avoid `--force` unless
+you intentionally want to redownload and regenerate everything.
 
 ### CUDA is not visible
 
@@ -1175,8 +1210,8 @@ This repository is licensed under the GNU General Public License version 3. See
 
 ## Known Limitations
 
-- The OpenAI translation path is one request by design. Very long videos may
-  exceed context limits or become expensive.
+- The OpenAI translation path is chunked by cue count. Very long videos can
+  still be expensive.
 - `--language auto` does not trigger automatic English-for-Dutch translation.
 - Existing `.en.srt` files are treated as ready regardless of whether they were
   produced by Whisper or OpenAI. Delete them or use `--force` to regenerate.
@@ -1198,8 +1233,6 @@ These are intentionally not implemented yet:
   redownload and Whisper reruns.
 - Add a `--translate-existing-srt` mode for translating an SRT without touching
   video/audio.
-- Add context-safe chunking for very long SRT files while preserving global
-  terminology, perhaps with a glossary pass.
 - Add an optional OpenAI SDK implementation if API usage grows.
 - Add tests around SRT parsing, compaction, archive hydration, and exact cue
   preservation.

@@ -7,7 +7,7 @@ YouTube video with yt-dlp or accepts a local video file, extracts small lossy
 and can open the video in mpv with the generated subtitle file attached. The
 primary SRT is written as a sidecar next to the video so mpv can auto-detect it
 on later opens. For Dutch sources, the default English translation path sends
-the full primary SRT to the OpenAI API in one request and preserves its cue
+the primary SRT to the OpenAI API in bounded chunks and preserves its cue
 timings.
 """
 
@@ -44,11 +44,13 @@ MODEL_CHOICES = (
 )
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
 DEFAULT_OPENAI_ENV_FILE = Path(__file__).resolve().parent / ".env"
-DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5.5"
-DEFAULT_OPENAI_TRANSLATION_REASONING = "xhigh"
+DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_TRANSLATION_REASONING = "none"
 DEFAULT_OPENAI_TIMEOUT = 900.0
 DEFAULT_OPENAI_MAX_RETRIES = 3
 DEFAULT_OPENAI_RETRY_INITIAL_DELAY = 5.0
+DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES = 120
+DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES = 3
 DEFAULT_PYTHON_VERSION = "3.14"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
@@ -158,8 +160,8 @@ def parse_args() -> argparse.Namespace:
         choices=("openai", "whisper"),
         default="openai",
         help=(
-            "How Dutch-to-English subtitles are generated. The default, openai, sends the full "
-            "primary SRT to the OpenAI Responses API in one request and preserves exact cue timings. "
+            "How Dutch-to-English subtitles are generated. The default, openai, sends the "
+            "primary SRT to the OpenAI Responses API in bounded chunks and preserves exact cue timings. "
             "Use whisper for the previous local audio translation path."
         ),
     )
@@ -167,7 +169,7 @@ def parse_args() -> argparse.Namespace:
         "--openai-translation-model",
         default=DEFAULT_OPENAI_TRANSLATION_MODEL,
         help=(
-            "OpenAI model used for full-SRT English translation. "
+            "OpenAI model used for SRT English translation. "
             f"Default: {DEFAULT_OPENAI_TRANSLATION_MODEL}."
         ),
     )
@@ -176,7 +178,7 @@ def parse_args() -> argparse.Namespace:
         choices=("none", "minimal", "low", "medium", "high", "xhigh"),
         default=DEFAULT_OPENAI_TRANSLATION_REASONING,
         help=(
-            "OpenAI reasoning effort for full-SRT English translation. "
+            "OpenAI reasoning effort for SRT English translation. "
             f"Default: {DEFAULT_OPENAI_TRANSLATION_REASONING}."
         ),
     )
@@ -193,6 +195,24 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Retries for transient OpenAI network/server failures after the initial request. "
             f"Default: {DEFAULT_OPENAI_MAX_RETRIES}."
+        ),
+    )
+    parser.add_argument(
+        "--openai-translation-chunk-cues",
+        type=int,
+        default=DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES,
+        help=(
+            "Maximum subtitle cues per OpenAI translation request. Use 0 for one full-SRT request. "
+            f"Default: {DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES}."
+        ),
+    )
+    parser.add_argument(
+        "--openai-translation-context-cues",
+        type=int,
+        default=DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES,
+        help=(
+            "Neighboring cues sent as context around each OpenAI translation chunk. "
+            f"Default: {DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES}."
         ),
     )
     parser.add_argument(
@@ -416,6 +436,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("provide exactly one source: positional SOURCE, --url, or --video-file")
     if args.openai_max_retries < 0:
         parser.error("--openai-max-retries must be 0 or greater")
+    if args.openai_translation_chunk_cues < 0:
+        parser.error("--openai-translation-chunk-cues must be 0 or greater")
+    if args.openai_translation_context_cues < 0:
+        parser.error("--openai-translation-context-cues must be 0 or greater")
 
     if args.source:
         if looks_like_url(args.source):
@@ -1143,22 +1167,232 @@ def openai_translation_response_format() -> dict[str, object]:
     }
 
 
-def openai_translation_prompt(source_srt: str, cue_count: int) -> str:
+def openai_translation_prompt(
+    source_srt: str,
+    cue_count: int,
+    *,
+    chunk_label: str | None = None,
+    previous_context: str = "",
+    next_context: str = "",
+) -> str:
+    chunk_note = ""
+    if chunk_label:
+        chunk_note = (
+            f"You are translating {chunk_label} from a longer subtitle file. "
+            "Return translations only for the SOURCE SRT block in this request.\n"
+        )
+
+    context_note = ""
+    if previous_context or next_context:
+        context_note = "Neighbor context for terminology only; do not translate it:\n"
+        if previous_context:
+            context_note += f"Before: {previous_context}\n"
+        if next_context:
+            context_note += f"After: {next_context}\n"
+        context_note += "\n"
+
     return (
-        "You are translating a complete Dutch SRT subtitle file into natural, idiomatic English.\n"
-        "Use the whole file as context before choosing wording. Preserve meaning, speaker intent, "
-        "names, institutions, and political terminology. Avoid literal Dutch phrasing when a natural "
-        "English formulation is clearer.\n\n"
+        "Translate Dutch SRT subtitles into natural, concise English.\n"
+        f"{chunk_note}"
+        "Preserve meaning, names, institutions, speaker intent, and political terms. "
+        "Avoid literal Dutch phrasing when natural English is clearer.\n\n"
+        f"{context_note}"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
-        f"Translate exactly {cue_count} cues. Use indexes 1 through {cue_count} in order. "
-        "Do not merge, split, omit, or add cues. Do not output timestamps; the script will preserve "
-        "the exact original time markings. Keep each translated cue concise enough to fit the same "
-        "subtitle timing, and use line breaks only when they genuinely improve subtitle readability.\n\n"
-        "COMPLETE SOURCE SRT:\n"
+        f"Translate exactly {cue_count} cues, indexes 1 through {cue_count}. "
+        "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length.\n\n"
+        "SOURCE SRT:\n"
         "```srt\n"
         f"{source_srt.rstrip()}\n"
         "```"
     )
+
+
+def cue_context_text(cues: list[SubtitleCue], max_chars: int = 1200) -> str:
+    text = " ".join(cue.text for cue in cues)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= max_chars:
+        return text
+    return textwrap.shorten(text, width=max_chars, placeholder=" ...")
+
+
+def text_sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def openai_translation_checkpoint_path(english_srt_path: Path) -> Path:
+    return english_srt_path.with_name(f"{english_srt_path.stem}.partial.json")
+
+
+def openai_translation_metadata(
+    source_srt: str,
+    source_cues: list[SubtitleCue],
+    args: argparse.Namespace,
+    chunk_size: int,
+) -> dict[str, object]:
+    return {
+        "schema": 1,
+        "source_sha256": text_sha256(source_srt),
+        "cue_count": len(source_cues),
+        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
+        "reasoning_effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING),
+        "chunk_cues": chunk_size,
+        "context_cues": int(
+            getattr(args, "openai_translation_context_cues", DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES)
+        ),
+    }
+
+
+def load_openai_translation_checkpoint(
+    checkpoint_path: Path,
+    metadata: dict[str, object],
+) -> list[str | None] | None:
+    if not checkpoint_path.exists():
+        return None
+    try:
+        data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or data.get("metadata") != metadata:
+        return None
+    translations = data.get("translations")
+    cue_count = metadata.get("cue_count")
+    if not isinstance(cue_count, int) or not isinstance(translations, list):
+        return None
+    if len(translations) != cue_count:
+        return None
+    if not all(item is None or isinstance(item, str) for item in translations):
+        return None
+    return translations
+
+
+def save_openai_translation_checkpoint(
+    checkpoint_path: Path,
+    metadata: dict[str, object],
+    translations: list[str | None],
+) -> None:
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = checkpoint_path.with_suffix(f"{checkpoint_path.suffix}.tmp")
+    payload = {
+        "metadata": metadata,
+        "translations": translations,
+    }
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+    temp_path.replace(checkpoint_path)
+
+
+def openai_translation_chunk_size(args: argparse.Namespace, cue_count: int) -> int:
+    requested = int(getattr(args, "openai_translation_chunk_cues", DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES))
+    if requested <= 0:
+        return cue_count
+    return max(1, requested)
+
+
+def translate_cue_chunk_with_openai(
+    source_cues: list[SubtitleCue],
+    args: argparse.Namespace,
+    *,
+    chunk_label: str | None = None,
+    previous_context: str = "",
+    next_context: str = "",
+) -> list[str]:
+    source_srt = render_srt(source_cues, args)
+    payload: dict[str, object] = {
+        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
+        "input": openai_translation_prompt(
+            source_srt,
+            len(source_cues),
+            chunk_label=chunk_label,
+            previous_context=previous_context,
+            next_context=next_context,
+        ),
+        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING)},
+        "text": {"format": openai_translation_response_format()},
+        "store": False,
+    }
+    response = openai_responses_api_request(args, payload)
+    print_openai_usage(response, chunk_label=chunk_label)
+    return parse_openai_translations(response_output_text(response), len(source_cues))
+
+
+def print_openai_usage(data: dict[str, object], *, chunk_label: str | None = None) -> None:
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return
+
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    total_tokens = usage.get("total_tokens")
+    output_details = usage.get("output_tokens_details")
+    reasoning_tokens = None
+    if isinstance(output_details, dict):
+        reasoning_tokens = output_details.get("reasoning_tokens")
+
+    parts: list[str] = []
+    if isinstance(input_tokens, int):
+        parts.append(f"input={input_tokens}")
+    if isinstance(output_tokens, int):
+        parts.append(f"output={output_tokens}")
+    if isinstance(reasoning_tokens, int):
+        parts.append(f"reasoning={reasoning_tokens}")
+    if isinstance(total_tokens, int):
+        parts.append(f"total={total_tokens}")
+    if not parts:
+        return
+
+    label = f" for {chunk_label}" if chunk_label else ""
+    print(f"OpenAI token usage{label}: " + ", ".join(parts))
+
+
+def translate_cues_with_openai(
+    source_srt: str,
+    source_cues: list[SubtitleCue],
+    english_srt_path: Path,
+    args: argparse.Namespace,
+) -> list[str]:
+    chunk_size = openai_translation_chunk_size(args, len(source_cues))
+    if chunk_size >= len(source_cues):
+        return translate_cue_chunk_with_openai(source_cues, args)
+
+    checkpoint_path = openai_translation_checkpoint_path(english_srt_path)
+    metadata = openai_translation_metadata(source_srt, source_cues, args, chunk_size)
+    context_cues = int(getattr(args, "openai_translation_context_cues", DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES))
+    translated_texts = load_openai_translation_checkpoint(checkpoint_path, metadata)
+    if translated_texts is None:
+        translated_texts = [None] * len(source_cues)
+
+    chunks = [
+        (start, min(start + chunk_size, len(source_cues)))
+        for start in range(0, len(source_cues), chunk_size)
+    ]
+    print(
+        f"OpenAI translation will use {len(chunks)} chunks "
+        f"of up to {chunk_size} cues; checkpoint: {checkpoint_path}"
+    )
+
+    for chunk_number, (start, end) in enumerate(chunks, start=1):
+        if all(translated_texts[start:end]):
+            print(f"Reusing completed OpenAI translation chunk {chunk_number}/{len(chunks)}.")
+            continue
+
+        previous_start = max(0, start - context_cues)
+        next_end = min(len(source_cues), end + context_cues)
+        chunk_label = f"chunk {chunk_number}/{len(chunks)} (global cues {start + 1}-{end})"
+        print(f"Translating OpenAI subtitle {chunk_label}...")
+        chunk_translations = translate_cue_chunk_with_openai(
+            source_cues[start:end],
+            args,
+            chunk_label=chunk_label,
+            previous_context=cue_context_text(source_cues[previous_start:start]),
+            next_context=cue_context_text(source_cues[end:next_end]),
+        )
+        translated_texts[start:end] = chunk_translations
+        save_openai_translation_checkpoint(checkpoint_path, metadata, translated_texts)
+
+    missing_indexes = [index + 1 for index, text in enumerate(translated_texts) if text is None]
+    if missing_indexes:
+        raise RuntimeError(f"OpenAI translation checkpoint is incomplete at cues: {missing_indexes[:10]}")
+
+    return [text for text in translated_texts if text is not None]
 
 
 def retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
@@ -1304,15 +1538,7 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
     if not source_cues:
         raise RuntimeError(f"no subtitle cues found in primary SRT: {primary_srt_path}")
 
-    payload: dict[str, object] = {
-        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
-        "input": openai_translation_prompt(source_srt, len(source_cues)),
-        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING)},
-        "text": {"format": openai_translation_response_format()},
-        "store": False,
-    }
-    response = openai_responses_api_request(args, payload)
-    translated_texts = parse_openai_translations(response_output_text(response), len(source_cues))
+    translated_texts = translate_cues_with_openai(source_srt, source_cues, english_srt_path, args)
     translated_cues = [
         SubtitleCue(cue.start_ms, cue.end_ms, translated_text)
         for cue, translated_text in zip(source_cues, translated_texts)
@@ -1320,6 +1546,9 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
 
     english_srt_path.parent.mkdir(parents=True, exist_ok=True)
     english_srt_path.write_text(render_srt(translated_cues, args), encoding="utf-8", newline="\n")
+    checkpoint_path = openai_translation_checkpoint_path(english_srt_path)
+    if checkpoint_path.exists():
+        checkpoint_path.unlink()
 
 
 def compact_srt_content(content: str, args: argparse.Namespace, *, is_english: bool = False) -> str:
