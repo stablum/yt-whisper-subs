@@ -296,6 +296,11 @@ When `--device cuda` is used, Torch is installed from the configured CUDA index:
 https://download.pytorch.org/whl/cu128
 ```
 
+The Torch install is forced to reinstall the `torch` package in CUDA mode. This
+matters because an existing CPU-only Torch wheel can otherwise satisfy the plain
+`torch` requirement and survive a normal upgrade, leaving PyTorch unable to see
+the NVIDIA GPU.
+
 The script does not install the OpenAI Python SDK. The OpenAI Responses API call
 uses the Python standard library (`urllib`). That was a deliberate dependency
 decision: the OpenAI translation path should not require adding and maintaining
@@ -1037,10 +1042,21 @@ or update `DEFAULT_OPENAI_TRANSLATION_MODEL`.
 
 The script prints PyTorch CUDA visibility before Whisper. If CUDA is false:
 
-- update NVIDIA drivers,
-- confirm the correct Torch CUDA wheel installed,
-- rerun with `--install-python-deps`,
+- confirm Windows can see the NVIDIA GPU with `nvidia-smi`,
+- update NVIDIA drivers if `nvidia-smi` is missing or cannot see the GPU,
+- rerun with `--install-python-deps` so the script reinstalls the CUDA Torch
+  wheel into `.venv`,
 - or use `--device cpu` for a slower run.
+
+Useful local check:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'no cuda')"
+```
+
+Expected CUDA output has a Torch version ending in something like `+cu128`,
+prints a CUDA runtime version such as `12.8`, and reports `True` for
+`torch.cuda.is_available()`.
 
 ### yt-dlp warns about JavaScript runtimes
 

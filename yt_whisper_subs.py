@@ -589,10 +589,12 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
             "--python",
             paths["python"],
             "--upgrade",
-            "torch",
         ]
         if args.device == "cuda":
-            torch_cmd += ["--index-url", args.torch_index_url]
+            # CPU and CUDA wheels can satisfy the same "torch" requirement.
+            # Force the wheel variant to be replaced when CUDA is requested.
+            torch_cmd += ["--reinstall-package", "torch", "--index-url", args.torch_index_url]
+        torch_cmd += ["torch"]
         run(torch_cmd)
 
     if not paths["python"].exists():
