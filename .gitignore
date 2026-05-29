@@ -1,0 +1,11 @@
+.env
+AGENTS.md
+clearml.conf
+.venv/
+artifacts/
+.clearml/
+lme-portable-test-*/
+__pycache__/
+*.py[cod]
+*.bck
+*.old
