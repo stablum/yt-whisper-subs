@@ -45,7 +45,7 @@ DEFAULT_OPENAI_ENV_FILE = Path(__file__).resolve().parent / ".env"
 DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5.5"
 DEFAULT_OPENAI_TRANSLATION_REASONING = "xhigh"
 DEFAULT_OPENAI_TIMEOUT = 900.0
-DEFAULT_PYTHON_VERSION = "3.12"
+DEFAULT_PYTHON_VERSION = "3.14"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
 DEFAULT_DUAL_SUB_SECONDARY_COLOR = "#66D9EF"
@@ -230,7 +230,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PYTHON_VERSION,
         help=(
             "Python version for uv-managed .venv creation. "
-            f"Default: {DEFAULT_PYTHON_VERSION}, because PyTorch CUDA wheels are not available for Python 3.14."
+            f"Default: {DEFAULT_PYTHON_VERSION}."
         ),
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
@@ -560,10 +560,16 @@ def requested_python_minor_version(version: str) -> str:
 
 
 def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None:
-    if args.install_python_deps or not paths["python"].exists():
+    requested_minor = requested_python_minor_version(args.python_version)
+    current_minor = get_python_minor_version(paths["python"])
+    needs_python_deps = (
+        args.install_python_deps
+        or not paths["python"].exists()
+        or current_minor != requested_minor
+    )
+
+    if needs_python_deps:
         require_command("uv")
-        requested_minor = requested_python_minor_version(args.python_version)
-        current_minor = get_python_minor_version(paths["python"])
         print(f"Creating/updating Python venv in: {paths['venv_dir']}")
 
         if paths["venv_dir"].exists() and current_minor != requested_minor:

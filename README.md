@@ -46,7 +46,7 @@ These defaults are hard-coded near the top of the script:
 | OpenAI timeout | `900` seconds |
 | OpenAI env file | `.env` beside the script |
 | Device | `cuda` |
-| Python version for uv venv | `3.12` |
+| Python version for uv venv | `3.14` |
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
 | Downloaded video container | `mkv` |
 | yt-dlp format selector | `bv*+ba/b` |
@@ -257,7 +257,7 @@ rerunning Whisper.
 The script expects to run on Windows. It uses:
 
 - `uv`
-- Python 3.12 in a script-local `.venv`
+- Python 3.14 in a script-local `.venv`
 - `yt-dlp`
 - `openai-whisper`
 - `torch`
@@ -269,10 +269,16 @@ was made because the script is intended to be portable as a single project
 folder and should not depend on whichever Python packages happen to be installed
 globally.
 
+The repository also includes a tracked `.python-version` file set to `3.14` so
+local Python tooling and the script-managed environment share the same project
+default.
+
 The script creates or updates `.venv` when:
 
 - `--install-python-deps` is passed, or
-- the expected `.venv\Scripts\python.exe` is missing.
+- the expected `.venv\Scripts\python.exe` is missing, or
+- the existing `.venv` uses a different Python major/minor version than
+  `--python-version`.
 
 It installs:
 
@@ -726,7 +732,7 @@ Exactly one source must be provided.
 | `--model MODEL` | `turbo` | Primary Whisper model. |
 | `--device cuda|cpu` | `cuda` | Whisper/PyTorch device. |
 | `--torch-index-url URL` | CUDA 12.8 PyTorch index | Torch install index when using CUDA. |
-| `--python-version VERSION` | `3.12` | Python version for the uv-managed `.venv`. |
+| `--python-version VERSION` | `3.14` | Python version for the uv-managed `.venv`. |
 | `--install-python-deps` | off | Recreate/update Python dependencies even if `.venv` exists. |
 
 Whisper model choices:
