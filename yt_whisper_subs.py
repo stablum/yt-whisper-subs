@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib import error as urlerror
@@ -45,6 +47,8 @@ DEFAULT_OPENAI_ENV_FILE = Path(__file__).resolve().parent / ".env"
 DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5.5"
 DEFAULT_OPENAI_TRANSLATION_REASONING = "xhigh"
 DEFAULT_OPENAI_TIMEOUT = 900.0
+DEFAULT_OPENAI_MAX_RETRIES = 3
+DEFAULT_OPENAI_RETRY_INITIAL_DELAY = 5.0
 DEFAULT_PYTHON_VERSION = "3.14"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
@@ -63,6 +67,14 @@ DEFAULT_COMPACT_SOFT_PERIODS = "english"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
+TRANSIENT_OPENAI_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
+TRANSIENT_OPENAI_NETWORK_ERRORS = (
+    urlerror.URLError,
+    http.client.HTTPException,
+    ConnectionError,
+    TimeoutError,
+    OSError,
+)
 SRT_TIME_RE = re.compile(
     r"(?P<start>\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(?P<end>\d{2}:\d{2}:\d{2},\d{3})"
 )
@@ -173,6 +185,15 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_OPENAI_TIMEOUT,
         help=f"Seconds to wait for the OpenAI translation request. Default: {DEFAULT_OPENAI_TIMEOUT:g}.",
+    )
+    parser.add_argument(
+        "--openai-max-retries",
+        type=int,
+        default=DEFAULT_OPENAI_MAX_RETRIES,
+        help=(
+            "Retries for transient OpenAI network/server failures after the initial request. "
+            f"Default: {DEFAULT_OPENAI_MAX_RETRIES}."
+        ),
     )
     parser.add_argument(
         "--openai-env-file",
@@ -393,6 +414,8 @@ def parse_args() -> argparse.Namespace:
     explicit_sources = [value for value in (args.source, args.url, args.video_file) if value]
     if len(explicit_sources) != 1:
         parser.error("provide exactly one source: positional SOURCE, --url, or --video-file")
+    if args.openai_max_retries < 0:
+        parser.error("--openai-max-retries must be 0 or greater")
 
     if args.source:
         if looks_like_url(args.source):
@@ -1138,27 +1161,68 @@ def openai_translation_prompt(source_srt: str, cue_count: int) -> str:
     )
 
 
+def retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
+    retry_after = exc.headers.get("Retry-After")
+    if not retry_after:
+        return None
+    try:
+        seconds = float(retry_after)
+    except ValueError:
+        return None
+    if seconds < 0:
+        return None
+    return seconds
+
+
+def openai_retry_delay(attempt: int, retry_after: float | None = None) -> float:
+    if retry_after is not None:
+        return retry_after
+    return DEFAULT_OPENAI_RETRY_INITIAL_DELAY * (2 ** max(0, attempt - 1))
+
+
 def openai_responses_api_request(args: argparse.Namespace, payload: dict[str, object]) -> dict[str, object]:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urlrequest.Request(
-        "https://api.openai.com/v1/responses",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {openai_api_key(args)}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    max_retries = max(0, int(getattr(args, "openai_max_retries", DEFAULT_OPENAI_MAX_RETRIES)))
+    total_attempts = max_retries + 1
 
-    try:
-        with urlrequest.urlopen(request, timeout=getattr(args, "openai_timeout", DEFAULT_OPENAI_TIMEOUT)) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urlerror.HTTPError as exc:
-        details = exc.read().decode("utf-8", errors="replace").strip()
-        details = details[:2000] if details else exc.reason
-        raise RuntimeError(f"OpenAI request failed with HTTP {exc.code}: {details}") from exc
-    except urlerror.URLError as exc:
-        raise RuntimeError(f"OpenAI request failed: {exc.reason}") from exc
+    for attempt in range(1, total_attempts + 1):
+        request = urlrequest.Request(
+            "https://api.openai.com/v1/responses",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {openai_api_key(args)}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urlrequest.urlopen(
+                request,
+                timeout=getattr(args, "openai_timeout", DEFAULT_OPENAI_TIMEOUT),
+            ) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urlerror.HTTPError as exc:
+            details = exc.read().decode("utf-8", errors="replace").strip()
+            details = details[:2000] if details else exc.reason
+            if exc.code not in TRANSIENT_OPENAI_HTTP_STATUS_CODES or attempt >= total_attempts:
+                raise RuntimeError(f"OpenAI request failed with HTTP {exc.code}: {details}") from exc
+            delay = openai_retry_delay(attempt, retry_after_seconds(exc))
+            print(
+                f"OpenAI request failed with HTTP {exc.code}; retrying "
+                f"{attempt}/{max_retries} in {delay:g}s..."
+            )
+            time.sleep(delay)
+        except TRANSIENT_OPENAI_NETWORK_ERRORS as exc:
+            if attempt >= total_attempts:
+                reason = getattr(exc, "reason", exc)
+                raise RuntimeError(f"OpenAI request failed: {reason}") from exc
+            delay = openai_retry_delay(attempt)
+            reason = getattr(exc, "reason", exc)
+            print(f"OpenAI request failed: {reason}; retrying {attempt}/{max_retries} in {delay:g}s...")
+            time.sleep(delay)
+
+    raise RuntimeError("OpenAI request failed after retries.")
 
 
 def response_output_text(data: dict[str, object]) -> str:

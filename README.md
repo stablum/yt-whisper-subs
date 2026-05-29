@@ -44,6 +44,7 @@ These defaults are hard-coded near the top of the script:
 | OpenAI translation model | `gpt-5.5` |
 | OpenAI reasoning effort | `xhigh` |
 | OpenAI timeout | `900` seconds |
+| OpenAI transient retries | `3` |
 | OpenAI env file | `.env` beside the script |
 | Device | `cuda` |
 | Python version for uv venv | `3.14` |
@@ -516,6 +517,12 @@ with:
 }
 ```
 
+Transient OpenAI request failures are retried before the run fails. This covers
+dropped connections such as Windows `WinError 10054`, timeouts, and temporary
+HTTP responses such as 429 or 5xx. Authentication, model, schema, and validation
+errors still fail immediately or after the API returns a final non-retryable
+response.
+
 The exact default model and effort are configurable:
 
 ```powershell
@@ -757,6 +764,7 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--openai-translation-model MODEL` | `gpt-5.5` | Model for OpenAI SRT translation. |
 | `--openai-reasoning-effort EFFORT` | `xhigh` | Reasoning effort for OpenAI SRT translation. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
+| `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
 | `--openai-env-file PATH` | `.env` beside script | Env file to load for `OPENAI_API_KEY`. |
 
 OpenAI reasoning effort choices:
@@ -1048,6 +1056,26 @@ python .\yt_whisper_subs.py --openai-translation-model MODEL <source>
 
 or update `DEFAULT_OPENAI_TRANSLATION_MODEL`.
 
+### OpenAI connection reset or timeout
+
+Errors such as this are treated as transient:
+
+```text
+[WinError 10054] An existing connection was forcibly closed by the remote host
+```
+
+The script retries transient OpenAI network/server failures with exponential
+backoff. Increase retries for flaky connections:
+
+```powershell
+python .\yt_whisper_subs.py --openai-max-retries 5 <source>
+```
+
+If the failure happened after the primary SRT was generated, rerunning normally
+should reuse the downloaded video and primary subtitles, then retry only the
+missing English subtitle yield. Avoid `--force` unless you intentionally want to
+redownload and regenerate everything.
+
 ### CUDA is not visible
 
 The script prints PyTorch CUDA visibility before Whisper. If CUDA is false:
@@ -1172,7 +1200,6 @@ These are intentionally not implemented yet:
   video/audio.
 - Add context-safe chunking for very long SRT files while preserving global
   terminology, perhaps with a glossary pass.
-- Add retries with exponential backoff for transient OpenAI failures.
 - Add an optional OpenAI SDK implementation if API usage grows.
 - Add tests around SRT parsing, compaction, archive hydration, and exact cue
   preservation.
