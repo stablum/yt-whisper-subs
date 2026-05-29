@@ -6,13 +6,16 @@ YouTube video with yt-dlp or accepts a local video file, extracts small lossy
 16 kHz mono audio with ffmpeg, runs OpenAI Whisper locally, writes an SRT file,
 and can open the video in mpv with the generated subtitle file attached. The
 primary SRT is written as a sidecar next to the video so mpv can auto-detect it
-on later opens.
+on later opens. For Dutch sources, the default English translation path sends
+the full primary SRT to the OpenAI API in one request and preserves its cue
+timings.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -22,6 +25,8 @@ import tempfile
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
+from urllib import error as urlerror
+from urllib import request as urlrequest
 from urllib.parse import parse_qs, urlparse
 
 
@@ -36,6 +41,10 @@ MODEL_CHOICES = (
     "turbo",
 )
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
+DEFAULT_OPENAI_ENV_FILE = Path(__file__).resolve().parent / ".env"
+DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5.5"
+DEFAULT_OPENAI_TRANSLATION_REASONING = "xhigh"
+DEFAULT_OPENAI_TIMEOUT = 900.0
 DEFAULT_PYTHON_VERSION = "3.12"
 DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
 DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
@@ -127,8 +136,50 @@ def parse_args() -> argparse.Namespace:
         "--english-model",
         choices=MODEL_CHOICES,
         help=(
-            "Model for Dutch-to-English subtitle translation. Defaults to medium "
+            "Whisper model for Dutch-to-English audio translation when "
+            "--english-translation-provider whisper is used. Defaults to medium "
             "when --model is turbo, otherwise defaults to --model."
+        ),
+    )
+    parser.add_argument(
+        "--english-translation-provider",
+        choices=("openai", "whisper"),
+        default="openai",
+        help=(
+            "How Dutch-to-English subtitles are generated. The default, openai, sends the full "
+            "primary SRT to the OpenAI Responses API in one request and preserves exact cue timings. "
+            "Use whisper for the previous local audio translation path."
+        ),
+    )
+    parser.add_argument(
+        "--openai-translation-model",
+        default=DEFAULT_OPENAI_TRANSLATION_MODEL,
+        help=(
+            "OpenAI model used for full-SRT English translation. "
+            f"Default: {DEFAULT_OPENAI_TRANSLATION_MODEL}."
+        ),
+    )
+    parser.add_argument(
+        "--openai-reasoning-effort",
+        choices=("none", "minimal", "low", "medium", "high", "xhigh"),
+        default=DEFAULT_OPENAI_TRANSLATION_REASONING,
+        help=(
+            "OpenAI reasoning effort for full-SRT English translation. "
+            f"Default: {DEFAULT_OPENAI_TRANSLATION_REASONING}."
+        ),
+    )
+    parser.add_argument(
+        "--openai-timeout",
+        type=float,
+        default=DEFAULT_OPENAI_TIMEOUT,
+        help=f"Seconds to wait for the OpenAI translation request. Default: {DEFAULT_OPENAI_TIMEOUT:g}.",
+    )
+    parser.add_argument(
+        "--openai-env-file",
+        default=str(DEFAULT_OPENAI_ENV_FILE),
+        help=(
+            "Optional .env file to load before calling OpenAI. "
+            f"Default: {DEFAULT_OPENAI_ENV_FILE}."
         ),
     )
     parser.add_argument("--task", choices=("transcribe", "translate"), default="transcribe")
@@ -260,7 +311,11 @@ def parse_args() -> argparse.Namespace:
         "--compact-subs",
         choices=("english", "all", "none"),
         default="english",
-        help="Compact fragmented SRT cues after generation and on existing files. Default: english.",
+        help=(
+            "Compact fragmented SRT cues after generation and on existing files. Default: english. "
+            "When OpenAI English translation is enabled, the primary SRT is also compacted first "
+            "so translation uses those exact cue timings."
+        ),
     )
     parser.add_argument(
         "--no-compact-subs",
@@ -367,9 +422,17 @@ def english_model(args: argparse.Namespace) -> str:
     return args.model
 
 
+def uses_openai_english_translation(args: argparse.Namespace) -> bool:
+    return getattr(args, "english_translation_provider", "openai") == "openai"
+
+
 def should_compact_subtitles(args: argparse.Namespace, *, is_english: bool) -> bool:
     if args.compact_subs == "none":
         return False
+    if is_english and uses_openai_english_translation(args):
+        return False
+    if not is_english and getattr(args, "compact_primary_for_openai_translation", False):
+        return True
     if args.compact_subs == "all":
         return True
     return is_english
@@ -968,6 +1031,213 @@ def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
+def strip_env_quotes(value: str) -> str:
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def load_env_file(path: str | os.PathLike[str] | None) -> None:
+    if not path:
+        return
+
+    env_path = Path(path).expanduser()
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        if "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        os.environ.setdefault(key, strip_env_quotes(value))
+
+
+def openai_api_key(args: argparse.Namespace) -> str:
+    load_env_file(getattr(args, "openai_env_file", DEFAULT_OPENAI_ENV_FILE))
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not set. Add it to the .env file next to this script "
+            "or set it in the environment."
+        )
+    return api_key
+
+
+def openai_translation_response_format() -> dict[str, object]:
+    return {
+        "type": "json_schema",
+        "name": "srt_translation",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["translations"],
+            "properties": {
+                "translations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["index", "text"],
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "text": {"type": "string"},
+                        },
+                    },
+                }
+            },
+        },
+    }
+
+
+def openai_translation_prompt(source_srt: str, cue_count: int) -> str:
+    return (
+        "You are translating a complete Dutch SRT subtitle file into natural, idiomatic English.\n"
+        "Use the whole file as context before choosing wording. Preserve meaning, speaker intent, "
+        "names, institutions, and political terminology. Avoid literal Dutch phrasing when a natural "
+        "English formulation is clearer.\n\n"
+        "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
+        f"Translate exactly {cue_count} cues. Use indexes 1 through {cue_count} in order. "
+        "Do not merge, split, omit, or add cues. Do not output timestamps; the script will preserve "
+        "the exact original time markings. Keep each translated cue concise enough to fit the same "
+        "subtitle timing, and use line breaks only when they genuinely improve subtitle readability.\n\n"
+        "COMPLETE SOURCE SRT:\n"
+        "```srt\n"
+        f"{source_srt.rstrip()}\n"
+        "```"
+    )
+
+
+def openai_responses_api_request(args: argparse.Namespace, payload: dict[str, object]) -> dict[str, object]:
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    request = urlrequest.Request(
+        "https://api.openai.com/v1/responses",
+        data=body,
+        headers={
+            "Authorization": f"Bearer {openai_api_key(args)}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urlrequest.urlopen(request, timeout=getattr(args, "openai_timeout", DEFAULT_OPENAI_TIMEOUT)) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urlerror.HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace").strip()
+        details = details[:2000] if details else exc.reason
+        raise RuntimeError(f"OpenAI request failed with HTTP {exc.code}: {details}") from exc
+    except urlerror.URLError as exc:
+        raise RuntimeError(f"OpenAI request failed: {exc.reason}") from exc
+
+
+def response_output_text(data: dict[str, object]) -> str:
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    parts: list[str] = []
+    output = data.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for entry in content:
+                if not isinstance(entry, dict):
+                    continue
+                text = entry.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+
+    text = "".join(parts).strip()
+    if not text:
+        status = data.get("status")
+        raise RuntimeError(f"OpenAI response did not include output text; status={status!r}")
+    return text
+
+
+def strip_json_code_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def parse_openai_translations(output_text: str, expected_count: int) -> list[str]:
+    try:
+        payload = json.loads(strip_json_code_fence(output_text))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"OpenAI returned invalid translation JSON: {exc}") from exc
+
+    translations = payload.get("translations") if isinstance(payload, dict) else None
+    if not isinstance(translations, list):
+        raise RuntimeError("OpenAI translation JSON is missing a translations list.")
+    if len(translations) != expected_count:
+        raise RuntimeError(
+            f"OpenAI returned {len(translations)} translations for {expected_count} subtitle cues."
+        )
+
+    texts: list[str] = []
+    for expected_index, item in enumerate(translations, start=1):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"OpenAI translation #{expected_index} is not an object.")
+        index = item.get("index")
+        text = item.get("text")
+        if index != expected_index:
+            raise RuntimeError(f"OpenAI translation index mismatch: expected {expected_index}, got {index!r}.")
+        if not isinstance(text, str):
+            raise RuntimeError(f"OpenAI translation #{expected_index} text is not a string.")
+        text = normalize_subtitle_text(text.splitlines())
+        if not text:
+            raise RuntimeError(f"OpenAI translation #{expected_index} is empty.")
+        texts.append(text)
+
+    return texts
+
+
+def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, args: argparse.Namespace) -> None:
+    source_srt = primary_srt_path.read_text(encoding="utf-8-sig")
+    source_cues = parse_srt(source_srt)
+    if not source_cues:
+        raise RuntimeError(f"no subtitle cues found in primary SRT: {primary_srt_path}")
+
+    payload: dict[str, object] = {
+        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
+        "input": openai_translation_prompt(source_srt, len(source_cues)),
+        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING)},
+        "text": {"format": openai_translation_response_format()},
+        "store": False,
+    }
+    response = openai_responses_api_request(args, payload)
+    translated_texts = parse_openai_translations(response_output_text(response), len(source_cues))
+    translated_cues = [
+        SubtitleCue(cue.start_ms, cue.end_ms, translated_text)
+        for cue, translated_text in zip(source_cues, translated_texts)
+    ]
+
+    english_srt_path.parent.mkdir(parents=True, exist_ok=True)
+    english_srt_path.write_text(render_srt(translated_cues, args), encoding="utf-8", newline="\n")
+
+
 def compact_srt_content(content: str, args: argparse.Namespace, *, is_english: bool = False) -> str:
     return render_srt(compact_cues(parse_srt(content), args, is_english=is_english), args)
 
@@ -1480,6 +1750,7 @@ def main() -> int:
         sidecar_srt_path = video_path.with_suffix(".srt")
         archive_srt_path = subs_dir / f"{video_base}.srt"
         make_english_subs = args.english_for_dutch and args.task == "transcribe" and is_dutch_language(args.language)
+        args.compact_primary_for_openai_translation = make_english_subs and uses_openai_english_translation(args)
         english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
         english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
 
@@ -1542,7 +1813,7 @@ def main() -> int:
                 python_deps_ready = True
 
             print()
-            print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, and Whisper.")
+            print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, Whisper, and OpenAI.")
 
             if not args.keep_audio and audio_path.exists():
                 audio_path.unlink()
@@ -1567,18 +1838,31 @@ def main() -> int:
 
             return 0
 
-        if not python_deps_ready:
+        need_primary_generation = (not primary_ready) or args.force
+        need_english_generation = make_english_subs and (
+            not subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) or args.force
+        )
+        need_whisper = need_primary_generation or (
+            need_english_generation and not uses_openai_english_translation(args)
+        )
+
+        if args.install_python_deps and not python_deps_ready:
             ensure_python_deps(paths, args)
             python_deps_ready = True
-        require_command("ffmpeg")
 
-        print()
-        print("Checking PyTorch CUDA visibility...")
-        if args.device == "cuda" and not check_cuda(paths):
-            raise RuntimeError(
-                "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
-                "or re-run with --device cpu."
-            )
+        if need_whisper:
+            if not python_deps_ready:
+                ensure_python_deps(paths, args)
+                python_deps_ready = True
+            require_command("ffmpeg")
+
+            print()
+            print("Checking PyTorch CUDA visibility...")
+            if args.device == "cuda" and not check_cuda(paths):
+                raise RuntimeError(
+                    "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
+                    "or re-run with --device cpu."
+                )
 
         if primary_ready and not args.force:
             print()
@@ -1603,6 +1887,16 @@ def main() -> int:
             if subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) and not args.force:
                 print()
                 print("English subtitle file already exists. Use --force to regenerate.")
+            elif uses_openai_english_translation(args):
+                if not sidecar_srt_path.exists():
+                    raise RuntimeError(
+                        "primary subtitles are required before OpenAI English translation can run."
+                    )
+
+                print()
+                print("Generating English subtitles from the full compacted primary SRT with OpenAI...")
+                translate_srt_with_openai(sidecar_srt_path, english_sidecar_srt_path, args)
+                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
             else:
                 print()
                 print("Generating English subtitles from Dutch audio...")
