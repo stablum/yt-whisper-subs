@@ -65,6 +65,7 @@ DEFAULT_COMPACT_MAX_DURATION = 9.0
 DEFAULT_COMPACT_MAX_CHARS = 180
 DEFAULT_COMPACT_MAX_CPS = 25.0
 DEFAULT_COMPACT_LINE_WIDTH = 50
+DEFAULT_SUBTITLE_GAP_EXTENSION = 5.0
 DEFAULT_COMPACT_SOFT_PERIODS = "english"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -411,6 +412,15 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_COMPACT_LINE_WIDTH,
         help=f"Target subtitle line width when rewriting compacted cues. Default: {DEFAULT_COMPACT_LINE_WIDTH}.",
     )
+    parser.add_argument(
+        "--subtitle-gap-extension",
+        type=float,
+        default=DEFAULT_SUBTITLE_GAP_EXTENSION,
+        help=(
+            "Seconds to extend each subtitle cue into following silence, capped by the next cue start. "
+            f"Use 0 to disable. Default: {DEFAULT_SUBTITLE_GAP_EXTENSION:g}."
+        ),
+    )
     audio_group = parser.add_mutually_exclusive_group()
     audio_group.add_argument(
         "--keep-audio",
@@ -440,6 +450,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--openai-translation-chunk-cues must be 0 or greater")
     if args.openai_translation_context_cues < 0:
         parser.error("--openai-translation-context-cues must be 0 or greater")
+    if args.subtitle_gap_extension < 0:
+        parser.error("--subtitle-gap-extension must be 0 or greater")
 
     if args.source:
         if looks_like_url(args.source):
@@ -1098,6 +1110,38 @@ def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
+def subtitle_gap_extension_ms(args: argparse.Namespace) -> int:
+    seconds = float(getattr(args, "subtitle_gap_extension", DEFAULT_SUBTITLE_GAP_EXTENSION))
+    return max(0, int(round(seconds * 1000)))
+
+
+def extend_subtitle_gaps(
+    cues: list[SubtitleCue],
+    args: argparse.Namespace,
+) -> tuple[list[SubtitleCue], bool]:
+    extension_ms = subtitle_gap_extension_ms(args)
+    if extension_ms <= 0 or len(cues) < 2:
+        return cues, False
+
+    extended: list[SubtitleCue] = []
+    changed = False
+    for index, cue in enumerate(cues):
+        if index == len(cues) - 1:
+            extended.append(cue)
+            continue
+
+        next_start_ms = cues[index + 1].start_ms
+        if cue.end_ms >= next_start_ms:
+            extended.append(cue)
+            continue
+
+        end_ms = min(cue.end_ms + extension_ms, next_start_ms)
+        changed = changed or end_ms != cue.end_ms
+        extended.append(SubtitleCue(cue.start_ms, end_ms, cue.text))
+
+    return extended, changed
+
+
 def strip_env_quotes(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
@@ -1555,6 +1599,13 @@ def compact_srt_content(content: str, args: argparse.Namespace, *, is_english: b
     return render_srt(compact_cues(parse_srt(content), args, is_english=is_english), args)
 
 
+def extend_subtitle_gaps_srt_content(content: str, args: argparse.Namespace) -> tuple[str, bool]:
+    cues, changed = extend_subtitle_gaps(parse_srt(content), args)
+    if not cues:
+        return "", False
+    return render_srt(cues, args), changed
+
+
 def uncompacted_backup_path(path: Path) -> Path:
     return path.with_name(f"{path.stem}.uncompact{path.suffix}")
 
@@ -1618,6 +1669,71 @@ def compact_srt_file(path: Path, args: argparse.Namespace, *, is_english: bool, 
     return True
 
 
+def extend_subtitle_gaps_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
+    if not path.exists():
+        return False
+
+    original = path.read_text(encoding="utf-8-sig")
+    extended, changed = extend_subtitle_gaps_srt_content(original, args)
+    if not changed or not extended:
+        return False
+
+    path.write_text(extended, encoding="utf-8", newline="\n")
+    print(f"Extended {label} subtitle gaps: {path}")
+    return True
+
+
+def align_subtitle_timings_to_reference_content(
+    reference_content: str,
+    target_content: str,
+    args: argparse.Namespace,
+) -> tuple[str, bool]:
+    reference_cues = parse_srt(reference_content)
+    target_cues = parse_srt(target_content)
+    if not reference_cues or len(reference_cues) != len(target_cues):
+        return "", False
+
+    changed = False
+    aligned_cues: list[SubtitleCue] = []
+    for reference_cue, target_cue in zip(reference_cues, target_cues):
+        changed = changed or (
+            reference_cue.start_ms != target_cue.start_ms
+            or reference_cue.end_ms != target_cue.end_ms
+        )
+        aligned_cues.append(
+            SubtitleCue(
+                reference_cue.start_ms,
+                reference_cue.end_ms,
+                target_cue.text,
+            )
+        )
+
+    if not changed:
+        return "", False
+    return render_srt(aligned_cues, args), True
+
+
+def align_subtitle_timings_to_reference_file(
+    reference_srt_path: Path,
+    target_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    label: str,
+) -> bool:
+    if not reference_srt_path.exists() or not target_srt_path.exists():
+        return False
+
+    reference = reference_srt_path.read_text(encoding="utf-8-sig")
+    target = target_srt_path.read_text(encoding="utf-8-sig")
+    aligned, changed = align_subtitle_timings_to_reference_content(reference, target, args)
+    if not changed or not aligned:
+        return False
+
+    target_srt_path.write_text(aligned, encoding="utf-8", newline="\n")
+    print(f"Aligned {label} subtitle timings to primary subtitles: {target_srt_path}")
+    return True
+
+
 def ensure_compacted_subtitle_pair(
     sidecar_srt_path: Path,
     archive_srt_path: Path,
@@ -1660,6 +1776,71 @@ def ensure_compacted_subtitle_pair(
     return changed
 
 
+def ensure_matching_subtitle_timing_pair(
+    reference_srt_path: Path,
+    target_sidecar_srt_path: Path,
+    target_archive_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    label: str,
+    force: bool,
+) -> bool:
+    if force:
+        return False
+
+    changed = align_subtitle_timings_to_reference_file(
+        reference_srt_path,
+        target_sidecar_srt_path,
+        args,
+        label=f"{label} sidecar",
+    )
+
+    if target_sidecar_srt_path.exists():
+        sync_subtitle_archive(target_sidecar_srt_path, target_archive_srt_path)
+    elif target_archive_srt_path.exists():
+        archive_changed = align_subtitle_timings_to_reference_file(
+            reference_srt_path,
+            target_archive_srt_path,
+            args,
+            label=f"{label} archive",
+        )
+        changed = changed or archive_changed
+        seed_sidecar_from_archive(target_sidecar_srt_path, target_archive_srt_path)
+
+    return changed
+
+
+def ensure_extended_subtitle_gap_pair(
+    sidecar_srt_path: Path,
+    archive_srt_path: Path,
+    args: argparse.Namespace,
+    *,
+    label: str,
+    force: bool,
+) -> bool:
+    if force or subtitle_gap_extension_ms(args) <= 0:
+        return False
+
+    sidecar_changed = extend_subtitle_gaps_file(
+        sidecar_srt_path,
+        args,
+        label=f"{label} sidecar",
+    )
+    archive_changed = extend_subtitle_gaps_file(
+        archive_srt_path,
+        args,
+        label=f"{label} archive",
+    )
+    changed = sidecar_changed or archive_changed
+
+    if sidecar_srt_path.exists():
+        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+    elif archive_srt_path.exists():
+        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
+
+    return changed
+
+
 def finalize_subtitle_pair(
     sidecar_srt_path: Path,
     archive_srt_path: Path,
@@ -1679,6 +1860,14 @@ def finalize_subtitle_pair(
         )
     else:
         sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+
+    ensure_extended_subtitle_gap_pair(
+        sidecar_srt_path,
+        archive_srt_path,
+        args,
+        label=label,
+        force=False,
+    )
 
 
 def whisper_cache_root() -> Path:
@@ -2093,6 +2282,13 @@ def main() -> int:
             label="primary",
             force=args.force,
         )
+        ensure_extended_subtitle_gap_pair(
+            sidecar_srt_path,
+            archive_srt_path,
+            args,
+            label="primary",
+            force=args.force,
+        )
         if make_english_subs:
             ensure_compacted_subtitle_pair(
                 english_sidecar_srt_path,
@@ -2102,6 +2298,22 @@ def main() -> int:
                 label="English",
                 force=args.force,
             )
+            ensure_extended_subtitle_gap_pair(
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                label="English",
+                force=args.force,
+            )
+            if uses_openai_english_translation(args):
+                ensure_matching_subtitle_timing_pair(
+                    sidecar_srt_path,
+                    english_sidecar_srt_path,
+                    english_archive_srt_path,
+                    args,
+                    label="English",
+                    force=args.force,
+                )
 
         print_yield_paths(
             video_path,
@@ -2209,7 +2421,14 @@ def main() -> int:
                 print()
                 print("Generating English subtitles from the full compacted primary SRT with OpenAI...")
                 translate_srt_with_openai(sidecar_srt_path, english_sidecar_srt_path, args)
-                sync_subtitle_archive(english_sidecar_srt_path, english_archive_srt_path)
+                ensure_matching_subtitle_timing_pair(
+                    sidecar_srt_path,
+                    english_sidecar_srt_path,
+                    english_archive_srt_path,
+                    args,
+                    label="English",
+                    force=False,
+                )
             else:
                 print()
                 print("Generating English subtitles from Dutch audio...")

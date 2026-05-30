@@ -17,10 +17,12 @@ The script is optimized for this workflow:
 1. Run it on a Dutch YouTube video.
 2. Keep a local lossy video file under `~/Videos/yt-whisper-subs/videos`.
 3. Generate Dutch subtitles locally with Whisper.
-4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read.
-5. Send the compacted Dutch SRT to the OpenAI API in bounded chunks.
+4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
+   then extend cue end times slightly into following silence.
+5. Send the compacted and gap-extended Dutch SRT to the OpenAI API in bounded
+   chunks.
 6. Receive natural English translations with the exact same cue count and time
-   markings as the compacted Dutch SRT.
+   markings as the compacted and gap-extended Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
 8. Store the `.srt` sidecars beside the video so `mpv` can discover them.
 9. Re-run cheaply: if the video and requested subtitles already exist, skip
@@ -71,15 +73,17 @@ These defaults are hard-coded near the top of the script:
 | Compaction max merged chars | `180` |
 | Compaction max characters per second | `25.0` |
 | Wrapped subtitle line width | `50` |
+| Subtitle gap extension | `5` seconds |
 
 One subtle default matters: when OpenAI English translation is enabled, the
 primary Dutch SRT is compacted before translation even though `--compact-subs`
-defaults to `english`. This exists so the OpenAI-translated English file has the
-same timestamps and cue count as the compacted Dutch file that the user actually
-wants to read.
+defaults to `english`. It is also gap-extended before translation. This exists
+so the OpenAI-translated English file has the same timestamps and cue count as
+the Dutch file that the user actually wants to read.
 
-If `--no-compact-subs` is used, this override is disabled. In that case OpenAI
-receives the un-compacted primary SRT.
+If `--no-compact-subs` is used, the compaction override is disabled. In that
+case OpenAI receives the un-compacted primary SRT, still gap-extended unless
+`--subtitle-gap-extension 0` is used.
 
 ## Quick Start
 
@@ -194,6 +198,7 @@ resolve source
 derive yield paths from video stem
 hydrate missing sidecar/archive subtitle pairs
 compact existing subtitles when needed
+extend subtitle cues into following silence when needed
 print yield paths
 if all requested yields exist and not --force:
   skip expensive work
@@ -464,8 +469,8 @@ SRT after primary compaction has occurred.
 The contract is:
 
 1. The Dutch SRT is parsed into cues.
-2. The complete compacted Dutch SRT is split into chunks when it is longer than
-   the configured OpenAI chunk size.
+2. The complete compacted and gap-extended Dutch SRT is split into chunks when
+   it is longer than the configured OpenAI chunk size.
 3. The prompt asks for natural idiomatic English.
 4. The prompt forbids merging, splitting, adding, or omitting cues.
 5. Each chunk includes a small amount of neighboring text as context, but the
@@ -496,7 +501,7 @@ The contract is:
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
-Dutch file. That property is the main reason this mode exists.
+and gap-extended Dutch file. That property is the main reason this mode exists.
 
 The OpenAI request uses:
 
@@ -611,7 +616,7 @@ translated English subtitles are not compacted afterward, because compacting
 them would break the exact cue-count/timestamp relationship with the compacted
 Dutch source.
 
-## Subtitle Compaction
+## Subtitle Compaction And Gap Extension
 
 Whisper often emits subtitle cues that are too fragmented. The script has a
 downstream compaction step that merges adjacent cues when doing so appears safe.
@@ -652,8 +657,21 @@ Defaults:
 In normal non-OpenAI mode, `english` means "compact only English subtitles."
 
 In default OpenAI mode, the script sets an internal flag so the primary Dutch
-SRT is also compacted first. This lets the translated English file match the
-compacted Dutch SRT exactly.
+SRT is also compacted first. After gap extension, this lets the translated
+English file match the displayed Dutch SRT exactly.
+
+After compaction, subtitle cue timing is smoothed so short no-speech gaps do not
+drop all text immediately. By default each cue is extended by up to 5 seconds
+into the following gap, capped at the next cue's start time so cues do not
+overlap. The final cue is left unchanged because there is no following cue to
+cap against. Use `--subtitle-gap-extension 0` to disable this.
+
+For the default OpenAI translation path, this timing extension happens on the
+primary SRT before translation. The English SRT is rendered onto those same cue
+timings, so original and translated subtitles keep matching cue boundaries. On
+reruns, an existing OpenAI-style English SRT with the same cue count is also
+realigned to the primary SRT timings before the script decides all yields are
+ready.
 
 Compaction writes backups. For a file:
 
@@ -839,6 +857,7 @@ Colors must be `#RRGGBB` or `#RRGGBBAA`.
 | `--compact-max-chars INT` | `180` | Maximum merged cue character length. |
 | `--compact-max-cps FLOAT` | `25.0` | Maximum merged reading speed. |
 | `--compact-line-width INT` | `50` | Wrap width when rendering compacted SRT. |
+| `--subtitle-gap-extension FLOAT` | `5` | Seconds to extend each cue into following silence, capped by the next cue start; `0` disables it. |
 
 ### Execution Control
 
@@ -917,10 +936,10 @@ to resume or clean up on the next download attempt.
 
 ### Full-SRT OpenAI Translation
 
-The OpenAI path translates the compacted SRT in bounded chunks. Each chunk keeps
-the script's strict cue-count contract and includes neighboring cue context for
-terminology continuity. This is the resilient version of the original
-whole-document architecture:
+The OpenAI path translates the compacted and gap-extended SRT in bounded chunks.
+Each chunk keeps the script's strict cue-count contract and includes neighboring
+cue context for terminology continuity. This is the resilient version of the
+original whole-document architecture:
 
 - The model sees enough surrounding discourse for local consistency.
 - It can translate recurring terms consistently.
@@ -929,20 +948,21 @@ whole-document architecture:
 - Completed chunks are checkpointed and reused on rerun.
 
 The script then validates the structured output and applies translations to the
-original compacted cue timings itself. The model is not trusted to output final
-SRT timestamps.
+original compacted and gap-extended cue timings itself. The model is not trusted
+to output final SRT timestamps.
 
 ### Compact Before Translating
 
-Compacting before translation was chosen because the final Dutch and English
-files should describe the same subtitle regions. If English were translated from
-uncompacted Dutch and then compacted independently, the two languages could
-drift in cue count and timing.
+Compacting and extending cue gaps before translation was chosen because the
+final Dutch and English files should describe the same subtitle regions. If
+English were translated from uncompacted Dutch and then compacted or
+gap-extended independently, the two languages could drift in cue count and
+timing.
 
 Default OpenAI mode therefore creates this invariant:
 
 ```text
-primary compacted SRT cues == English translated SRT cues
+primary compacted and gap-extended SRT cues == English translated SRT cues
 ```
 
 where equality means same number of cues and same start/end timestamps.
@@ -987,6 +1007,8 @@ High-level groups:
 | `check_cuda`, `run_whisper` | Whisper execution and CUDA validation. |
 | `parse_srt`, `render_srt` | SRT data model and serialization. |
 | `compact_cues`, `may_merge_cues` | Cue compaction heuristics. |
+| `extend_subtitle_gaps` | Cue end-time extension into following silence. |
+| `align_subtitle_timings_to_reference_file` | Keep OpenAI English cue timings aligned to primary cue timings. |
 | `save_uncompacted_backup`, `restore_subtitle_from_uncompacted_backup` | Reversible compaction support. |
 | `translate_srt_with_openai` | Full-SRT OpenAI translation and rendering. |
 | `openai_responses_api_request` | Raw HTTP call to Responses API. |
@@ -1015,9 +1037,10 @@ Start by preserving these invariants:
 1. A second run on the same URL with all yields present must skip yt-dlp,
    ffmpeg, CUDA, Whisper, and OpenAI.
 2. URL cache hits must be by exact YouTube video ID, not newest file.
-3. Default OpenAI English translation must use the compacted primary SRT.
+3. Default OpenAI English translation must use the compacted and gap-extended
+   primary SRT.
 4. Default OpenAI English output must have the same cue count and timestamps as
-   the compacted primary SRT.
+   the compacted and gap-extended primary SRT.
 5. Do not independently compact OpenAI English output after translation.
 6. Do not print or commit `.env` or API keys.
 7. Keep video and subtitle yields under `~/Videos/yt-whisper-subs` by default.
@@ -1246,9 +1269,9 @@ If you remember only one thing, remember this:
 
 ```text
 Downloaded video is the durable media yield.
-Primary compacted SRT is the timing authority.
+Primary compacted and gap-extended SRT is the timing authority.
 OpenAI translates text only.
-The script renders English onto the primary compacted SRT timings.
+The script renders English onto the primary SRT timings.
 Sidecars are for mpv; archives are for durable reuse.
 Second runs should be cheap.
 ```
