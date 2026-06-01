@@ -44,7 +44,7 @@ These defaults are hard-coded near the top of the script:
 | Primary Whisper model | `turbo` |
 | English translation provider | `openai` |
 | OpenAI translation model | `gpt-5-mini` |
-| OpenAI reasoning effort | `none` |
+| OpenAI reasoning effort | `low` |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -516,7 +516,7 @@ with:
   "model": "gpt-5-mini",
   "input": "...prompt and current SRT chunk...",
   "reasoning": {
-    "effort": "none"
+    "effort": "low"
   },
   "text": {
     "format": {
@@ -545,7 +545,7 @@ The exact default model and effort are configurable:
 ```powershell
 python .\yt_whisper_subs.py `
   --openai-translation-model gpt-5-mini `
-  --openai-reasoning-effort none `
+  --openai-reasoning-effort low `
   "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
@@ -577,8 +577,8 @@ can still be expensive for long transcripts.
 Cost controls are intentionally conservative by default:
 
 - `gpt-5-mini` is used instead of frontier models such as `gpt-5.5`.
-- reasoning effort defaults to `none`, because subtitle translation is a
-  well-scoped transformation rather than a hard reasoning task.
+- reasoning effort defaults to `low`, which is accepted by the default
+  `gpt-5-mini` model and gives translation a little more room than `minimal`.
 - only three neighboring cues are sent as context around each chunk.
 - token usage is printed after each successful OpenAI response when the API
   returns usage metadata.
@@ -803,7 +803,7 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--english-translation-provider openai|whisper` | `openai` | Select OpenAI SRT translation or Whisper audio translation. |
 | `--english-model MODEL` | conditional | Whisper model for the `whisper` provider only. |
 | `--openai-translation-model MODEL` | `gpt-5-mini` | Model for OpenAI SRT translation. |
-| `--openai-reasoning-effort EFFORT` | `none` | Reasoning effort for OpenAI SRT translation. |
+| `--openai-reasoning-effort EFFORT` | `low` | Reasoning effort for OpenAI SRT translation. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
 | `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full-SRT request. |
@@ -815,6 +815,10 @@ OpenAI reasoning effort choices:
 ```text
 none, minimal, low, medium, high, xhigh
 ```
+
+The default `gpt-5-mini` model accepts `minimal`, `low`, `medium`, and `high`.
+The script validates that combination before sending a request, because the API
+rejects `none` and `xhigh` for `gpt-5-mini`.
 
 ### Download And Media
 
@@ -1058,7 +1062,7 @@ python .\yt_whisper_subs.py --help
 Mock the OpenAI translation path without making an API call:
 
 ```powershell
-python -c "import argparse, tempfile, json; from pathlib import Path; import yt_whisper_subs as y; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); y.openai_responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='none', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); y.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
+python -c "import argparse, tempfile, json; from pathlib import Path; import yt_whisper_subs as y; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); y.openai_responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='low', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); y.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
 ```
 
 Expected property: the English output should retain the exact two timestamp
@@ -1106,6 +1110,13 @@ python .\yt_whisper_subs.py --openai-translation-model MODEL <source>
 ```
 
 or update `DEFAULT_OPENAI_TRANSLATION_MODEL`.
+
+If the API reports that a reasoning effort is unsupported, pass a supported
+effort explicitly. For the default `gpt-5-mini` model, use one of:
+
+```text
+minimal, low, medium, high
+```
 
 ### OpenAI connection reset or timeout
 

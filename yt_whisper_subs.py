@@ -45,10 +45,11 @@ MODEL_CHOICES = (
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
 DEFAULT_OPENAI_ENV_FILE = Path(__file__).resolve().parent / ".env"
 DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5-mini"
-DEFAULT_OPENAI_TRANSLATION_REASONING = "none"
+DEFAULT_OPENAI_TRANSLATION_REASONING = "low"
 DEFAULT_OPENAI_TIMEOUT = 900.0
 DEFAULT_OPENAI_MAX_RETRIES = 3
 DEFAULT_OPENAI_RETRY_INITIAL_DELAY = 5.0
+GPT_5_MINI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
 DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES = 120
 DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES = 3
 DEFAULT_PYTHON_VERSION = "3.14"
@@ -452,6 +453,15 @@ def parse_args() -> argparse.Namespace:
         parser.error("--openai-translation-context-cues must be 0 or greater")
     if args.subtitle_gap_extension < 0:
         parser.error("--subtitle-gap-extension must be 0 or greater")
+    if (
+        args.openai_translation_model == "gpt-5-mini"
+        and args.openai_reasoning_effort not in GPT_5_MINI_REASONING_EFFORTS
+    ):
+        allowed = ", ".join(GPT_5_MINI_REASONING_EFFORTS)
+        parser.error(
+            "--openai-reasoning-effort must be one of "
+            f"{allowed} when --openai-translation-model is gpt-5-mini"
+        )
 
     if args.source:
         if looks_like_url(args.source):
