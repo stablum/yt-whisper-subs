@@ -478,7 +478,10 @@ The contract is:
 6. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
    to the English sidecar, so an interrupted or failed run can resume without
    paying for already translated chunks again.
-7. The API is asked for strict JSON:
+7. If a chunk response is valid JSON but incomplete, for example 91 usable
+   translations for 92 source cues, the script keeps the usable indexed
+   translations and sends a small repair request for only the missing cues.
+8. The API is asked for strict JSON:
 
    ```json
    {
@@ -491,13 +494,12 @@ The contract is:
    }
    ```
 
-8. The script validates that:
+9. The script validates that:
    - the JSON parses,
    - `translations` is a list,
-   - the list length equals the current chunk cue count,
-   - each index is exactly the expected 1-based cue number,
+   - every expected 1-based cue index has exactly one usable translation,
    - each text value is a non-empty string.
-9. The script renders a new English SRT by pairing each translated text with the
+10. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
@@ -534,7 +536,8 @@ Transient OpenAI request failures are retried before the run fails. This covers
 dropped connections such as Windows `WinError 10054`, timeouts, and temporary
 HTTP responses such as 429 or 5xx. Authentication, model, schema, and validation
 errors still fail immediately or after the API returns a final non-retryable
-response.
+response. Incomplete but parseable translation chunks are handled separately by
+the missing-cue repair request described above.
 
 Set `--openai-translation-chunk-cues 0` to restore the older single-request
 full-SRT behavior. The chunked default is more resilient for longer videos and
@@ -572,7 +575,8 @@ the transcript.
 
 Cost note: long videos may require multiple OpenAI requests because the script
 now chunks translation work by cue count. This avoids oversized responses but
-can still be expensive for long transcripts.
+can still be expensive for long transcripts. A malformed or incomplete chunk may
+add a small repair request for only the missing cues.
 
 Cost controls are intentionally conservative by default:
 
@@ -1016,7 +1020,8 @@ High-level groups:
 | `save_uncompacted_backup`, `restore_subtitle_from_uncompacted_backup` | Reversible compaction support. |
 | `translate_srt_with_openai` | Full-SRT OpenAI translation and rendering. |
 | `openai_responses_api_request` | Raw HTTP call to Responses API. |
-| `parse_openai_translations` | Strict translation response validation. |
+| `collect_openai_translations`, `parse_openai_translations` | Translation response collection and strict validation. |
+| `repair_cue_chunk_translations_with_openai` | Missing-cue repair requests for incomplete OpenAI chunks. |
 | `hydrate_subtitle_pair`, `sync_subtitle_archive` | Sidecar/archive repair and syncing. |
 | `write_ass_subtitle`, `play_video` | mpv dual-subtitle playback. |
 | `main` | Pipeline orchestration and skip logic. |
@@ -1138,6 +1143,12 @@ If failures persist with longer videos, reduce the OpenAI chunk size:
 ```powershell
 python .\yt_whisper_subs.py --openai-translation-chunk-cues 60 <source>
 ```
+
+If OpenAI returns fewer translations than requested for a chunk, the script
+keeps the valid indexed translations and automatically asks OpenAI to repair
+only the missing cue indexes. If that repair request also fails validation,
+rerunning normally should reuse any previously checkpointed chunks and retry the
+incomplete chunk.
 
 If the failure happened after the primary SRT was generated, rerunning normally
 should reuse the downloaded video and primary subtitles, then retry only the

@@ -121,6 +121,20 @@ class SubtitleCue:
     text: str
 
 
+@dataclass(frozen=True)
+class OpenAITranslationParseResult:
+    texts: list[str | None]
+    errors: list[str]
+
+    @property
+    def missing_indexes(self) -> list[int]:
+        return [index + 1 for index, text in enumerate(self.texts) if text is None]
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_indexes
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -1253,7 +1267,54 @@ def openai_translation_prompt(
         f"{context_note}"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
         f"Translate exactly {cue_count} cues, indexes 1 through {cue_count}. "
-        "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length.\n\n"
+        "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
+        "Before returning, count the translations array and ensure it contains every requested index.\n\n"
+        "SOURCE SRT:\n"
+        "```srt\n"
+        f"{source_srt.rstrip()}\n"
+        "```"
+    )
+
+
+def openai_translation_repair_prompt(
+    source_srt: str,
+    cue_count: int,
+    *,
+    chunk_label: str | None,
+    validation_errors: list[str],
+    previous_context: str = "",
+    next_context: str = "",
+) -> str:
+    chunk_note = ""
+    if chunk_label:
+        chunk_note = f"This is a repair request for {chunk_label}.\n"
+
+    context_note = ""
+    if previous_context or next_context:
+        context_note = "Neighbor context for terminology only; do not translate it:\n"
+        if previous_context:
+            context_note += f"Before: {previous_context}\n"
+        if next_context:
+            context_note += f"After: {next_context}\n"
+        context_note += "\n"
+
+    error_note = ""
+    if validation_errors:
+        error_note = "The previous response could not be used because:\n"
+        for error in validation_errors[:8]:
+            error_note += f"- {error}\n"
+        error_note += "\n"
+
+    return (
+        "Repair an incomplete Dutch-to-English SRT translation.\n"
+        f"{chunk_note}"
+        f"{error_note}"
+        f"{context_note}"
+        "Translate only the SOURCE SRT cues below into natural, concise English.\n"
+        "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
+        f"Return exactly {cue_count} translations, indexes 1 through {cue_count}. "
+        "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
+        "Before returning, count the translations array and ensure it contains every requested index.\n\n"
         "SOURCE SRT:\n"
         "```srt\n"
         f"{source_srt.rstrip()}\n"
@@ -1341,6 +1402,74 @@ def openai_translation_chunk_size(args: argparse.Namespace, cue_count: int) -> i
     return max(1, requested)
 
 
+def openai_translation_payload(args: argparse.Namespace, prompt: str) -> dict[str, object]:
+    return {
+        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
+        "input": prompt,
+        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING)},
+        "text": {"format": openai_translation_response_format()},
+        "store": False,
+    }
+
+
+def format_index_list(indexes: list[int], *, limit: int = 12) -> str:
+    if len(indexes) <= limit:
+        return ", ".join(str(index) for index in indexes)
+    shown = ", ".join(str(index) for index in indexes[:limit])
+    return f"{shown}, ... ({len(indexes)} total)"
+
+
+def repair_cue_chunk_translations_with_openai(
+    source_cues: list[SubtitleCue],
+    parse_result: OpenAITranslationParseResult,
+    args: argparse.Namespace,
+    *,
+    chunk_label: str | None = None,
+    previous_context: str = "",
+    next_context: str = "",
+) -> list[str]:
+    missing_indexes = parse_result.missing_indexes
+    if not missing_indexes:
+        return [text for text in parse_result.texts if text is not None]
+
+    label = f" for {chunk_label}" if chunk_label else ""
+    print(
+        f"OpenAI returned an incomplete translation{label}; "
+        f"requesting repair for cue(s) {format_index_list(missing_indexes)}."
+    )
+
+    missing_cues = [source_cues[index - 1] for index in missing_indexes]
+    repair_srt = render_srt(missing_cues, args)
+    repair_label = f"{chunk_label} repair" if chunk_label else "repair"
+    payload = openai_translation_payload(
+        args,
+        openai_translation_repair_prompt(
+            repair_srt,
+            len(missing_cues),
+            chunk_label=chunk_label,
+            validation_errors=parse_result.errors,
+            previous_context=previous_context,
+            next_context=next_context,
+        ),
+    )
+    response = openai_responses_api_request(args, payload)
+    print_openai_usage(response, chunk_label=repair_label)
+    repaired_texts = parse_openai_translations(response_output_text(response), len(missing_cues))
+
+    texts = list(parse_result.texts)
+    for missing_index, repaired_text in zip(missing_indexes, repaired_texts):
+        texts[missing_index - 1] = repaired_text
+
+    still_missing = [index + 1 for index, text in enumerate(texts) if text is None]
+    if still_missing:
+        raise RuntimeError(
+            "OpenAI translation repair did not fill cue(s): "
+            f"{format_index_list(still_missing)}"
+        )
+
+    return [text for text in texts if text is not None]
+
+
 def translate_cue_chunk_with_openai(
     source_cues: list[SubtitleCue],
     args: argparse.Namespace,
@@ -1350,22 +1479,29 @@ def translate_cue_chunk_with_openai(
     next_context: str = "",
 ) -> list[str]:
     source_srt = render_srt(source_cues, args)
-    payload: dict[str, object] = {
-        "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
-        "input": openai_translation_prompt(
+    payload = openai_translation_payload(
+        args,
+        openai_translation_prompt(
             source_srt,
             len(source_cues),
             chunk_label=chunk_label,
             previous_context=previous_context,
             next_context=next_context,
         ),
-        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", DEFAULT_OPENAI_TRANSLATION_REASONING)},
-        "text": {"format": openai_translation_response_format()},
-        "store": False,
-    }
+    )
     response = openai_responses_api_request(args, payload)
     print_openai_usage(response, chunk_label=chunk_label)
-    return parse_openai_translations(response_output_text(response), len(source_cues))
+    parse_result = collect_openai_translations(response_output_text(response), len(source_cues))
+    if parse_result.complete:
+        return [text for text in parse_result.texts if text is not None]
+    return repair_cue_chunk_translations_with_openai(
+        source_cues,
+        parse_result,
+        args,
+        chunk_label=chunk_label,
+        previous_context=previous_context,
+        next_context=next_context,
+    )
 
 
 def print_openai_usage(data: dict[str, object], *, chunk_label: str | None = None) -> None:
@@ -1554,7 +1690,7 @@ def strip_json_code_fence(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def parse_openai_translations(output_text: str, expected_count: int) -> list[str]:
+def collect_openai_translations(output_text: str, expected_count: int) -> OpenAITranslationParseResult:
     try:
         payload = json.loads(strip_json_code_fence(output_text))
     except json.JSONDecodeError as exc:
@@ -1563,26 +1699,53 @@ def parse_openai_translations(output_text: str, expected_count: int) -> list[str
     translations = payload.get("translations") if isinstance(payload, dict) else None
     if not isinstance(translations, list):
         raise RuntimeError("OpenAI translation JSON is missing a translations list.")
+
+    texts: list[str | None] = [None] * expected_count
+    errors: list[str] = []
     if len(translations) != expected_count:
-        raise RuntimeError(
+        errors.append(
             f"OpenAI returned {len(translations)} translations for {expected_count} subtitle cues."
         )
 
-    texts: list[str] = []
-    for expected_index, item in enumerate(translations, start=1):
+    for response_index, item in enumerate(translations, start=1):
         if not isinstance(item, dict):
-            raise RuntimeError(f"OpenAI translation #{expected_index} is not an object.")
+            errors.append(f"OpenAI translation response item #{response_index} is not an object.")
+            continue
         index = item.get("index")
         text = item.get("text")
-        if index != expected_index:
-            raise RuntimeError(f"OpenAI translation index mismatch: expected {expected_index}, got {index!r}.")
+        if not isinstance(index, int) or isinstance(index, bool):
+            errors.append(f"OpenAI translation response item #{response_index} has non-integer index {index!r}.")
+            continue
+        if index < 1 or index > expected_count:
+            errors.append(
+                f"OpenAI translation response item #{response_index} has out-of-range index {index!r}."
+            )
+            continue
         if not isinstance(text, str):
-            raise RuntimeError(f"OpenAI translation #{expected_index} text is not a string.")
+            errors.append(f"OpenAI translation #{index} text is not a string.")
+            continue
         text = normalize_subtitle_text(text.splitlines())
         if not text:
-            raise RuntimeError(f"OpenAI translation #{expected_index} is empty.")
-        texts.append(text)
+            errors.append(f"OpenAI translation #{index} is empty.")
+            continue
+        if texts[index - 1] is not None:
+            errors.append(f"OpenAI returned duplicate translation index {index}.")
+            continue
+        texts[index - 1] = text
 
+    return OpenAITranslationParseResult(texts=texts, errors=errors)
+
+
+def parse_openai_translations(output_text: str, expected_count: int) -> list[str]:
+    result = collect_openai_translations(output_text, expected_count)
+    if not result.complete:
+        message = "; ".join(result.errors) if result.errors else "OpenAI returned incomplete translations."
+        raise RuntimeError(
+            f"{message} Missing cue(s): {format_index_list(result.missing_indexes)}."
+        )
+    texts = [text for text in result.texts if text is not None]
+    if len(texts) != expected_count:
+        raise RuntimeError(f"OpenAI returned {len(texts)} usable translations for {expected_count} subtitle cues.")
     return texts
 
 
