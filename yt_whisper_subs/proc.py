@@ -62,6 +62,18 @@ def configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def child_process_env() -> dict[str, str]:
+    """Build a subprocess env that makes Python tools emit UTF-8 text.
+
+    Example: `subprocess.run(cmd, env=child_process_env())`.
+    """
+
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
 def run(
     cmd: list[str | os.PathLike[str]],
     *,
@@ -74,11 +86,14 @@ def run(
     Example: `run(["ffmpeg", "-version"], check=False)`.
     """
 
+    configure_stdio()
     print()
     print(f"> {command_text(cmd)}")
+    env = child_process_env()
     if capture_stdout and stream_stdout:
         process = subprocess.Popen(
             [str(part) for part in cmd],
+            env=env,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -119,6 +134,7 @@ def run(
     if capture_stdout:
         result = subprocess.run(
             [str(part) for part in cmd],
+            env=env,
             check=False,
             text=True,
             encoding="utf-8",
@@ -129,6 +145,7 @@ def run(
     else:
         process = subprocess.Popen(
             [str(part) for part in cmd],
+            env=env,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -194,6 +211,7 @@ def get_python_minor_version(python_exe: Path) -> str | None:
 
     result = subprocess.run(
         [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+        env=child_process_env(),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

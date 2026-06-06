@@ -92,6 +92,7 @@ def whisper_model_url(paths: dict[str, Path], model: str) -> str | None:
             "import sys, whisper; print(whisper._MODELS[sys.argv[1]])",
             model,
         ],
+        env=proc.child_process_env(),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

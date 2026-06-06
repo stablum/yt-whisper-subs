@@ -440,6 +440,11 @@ The default task is `transcribe`, default language is `nl`, and default model is
 If the language is not `auto`, the script passes it explicitly to Whisper. This
 is faster and more deterministic for the intended Dutch workflow.
 
+Python subprocesses inherit `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` from the
+wrapper. This keeps Whisper's live transcript output from failing on Windows
+code pages when recognized speech contains characters outside the local console
+encoding.
+
 Before running Whisper on CUDA, the script checks PyTorch CUDA visibility:
 
 ```python
@@ -1220,6 +1225,15 @@ Useful local check:
 Expected CUDA output has a Torch version ending in something like `+cu128`,
 prints a CUDA runtime version such as `12.8`, and reports `True` for
 `torch.cuda.is_available()`.
+
+### Whisper reports `UnicodeEncodeError`
+
+Whisper prints recognized text while transcribing. The wrapper forces UTF-8 mode
+for Python subprocesses so characters outside the Windows console code page do
+not abort Whisper before it writes the `.srt` file. Re-run the same command with
+the fixed version; if a partial temporary subtitle directory remains under
+`subtitles\whisper-*`, it can be ignored because the next run creates a fresh
+temporary directory.
 
 ### yt-dlp warns about JavaScript runtimes
 
