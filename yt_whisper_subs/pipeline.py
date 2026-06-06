@@ -76,9 +76,10 @@ class RunYields(NamedTuple):
         Example: `playback.play_video(video, run_yields.srt_paths(), args)`.
         """
 
-        paths = [self.primary.sidecar]
+        paths = []
         if self.make_english:
             paths.append(self.english.sidecar)
+        paths.append(self.primary.sidecar)
         return paths
 
     def print_paths(self, log_path: Path) -> None:
