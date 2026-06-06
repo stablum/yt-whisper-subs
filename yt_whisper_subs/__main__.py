@@ -1,7 +1,6 @@
-#!/usr/bin/env python
-"""Thin launcher for the modular yt-whisper-subs package.
+"""Module execution entry point for `python -m yt_whisper_subs`.
 
-Example: `python yt_whisper_subs.py --help`.
+Example: `python -m yt_whisper_subs --help`.
 """
 
 from __future__ import annotations

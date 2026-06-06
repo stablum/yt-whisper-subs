@@ -1,10 +1,12 @@
-# yt_whisper_subs.py
+# yt-whisper-subs
 
-`yt_whisper_subs.py` is a Windows-oriented subtitle pipeline for YouTube videos
-and local video files. It downloads a lossy compressed video when given a URL,
-extracts a small lossy audio track, runs local OpenAI Whisper to create primary
-language subtitles, optionally translates Dutch subtitles to English with the
-OpenAI Responses API, and optionally launches `mpv` with dual subtitles.
+`yt_whisper_subs.py` is the launcher for a Windows-oriented subtitle pipeline
+for YouTube videos and local video files. The implementation lives in the
+`yt_whisper_subs/` package. It downloads a lossy compressed video when given a
+URL, extracts a small lossy audio track, runs local OpenAI Whisper to create
+primary language subtitles, optionally translates Dutch subtitles to English
+with the OpenAI Responses API, and optionally launches `mpv` with dual
+subtitles.
 
 This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
@@ -906,25 +908,37 @@ environment variables or the OpenAI API key.
 
 ## Software Engineering Decisions
 
-### A Single Script Instead Of A Package
+### Modular Package With A Script Launcher
 
-The script is intentionally one file. The workflow is personal, operational, and
-Windows-specific. Keeping everything in one file makes it easy to move into a
-dedicated project directory later and easy for Codex to inspect in one pass.
+The repository keeps `yt_whisper_subs.py` as the command users run, but the
+implementation is split into cohesive modules under `yt_whisper_subs/`. This
+keeps the operational surface simple while avoiding a kitchen-drawer source file
+that mixes CLI parsing, media handling, SRT transforms, OpenAI translation,
+playback, logging, and orchestration.
 
-The downside is file length. If this becomes a shared project, good extraction
-boundaries would be:
+The split is intentionally responsibility-oriented:
 
-- `cli.py`
-- `downloads.py`
-- `whisper_local.py`
-- `srt.py`
-- `compaction.py`
-- `openai_translate.py`
-- `mpv.py`
-
-Do not split it casually. The current single-file shape makes local iteration
-fast.
+- `cli.py` owns argument parsing.
+- `opts.py` owns option-derived policy decisions.
+- `cfg.py` is the single source of truth for defaults.
+- `proc.py` owns subprocess execution, stdio setup, tool checks, CUDA probing,
+  and the script-local `.venv`.
+- `runlog.py` owns timestamped run logging.
+- `youtube.py` owns YouTube ID extraction, cache lookup, migration, and yt-dlp
+  downloads.
+- `media.py` owns local video paths and audio extraction.
+- `whisper_local.py` owns Whisper execution and model-cache validation.
+- `srt.py` owns the subtitle cue model, SRT parsing/rendering, compaction, and
+  gap extension.
+- `openai_client.py` owns dotenv loading, Responses API calls, retry behavior,
+  and response text extraction.
+- `openai_translate.py` owns the indexed-cue translation strategy,
+  checkpointing, repair requests, validation, and English SRT rendering.
+- `subtitle_files.py` owns sidecar/archive repair, compaction backups, timing
+  alignment, and pair finalization.
+- `playback.py` owns ASS generation and mpv launch details.
+- `pipeline.py` owns end-to-end orchestration and cheap yield reuse.
+- `app.py` wires CLI parsing, logging, and pipeline execution.
 
 ### Script-Local `.venv`
 
@@ -1033,40 +1047,32 @@ controls remain closer to normal.
 If `--device cuda` is requested and PyTorch cannot see CUDA, the script fails
 before Whisper starts. This avoids surprising multi-hour CPU runs.
 
-## Internal Function Map
+## Internal Module Map
 
 High-level groups:
 
-| Function(s) | Responsibility |
+| Module | Responsibility |
 | --- | --- |
-| `parse_args` | CLI definition and source disambiguation. |
-| `venv_paths`, `ensure_python_deps` | Locate and maintain `.venv`. |
-| `RunLogger`, `TeeStream`, `print_run_header` | Timestamped run logging. |
-| `run` | Print and execute subprocesses; optionally stream captured output into the log. |
-| `youtube_video_id`, `latest_downloaded_video` | Exact video cache lookup. |
-| `canonicalize_youtube_video_filename`, `migrate_legacy_youtube_yields_to_video_id` | Keep YouTube yields named by video ID. |
-| `download_video` | yt-dlp invocation and final path resolution. |
-| `extract_audio`, `audio_codec_args` | ffmpeg audio yield creation. |
-| `check_cuda`, `run_whisper` | Whisper execution and CUDA validation. |
-| `parse_srt`, `render_srt` | SRT data model and serialization. |
-| `openai_source_cues_json` | Indexed cue-text JSON serialization for OpenAI translation. |
-| `compact_cues`, `may_merge_cues` | Cue compaction heuristics. |
-| `extend_subtitle_gaps` | Cue end-time extension into following silence. |
-| `align_subtitle_timings_to_reference_file` | Keep OpenAI English cue timings aligned to primary cue timings. |
-| `save_uncompacted_backup`, `restore_subtitle_from_uncompacted_backup` | Reversible compaction support. |
-| `translate_srt_with_openai` | Indexed-cue OpenAI translation and rendering. |
-| `openai_responses_api_request` | Raw HTTP call to Responses API. |
-| `collect_openai_translations`, `parse_openai_translations` | Translation response collection and strict validation. |
-| `repair_cue_chunk_translations_with_openai` | Missing-cue repair requests for incomplete OpenAI chunks. |
-| `hydrate_subtitle_pair`, `sync_subtitle_archive` | Sidecar/archive repair and syncing. |
-| `write_ass_subtitle`, `play_video` | mpv dual-subtitle playback. |
-| `run_pipeline`, `main` | Pipeline orchestration, logging, and skip logic. |
+| `yt_whisper_subs.cli` | CLI definition and source disambiguation. |
+| `yt_whisper_subs.opts` | Language, translation-provider, compaction, and soft-period policy helpers. |
+| `yt_whisper_subs.cfg` | Shared defaults and choices. |
+| `yt_whisper_subs.proc` | Subprocess execution, external command checks, CUDA probing, and `.venv` maintenance. |
+| `yt_whisper_subs.runlog` | Timestamped run logging and log-path creation. |
+| `yt_whisper_subs.youtube` | Exact YouTube ID cache lookup, yield migration, and yt-dlp invocation. |
+| `yt_whisper_subs.media` | Local video path validation and ffmpeg audio extraction. |
+| `yt_whisper_subs.whisper_local` | Whisper CLI execution and model-cache cleanup. |
+| `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, cue compaction, and gap extension. |
+| `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, and response text extraction. |
+| `yt_whisper_subs.openai_translate` | Indexed-cue prompts, chunking, checkpoints, repair requests, validation, and English SRT rendering. |
+| `yt_whisper_subs.subtitle_files` | Sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
+| `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
+| `yt_whisper_subs.pipeline` | End-to-end orchestration, yield-path calculation, skip logic, and playback handoff. |
+| `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 
 The central data model is:
 
 ```python
-@dataclass(frozen=True)
-class SubtitleCue:
+class SubtitleCue(NamedTuple):
     start_ms: int
     end_ms: int
     text: str
@@ -1094,17 +1100,19 @@ Start by preserving these invariants:
 10. Preserve sidecar/archive repair behavior.
 11. Preserve the timestamped run log and avoid logging secrets.
 
-When changing the script, useful verification commands are:
+When changing the project, useful verification commands are:
 
 ```powershell
+python -m compileall .\yt_whisper_subs.py .\yt_whisper_subs
 python -m py_compile .\yt_whisper_subs.py
 python .\yt_whisper_subs.py --help
+python -m yt_whisper_subs --help
 ```
 
 Mock the OpenAI translation path without making an API call:
 
 ```powershell
-python -c "import argparse, tempfile, json; from pathlib import Path; import yt_whisper_subs as y; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); y.openai_responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='low', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); y.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
+python -c "import argparse, tempfile, json; from pathlib import Path; from yt_whisper_subs import openai_client, openai_translate; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); openai_client.responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='low', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); openai_translate.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
 ```
 
 Expected property: the English output should retain the exact two timestamp
@@ -1113,7 +1121,7 @@ ranges from the input.
 Check compaction routing for default OpenAI mode:
 
 ```powershell
-python -c "import argparse, yt_whisper_subs as y; args=argparse.Namespace(compact_subs='english', english_translation_provider='openai', compact_primary_for_openai_translation=True); print(y.should_compact_subtitles(args, is_english=False)); print(y.should_compact_subtitles(args, is_english=True))"
+python -c "import argparse; from yt_whisper_subs import opts; args=argparse.Namespace(compact_subs='english', english_translation_provider='openai', compact_primary_for_openai_translation=True); print(opts.should_compact_subtitles(args, is_english=False)); print(opts.should_compact_subtitles(args, is_english=True))"
 ```
 
 Expected output:

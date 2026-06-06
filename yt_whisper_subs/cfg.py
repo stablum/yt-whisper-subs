@@ -1,0 +1,48 @@
+"""Central defaults shared by the subtitle pipeline modules.
+
+Example: `cfg.DEFAULT_OUTPUT_DIR` points at the normal yield root.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+MODEL_CHOICES = (
+    "tiny",
+    "base",
+    "small",
+    "medium",
+    "large",
+    "large-v2",
+    "large-v3",
+    "turbo",
+)
+DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
+DEFAULT_OPENAI_ENV_FILE = PROJECT_DIR / ".env"
+DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5-mini"
+DEFAULT_OPENAI_TRANSLATION_REASONING = "low"
+DEFAULT_OPENAI_TIMEOUT = 900.0
+DEFAULT_OPENAI_MAX_RETRIES = 3
+DEFAULT_OPENAI_RETRY_INITIAL_DELAY = 5.0
+GPT_5_MINI_REASONING_EFFORTS = ("minimal", "low", "medium", "high")
+DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES = 120
+DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES = 3
+DEFAULT_PYTHON_VERSION = "3.14"
+DEFAULT_TORCH_INDEX_URL = "https://download.pytorch.org/whl/cu128"
+DEFAULT_DUAL_SUB_PRIMARY_COLOR = "#FFE066"
+DEFAULT_DUAL_SUB_SECONDARY_COLOR = "#66D9EF"
+DEFAULT_DUAL_SUB_PRIMARY_POS = 100
+DEFAULT_DUAL_SUB_SECONDARY_POS = 8
+DEFAULT_DUAL_SUB_FONT_SIZE = 80
+DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE = 0.6
+DEFAULT_DOWNLOAD_PROGRESS_DELTA = 1.0
+DEFAULT_COMPACT_GAP = 0.9
+DEFAULT_COMPACT_MAX_DURATION = 9.0
+DEFAULT_COMPACT_MAX_CHARS = 180
+DEFAULT_COMPACT_MAX_CPS = 25.0
+DEFAULT_COMPACT_LINE_WIDTH = 50
+DEFAULT_SUBTITLE_GAP_EXTENSION = 5.0
+DEFAULT_COMPACT_SOFT_PERIODS = "english"
+AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
+MEDIA_SUFFIXES = (".mkv", ".mp4", ".webm")
