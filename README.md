@@ -53,6 +53,7 @@ These defaults are hard-coded near the top of the script:
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
 | OpenAI translation context | `3` neighboring cues |
+| Subprocess silence heartbeat | `60` seconds |
 | OpenAI env file | `.env` beside the script |
 | Run logs | timestamped under `~/Videos/yt-whisper-subs/logs` |
 | Device | `cuda` |
@@ -444,6 +445,20 @@ Python subprocesses inherit `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` from the
 wrapper. This keeps Whisper's live transcript output from failing on Windows
 code pages when recognized speech contains characters outside the local console
 encoding.
+
+Long-running tools such as Whisper, yt-dlp, and ffmpeg are streamed through the
+wrapper. If a child process stays alive but produces no output for 60 seconds,
+the wrapper prints a heartbeat line:
+
+```text
+[subprocess still running; no output for 60s]
+```
+
+This line is diagnostic only. It does not kill the child process. It exists so a
+Whisper model load, network stall, or unusually quiet transcription phase is
+visible in both the terminal and the timestamped run log. Playback through `mpv`
+does not use this heartbeat, because a quiet player process is normal while a
+video is open.
 
 Before running Whisper on CUDA, the script checks PyTorch CUDA visibility:
 
@@ -1253,6 +1268,15 @@ Useful local check:
 Expected CUDA output has a Torch version ending in something like `+cu128`,
 prints a CUDA runtime version such as `12.8`, and reports `True` for
 `torch.cuda.is_available()`.
+
+### Whisper prints no transcript lines
+
+The wrapper now reports long periods where Whisper is alive but silent. A single
+heartbeat can be normal while CUDA initializes or the model loads, and repeated
+heartbeats can happen when Whisper buffers transcript output while it works. If
+heartbeat lines continue for a long time with no GPU or CPU activity, press
+Ctrl-C once so the wrapper can terminate the child process, then rerun. The run
+log will show the last command and heartbeat timing.
 
 ### Whisper reports `UnicodeEncodeError`
 

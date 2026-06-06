@@ -2,6 +2,7 @@
 AGENTS.md
 clearml.conf
 .venv/
+.tmp/
 artifacts/
 .clearml/
 lme-portable-test-*/

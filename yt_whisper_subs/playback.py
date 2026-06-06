@@ -253,7 +253,7 @@ def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace
             ]
 
         cmd.append(video_path)
-        proc.run(cmd)
+        proc.run(cmd, silence_seconds=None)
     finally:
         if temp_dir_context is not None:
             temp_dir_context.__exit__(None, None, None)

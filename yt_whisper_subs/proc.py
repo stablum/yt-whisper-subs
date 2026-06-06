@@ -7,12 +7,19 @@ from __future__ import annotations
 
 import argparse
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
+from typing import TextIO
 
 from yt_whisper_subs import cfg
+
+
+_OUTPUT_POLL_SECONDS = 0.2
 
 
 def venv_paths() -> dict[str, Path]:
@@ -74,12 +81,98 @@ def child_process_env() -> dict[str, str]:
     return env
 
 
+def _terminate_process(process: subprocess.Popen[str]) -> None:
+    """Stop a child process before propagating wrapper interruption.
+
+    Example: `_terminate_process(process)` after Ctrl-C.
+    """
+
+    if process.poll() is not None:
+        return
+
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def _read_stream_chars(stream: TextIO, output_q: queue.Queue[str | None]) -> None:
+    """Move blocking pipe reads into a queue so the parent can stay responsive.
+
+    Example: `_read_stream_chars(process.stdout, output_q)` in a reader thread.
+    """
+
+    try:
+        while chunk := stream.read(1):
+            output_q.put(chunk)
+    finally:
+        output_q.put(None)
+
+
+def _stream_process_output(
+    process: subprocess.Popen[str],
+    *,
+    capture_stdout: bool,
+    silence_seconds: float | None,
+) -> tuple[int, str | None]:
+    """Drain subprocess output while reporting long periods with no text.
+
+    Example: `_stream_process_output(process, capture_stdout=True, silence_seconds=60)`.
+    """
+
+    assert process.stdout is not None
+    output_q: queue.Queue[str | None] = queue.Queue()
+    reader = threading.Thread(
+        target=_read_stream_chars,
+        args=(process.stdout, output_q),
+        daemon=True,
+        name="yt-whisper-subs-output-reader",
+    )
+    reader.start()
+
+    captured_parts: list[str] = []
+    last_output_time = time.monotonic()
+    reader_done = False
+    silence_limit = silence_seconds or 0.0
+
+    while not reader_done or process.poll() is None:
+        try:
+            chunk = output_q.get(timeout=_OUTPUT_POLL_SECONDS)
+        except queue.Empty:
+            now = time.monotonic()
+            silent_for = now - last_output_time
+            if silence_limit > 0 and silent_for >= silence_limit:
+                print(f"[subprocess still running; no output for {silent_for:.0f}s]")
+                sys.stdout.flush()
+                last_output_time = now
+            continue
+
+        if chunk is None:
+            reader_done = True
+            continue
+
+        if capture_stdout:
+            captured_parts.append(chunk)
+        sys.stdout.write(chunk)
+        if chunk in {"\n", "\r"}:
+            sys.stdout.flush()
+        last_output_time = time.monotonic()
+
+    returncode = process.wait()
+    reader.join(timeout=1)
+    stdout_text = "".join(captured_parts) if capture_stdout else None
+    return returncode, stdout_text
+
+
 def run(
     cmd: list[str | os.PathLike[str]],
     *,
     capture_stdout: bool = False,
     stream_stdout: bool = False,
     check: bool = True,
+    silence_seconds: float | None = cfg.DEFAULT_SUBPROCESS_SILENCE_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a command while preserving live output in the run log.
 
@@ -90,61 +183,22 @@ def run(
     print()
     print(f"> {command_text(cmd)}")
     env = child_process_env()
-    if capture_stdout and stream_stdout:
-        process = subprocess.Popen(
-            [str(part) for part in cmd],
-            env=env,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        captured_parts: list[str] = []
-        assert process.stdout is not None
-        try:
-            while True:
-                chunk = process.stdout.read(1)
-                if not chunk:
-                    break
-                captured_parts.append(chunk)
-                sys.stdout.write(chunk)
-                if chunk in {"\n", "\r"}:
-                    sys.stdout.flush()
-            returncode = process.wait()
-        except BaseException:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-            raise
-        result = subprocess.CompletedProcess(
-            [str(part) for part in cmd],
-            returncode,
-            stdout="".join(captured_parts),
-        )
-        if check and result.returncode != 0:
-            raise RuntimeError(f"command failed with exit code {result.returncode}: {cmd[0]}")
-        return result
+    command = [str(part) for part in cmd]
 
-    stdout = subprocess.PIPE if capture_stdout else None
-    if capture_stdout:
+    if capture_stdout and not stream_stdout:
         result = subprocess.run(
-            [str(part) for part in cmd],
+            command,
             env=env,
             check=False,
             text=True,
             encoding="utf-8",
             errors="replace",
-            stdout=stdout,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
     else:
         process = subprocess.Popen(
-            [str(part) for part in cmd],
+            command,
             env=env,
             text=True,
             encoding="utf-8",
@@ -152,26 +206,16 @@ def run(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
-        assert process.stdout is not None
         try:
-            while True:
-                chunk = process.stdout.read(1)
-                if not chunk:
-                    break
-                sys.stdout.write(chunk)
-                if chunk in {"\n", "\r"}:
-                    sys.stdout.flush()
-            returncode = process.wait()
+            returncode, stdout_text = _stream_process_output(
+                process,
+                capture_stdout=capture_stdout,
+                silence_seconds=silence_seconds,
+            )
         except BaseException:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+            _terminate_process(process)
             raise
-        result = subprocess.CompletedProcess([str(part) for part in cmd], returncode)
+        result = subprocess.CompletedProcess(command, returncode, stdout=stdout_text)
 
     if check and result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}: {cmd[0]}")
