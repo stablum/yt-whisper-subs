@@ -19,8 +19,8 @@ The script is optimized for this workflow:
 3. Generate Dutch subtitles locally with Whisper.
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
    then extend cue end times slightly into following silence.
-5. Send the compacted and gap-extended Dutch SRT to the OpenAI API in bounded
-   chunks.
+5. Send the compacted and gap-extended Dutch cue texts to the OpenAI API as
+   bounded indexed JSON chunks.
 6. Receive natural English translations with the exact same cue count and time
    markings as the compacted and gap-extended Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
@@ -82,8 +82,8 @@ so the OpenAI-translated English file has the same timestamps and cue count as
 the Dutch file that the user actually wants to read.
 
 If `--no-compact-subs` is used, the compaction override is disabled. In that
-case OpenAI receives the un-compacted primary SRT, still gap-extended unless
-`--subtitle-gap-extension 0` is used.
+case OpenAI receives cue text from the un-compacted primary SRT, still
+gap-extended unless `--subtitle-gap-extension 0` is used.
 
 ## Quick Start
 
@@ -469,19 +469,24 @@ SRT after primary compaction has occurred.
 The contract is:
 
 1. The Dutch SRT is parsed into cues.
-2. The complete compacted and gap-extended Dutch SRT is split into chunks when
-   it is longer than the configured OpenAI chunk size.
+2. The complete compacted and gap-extended Dutch SRT is parsed into cues and
+   split into indexed cue-text JSON chunks when it is longer than the configured
+   OpenAI chunk size.
 3. The prompt asks for natural idiomatic English.
 4. The prompt forbids merging, splitting, adding, or omitting cues.
-5. Each chunk includes a small amount of neighboring text as context, but the
+5. Each source cue is sent as an object with an explicit `index` and `text`, and
+   the prompt tells the model to translate only that cue's text for the matching
+   output index. This is important for sentence fragments that span multiple
+   cues: the model must not complete a fragment with neighboring cue text.
+6. Each chunk includes a small amount of neighboring text as context, but the
    model is asked to translate only the current chunk.
-6. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
+7. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
    to the English sidecar, so an interrupted or failed run can resume without
    paying for already translated chunks again.
-7. If a chunk response is valid JSON but incomplete, for example 91 usable
+8. If a chunk response is valid JSON but incomplete, for example 91 usable
    translations for 92 source cues, the script keeps the usable indexed
    translations and sends a small repair request for only the missing cues.
-8. The API is asked for strict JSON:
+9. The API is asked for strict JSON:
 
    ```json
    {
@@ -494,12 +499,12 @@ The contract is:
    }
    ```
 
-9. The script validates that:
+10. The script validates that:
    - the JSON parses,
    - `translations` is a list,
    - every expected 1-based cue index has exactly one usable translation,
    - each text value is a non-empty string.
-10. The script renders a new English SRT by pairing each translated text with the
+11. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
@@ -516,7 +521,7 @@ with:
 ```json
 {
   "model": "gpt-5-mini",
-  "input": "...prompt and current SRT chunk...",
+  "input": "...prompt and current indexed cue JSON chunk...",
   "reasoning": {
     "effort": "low"
   },
@@ -539,9 +544,9 @@ errors still fail immediately or after the API returns a final non-retryable
 response. Incomplete but parseable translation chunks are handled separately by
 the missing-cue repair request described above.
 
-Set `--openai-translation-chunk-cues 0` to restore the older single-request
-full-SRT behavior. The chunked default is more resilient for longer videos and
-avoids connection resets seen with large JSON responses.
+Set `--openai-translation-chunk-cues 0` to use one full cue-list request. The
+chunked default is more resilient for longer videos and avoids connection
+resets seen with large JSON responses.
 
 The exact default model and effort are configurable:
 
@@ -810,7 +815,7 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--openai-reasoning-effort EFFORT` | `low` | Reasoning effort for OpenAI SRT translation. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
-| `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full-SRT request. |
+| `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full cue-list request. |
 | `--openai-translation-context-cues INT` | `3` | Neighboring cues sent as context around each chunk. |
 | `--openai-env-file PATH` | `.env` beside script | Env file to load for `OPENAI_API_KEY`. |
 
@@ -942,18 +947,20 @@ The cache lookup still treats only final merged media files as durable video
 yields. Partial files and yt-dlp intermediate stream files are left for yt-dlp
 to resume or clean up on the next download attempt.
 
-### Full-SRT OpenAI Translation
+### Indexed-Cue OpenAI Translation
 
-The OpenAI path translates the compacted and gap-extended SRT in bounded chunks.
-Each chunk keeps the script's strict cue-count contract and includes neighboring
-cue context for terminology continuity. This is the resilient version of the
-original whole-document architecture:
+The OpenAI path translates indexed cue text in bounded chunks, derived from the
+compacted and gap-extended SRT. Each chunk keeps the script's strict cue-count
+contract and includes neighboring cue context for terminology continuity. This
+is the resilient version of the original whole-document architecture:
 
 - The model sees enough surrounding discourse for local consistency.
 - It can translate recurring terms consistently.
 - It can avoid locally plausible but globally wrong choices.
 - It avoids the large single response that can trigger remote connection resets.
 - Completed chunks are checkpointed and reused on rerun.
+- The explicit cue JSON format reduces semantic drift where the model merges a
+  split sentence into one cue and shifts later translations by one index.
 
 The script then validates the structured output and applies translations to the
 original compacted and gap-extended cue timings itself. The model is not trusted
@@ -1014,6 +1021,7 @@ High-level groups:
 | `extract_audio`, `audio_codec_args` | ffmpeg audio yield creation. |
 | `check_cuda`, `run_whisper` | Whisper execution and CUDA validation. |
 | `parse_srt`, `render_srt` | SRT data model and serialization. |
+| `openai_source_cues_json` | Indexed cue-text JSON serialization for OpenAI translation. |
 | `compact_cues`, `may_merge_cues` | Cue compaction heuristics. |
 | `extend_subtitle_gaps` | Cue end-time extension into following silence. |
 | `align_subtitle_timings_to_reference_file` | Keep OpenAI English cue timings aligned to primary cue timings. |

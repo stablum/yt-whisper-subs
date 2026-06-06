@@ -7,7 +7,7 @@ YouTube video with yt-dlp or accepts a local video file, extracts small lossy
 and can open the video in mpv with the generated subtitle file attached. The
 primary SRT is written as a sidecar next to the video so mpv can auto-detect it
 on later opens. For Dutch sources, the default English translation path sends
-the primary SRT to the OpenAI API in bounded chunks and preserves its cue
+indexed cue text to the OpenAI API in bounded chunks and preserves primary cue
 timings.
 """
 
@@ -177,7 +177,7 @@ def parse_args() -> argparse.Namespace:
         default="openai",
         help=(
             "How Dutch-to-English subtitles are generated. The default, openai, sends the "
-            "primary SRT to the OpenAI Responses API in bounded chunks and preserves exact cue timings. "
+            "primary cue text to the OpenAI Responses API in bounded indexed chunks and preserves exact cue timings. "
             "Use whisper for the previous local audio translation path."
         ),
     )
@@ -218,7 +218,7 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES,
         help=(
-            "Maximum subtitle cues per OpenAI translation request. Use 0 for one full-SRT request. "
+            "Maximum subtitle cues per OpenAI translation request. Use 0 for one full cue-list request. "
             f"Default: {DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES}."
         ),
     )
@@ -1134,6 +1134,17 @@ def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
+def openai_source_cues_json(cues: list[SubtitleCue]) -> str:
+    payload = [
+        {
+            "index": index,
+            "text": cue.text,
+        }
+        for index, cue in enumerate(cues, start=1)
+    ]
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def subtitle_gap_extension_ms(args: argparse.Namespace) -> int:
     seconds = float(getattr(args, "subtitle_gap_extension", DEFAULT_SUBTITLE_GAP_EXTENSION))
     return max(0, int(round(seconds * 1000)))
@@ -1236,7 +1247,7 @@ def openai_translation_response_format() -> dict[str, object]:
 
 
 def openai_translation_prompt(
-    source_srt: str,
+    source_cues_json: str,
     cue_count: int,
     *,
     chunk_label: str | None = None,
@@ -1247,7 +1258,7 @@ def openai_translation_prompt(
     if chunk_label:
         chunk_note = (
             f"You are translating {chunk_label} from a longer subtitle file. "
-            "Return translations only for the SOURCE SRT block in this request.\n"
+            "Return translations only for the SOURCE CUES JSON block in this request.\n"
         )
 
     context_note = ""
@@ -1260,24 +1271,29 @@ def openai_translation_prompt(
         context_note += "\n"
 
     return (
-        "Translate Dutch SRT subtitles into natural, concise English.\n"
+        "Translate Dutch subtitle cue texts into natural, concise English.\n"
         f"{chunk_note}"
         "Preserve meaning, names, institutions, speaker intent, and political terms. "
-        "Avoid literal Dutch phrasing when natural English is clearer.\n\n"
+        "Avoid literal Dutch phrasing when natural English is clearer.\n"
+        "The source is a JSON array of cue objects. Each source index is the required output index. "
+        "For each output item, translate only the text field of the source cue with the same index. "
+        "Do not pull text from neighboring cues into the current cue, even when a sentence continues "
+        "across cue boundaries. If a source cue is a fragment or starts/ends with ellipses, return a "
+        "matching English fragment rather than completing it with adjacent cue text.\n\n"
         f"{context_note}"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
         f"Translate exactly {cue_count} cues, indexes 1 through {cue_count}. "
         "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
         "Before returning, count the translations array and ensure it contains every requested index.\n\n"
-        "SOURCE SRT:\n"
-        "```srt\n"
-        f"{source_srt.rstrip()}\n"
+        "SOURCE CUES JSON:\n"
+        "```json\n"
+        f"{source_cues_json.rstrip()}\n"
         "```"
     )
 
 
 def openai_translation_repair_prompt(
-    source_srt: str,
+    source_cues_json: str,
     cue_count: int,
     *,
     chunk_label: str | None,
@@ -1310,14 +1326,17 @@ def openai_translation_repair_prompt(
         f"{chunk_note}"
         f"{error_note}"
         f"{context_note}"
-        "Translate only the SOURCE SRT cues below into natural, concise English.\n"
+        "Translate only the SOURCE CUES JSON below into natural, concise English.\n"
+        "Each source index is local to this repair request and is the required output index. "
+        "Translate only the text field of the source cue with the same index. Do not use neighboring "
+        "cue text to complete fragments.\n"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
         f"Return exactly {cue_count} translations, indexes 1 through {cue_count}. "
         "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
         "Before returning, count the translations array and ensure it contains every requested index.\n\n"
-        "SOURCE SRT:\n"
-        "```srt\n"
-        f"{source_srt.rstrip()}\n"
+        "SOURCE CUES JSON:\n"
+        "```json\n"
+        f"{source_cues_json.rstrip()}\n"
         "```"
     )
 
@@ -1345,7 +1364,8 @@ def openai_translation_metadata(
     chunk_size: int,
 ) -> dict[str, object]:
     return {
-        "schema": 1,
+        "schema": 2,
+        "source_format": "cue_json_v1",
         "source_sha256": text_sha256(source_srt),
         "cue_count": len(source_cues),
         "model": getattr(args, "openai_translation_model", DEFAULT_OPENAI_TRANSLATION_MODEL),
@@ -1439,12 +1459,12 @@ def repair_cue_chunk_translations_with_openai(
     )
 
     missing_cues = [source_cues[index - 1] for index in missing_indexes]
-    repair_srt = render_srt(missing_cues, args)
+    repair_source_cues = openai_source_cues_json(missing_cues)
     repair_label = f"{chunk_label} repair" if chunk_label else "repair"
     payload = openai_translation_payload(
         args,
         openai_translation_repair_prompt(
-            repair_srt,
+            repair_source_cues,
             len(missing_cues),
             chunk_label=chunk_label,
             validation_errors=parse_result.errors,
@@ -1478,11 +1498,11 @@ def translate_cue_chunk_with_openai(
     previous_context: str = "",
     next_context: str = "",
 ) -> list[str]:
-    source_srt = render_srt(source_cues, args)
+    source_cues_json = openai_source_cues_json(source_cues)
     payload = openai_translation_payload(
         args,
         openai_translation_prompt(
-            source_srt,
+            source_cues_json,
             len(source_cues),
             chunk_label=chunk_label,
             previous_context=previous_context,
