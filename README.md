@@ -23,7 +23,7 @@ The script is optimized for this workflow:
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
    then extend cue end times slightly into following silence.
 5. Send the compacted and gap-extended Dutch cue texts to the OpenAI API as
-   bounded indexed JSON chunks.
+   bounded indexed JSON chunks whose cue order is dispersed inside each batch.
 6. Receive natural English translations with the exact same cue count and time
    markings as the compacted and gap-extended Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
@@ -126,6 +126,12 @@ Force a fresh download and fresh subtitle generation:
 
 ```powershell
 python .\yt_whisper_subs.py --force "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Regenerate only the English subtitle yield from the existing Dutch SRT:
+
+```powershell
+python .\yt_whisper_subs.py --force-english "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 Use local Whisper audio translation instead of OpenAI SRT translation:
@@ -277,6 +283,10 @@ If only one yield is unwanted, manually deleting that yield can be cheaper than
 using `--force`. For example, deleting only `*.en.srt` lets the script regenerate
 English translation from an existing primary SRT without re-downloading video or
 rerunning Whisper.
+
+`--force-english` is the supported shortcut for that common case. It keeps the
+cached video, audio, and primary Dutch subtitles, then regenerates only the
+Dutch-to-English subtitle yield when English generation is enabled for the run.
 
 ## Dependency Management
 
@@ -513,15 +523,19 @@ The contract is:
    the prompt tells the model to translate only that cue's text for the matching
    output index. This is important for sentence fragments that span multiple
    cues: the model must not complete a fragment with neighboring cue text.
-6. Each chunk includes a small amount of neighboring text as context, but the
+6. Cues inside each chunk are deliberately sent in a non-chronological
+   even-then-odd order while keeping their 1-based indexes. This reduces the
+   model's tendency to complete one subtitle fragment with the next cue and
+   shift subsequent translations by one.
+7. Each chunk includes a small amount of neighboring text as context, but the
    model is asked to translate only the current chunk.
-7. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
+8. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
    to the English sidecar, so an interrupted or failed run can resume without
    paying for already translated chunks again.
-8. If a chunk response is valid JSON but incomplete, for example 91 usable
+9. If a chunk response is valid JSON but incomplete, for example 91 usable
    translations for 92 source cues, the script keeps the usable indexed
    translations and sends a small repair request for only the missing cues.
-9. The API is asked for strict JSON:
+10. The API is asked for strict JSON:
 
    ```json
    {
@@ -534,12 +548,12 @@ The contract is:
    }
    ```
 
-10. The script validates that:
+11. The script validates that:
    - the JSON parses,
    - `translations` is a list,
    - every expected 1-based cue index has exactly one usable translation,
    - each text value is a non-empty string.
-11. The script renders a new English SRT by pairing each translated text with the
+12. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
@@ -912,6 +926,7 @@ Colors must be `#RRGGBB` or `#RRGGBBAA`.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--force` | off | Re-download URL videos and regenerate subtitles. |
+| `--force-english` | off | Regenerate only the English subtitle yield from existing primary subtitles when possible. |
 | `--install-tools` | off | Install/update `uv`, `ffmpeg`, and `mpv` via Scoop. |
 
 ### Logging
@@ -1038,6 +1053,9 @@ is the resilient version of the original whole-document architecture:
 - Completed chunks are checkpointed and reused on rerun.
 - The explicit cue JSON format reduces semantic drift where the model merges a
   split sentence into one cue and shifts later translations by one index.
+- The source cue JSON is emitted in an even-then-odd index order inside each
+  chunk. This keeps neighboring source cues away from each other in the prompt
+  while preserving the numeric indexes used to reconstruct the final SRT.
 
 The script then validates the structured output and applies translations to the
 original compacted and gap-extended cue timings itself. The model is not trusted
@@ -1327,16 +1345,15 @@ used.
 
 ### I want only to regenerate English subtitles
 
-Avoid `--force` if you do not want to redownload the URL video. Delete the
-English sidecar and archive:
+Avoid `--force` if you do not want to redownload the URL video or rerun
+Whisper. Use `--force-english` instead:
 
-```text
-videos\VIDEO_ID.en.srt
-subtitles\VIDEO_ID.en.srt
+```powershell
+python .\yt_whisper_subs.py --force-english "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Then rerun normally. The script should reuse the video and primary subtitles,
-then regenerate English with OpenAI.
+The script should reuse the video and primary subtitles, then regenerate
+English with the selected Dutch-to-English provider.
 
 ### `mpv` does not auto-detect subtitles
 
@@ -1370,7 +1387,8 @@ This repository is licensed under the GNU General Public License version 3. See
   still be expensive.
 - `--language auto` does not trigger automatic English-for-Dutch translation.
 - Existing `.en.srt` files are treated as ready regardless of whether they were
-  produced by Whisper or OpenAI. Delete them or use `--force` to regenerate.
+  produced by Whisper or OpenAI. Use `--force-english` or `--force` to
+  regenerate them.
 - There is no metadata sidecar recording the exact model, prompt, or compaction
   settings used for each yield.
 - SRT parsing is intentionally pragmatic, not a full subtitle spec
@@ -1385,8 +1403,6 @@ These are intentionally not implemented yet:
 
 - Add a metadata JSON file per video recording source URL, video ID, models,
   compaction settings, OpenAI model, and generation timestamps.
-- Add a `--force-english` or `--regenerate-english` option that avoids video
-  redownload and Whisper reruns.
 - Add a `--translate-existing-srt` mode for translating an SRT without touching
   video/audio.
 - Add an optional OpenAI SDK implementation if API usage grows.

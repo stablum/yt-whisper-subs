@@ -101,6 +101,47 @@ class OpenAITranslateTests(unittest.TestCase):
             checkpoint_path = openai_translate.openai_translation_checkpoint_path(dst_path)
             self.assertFalse(checkpoint_path.exists())
 
+    def test_translation_prompt_disperses_adjacent_source_cues(self) -> None:
+        """Send batched source cues in non-chronological order while preserving indexes.
+
+        Example: four cue texts are sent as indexes 1, 3, 2, 4.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            src_path = Path(tmp_dir) / "nl.srt"
+            dst_path = Path(tmp_dir) / "en.srt"
+            src_path.write_text(
+                "1\n00:00:00,000 --> 00:00:01,000\nEen.\n\n"
+                "2\n00:00:01,000 --> 00:00:02,000\nTwee.\n\n"
+                "3\n00:00:02,000 --> 00:00:03,000\nDrie.\n\n"
+                "4\n00:00:03,000 --> 00:00:04,000\nVier.\n",
+                encoding="utf-8",
+            )
+            observed_indexes: list[int] = []
+
+            def request(args: argparse.Namespace, payload: dict[str, object]) -> dict[str, object]:
+                """Capture the source cue order from the generated OpenAI prompt.
+
+                Example: invoked by `openai_translate`.
+                """
+
+                prompt = str(payload["input"])
+                source_json = prompt.split("```json\n", 1)[1].split("\n```", 1)[0]
+                observed_indexes.extend(item["index"] for item in json.loads(source_json))
+                translations = [
+                    {"index": 1, "text": "One."},
+                    {"index": 2, "text": "Two."},
+                    {"index": 3, "text": "Three."},
+                    {"index": 4, "text": "Four."},
+                ]
+                return {"output_text": json.dumps({"translations": translations})}
+
+            openai_client.responses_api_request = request
+
+            openai_translate.translate_srt_with_openai(src_path, dst_path, self._args(chunk_cues=120))
+
+            self.assertEqual(observed_indexes, [1, 3, 2, 4])
+
     def _args(self, *, chunk_cues: int) -> argparse.Namespace:
         """Build the small option namespace the translator reads.
 

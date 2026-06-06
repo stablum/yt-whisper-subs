@@ -366,18 +366,30 @@ def render_srt(cues: list[SubtitleCue], args: argparse.Namespace) -> str:
     return "\n\n".join(blocks) + ("\n" if blocks else "")
 
 
-def openai_source_cues_json(cues: list[SubtitleCue]) -> str:
-    """Render cue text as indexed JSON for the OpenAI translation contract.
+def interleaved_cue_order(cue_count: int) -> list[int]:
+    """Return a cue order that separates immediate neighbors in batched prompts.
 
-    Example: `openai_source_cues_json(cues)`.
+    Example: `interleaved_cue_order(4)` returns `[0, 2, 1, 3]`.
     """
 
+    even_idxs = list(range(0, cue_count, 2))
+    odd_idxs = list(range(1, cue_count, 2))
+    return even_idxs + odd_idxs
+
+
+def openai_source_cues_json(cues: list[SubtitleCue], *, order: list[int] | None = None) -> str:
+    """Render cue text as indexed JSON for the OpenAI translation contract.
+
+    Example: `openai_source_cues_json(cues, order=[0, 2, 1])`.
+    """
+
+    cue_order = order if order is not None else list(range(len(cues)))
     payload = [
         {
-            "index": index,
-            "text": cue.text,
+            "index": cue_idx + 1,
+            "text": cues[cue_idx].text,
         }
-        for index, cue in enumerate(cues, start=1)
+        for cue_idx in cue_order
     ]
     return json.dumps(payload, ensure_ascii=False, indent=2)
 

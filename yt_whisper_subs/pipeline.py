@@ -143,11 +143,13 @@ class PipelineRunner:
         self._prepare_existing_subtitles(run_yields)
         run_yields.print_paths(self._log_path)
 
-        if run_yields.all_ready() and not self._args.force:
+        if run_yields.all_ready() and not self._args.force and not self._force_english(run_yields):
             return self._reuse_ready_yields(run_yields)
 
         need_primary_generation = (not run_yields.primary.ready()) or self._args.force
-        need_english_generation = run_yields.make_english and ((not run_yields.english.ready()) or self._args.force)
+        need_english_generation = run_yields.make_english and (
+            (not run_yields.english.ready()) or self._args.force or self._force_english(run_yields)
+        )
         need_whisper = need_primary_generation or (
             need_english_generation and not opts.uses_openai_english_translation(self._args)
         )
@@ -354,9 +356,9 @@ class PipelineRunner:
         Example: `self._generate_english_subs(run_yields)`.
         """
 
-        if run_yields.english.ready() and not self._args.force:
+        if run_yields.english.ready() and not self._args.force and not self._force_english(run_yields):
             print()
-            print("English subtitle file already exists. Use --force to regenerate.")
+            print("English subtitle file already exists. Use --force-english or --force to regenerate.")
             return
 
         if opts.uses_openai_english_translation(self._args):
@@ -428,6 +430,14 @@ class PipelineRunner:
 
         if not self._args.keep_audio and run_yields.audio.exists():
             run_yields.audio.unlink()
+
+    def _force_english(self, run_yields: RunYields) -> bool:
+        """Check whether only the English subtitle yield should be regenerated.
+
+        Example: `self._force_english(run_yields)` inside skip logic.
+        """
+
+        return run_yields.make_english and bool(getattr(self._args, "force_english", False))
 
     def _play(self, run_yields: RunYields) -> None:
         """Launch mpv with the sidecar subtitles selected for this run.

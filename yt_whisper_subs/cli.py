@@ -185,6 +185,14 @@ def parse_args() -> argparse.Namespace:
         help="Re-download URL videos and regenerate subtitles even if yields already exist.",
     )
     parser.add_argument(
+        "--force-english",
+        action="store_true",
+        help=(
+            "Regenerate the Dutch-to-English subtitle yield without forcing the video download "
+            "or primary Dutch Whisper transcription."
+        ),
+    )
+    parser.add_argument(
         "--no-english-for-dutch",
         dest="english_for_dutch",
         action="store_false",

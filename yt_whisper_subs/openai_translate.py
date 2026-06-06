@@ -301,7 +301,8 @@ class OpenAISrtTranslator:
         Example: `self._translate_chunk(cues, chunk_label="chunk 1/2")`.
         """
 
-        source_cues_json = srt.openai_source_cues_json(source_cues)
+        cue_order = srt.interleaved_cue_order(len(source_cues))
+        source_cues_json = srt.openai_source_cues_json(source_cues, order=cue_order)
         payload = openai_translation_payload(
             self._args,
             openai_translation_prompt(
@@ -350,7 +351,8 @@ class OpenAISrtTranslator:
         )
 
         missing_cues = [source_cues[index - 1] for index in missing_indexes]
-        repair_source_cues = srt.openai_source_cues_json(missing_cues)
+        repair_order = srt.interleaved_cue_order(len(missing_cues))
+        repair_source_cues = srt.openai_source_cues_json(missing_cues, order=repair_order)
         repair_label = f"{chunk_label} repair" if chunk_label else "repair"
         payload = openai_translation_payload(
             self._args,
@@ -447,12 +449,16 @@ def openai_translation_prompt(
         f"{chunk_note}"
         "Preserve meaning, names, institutions, speaker intent, and political terms. "
         "Avoid literal Dutch phrasing when natural English is clearer.\n"
-        "The source is a JSON array of cue objects. Each source index is the required output index. "
+        "The source is a JSON array of cue objects. The array order is deliberately shuffled and is "
+        "not narrative order; use the index values only. Each source index is the required output index. "
         "For each output item, translate only the text field of the source cue with the same index. "
         "Do not pull text from neighboring cues into the current cue, even when a sentence continues "
         "across cue boundaries. If a source cue is a fragment or starts/ends with ellipses, return a "
-        "matching English fragment rather than completing it with adjacent cue text.\n\n"
+        "matching English fragment rather than completing it with adjacent cue text. It is better to "
+        "return an incomplete English fragment than to borrow words or facts from another index.\n\n"
         f"{context_note}"
+        "Example alignment rule: if index 7 says \"Waar geen betaald parkeren is.\", translate index 7 "
+        "as a fragment such as \"Where there is no paid parking.\", not as part of index 6.\n"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
         f"Translate exactly {cue_count} cues, indexes 1 through {cue_count}. "
         "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
@@ -504,9 +510,10 @@ def openai_translation_repair_prompt(
         f"{error_note}"
         f"{context_note}"
         "Translate only the SOURCE CUES JSON below into natural, concise English.\n"
+        "The source JSON array order may be shuffled; use only the index values. "
         "Each source index is local to this repair request and is the required output index. "
         "Translate only the text field of the source cue with the same index. Do not use neighboring "
-        "cue text to complete fragments.\n"
+        "cue text to complete fragments. Return incomplete English fragments when the source cue is incomplete.\n"
         "Return JSON only with this shape: {\"translations\":[{\"index\":1,\"text\":\"...\"}]}.\n"
         f"Return exactly {cue_count} translations, indexes 1 through {cue_count}. "
         "Do not merge, split, omit, add cues, or output timestamps. Keep text subtitle-length. "
