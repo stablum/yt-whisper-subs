@@ -69,6 +69,7 @@ DEFAULT_COMPACT_LINE_WIDTH = 50
 DEFAULT_SUBTITLE_GAP_EXTENSION = 5.0
 DEFAULT_COMPACT_SOFT_PERIODS = "english"
 AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
+MEDIA_SUFFIXES = (".mkv", ".mp4", ".webm")
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
 TRANSIENT_OPENAI_HTTP_STATUS_CODES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -135,6 +136,58 @@ class OpenAITranslationParseResult:
         return not self.missing_indexes
 
 
+class TeeStream:
+    def __init__(self, primary, log_file) -> None:
+        self.primary = primary
+        self.log_file = log_file
+        self.encoding = getattr(primary, "encoding", "utf-8")
+        self.errors = getattr(primary, "errors", "replace")
+
+    def write(self, text: str) -> int:
+        written = self.primary.write(text)
+        self.log_file.write(text)
+        return written
+
+    def flush(self) -> None:
+        self.primary.flush()
+        self.log_file.flush()
+
+    def isatty(self) -> bool:
+        return self.primary.isatty()
+
+    def fileno(self) -> int:
+        return self.primary.fileno()
+
+
+class RunLogger:
+    def __init__(self, log_path: Path) -> None:
+        self.log_path = log_path
+        self.log_file = None
+        self.stdout = None
+        self.stderr = None
+
+    def __enter__(self) -> Path:
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        self.log_file = self.log_path.open("a", encoding="utf-8", newline="")
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
+        sys.stdout = TeeStream(self.stdout, self.log_file)
+        sys.stderr = TeeStream(self.stderr, self.log_file)
+        return self.log_path
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        finally:
+            if self.stdout is not None:
+                sys.stdout = self.stdout
+            if self.stderr is not None:
+                sys.stderr = self.stderr
+            if self.log_file is not None:
+                self.log_file.close()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -155,6 +208,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         help=f"Output root directory. Default: {DEFAULT_OUTPUT_DIR}",
+    )
+    parser.add_argument(
+        "--log-file",
+        help=(
+            "Write a comprehensive run log to this path. By default a timestamped log "
+            "is written under the output root's logs directory."
+        ),
     )
     parser.add_argument(
         "--language",
@@ -548,6 +608,10 @@ def command_text(cmd: list[str | os.PathLike[str]]) -> str:
     return " ".join(str(part) for part in cmd)
 
 
+def command_line_text(argv: list[str]) -> str:
+    return " ".join(argv)
+
+
 def configure_stdio() -> None:
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
@@ -570,6 +634,7 @@ def run(
             encoding="utf-8",
             errors="replace",
             stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
         captured_parts: list[str] = []
         assert process.stdout is not None
@@ -602,14 +667,46 @@ def run(
         return result
 
     stdout = subprocess.PIPE if capture_stdout else None
-    result = subprocess.run(
-        [str(part) for part in cmd],
-        check=False,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=stdout,
-    )
+    if capture_stdout:
+        result = subprocess.run(
+            [str(part) for part in cmd],
+            check=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=stdout,
+            stderr=subprocess.STDOUT,
+        )
+    else:
+        process = subprocess.Popen(
+            [str(part) for part in cmd],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
+        assert process.stdout is not None
+        try:
+            while True:
+                chunk = process.stdout.read(1)
+                if not chunk:
+                    break
+                sys.stdout.write(chunk)
+                if chunk in {"\n", "\r"}:
+                    sys.stdout.flush()
+            returncode = process.wait()
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
+        result = subprocess.CompletedProcess([str(part) for part in cmd], returncode)
+
     if check and result.returncode != 0:
         raise RuntimeError(f"command failed with exit code {result.returncode}: {cmd[0]}")
     return result
@@ -761,22 +858,127 @@ def youtube_video_id(url: str) -> str | None:
     return None
 
 
+def safe_output_stem(value: str, *, fallback: str = "run") -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", value.strip()).strip("._-")
+    return cleaned[:100] or fallback
+
+
+def default_log_path(args: argparse.Namespace, out_dir: Path) -> Path:
+    if args.url:
+        source_stem = youtube_video_id(args.url) or "url"
+    else:
+        source_stem = Path(args.video_file).expanduser().stem
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    return out_dir / "logs" / f"{safe_output_stem(source_stem)}-{timestamp}.log"
+
+
+def resolve_log_path(args: argparse.Namespace, out_dir: Path) -> Path:
+    if args.log_file:
+        return Path(args.log_file).expanduser().resolve()
+    return default_log_path(args, out_dir)
+
+
+def redacted_args(args: argparse.Namespace) -> dict[str, object]:
+    values = vars(args).copy()
+    return {key: values[key] for key in sorted(values)}
+
+
+def print_run_header(args: argparse.Namespace, out_dir: Path, log_path: Path) -> None:
+    print(f"Run log: {log_path}")
+    print(f"Started: {time.strftime('%Y-%m-%d %H:%M:%S %z')}")
+    print(f"CWD: {Path.cwd()}")
+    print(f"Command: {command_line_text(sys.argv)}")
+    print(f"Output root: {out_dir}")
+    print("Arguments:")
+    print(json.dumps(redacted_args(args), ensure_ascii=False, indent=2, sort_keys=True))
+
+
+def youtube_id_matches_video_file(path: Path, video_id: str) -> bool:
+    return path.stem == video_id or path.stem.endswith(f"[{video_id}]")
+
+
+def canonicalize_youtube_video_filename(video_path: Path, video_id: str) -> Path:
+    if video_path.stem == video_id:
+        return video_path.resolve()
+
+    target_path = video_path.with_name(f"{video_id}{video_path.suffix}")
+    if target_path.exists() and target_path.resolve() != video_path.resolve():
+        print(f"Using existing video-id video filename instead of legacy title filename: {target_path}")
+        return target_path.resolve()
+
+    video_path.replace(target_path)
+    print(f"Renamed video to video-id filename: {target_path}")
+    return target_path.resolve()
+
+
+def legacy_youtube_named_files(directory: Path, video_id: str, suffix: str) -> list[Path]:
+    if not directory.exists():
+        return []
+    canonical_name = f"{video_id}{suffix}"
+    return sorted(
+        [
+            path
+            for path in directory.iterdir()
+            if path.is_file()
+            and path.name != canonical_name
+            and path.name.endswith(f"[{video_id}]{suffix}")
+        ],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+
+
+def migrate_legacy_youtube_file(directory: Path, video_id: str, suffix: str, label: str) -> None:
+    target_path = directory / f"{video_id}{suffix}"
+    for legacy_path in legacy_youtube_named_files(directory, video_id, suffix):
+        if target_path.exists():
+            print(
+                f"Leaving legacy {label} filename in place because the video-id filename already exists: "
+                f"{legacy_path}"
+            )
+            continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        legacy_path.replace(target_path)
+        print(f"Renamed legacy {label} to video-id filename: {target_path}")
+
+
+def migrate_legacy_youtube_yields_to_video_id(
+    video_id: str,
+    video_dir: Path,
+    audio_dir: Path,
+    subs_dir: Path,
+) -> None:
+    for suffix in MEDIA_SUFFIXES:
+        migrate_legacy_youtube_file(video_dir, video_id, suffix, "video")
+
+    for suffix in (".srt", ".en.srt", ".uncompact.srt", ".en.uncompact.srt", ".en.partial.json"):
+        migrate_legacy_youtube_file(video_dir, video_id, suffix, "video sidecar subtitle")
+        migrate_legacy_youtube_file(subs_dir, video_id, suffix, "subtitle archive")
+
+    for audio_format in AUDIO_FORMAT_CHOICES:
+        migrate_legacy_youtube_file(audio_dir, video_id, f".{audio_format}", "audio")
+
+
 def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
     video_id = youtube_video_id(url)
-    media_suffixes = {".mkv", ".mp4", ".webm"}
     files = [
         path
         for path in video_dir.iterdir()
         if path.is_file()
-        and path.suffix.lower() in media_suffixes
+        and path.suffix.lower() in MEDIA_SUFFIXES
         and not path.name.endswith(".part")
         and not INTERMEDIATE_FORMAT_RE.search(path.name)
     ]
 
     if video_id:
-        id_matches = [path for path in files if path.stem.endswith(f"[{video_id}]")]
-        if id_matches:
-            return max(id_matches, key=lambda path: path.stat().st_mtime).resolve()
+        canonical_matches = [path for path in files if path.stem == video_id]
+        if canonical_matches:
+            return max(canonical_matches, key=lambda path: path.stat().st_mtime).resolve()
+
+        legacy_matches = [path for path in files if youtube_id_matches_video_file(path, video_id)]
+        if legacy_matches:
+            return max(legacy_matches, key=lambda path: path.stat().st_mtime).resolve()
 
     return None
 
@@ -784,7 +986,7 @@ def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
 def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argparse.Namespace) -> Path:
     video_dir.mkdir(parents=True, exist_ok=True)
 
-    template = video_dir / "%(title).180B [%(id)s].%(ext)s"
+    template = video_dir / "%(id)s.%(ext)s"
     cmd: list[str | os.PathLike[str]] = [
         paths["python"],
         "-m",
@@ -2366,6 +2568,7 @@ def resolve_output_dir(out_dir: str | None) -> Path:
 def print_yield_paths(
     video_path: Path,
     audio_path: Path,
+    log_path: Path,
     sidecar_srt_path: Path,
     archive_srt_path: Path,
     *,
@@ -2376,6 +2579,7 @@ def print_yield_paths(
     print()
     print(f"Video: {video_path}")
     print(f"Audio: {audio_path}")
+    print(f"Log:   {log_path}")
     print(f"SRT:   {sidecar_srt_path}")
     print(f"Archive SRT: {archive_srt_path}")
     if make_english_subs:
@@ -2386,6 +2590,7 @@ def print_yield_paths(
 def print_done(
     video_path: Path,
     audio_path: Path,
+    log_path: Path,
     sidecar_srt_path: Path,
     archive_srt_path: Path,
     *,
@@ -2397,6 +2602,7 @@ def print_done(
     print("Done.")
     print(f"Video: {video_path}")
     print(f"Audio: {audio_path if audio_path.exists() else '(deleted)'}")
+    print(f"Log:   {log_path}")
     print(f"Subs:  {sidecar_srt_path}")
     print(f"Archive Subs: {archive_srt_path}")
     if make_english_subs:
@@ -2404,245 +2610,134 @@ def print_done(
         print(f"English Archive Subs: {english_archive_srt_path}")
 
 
-def main() -> int:
-    configure_stdio()
-    args = parse_args()
-    paths = venv_paths()
+def run_pipeline(args: argparse.Namespace, paths: dict[str, Path], out_dir: Path, log_path: Path) -> int:
+    if args.install_tools:
+        install_tools()
 
-    try:
-        if args.install_tools:
-            install_tools()
+    if not args.no_play:
+        require_command("mpv")
 
-        if not args.no_play:
-            require_command("mpv")
+    video_dir = out_dir / "videos"
+    audio_dir = out_dir / "audio"
+    subs_dir = out_dir / "subtitles"
+    video_dir.mkdir(parents=True, exist_ok=True)
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    subs_dir.mkdir(parents=True, exist_ok=True)
+    python_deps_ready = False
 
-        out_dir = resolve_output_dir(args.out_dir)
-        video_dir = out_dir / "videos"
-        audio_dir = out_dir / "audio"
-        subs_dir = out_dir / "subtitles"
-        video_dir.mkdir(parents=True, exist_ok=True)
-        audio_dir.mkdir(parents=True, exist_ok=True)
-        subs_dir.mkdir(parents=True, exist_ok=True)
-        python_deps_ready = False
-
-        if args.url:
-            video_path = None if args.force else latest_downloaded_video(video_dir, args.url)
-            if video_path:
-                print()
-                print(f"Found existing video yield: {video_path}")
-            else:
-                ensure_python_deps(paths, args)
-                python_deps_ready = True
-                require_command("ffmpeg")
-                print()
-                print("Downloading compressed lossy video stream...")
-                video_path = download_video(args.url, video_dir, paths, args)
+    if args.url:
+        source_video_id = youtube_video_id(args.url)
+        video_path = None if args.force else latest_downloaded_video(video_dir, args.url)
+        if video_path:
+            print()
+            print(f"Found existing video yield: {video_path}")
         else:
-            video_path = resolve_video_path(args.video_file)
+            ensure_python_deps(paths, args)
+            python_deps_ready = True
+            require_command("ffmpeg")
+            print()
+            print("Downloading compressed lossy video stream...")
+            video_path = download_video(args.url, video_dir, paths, args)
+        if source_video_id:
+            video_path = canonicalize_youtube_video_filename(video_path, source_video_id)
+            migrate_legacy_youtube_yields_to_video_id(source_video_id, video_dir, audio_dir, subs_dir)
+    else:
+        source_video_id = None
+        video_path = resolve_video_path(args.video_file)
 
-        video_base = video_path.stem
-        audio_path = audio_dir / f"{video_base}.{args.audio_format}"
-        sidecar_srt_path = video_path.with_suffix(".srt")
-        archive_srt_path = subs_dir / f"{video_base}.srt"
-        make_english_subs = args.english_for_dutch and args.task == "transcribe" and is_dutch_language(args.language)
-        args.compact_primary_for_openai_translation = make_english_subs and uses_openai_english_translation(args)
-        english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
-        english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
+    video_base = source_video_id or video_path.stem
+    audio_path = audio_dir / f"{video_base}.{args.audio_format}"
+    sidecar_srt_path = video_path.with_suffix(".srt")
+    archive_srt_path = subs_dir / f"{video_base}.srt"
+    make_english_subs = args.english_for_dutch and args.task == "transcribe" and is_dutch_language(args.language)
+    args.compact_primary_for_openai_translation = make_english_subs and uses_openai_english_translation(args)
+    english_sidecar_srt_path = video_path.with_name(f"{video_base}.en.srt")
+    english_archive_srt_path = subs_dir / f"{video_base}.en.srt"
 
+    hydrate_subtitle_pair(
+        "primary",
+        sidecar_srt_path,
+        archive_srt_path,
+        args,
+        is_english=False,
+        force=args.force,
+    )
+    if make_english_subs:
         hydrate_subtitle_pair(
-            "primary",
-            sidecar_srt_path,
-            archive_srt_path,
+            "English",
+            english_sidecar_srt_path,
+            english_archive_srt_path,
             args,
-            is_english=False,
+            is_english=True,
             force=args.force,
         )
-        if make_english_subs:
-            hydrate_subtitle_pair(
-                "English",
-                english_sidecar_srt_path,
-                english_archive_srt_path,
-                args,
-                is_english=True,
-                force=args.force,
-            )
 
+    ensure_compacted_subtitle_pair(
+        sidecar_srt_path,
+        archive_srt_path,
+        args,
+        is_english=False,
+        label="primary",
+        force=args.force,
+    )
+    ensure_extended_subtitle_gap_pair(
+        sidecar_srt_path,
+        archive_srt_path,
+        args,
+        label="primary",
+        force=args.force,
+    )
+    if make_english_subs:
         ensure_compacted_subtitle_pair(
-            sidecar_srt_path,
-            archive_srt_path,
+            english_sidecar_srt_path,
+            english_archive_srt_path,
             args,
-            is_english=False,
-            label="primary",
+            is_english=True,
+            label="English",
             force=args.force,
         )
         ensure_extended_subtitle_gap_pair(
-            sidecar_srt_path,
-            archive_srt_path,
-            args,
-            label="primary",
-            force=args.force,
-        )
-        if make_english_subs:
-            ensure_compacted_subtitle_pair(
-                english_sidecar_srt_path,
-                english_archive_srt_path,
-                args,
-                is_english=True,
-                label="English",
-                force=args.force,
-            )
-            ensure_extended_subtitle_gap_pair(
-                english_sidecar_srt_path,
-                english_archive_srt_path,
-                args,
-                label="English",
-                force=args.force,
-            )
-            if uses_openai_english_translation(args):
-                ensure_matching_subtitle_timing_pair(
-                    sidecar_srt_path,
-                    english_sidecar_srt_path,
-                    english_archive_srt_path,
-                    args,
-                    label="English",
-                    force=args.force,
-                )
-
-        print_yield_paths(
-            video_path,
-            audio_path,
-            sidecar_srt_path,
-            archive_srt_path,
-            make_english_subs=make_english_subs,
-            english_sidecar_srt_path=english_sidecar_srt_path,
-            english_archive_srt_path=english_archive_srt_path,
-        )
-
-        primary_ready = subtitle_pair_ready(sidecar_srt_path, archive_srt_path)
-        english_ready = (not make_english_subs) or subtitle_pair_ready(
             english_sidecar_srt_path,
             english_archive_srt_path,
+            args,
+            label="English",
+            force=args.force,
         )
-        all_yields_ready = video_path.exists() and primary_ready and english_ready
+        if uses_openai_english_translation(args):
+            ensure_matching_subtitle_timing_pair(
+                sidecar_srt_path,
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                label="English",
+                force=args.force,
+            )
 
-        if all_yields_ready and not args.force:
-            if args.install_python_deps and not python_deps_ready:
-                ensure_python_deps(paths, args)
-                python_deps_ready = True
+    print_yield_paths(
+        video_path,
+        audio_path,
+        log_path,
+        sidecar_srt_path,
+        archive_srt_path,
+        make_english_subs=make_english_subs,
+        english_sidecar_srt_path=english_sidecar_srt_path,
+        english_archive_srt_path=english_archive_srt_path,
+    )
 
-            print()
-            print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, Whisper, and OpenAI.")
+    primary_ready = subtitle_pair_ready(sidecar_srt_path, archive_srt_path)
+    english_ready = (not make_english_subs) or subtitle_pair_ready(
+        english_sidecar_srt_path,
+        english_archive_srt_path,
+    )
+    all_yields_ready = video_path.exists() and primary_ready and english_ready
 
-            if not args.keep_audio and audio_path.exists():
-                audio_path.unlink()
-
-            if args.no_play:
-                print_done(
-                    video_path,
-                    audio_path,
-                    sidecar_srt_path,
-                    archive_srt_path,
-                    make_english_subs=make_english_subs,
-                    english_sidecar_srt_path=english_sidecar_srt_path,
-                    english_archive_srt_path=english_archive_srt_path,
-                )
-            else:
-                print()
-                print("Opening in mpv with subtitles...")
-                srt_paths = [sidecar_srt_path]
-                if make_english_subs:
-                    srt_paths.append(english_sidecar_srt_path)
-                play_video(video_path, srt_paths, args)
-
-            return 0
-
-        need_primary_generation = (not primary_ready) or args.force
-        need_english_generation = make_english_subs and (
-            not subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) or args.force
-        )
-        need_whisper = need_primary_generation or (
-            need_english_generation and not uses_openai_english_translation(args)
-        )
-
+    if all_yields_ready and not args.force:
         if args.install_python_deps and not python_deps_ready:
             ensure_python_deps(paths, args)
             python_deps_ready = True
 
-        if need_whisper:
-            if not python_deps_ready:
-                ensure_python_deps(paths, args)
-                python_deps_ready = True
-            require_command("ffmpeg")
-
-            print()
-            print("Checking PyTorch CUDA visibility...")
-            if args.device == "cuda" and not check_cuda(paths):
-                raise RuntimeError(
-                    "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
-                    "or re-run with --device cpu."
-                )
-
-        if primary_ready and not args.force:
-            print()
-            print("Subtitle file already exists. Use --force to regenerate.")
-        else:
-            print()
-            print(f"Extracting mono 16 kHz lossy {args.audio_format} audio...")
-            extract_audio(video_path, audio_path, args.audio_format, args.force)
-
-            print()
-            print("Running Whisper...")
-            run_whisper(audio_path, sidecar_srt_path, subs_dir, paths, args)
-            finalize_subtitle_pair(
-                sidecar_srt_path,
-                archive_srt_path,
-                args,
-                is_english=False,
-                label="primary",
-            )
-
-        if make_english_subs:
-            if subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) and not args.force:
-                print()
-                print("English subtitle file already exists. Use --force to regenerate.")
-            elif uses_openai_english_translation(args):
-                if not sidecar_srt_path.exists():
-                    raise RuntimeError(
-                        "primary subtitles are required before OpenAI English translation can run."
-                    )
-
-                print()
-                print("Generating English subtitles from the full compacted primary SRT with OpenAI...")
-                translate_srt_with_openai(sidecar_srt_path, english_sidecar_srt_path, args)
-                ensure_matching_subtitle_timing_pair(
-                    sidecar_srt_path,
-                    english_sidecar_srt_path,
-                    english_archive_srt_path,
-                    args,
-                    label="English",
-                    force=False,
-                )
-            else:
-                print()
-                print("Generating English subtitles from Dutch audio...")
-                extract_audio(video_path, audio_path, args.audio_format, args.force)
-                run_whisper(
-                    audio_path,
-                    english_sidecar_srt_path,
-                    subs_dir,
-                    paths,
-                    args,
-                    task="translate",
-                    language=args.language,
-                    model=english_model(args),
-                )
-                finalize_subtitle_pair(
-                    english_sidecar_srt_path,
-                    english_archive_srt_path,
-                    args,
-                    is_english=True,
-                    label="English",
-                )
+        print()
+        print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, Whisper, and OpenAI.")
 
         if not args.keep_audio and audio_path.exists():
             audio_path.unlink()
@@ -2651,6 +2746,7 @@ def main() -> int:
             print_done(
                 video_path,
                 audio_path,
+                log_path,
                 sidecar_srt_path,
                 archive_srt_path,
                 make_english_subs=make_english_subs,
@@ -2665,11 +2761,133 @@ def main() -> int:
                 srt_paths.append(english_sidecar_srt_path)
             play_video(video_path, srt_paths, args)
 
-    except Exception as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        return 0
+
+    need_primary_generation = (not primary_ready) or args.force
+    need_english_generation = make_english_subs and (
+        not subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) or args.force
+    )
+    need_whisper = need_primary_generation or (
+        need_english_generation and not uses_openai_english_translation(args)
+    )
+
+    if args.install_python_deps and not python_deps_ready:
+        ensure_python_deps(paths, args)
+        python_deps_ready = True
+
+    if need_whisper:
+        if not python_deps_ready:
+            ensure_python_deps(paths, args)
+            python_deps_ready = True
+        require_command("ffmpeg")
+
+        print()
+        print("Checking PyTorch CUDA visibility...")
+        if args.device == "cuda" and not check_cuda(paths):
+            raise RuntimeError(
+                "CUDA is not visible to PyTorch. Fix the NVIDIA driver/PyTorch CUDA install, "
+                "or re-run with --device cpu."
+            )
+
+    if primary_ready and not args.force:
+        print()
+        print("Subtitle file already exists. Use --force to regenerate.")
+    else:
+        print()
+        print(f"Extracting mono 16 kHz lossy {args.audio_format} audio...")
+        extract_audio(video_path, audio_path, args.audio_format, args.force)
+
+        print()
+        print("Running Whisper...")
+        run_whisper(audio_path, sidecar_srt_path, subs_dir, paths, args)
+        finalize_subtitle_pair(
+            sidecar_srt_path,
+            archive_srt_path,
+            args,
+            is_english=False,
+            label="primary",
+        )
+
+    if make_english_subs:
+        if subtitle_pair_ready(english_sidecar_srt_path, english_archive_srt_path) and not args.force:
+            print()
+            print("English subtitle file already exists. Use --force to regenerate.")
+        elif uses_openai_english_translation(args):
+            if not sidecar_srt_path.exists():
+                raise RuntimeError("primary subtitles are required before OpenAI English translation can run.")
+
+            print()
+            print("Generating English subtitles from indexed primary cue text with OpenAI...")
+            translate_srt_with_openai(sidecar_srt_path, english_sidecar_srt_path, args)
+            ensure_matching_subtitle_timing_pair(
+                sidecar_srt_path,
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                label="English",
+                force=False,
+            )
+        else:
+            print()
+            print("Generating English subtitles from Dutch audio...")
+            extract_audio(video_path, audio_path, args.audio_format, args.force)
+            run_whisper(
+                audio_path,
+                english_sidecar_srt_path,
+                subs_dir,
+                paths,
+                args,
+                task="translate",
+                language=args.language,
+                model=english_model(args),
+            )
+            finalize_subtitle_pair(
+                english_sidecar_srt_path,
+                english_archive_srt_path,
+                args,
+                is_english=True,
+                label="English",
+            )
+
+    if not args.keep_audio and audio_path.exists():
+        audio_path.unlink()
+
+    if args.no_play:
+        print_done(
+            video_path,
+            audio_path,
+            log_path,
+            sidecar_srt_path,
+            archive_srt_path,
+            make_english_subs=make_english_subs,
+            english_sidecar_srt_path=english_sidecar_srt_path,
+            english_archive_srt_path=english_archive_srt_path,
+        )
+    else:
+        print()
+        print("Opening in mpv with subtitles...")
+        srt_paths = [sidecar_srt_path]
+        if make_english_subs:
+            srt_paths.append(english_sidecar_srt_path)
+        play_video(video_path, srt_paths, args)
 
     return 0
+
+
+def main() -> int:
+    configure_stdio()
+    args = parse_args()
+    paths = venv_paths()
+    out_dir = resolve_output_dir(args.out_dir)
+    log_path = resolve_log_path(args, out_dir)
+
+    with RunLogger(log_path):
+        print_run_header(args, out_dir, log_path)
+        try:
+            return run_pipeline(args, paths, out_dir, log_path)
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
 
 if __name__ == "__main__":

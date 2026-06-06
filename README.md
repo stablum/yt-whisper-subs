@@ -15,7 +15,8 @@ script without rediscovering all of the local decisions.
 The script is optimized for this workflow:
 
 1. Run it on a Dutch YouTube video.
-2. Keep a local lossy video file under `~/Videos/yt-whisper-subs/videos`.
+2. Keep a local lossy video file under `~/Videos/yt-whisper-subs/videos`,
+   named from the YouTube video ID.
 3. Generate Dutch subtitles locally with Whisper.
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
    then extend cue end times slightly into following silence.
@@ -25,7 +26,8 @@ The script is optimized for this workflow:
    markings as the compacted and gap-extended Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
 8. Store the `.srt` sidecars beside the video so `mpv` can discover them.
-9. Re-run cheaply: if the video and requested subtitles already exist, skip
+9. Write a timestamped run log under `~/Videos/yt-whisper-subs/logs`.
+10. Re-run cheaply: if the video and requested subtitles already exist, skip
    download, audio extraction, CUDA checks, Whisper, and OpenAI, then just open
    `mpv`.
 
@@ -50,6 +52,7 @@ These defaults are hard-coded near the top of the script:
 | OpenAI translation chunk size | `120` cues |
 | OpenAI translation context | `3` neighboring cues |
 | OpenAI env file | `.env` beside the script |
+| Run logs | timestamped under `~/Videos/yt-whisper-subs/logs` |
 | Device | `cuda` |
 | Python version for uv venv | `3.14` |
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
@@ -153,25 +156,33 @@ Inside it:
 ```text
 yt-whisper-subs\
   videos\
-    Video title [youtube_id].mkv
-    Video title [youtube_id].srt
-    Video title [youtube_id].en.srt
+    youtube_id.mkv
+    youtube_id.srt
+    youtube_id.en.srt
   audio\
-    Video title [youtube_id].opus
+    youtube_id.opus
+  logs\
+    youtube_id-YYYYMMDD-HHMMSS.log
   subtitles\
-    Video title [youtube_id].srt
-    Video title [youtube_id].en.srt
-    Video title [youtube_id].uncompact.srt
-    Video title [youtube_id].en.uncompact.srt
+    youtube_id.srt
+    youtube_id.en.srt
+    youtube_id.uncompact.srt
+    youtube_id.en.uncompact.srt
 ```
 
 The exact `.uncompact.*` files appear only when compaction changed an existing
 subtitle file and a backup did not already exist.
 
+For YouTube URLs, filenames are based on the video ID instead of the title. This
+avoids title punctuation, Unicode, path length, and title-change problems. If an
+older title-based yield such as `Video title [youtube_id].mkv` exists, the
+script migrates it to `youtube_id.mkv` when the ID-named target does not already
+exist. Local video files still use the local file stem.
+
 The script writes subtitles in two places:
 
 1. Sidecar subtitles beside the video, for `mpv` auto-detection:
-   `videos\Video title [id].srt` and `videos\Video title [id].en.srt`.
+   `videos\youtube_id.srt` and `videos\youtube_id.en.srt`.
 2. Archive subtitles under `subtitles\`, so subtitle yields survive even if
    sidecars are moved or missing.
 
@@ -189,13 +200,15 @@ The main flow is:
 
 ```text
 parse args
+start timestamped run log
 resolve source
   if URL:
     find exact cached video by YouTube ID unless --force
     otherwise download with yt-dlp
+    canonicalize URL yields to video-id filenames
   if local file:
     resolve local path
-derive yield paths from video stem
+derive yield paths from video ID for URLs or video stem for local files
 hydrate missing sidecar/archive subtitle pairs
 compact existing subtitles when needed
 extend subtitle cues into following silence when needed
@@ -225,9 +238,11 @@ yields are already present.
 On normal runs, the script reuses existing yields.
 
 For URL input, the video cache lookup is intentionally exact. The script extracts
-the YouTube video ID from supported URL shapes and looks for a final media file
-whose stem ends with `[video_id]`. It does not pick "the newest downloaded video"
-as a fallback. That earlier behavior was risky because a new URL could
+the YouTube video ID from supported URL shapes and looks first for a final media
+file whose stem is exactly `video_id`. It also recognizes the older
+`Video title [video_id]` cache form so existing downloads can be migrated. It
+does not pick "the newest downloaded video" as a fallback. That earlier behavior
+was risky because a new URL could
 accidentally play a previously downloaded video.
 
 Supported YouTube URL shapes include:
@@ -347,7 +362,7 @@ python -m yt_dlp
   -f <format selector>
   --merge-output-format <container>
   --print after_move:filepath
-  -o "%(title).180B [%(id)s].%(ext)s"
+  -o "%(id)s.%(ext)s"
 ```
 
 Design notes:
@@ -359,10 +374,8 @@ Design notes:
 - `--progress-delta` defaults to `1`, so progress output is visible but not too
   noisy.
 - `--print after_move:filepath` gives the script the final filename.
-- The output filename includes the YouTube ID in square brackets so exact cache
-  lookup is possible.
-- The title is capped with `%(title).180B` to reduce path-length and filesystem
-  pain.
+- The output filename is the extractor/video ID only, which avoids title-derived
+  filesystem problems and makes exact cache lookup direct.
 
 The default format selector is:
 
@@ -685,13 +698,13 @@ ready.
 Compaction writes backups. For a file:
 
 ```text
-Video title [id].srt
+youtube_id.srt
 ```
 
 the backup is:
 
 ```text
-Video title [id].uncompact.srt
+youtube_id.uncompact.srt
 ```
 
 Backups are created only if the compacted output differs and no backup already
@@ -879,6 +892,18 @@ Colors must be `#RRGGBB` or `#RRGGBBAA`.
 | `--force` | off | Re-download URL videos and regenerate subtitles. |
 | `--install-tools` | off | Install/update `uv`, `ffmpeg`, and `mpv` via Scoop. |
 
+### Logging
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--log-file PATH` | `logs\source-YYYYMMDD-HHMMSS.log` | Write the run log to a specific path. |
+
+Every normal run writes a comprehensive UTF-8 log file. For YouTube URLs, the
+default log filename starts with the video ID. The log records the command line,
+resolved arguments, output root, yield paths, script messages, and subprocess
+output from tools such as yt-dlp, ffmpeg, Whisper, and mpv. It does not print
+environment variables or the OpenAI API key.
+
 ## Software Engineering Decisions
 
 ### A Single Script Instead Of A Package
@@ -920,8 +945,9 @@ SDK may become worthwhile.
 
 ### Exact YouTube ID Cache Matching
 
-The cache lookup uses the YouTube video ID embedded in the filename. It does not
-guess by newest file.
+The cache lookup uses the YouTube video ID as the filename stem. It does not
+guess by newest file. Older `Video title [id]` filenames are still recognized
+and migrated to `id.*` when no ID-named target exists.
 
 This prevents a serious UX failure: running the script on a new URL and seeing a
 previous video launch because it happened to be the newest local media file.
@@ -1015,8 +1041,10 @@ High-level groups:
 | --- | --- |
 | `parse_args` | CLI definition and source disambiguation. |
 | `venv_paths`, `ensure_python_deps` | Locate and maintain `.venv`. |
-| `run` | Print and execute subprocesses; optionally stream stdout. |
+| `RunLogger`, `TeeStream`, `print_run_header` | Timestamped run logging. |
+| `run` | Print and execute subprocesses; optionally stream captured output into the log. |
 | `youtube_video_id`, `latest_downloaded_video` | Exact video cache lookup. |
+| `canonicalize_youtube_video_filename`, `migrate_legacy_youtube_yields_to_video_id` | Keep YouTube yields named by video ID. |
 | `download_video` | yt-dlp invocation and final path resolution. |
 | `extract_audio`, `audio_codec_args` | ffmpeg audio yield creation. |
 | `check_cuda`, `run_whisper` | Whisper execution and CUDA validation. |
@@ -1026,13 +1054,13 @@ High-level groups:
 | `extend_subtitle_gaps` | Cue end-time extension into following silence. |
 | `align_subtitle_timings_to_reference_file` | Keep OpenAI English cue timings aligned to primary cue timings. |
 | `save_uncompacted_backup`, `restore_subtitle_from_uncompacted_backup` | Reversible compaction support. |
-| `translate_srt_with_openai` | Full-SRT OpenAI translation and rendering. |
+| `translate_srt_with_openai` | Indexed-cue OpenAI translation and rendering. |
 | `openai_responses_api_request` | Raw HTTP call to Responses API. |
 | `collect_openai_translations`, `parse_openai_translations` | Translation response collection and strict validation. |
 | `repair_cue_chunk_translations_with_openai` | Missing-cue repair requests for incomplete OpenAI chunks. |
 | `hydrate_subtitle_pair`, `sync_subtitle_archive` | Sidecar/archive repair and syncing. |
 | `write_ass_subtitle`, `play_video` | mpv dual-subtitle playback. |
-| `main` | Pipeline orchestration and skip logic. |
+| `run_pipeline`, `main` | Pipeline orchestration, logging, and skip logic. |
 
 The central data model is:
 
@@ -1064,6 +1092,7 @@ Start by preserving these invariants:
 8. Keep video storage lossy.
 9. Keep local Whisper/PyTorch dependencies in `.venv` beside the script.
 10. Preserve sidecar/archive repair behavior.
+11. Preserve the timestamped run log and avoid logging secrets.
 
 When changing the script, useful verification commands are:
 
@@ -1216,7 +1245,7 @@ by exact video ID. If it happens, inspect filenames under:
 The final video filename should end with:
 
 ```text
-[VIDEO_ID].mkv
+VIDEO_ID.mkv
 ```
 
 Unsupported URL shapes may not yield a video ID, in which case no cache hit is
@@ -1228,8 +1257,8 @@ Avoid `--force` if you do not want to redownload the URL video. Delete the
 English sidecar and archive:
 
 ```text
-videos\Video title [id].en.srt
-subtitles\Video title [id].en.srt
+videos\VIDEO_ID.en.srt
+subtitles\VIDEO_ID.en.srt
 ```
 
 Then rerun normally. The script should reuse the video and primary subtitles,
@@ -1241,8 +1270,8 @@ The script writes sidecar subtitles beside the video specifically for
 auto-detection:
 
 ```text
-Video title [id].srt
-Video title [id].en.srt
+VIDEO_ID.srt
+VIDEO_ID.en.srt
 ```
 
 However, when the script launches `mpv`, it passes subtitle files explicitly and
