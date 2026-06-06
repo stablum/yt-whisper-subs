@@ -937,13 +937,30 @@ The split is intentionally responsibility-oriented:
   gap extension.
 - `openai_client.py` owns dotenv loading, Responses API calls, retry behavior,
   and response text extraction.
-- `openai_translate.py` owns the indexed-cue translation strategy,
-  checkpointing, repair requests, validation, and English SRT rendering.
+- `openai_translate.py` owns the indexed-cue translation strategy through
+  `OpenAISrtTranslator`, `TranslationChunk`, and `TranslationCheckpoint`.
 - `subtitle_files.py` owns sidecar/archive repair, compaction backups, timing
-  alignment, and pair finalization.
+  alignment, and pair finalization through `SubtitlePair`.
 - `playback.py` owns ASS generation and mpv launch details.
-- `pipeline.py` owns end-to-end orchestration and cheap yield reuse.
+- `pipeline.py` owns end-to-end orchestration, concrete yield paths, and cheap
+  reuse through `PipelineRunner`, `YieldDirs`, and `RunYields`.
 - `app.py` wires CLI parsing, logging, and pipeline execution.
+
+### Cohesive Runtime Objects
+
+Several modules use small, behavior-bearing value objects instead of passing
+long path and state argument lists through orchestration code:
+
+- `subtitle_files.SubtitlePair` keeps the sidecar/archive subtitle lifecycle in
+  one place: hydration, archive syncing, compaction backups, gap extension, and
+  timing alignment.
+- `pipeline.YieldDirs` and `pipeline.RunYields` describe the concrete files for
+  one run, while `pipeline.PipelineRunner` owns the workflow state such as
+  whether the managed Python dependencies have already been checked.
+- `openai_translate.OpenAISrtTranslator` owns chunked translation, repair
+  requests, and checkpoint reuse. `TranslationCheckpoint` owns the partial JSON
+  persistence contract, and `TranslationChunk` owns chunk labels and context
+  windows.
 
 ### Script-Local `.venv`
 
@@ -1068,10 +1085,10 @@ High-level groups:
 | `yt_whisper_subs.whisper_local` | Whisper CLI execution and model-cache cleanup. |
 | `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, cue compaction, and gap extension. |
 | `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, and response text extraction. |
-| `yt_whisper_subs.openai_translate` | Indexed-cue prompts, chunking, checkpoints, repair requests, validation, and English SRT rendering. |
-| `yt_whisper_subs.subtitle_files` | Sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
+| `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
+| `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
-| `yt_whisper_subs.pipeline` | End-to-end orchestration, yield-path calculation, skip logic, and playback handoff. |
+| `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 
 The central data model is:
@@ -1085,6 +1102,12 @@ class SubtitleCue(NamedTuple):
 
 This keeps SRT logic timestamp-based internally and avoids string manipulation
 until final rendering.
+
+Other structural data models are deliberately close to their behavior:
+
+- `SubtitlePair` owns the two-file sidecar/archive subtitle contract.
+- `RunYields` owns the concrete files requested by one source run.
+- `TranslationCheckpoint` owns reusable partial OpenAI translation state.
 
 ## Future Codex Maintenance Notes
 
@@ -1108,11 +1131,16 @@ Start by preserving these invariants:
 When changing the project, useful verification commands are:
 
 ```powershell
-python -m compileall .\yt_whisper_subs.py .\yt_whisper_subs
+python -m compileall .\yt_whisper_subs.py .\yt_whisper_subs .\tests
+python -m unittest discover -s tests
 python -m py_compile .\yt_whisper_subs.py
 python .\yt_whisper_subs.py --help
 python -m yt_whisper_subs --help
 ```
+
+The tracked tests currently cover the OpenAI translator's timing preservation,
+chunk repair, and checkpoint cleanup, plus `SubtitlePair` archive hydration,
+syncing, compaction, and backup behavior.
 
 Mock the OpenAI translation path without making an API call:
 
@@ -1338,8 +1366,8 @@ These are intentionally not implemented yet:
 - Add a `--translate-existing-srt` mode for translating an SRT without touching
   video/audio.
 - Add an optional OpenAI SDK implementation if API usage grows.
-- Add tests around SRT parsing, compaction, archive hydration, and exact cue
-  preservation.
+- Broaden tests around SRT parser edge cases, CLI validation, and cheap-reuse
+  orchestration without invoking external tools.
 - Add provider metadata into generated subtitle comments or adjacent JSON.
 - Add better language detection handoff so `--language auto` can still trigger
   English translation when Whisper detects Dutch.

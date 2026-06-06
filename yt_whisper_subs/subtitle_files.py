@@ -1,6 +1,6 @@
 """Subtitle sidecar/archive maintenance and file-level transforms.
 
-Example: `subtitle_files.hydrate_subtitle_pair("primary", sidecar, archive, args, is_english=False, force=False)`.
+Example: `subtitle_files.SubtitlePair(sidecar, archive).hydrate("primary", args, is_english=False, force=False)`.
 """
 
 from __future__ import annotations
@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import shutil
 from pathlib import Path
+from typing import NamedTuple
 
 from yt_whisper_subs import opts
 from yt_whisper_subs import srt
@@ -41,99 +42,6 @@ def uncompacted_backup_path(path: Path) -> Path:
     """
 
     return path.with_name(f"{path.stem}.uncompact{path.suffix}")
-
-
-def save_uncompacted_backup(path: Path, content: str, *, label: str) -> Path | None:
-    """Save the first pre-compaction SRT backup for later restoration.
-
-    Example: `save_uncompacted_backup(path, content, label="primary")`.
-    """
-
-    backup_path = uncompacted_backup_path(path)
-    if backup_path.exists():
-        return None
-
-    backup_path.write_text(content, encoding="utf-8", newline="\n")
-    print(f"Saved {label} uncompacted subtitle backup: {backup_path}")
-    return backup_path
-
-
-def restore_subtitle_from_uncompacted_backup(
-    path: Path,
-    args: argparse.Namespace,
-    *,
-    is_english: bool,
-    label: str,
-) -> bool:
-    """Rebuild a missing subtitle from its uncompacted backup when available.
-
-    Example: `restore_subtitle_from_uncompacted_backup(path, args, is_english=False, label="primary")`.
-    """
-
-    if path.exists():
-        return False
-
-    backup_path = uncompacted_backup_path(path)
-    if not backup_path.exists():
-        return False
-
-    backup_content = backup_path.read_text(encoding="utf-8-sig")
-    if opts.should_compact_subtitles(args, is_english=is_english):
-        restored_content = compact_srt_content(backup_content, args, is_english=is_english)
-        action = "Rebuilt compacted"
-    else:
-        restored_content = backup_content.replace("\r\n", "\n").replace("\r", "\n")
-        action = "Restored"
-
-    if not restored_content:
-        return False
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(restored_content, encoding="utf-8", newline="\n")
-    print(f"{action} {label} subtitles from uncompacted backup: {path}")
-    return True
-
-
-def compact_srt_file(path: Path, args: argparse.Namespace, *, is_english: bool, label: str) -> bool:
-    """Compact one SRT file in place while preserving an uncompacted backup.
-
-    Example: `compact_srt_file(path, args, is_english=True, label="English")`.
-    """
-
-    if not path.exists():
-        return False
-
-    original = path.read_text(encoding="utf-8-sig")
-    compacted = compact_srt_content(original, args, is_english=is_english)
-    if not compacted:
-        return False
-
-    if original.replace("\r\n", "\n") == compacted:
-        return False
-
-    save_uncompacted_backup(path, original, label=label)
-    path.write_text(compacted, encoding="utf-8", newline="\n")
-    print(f"Compacted {label} subtitles: {path}")
-    return True
-
-
-def extend_subtitle_gaps_file(path: Path, args: argparse.Namespace, *, label: str) -> bool:
-    """Extend subtitle cue gaps in one file when the option is enabled.
-
-    Example: `extend_subtitle_gaps_file(path, args, label="primary")`.
-    """
-
-    if not path.exists():
-        return False
-
-    original = path.read_text(encoding="utf-8-sig")
-    extended, changed = extend_subtitle_gaps_srt_content(original, args)
-    if not changed or not extended:
-        return False
-
-    path.write_text(extended, encoding="utf-8", newline="\n")
-    print(f"Extended {label} subtitle gaps: {path}")
-    return True
 
 
 def align_subtitle_timings_to_reference_content(
@@ -171,258 +79,305 @@ def align_subtitle_timings_to_reference_content(
     return srt.render_srt(aligned_cues, args), True
 
 
-def align_subtitle_timings_to_reference_file(
-    reference_srt_path: Path,
-    target_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    label: str,
-) -> bool:
-    """Align one target SRT file to the timing authority reference SRT.
+class SubtitlePair(NamedTuple):
+    """Sidecar/archive subtitle yield pair with repair and transform behavior.
 
-    Example: `align_subtitle_timings_to_reference_file(primary, english, args, label="English")`.
+    Example: `SubtitlePair(sidecar, archive).ready()`.
     """
 
-    if not reference_srt_path.exists() or not target_srt_path.exists():
-        return False
+    sidecar: Path
+    archive: Path
 
-    reference = reference_srt_path.read_text(encoding="utf-8-sig")
-    target = target_srt_path.read_text(encoding="utf-8-sig")
-    aligned, changed = align_subtitle_timings_to_reference_content(reference, target, args)
-    if not changed or not aligned:
-        return False
+    def ready(self) -> bool:
+        """Check whether both playback and archive subtitle yields exist.
 
-    target_srt_path.write_text(aligned, encoding="utf-8", newline="\n")
-    print(f"Aligned {label} subtitle timings to primary subtitles: {target_srt_path}")
-    return True
+        Example: `pair.ready()`.
+        """
 
+        return self.sidecar.exists() and self.archive.exists()
 
-def ensure_compacted_subtitle_pair(
-    sidecar_srt_path: Path,
-    archive_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    is_english: bool,
-    label: str,
-    force: bool,
-) -> bool:
-    """Compact sidecar/archive subtitle pairs and resync their durable copy.
+    def seed_sidecar_from_archive(self) -> bool:
+        """Copy an archive subtitle beside the video when the sidecar is missing.
 
-    Example: `ensure_compacted_subtitle_pair(sidecar, archive, args, is_english=False, label="primary", force=False)`.
-    """
+        Example: `pair.seed_sidecar_from_archive()`.
+        """
 
-    if force or not opts.should_compact_subtitles(args, is_english=is_english):
-        return False
+        if self.sidecar.exists() or not self.archive.exists():
+            return False
 
-    if sidecar_srt_path.exists():
-        sidecar_changed = compact_srt_file(
-            sidecar_srt_path,
+        self.sidecar.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.archive, self.sidecar)
+        return True
+
+    def sync_archive(self) -> None:
+        """Copy the sidecar subtitle into the durable archive when needed.
+
+        Example: `pair.sync_archive()`.
+        """
+
+        if not self.sidecar.exists() or self.sidecar.resolve() == self.archive.resolve():
+            return
+
+        self.archive.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(self.sidecar, self.archive)
+
+    def hydrate(
+        self,
+        label: str,
+        args: argparse.Namespace,
+        *,
+        is_english: bool,
+        force: bool,
+    ) -> None:
+        """Repair missing sidecar/archive subtitles before expensive generation.
+
+        Example: `pair.hydrate("primary", args, is_english=False, force=False)`.
+        """
+
+        if force:
+            return
+
+        self._restore_from_uncompacted_backup(
+            self.sidecar,
             args,
             is_english=is_english,
             label=f"{label} sidecar",
         )
-    else:
-        sidecar_changed = False
-
-    if archive_srt_path.exists():
-        archive_changed = compact_srt_file(
-            archive_srt_path,
+        self._restore_from_uncompacted_backup(
+            self.archive,
             args,
             is_english=is_english,
             label=f"{label} archive",
         )
-    else:
-        archive_changed = False
 
-    changed = sidecar_changed or archive_changed
+        if self.seed_sidecar_from_archive():
+            print()
+            print(f"Copied existing {label} subtitle archive next to the video for mpv auto-detection.")
+        elif self.sidecar.exists() and not self.archive.exists():
+            self.sync_archive()
+            print()
+            print(f"Copied existing {label} subtitle sidecar into the subtitle archive.")
 
-    if sidecar_srt_path.exists():
-        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
-    elif archive_srt_path.exists():
-        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
+    def ensure_compacted(
+        self,
+        args: argparse.Namespace,
+        *,
+        is_english: bool,
+        label: str,
+        force: bool,
+    ) -> bool:
+        """Compact sidecar/archive subtitles and resync their durable copy.
 
-    return changed
+        Example: `pair.ensure_compacted(args, is_english=True, label="English", force=False)`.
+        """
 
+        if force or not opts.should_compact_subtitles(args, is_english=is_english):
+            return False
 
-def ensure_matching_subtitle_timing_pair(
-    reference_srt_path: Path,
-    target_sidecar_srt_path: Path,
-    target_archive_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    label: str,
-    force: bool,
-) -> bool:
-    """Keep English sidecar/archive timings aligned to the primary SRT.
-
-    Example: `ensure_matching_subtitle_timing_pair(primary, en_sidecar, en_archive, args, label="English", force=False)`.
-    """
-
-    if force:
-        return False
-
-    changed = align_subtitle_timings_to_reference_file(
-        reference_srt_path,
-        target_sidecar_srt_path,
-        args,
-        label=f"{label} sidecar",
-    )
-
-    if target_sidecar_srt_path.exists():
-        sync_subtitle_archive(target_sidecar_srt_path, target_archive_srt_path)
-    elif target_archive_srt_path.exists():
-        archive_changed = align_subtitle_timings_to_reference_file(
-            reference_srt_path,
-            target_archive_srt_path,
-            args,
-            label=f"{label} archive",
-        )
-        changed = changed or archive_changed
-        seed_sidecar_from_archive(target_sidecar_srt_path, target_archive_srt_path)
-
-    return changed
-
-
-def ensure_extended_subtitle_gap_pair(
-    sidecar_srt_path: Path,
-    archive_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    label: str,
-    force: bool,
-) -> bool:
-    """Extend cue gaps for a sidecar/archive pair and resync after changes.
-
-    Example: `ensure_extended_subtitle_gap_pair(sidecar, archive, args, label="primary", force=False)`.
-    """
-
-    if force or srt.subtitle_gap_extension_ms(args) <= 0:
-        return False
-
-    sidecar_changed = extend_subtitle_gaps_file(
-        sidecar_srt_path,
-        args,
-        label=f"{label} sidecar",
-    )
-    archive_changed = extend_subtitle_gaps_file(
-        archive_srt_path,
-        args,
-        label=f"{label} archive",
-    )
-    changed = sidecar_changed or archive_changed
-
-    if sidecar_srt_path.exists():
-        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
-    elif archive_srt_path.exists():
-        seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path)
-
-    return changed
-
-
-def finalize_subtitle_pair(
-    sidecar_srt_path: Path,
-    archive_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    is_english: bool,
-    label: str,
-) -> None:
-    """Apply final compaction/archive/gap-extension rules after generation.
-
-    Example: `finalize_subtitle_pair(sidecar, archive, args, is_english=False, label="primary")`.
-    """
-
-    if opts.should_compact_subtitles(args, is_english=is_english):
-        ensure_compacted_subtitle_pair(
-            sidecar_srt_path,
-            archive_srt_path,
+        sidecar_changed = self._compact_file(
+            self.sidecar,
             args,
             is_english=is_english,
-            label=label,
-            force=False,
+            label=f"{label} sidecar",
         )
-    else:
-        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
+        archive_changed = self._compact_file(
+            self.archive,
+            args,
+            is_english=is_english,
+            label=f"{label} archive",
+        )
+        self._resync_existing()
+        return sidecar_changed or archive_changed
 
-    ensure_extended_subtitle_gap_pair(
-        sidecar_srt_path,
-        archive_srt_path,
-        args,
-        label=label,
-        force=False,
-    )
+    def ensure_extended_gaps(
+        self,
+        args: argparse.Namespace,
+        *,
+        label: str,
+        force: bool,
+    ) -> bool:
+        """Extend cue gaps for a sidecar/archive pair and resync after changes.
 
+        Example: `pair.ensure_extended_gaps(args, label="primary", force=False)`.
+        """
 
-def seed_sidecar_from_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
-    """Copy an archive subtitle beside the video when the sidecar is missing.
+        if force or srt.subtitle_gap_extension_ms(args) <= 0:
+            return False
 
-    Example: `seed_sidecar_from_archive(sidecar, archive)`.
-    """
+        sidecar_changed = self._extend_gaps_file(self.sidecar, args, label=f"{label} sidecar")
+        archive_changed = self._extend_gaps_file(self.archive, args, label=f"{label} archive")
+        self._resync_existing()
+        return sidecar_changed or archive_changed
 
-    if sidecar_srt_path.exists() or not archive_srt_path.exists():
-        return False
+    def align_timings_to(
+        self,
+        reference_srt_path: Path,
+        args: argparse.Namespace,
+        *,
+        label: str,
+        force: bool,
+    ) -> bool:
+        """Keep this pair's cue timings aligned to a reference SRT.
 
-    sidecar_srt_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(archive_srt_path, sidecar_srt_path)
-    return True
+        Example: `english_pair.align_timings_to(primary.sidecar, args, label="English", force=False)`.
+        """
 
+        if force:
+            return False
 
-def sync_subtitle_archive(sidecar_srt_path: Path, archive_srt_path: Path) -> None:
-    """Copy a sidecar subtitle into the durable archive when needed.
+        changed = self._align_file(reference_srt_path, self.sidecar, args, label=f"{label} sidecar")
 
-    Example: `sync_subtitle_archive(sidecar, archive)`.
-    """
+        if self.sidecar.exists():
+            self.sync_archive()
+        elif self.archive.exists():
+            archive_changed = self._align_file(reference_srt_path, self.archive, args, label=f"{label} archive")
+            changed = changed or archive_changed
+            self.seed_sidecar_from_archive()
 
-    if not sidecar_srt_path.exists() or sidecar_srt_path.resolve() == archive_srt_path.resolve():
-        return
+        return changed
 
-    archive_srt_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(sidecar_srt_path, archive_srt_path)
+    def finalize(
+        self,
+        args: argparse.Namespace,
+        *,
+        is_english: bool,
+        label: str,
+    ) -> None:
+        """Apply final compaction/archive/gap-extension rules after generation.
 
+        Example: `pair.finalize(args, is_english=False, label="primary")`.
+        """
 
-def hydrate_subtitle_pair(
-    label: str,
-    sidecar_srt_path: Path,
-    archive_srt_path: Path,
-    args: argparse.Namespace,
-    *,
-    is_english: bool,
-    force: bool,
-) -> None:
-    """Repair missing sidecar/archive subtitles before expensive generation.
+        if opts.should_compact_subtitles(args, is_english=is_english):
+            self.ensure_compacted(args, is_english=is_english, label=label, force=False)
+        else:
+            self.sync_archive()
 
-    Example: `hydrate_subtitle_pair("primary", sidecar, archive, args, is_english=False, force=False)`.
-    """
+        self.ensure_extended_gaps(args, label=label, force=False)
 
-    if force:
-        return
+    def _resync_existing(self) -> None:
+        """Mirror whichever subtitle copy exists so future runs stay cheap.
 
-    restore_subtitle_from_uncompacted_backup(
-        sidecar_srt_path,
-        args,
-        is_english=is_english,
-        label=f"{label} sidecar",
-    )
-    restore_subtitle_from_uncompacted_backup(
-        archive_srt_path,
-        args,
-        is_english=is_english,
-        label=f"{label} archive",
-    )
+        Example: called after pair transforms.
+        """
 
-    if seed_sidecar_from_archive(sidecar_srt_path, archive_srt_path):
-        print()
-        print(f"Copied existing {label} subtitle archive next to the video for mpv auto-detection.")
-    elif sidecar_srt_path.exists() and not archive_srt_path.exists():
-        sync_subtitle_archive(sidecar_srt_path, archive_srt_path)
-        print()
-        print(f"Copied existing {label} subtitle sidecar into the subtitle archive.")
+        if self.sidecar.exists():
+            self.sync_archive()
+        elif self.archive.exists():
+            self.seed_sidecar_from_archive()
 
+    def _save_uncompacted_backup(self, path: Path, content: str, *, label: str) -> Path | None:
+        """Save the first pre-compaction SRT backup for later restoration.
 
-def subtitle_pair_ready(sidecar_srt_path: Path, archive_srt_path: Path) -> bool:
-    """Check whether both playback and archive subtitle yields exist.
+        Example: `pair._save_uncompacted_backup(path, text, label="primary")`.
+        """
 
-    Example: `subtitle_pair_ready(sidecar, archive)`.
-    """
+        backup_path = uncompacted_backup_path(path)
+        if backup_path.exists():
+            return None
 
-    return sidecar_srt_path.exists() and archive_srt_path.exists()
+        backup_path.write_text(content, encoding="utf-8", newline="\n")
+        print(f"Saved {label} uncompacted subtitle backup: {backup_path}")
+        return backup_path
+
+    def _restore_from_uncompacted_backup(
+        self,
+        path: Path,
+        args: argparse.Namespace,
+        *,
+        is_english: bool,
+        label: str,
+    ) -> bool:
+        """Rebuild a missing subtitle from its uncompacted backup when available.
+
+        Example: `pair._restore_from_uncompacted_backup(path, args, is_english=False, label="primary")`.
+        """
+
+        if path.exists():
+            return False
+
+        backup_path = uncompacted_backup_path(path)
+        if not backup_path.exists():
+            return False
+
+        backup_content = backup_path.read_text(encoding="utf-8-sig")
+        if opts.should_compact_subtitles(args, is_english=is_english):
+            restored_content = compact_srt_content(backup_content, args, is_english=is_english)
+            action = "Rebuilt compacted"
+        else:
+            restored_content = backup_content.replace("\r\n", "\n").replace("\r", "\n")
+            action = "Restored"
+
+        if not restored_content:
+            return False
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(restored_content, encoding="utf-8", newline="\n")
+        print(f"{action} {label} subtitles from uncompacted backup: {path}")
+        return True
+
+    def _compact_file(self, path: Path, args: argparse.Namespace, *, is_english: bool, label: str) -> bool:
+        """Compact one SRT file in place while preserving an uncompacted backup.
+
+        Example: `pair._compact_file(path, args, is_english=True, label="English")`.
+        """
+
+        if not path.exists():
+            return False
+
+        original = path.read_text(encoding="utf-8-sig")
+        compacted = compact_srt_content(original, args, is_english=is_english)
+        if not compacted:
+            return False
+
+        if original.replace("\r\n", "\n") == compacted:
+            return False
+
+        self._save_uncompacted_backup(path, original, label=label)
+        path.write_text(compacted, encoding="utf-8", newline="\n")
+        print(f"Compacted {label} subtitles: {path}")
+        return True
+
+    def _extend_gaps_file(self, path: Path, args: argparse.Namespace, *, label: str) -> bool:
+        """Extend subtitle cue gaps in one file when the option is enabled.
+
+        Example: `pair._extend_gaps_file(path, args, label="primary")`.
+        """
+
+        if not path.exists():
+            return False
+
+        original = path.read_text(encoding="utf-8-sig")
+        extended, changed = extend_subtitle_gaps_srt_content(original, args)
+        if not changed or not extended:
+            return False
+
+        path.write_text(extended, encoding="utf-8", newline="\n")
+        print(f"Extended {label} subtitle gaps: {path}")
+        return True
+
+    def _align_file(
+        self,
+        reference_srt_path: Path,
+        target_srt_path: Path,
+        args: argparse.Namespace,
+        *,
+        label: str,
+    ) -> bool:
+        """Align one target SRT file to the timing authority reference SRT.
+
+        Example: `pair._align_file(primary, english, args, label="English")`.
+        """
+
+        if not reference_srt_path.exists() or not target_srt_path.exists():
+            return False
+
+        reference = reference_srt_path.read_text(encoding="utf-8-sig")
+        target = target_srt_path.read_text(encoding="utf-8-sig")
+        aligned, changed = align_subtitle_timings_to_reference_content(reference, target, args)
+        if not changed or not aligned:
+            return False
+
+        target_srt_path.write_text(aligned, encoding="utf-8", newline="\n")
+        print(f"Aligned {label} subtitle timings to primary subtitles: {target_srt_path}")
+        return True

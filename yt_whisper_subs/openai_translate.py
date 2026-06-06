@@ -45,6 +45,341 @@ class OpenAITranslationParseResult(NamedTuple):
 
         return not self.missing_indexes
 
+    def complete_texts(self) -> list[str]:
+        """Return non-empty translations after the caller has verified completeness.
+
+        Example: `texts = result.complete_texts()`.
+        """
+
+        return [text for text in self.texts if text is not None]
+
+
+class TranslationChunk(NamedTuple):
+    """A local cue slice in a larger checkpointed OpenAI translation run.
+
+    Example: `TranslationChunk(1, 3, 0, 120).label`.
+    """
+
+    number: int
+    total: int
+    start: int
+    end: int
+
+    @property
+    def label(self) -> str:
+        """Return the stable human label used in logs and prompts.
+
+        Example: `chunk.label`.
+        """
+
+        return f"chunk {self.number}/{self.total} (global cues {self.start + 1}-{self.end})"
+
+    def cue_slice(self, cues: list[srt.SubtitleCue]) -> list[srt.SubtitleCue]:
+        """Return this chunk's source cues.
+
+        Example: `chunk.cue_slice(source_cues)`.
+        """
+
+        return cues[self.start : self.end]
+
+    def complete_in(self, translations: list[str | None]) -> bool:
+        """Check whether this chunk is already present in checkpoint state.
+
+        Example: `if chunk.complete_in(texts): ...`.
+        """
+
+        return all(translations[self.start : self.end])
+
+    def previous_context(self, cues: list[srt.SubtitleCue], context_cues: int) -> str:
+        """Render bounded text before this chunk for terminology context.
+
+        Example: `chunk.previous_context(cues, 3)`.
+        """
+
+        previous_start = max(0, self.start - context_cues)
+        return cue_context_text(cues[previous_start : self.start])
+
+    def next_context(self, cues: list[srt.SubtitleCue], context_cues: int) -> str:
+        """Render bounded text after this chunk for terminology context.
+
+        Example: `chunk.next_context(cues, 3)`.
+        """
+
+        next_end = min(len(cues), self.end + context_cues)
+        return cue_context_text(cues[self.end : next_end])
+
+
+class TranslationCheckpoint(NamedTuple):
+    """Reusable partial translation state keyed to source text and model options.
+
+    Example: `checkpoint.save(texts)` after a chunk completes.
+    """
+
+    path: Path
+    metadata: dict[str, object]
+
+    @classmethod
+    def for_run(
+        cls,
+        source_srt: str,
+        source_cues: list[srt.SubtitleCue],
+        english_srt_path: Path,
+        args: argparse.Namespace,
+        chunk_size: int,
+    ) -> TranslationCheckpoint:
+        """Build the checkpoint identity for one source/output pair.
+
+        Example: `TranslationCheckpoint.for_run(text, cues, dst, args, 120)`.
+        """
+
+        context_cues = int(
+            getattr(args, "openai_translation_context_cues", cfg.DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES)
+        )
+        metadata = {
+            "schema": 2,
+            "source_format": "cue_json_v1",
+            "source_sha256": text_sha256(source_srt),
+            "cue_count": len(source_cues),
+            "model": getattr(args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
+            "reasoning_effort": getattr(args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
+            "chunk_cues": chunk_size,
+            "context_cues": context_cues,
+        }
+        return cls(path=openai_translation_checkpoint_path(english_srt_path), metadata=metadata)
+
+    def load(self) -> list[str | None] | None:
+        """Load a reusable partial OpenAI translation checkpoint.
+
+        Example: `checkpoint.load()`.
+        """
+
+        if not self.path.exists():
+            return None
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(data, dict) or data.get("metadata") != self.metadata:
+            return None
+        translations = data.get("translations")
+        cue_count = self.metadata.get("cue_count")
+        if not isinstance(cue_count, int) or not isinstance(translations, list):
+            return None
+        if len(translations) != cue_count:
+            return None
+        if not all(item is None or isinstance(item, str) for item in translations):
+            return None
+        return translations
+
+    def save(self, translations: list[str | None]) -> None:
+        """Atomically save partial translations after each completed chunk.
+
+        Example: `checkpoint.save(texts)`.
+        """
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self.path.with_suffix(f"{self.path.suffix}.tmp")
+        payload = {
+            "metadata": self.metadata,
+            "translations": translations,
+        }
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
+        temp_path.replace(self.path)
+
+
+class OpenAISrtTranslator:
+    """Translate cue text through OpenAI while preserving source SRT timings.
+
+    Example: `OpenAISrtTranslator(src_text, cues, dst, args).translate_texts()`.
+    """
+
+    def __init__(
+        self,
+        source_srt: str,
+        source_cues: list[srt.SubtitleCue],
+        english_srt_path: Path,
+        args: argparse.Namespace,
+    ) -> None:
+        self._source_srt = source_srt
+        self._source_cues = source_cues
+        self._english_srt_path = english_srt_path
+        self._args = args
+
+    def translate_texts(self) -> list[str]:
+        """Translate all source cues using whole-file or checkpointed chunk mode.
+
+        Example: `translator.translate_texts()`.
+        """
+
+        chunk_size = openai_translation_chunk_size(self._args, len(self._source_cues))
+        if chunk_size >= len(self._source_cues):
+            return self._translate_chunk(self._source_cues)
+        return self._translate_checkpointed(chunk_size)
+
+    @property
+    def checkpoint_path(self) -> Path:
+        """Return where partial translations are cached for this output SRT.
+
+        Example: `translator.checkpoint_path`.
+        """
+
+        return openai_translation_checkpoint_path(self._english_srt_path)
+
+    def _translate_checkpointed(self, chunk_size: int) -> list[str]:
+        """Translate chunks while reusing and updating a partial checkpoint.
+
+        Example: `self._translate_checkpointed(120)`.
+        """
+
+        checkpoint = TranslationCheckpoint.for_run(
+            self._source_srt,
+            self._source_cues,
+            self._english_srt_path,
+            self._args,
+            chunk_size,
+        )
+        context_cues = int(
+            getattr(self._args, "openai_translation_context_cues", cfg.DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES)
+        )
+        translated_texts = checkpoint.load()
+        if translated_texts is None:
+            translated_texts = [None] * len(self._source_cues)
+
+        chunks = self._chunks(chunk_size)
+        print(
+            f"OpenAI translation will use {len(chunks)} chunks "
+            f"of up to {chunk_size} cues; checkpoint: {checkpoint.path}"
+        )
+
+        for chunk in chunks:
+            if chunk.complete_in(translated_texts):
+                print(f"Reusing completed OpenAI translation chunk {chunk.number}/{chunk.total}.")
+                continue
+
+            print(f"Translating OpenAI subtitle {chunk.label}...")
+            chunk_translations = self._translate_chunk(
+                chunk.cue_slice(self._source_cues),
+                chunk_label=chunk.label,
+                previous_context=chunk.previous_context(self._source_cues, context_cues),
+                next_context=chunk.next_context(self._source_cues, context_cues),
+            )
+            translated_texts[chunk.start : chunk.end] = chunk_translations
+            checkpoint.save(translated_texts)
+
+        missing_indexes = [index + 1 for index, text in enumerate(translated_texts) if text is None]
+        if missing_indexes:
+            raise RuntimeError(f"OpenAI translation checkpoint is incomplete at cues: {missing_indexes[:10]}")
+
+        return [text for text in translated_texts if text is not None]
+
+    def _chunks(self, chunk_size: int) -> list[TranslationChunk]:
+        """Split source cues into logged, one-based numbered chunks.
+
+        Example: `self._chunks(120)`.
+        """
+
+        ranges = [
+            (start, min(start + chunk_size, len(self._source_cues)))
+            for start in range(0, len(self._source_cues), chunk_size)
+        ]
+        total = len(ranges)
+        return [
+            TranslationChunk(number=index, total=total, start=start, end=end)
+            for index, (start, end) in enumerate(ranges, start=1)
+        ]
+
+    def _translate_chunk(
+        self,
+        source_cues: list[srt.SubtitleCue],
+        *,
+        chunk_label: str | None = None,
+        previous_context: str = "",
+        next_context: str = "",
+    ) -> list[str]:
+        """Translate one chunk and repair it if the JSON is valid but incomplete.
+
+        Example: `self._translate_chunk(cues, chunk_label="chunk 1/2")`.
+        """
+
+        source_cues_json = srt.openai_source_cues_json(source_cues)
+        payload = openai_translation_payload(
+            self._args,
+            openai_translation_prompt(
+                source_cues_json,
+                len(source_cues),
+                chunk_label=chunk_label,
+                previous_context=previous_context,
+                next_context=next_context,
+            ),
+        )
+        response = openai_client.responses_api_request(self._args, payload)
+        print_openai_usage(response, chunk_label=chunk_label)
+        parse_result = collect_openai_translations(openai_client.response_output_text(response), len(source_cues))
+        if parse_result.complete:
+            return parse_result.complete_texts()
+        return self._repair_chunk(
+            source_cues,
+            parse_result,
+            chunk_label=chunk_label,
+            previous_context=previous_context,
+            next_context=next_context,
+        )
+
+    def _repair_chunk(
+        self,
+        source_cues: list[srt.SubtitleCue],
+        parse_result: OpenAITranslationParseResult,
+        *,
+        chunk_label: str | None = None,
+        previous_context: str = "",
+        next_context: str = "",
+    ) -> list[str]:
+        """Ask OpenAI only for missing cue translations from an incomplete chunk.
+
+        Example: `self._repair_chunk(cues, result)`.
+        """
+
+        missing_indexes = parse_result.missing_indexes
+        if not missing_indexes:
+            return parse_result.complete_texts()
+
+        label = f" for {chunk_label}" if chunk_label else ""
+        print(
+            f"OpenAI returned an incomplete translation{label}; "
+            f"requesting repair for cue(s) {format_index_list(missing_indexes)}."
+        )
+
+        missing_cues = [source_cues[index - 1] for index in missing_indexes]
+        repair_source_cues = srt.openai_source_cues_json(missing_cues)
+        repair_label = f"{chunk_label} repair" if chunk_label else "repair"
+        payload = openai_translation_payload(
+            self._args,
+            openai_translation_repair_prompt(
+                repair_source_cues,
+                len(missing_cues),
+                chunk_label=chunk_label,
+                validation_errors=parse_result.errors,
+                previous_context=previous_context,
+                next_context=next_context,
+            ),
+        )
+        response = openai_client.responses_api_request(self._args, payload)
+        print_openai_usage(response, chunk_label=repair_label)
+        repaired_texts = parse_openai_translations(openai_client.response_output_text(response), len(missing_cues))
+
+        texts = list(parse_result.texts)
+        for missing_index, repaired_text in zip(missing_indexes, repaired_texts):
+            texts[missing_index - 1] = repaired_text
+
+        still_missing = [index + 1 for index, text in enumerate(texts) if text is None]
+        if still_missing:
+            raise RuntimeError(
+                "OpenAI translation repair did not fill cue(s): "
+                f"{format_index_list(still_missing)}"
+            )
+
+        return [text for text in texts if text is not None]
+
 
 def openai_translation_response_format() -> dict[str, object]:
     """Return the strict JSON schema requested from the Responses API.
@@ -214,79 +549,6 @@ def openai_translation_checkpoint_path(english_srt_path: Path) -> Path:
     return english_srt_path.with_name(f"{english_srt_path.stem}.partial.json")
 
 
-def openai_translation_metadata(
-    source_srt: str,
-    source_cues: list[srt.SubtitleCue],
-    args: argparse.Namespace,
-    chunk_size: int,
-) -> dict[str, object]:
-    """Build the metadata key that decides whether a checkpoint is reusable.
-
-    Example: `openai_translation_metadata(text, cues, args, 120)`.
-    """
-
-    return {
-        "schema": 2,
-        "source_format": "cue_json_v1",
-        "source_sha256": text_sha256(source_srt),
-        "cue_count": len(source_cues),
-        "model": getattr(args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
-        "reasoning_effort": getattr(args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
-        "chunk_cues": chunk_size,
-        "context_cues": int(
-            getattr(args, "openai_translation_context_cues", cfg.DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES)
-        ),
-    }
-
-
-def load_openai_translation_checkpoint(
-    checkpoint_path: Path,
-    metadata: dict[str, object],
-) -> list[str | None] | None:
-    """Load a reusable partial OpenAI translation checkpoint.
-
-    Example: `load_openai_translation_checkpoint(path, metadata)`.
-    """
-
-    if not checkpoint_path.exists():
-        return None
-    try:
-        data = json.loads(checkpoint_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    if not isinstance(data, dict) or data.get("metadata") != metadata:
-        return None
-    translations = data.get("translations")
-    cue_count = metadata.get("cue_count")
-    if not isinstance(cue_count, int) or not isinstance(translations, list):
-        return None
-    if len(translations) != cue_count:
-        return None
-    if not all(item is None or isinstance(item, str) for item in translations):
-        return None
-    return translations
-
-
-def save_openai_translation_checkpoint(
-    checkpoint_path: Path,
-    metadata: dict[str, object],
-    translations: list[str | None],
-) -> None:
-    """Atomically save partial translations after each completed chunk.
-
-    Example: `save_openai_translation_checkpoint(path, metadata, texts)`.
-    """
-
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = checkpoint_path.with_suffix(f"{checkpoint_path.suffix}.tmp")
-    payload = {
-        "metadata": metadata,
-        "translations": translations,
-    }
-    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8", newline="\n")
-    temp_path.replace(checkpoint_path)
-
-
 def openai_translation_chunk_size(args: argparse.Namespace, cue_count: int) -> int:
     """Resolve the actual chunk size, treating zero as whole-file mode.
 
@@ -326,101 +588,6 @@ def format_index_list(indexes: list[int], *, limit: int = 12) -> str:
     return f"{shown}, ... ({len(indexes)} total)"
 
 
-def repair_cue_chunk_translations_with_openai(
-    source_cues: list[srt.SubtitleCue],
-    parse_result: OpenAITranslationParseResult,
-    args: argparse.Namespace,
-    *,
-    chunk_label: str | None = None,
-    previous_context: str = "",
-    next_context: str = "",
-) -> list[str]:
-    """Ask OpenAI only for missing cue translations from an incomplete chunk.
-
-    Example: `repair_cue_chunk_translations_with_openai(cues, result, args)`.
-    """
-
-    missing_indexes = parse_result.missing_indexes
-    if not missing_indexes:
-        return [text for text in parse_result.texts if text is not None]
-
-    label = f" for {chunk_label}" if chunk_label else ""
-    print(
-        f"OpenAI returned an incomplete translation{label}; "
-        f"requesting repair for cue(s) {format_index_list(missing_indexes)}."
-    )
-
-    missing_cues = [source_cues[index - 1] for index in missing_indexes]
-    repair_source_cues = srt.openai_source_cues_json(missing_cues)
-    repair_label = f"{chunk_label} repair" if chunk_label else "repair"
-    payload = openai_translation_payload(
-        args,
-        openai_translation_repair_prompt(
-            repair_source_cues,
-            len(missing_cues),
-            chunk_label=chunk_label,
-            validation_errors=parse_result.errors,
-            previous_context=previous_context,
-            next_context=next_context,
-        ),
-    )
-    response = openai_client.responses_api_request(args, payload)
-    print_openai_usage(response, chunk_label=repair_label)
-    repaired_texts = parse_openai_translations(openai_client.response_output_text(response), len(missing_cues))
-
-    texts = list(parse_result.texts)
-    for missing_index, repaired_text in zip(missing_indexes, repaired_texts):
-        texts[missing_index - 1] = repaired_text
-
-    still_missing = [index + 1 for index, text in enumerate(texts) if text is None]
-    if still_missing:
-        raise RuntimeError(
-            "OpenAI translation repair did not fill cue(s): "
-            f"{format_index_list(still_missing)}"
-        )
-
-    return [text for text in texts if text is not None]
-
-
-def translate_cue_chunk_with_openai(
-    source_cues: list[srt.SubtitleCue],
-    args: argparse.Namespace,
-    *,
-    chunk_label: str | None = None,
-    previous_context: str = "",
-    next_context: str = "",
-) -> list[str]:
-    """Translate one chunk and repair it if the JSON is valid but incomplete.
-
-    Example: `translate_cue_chunk_with_openai(cues, args)`.
-    """
-
-    source_cues_json = srt.openai_source_cues_json(source_cues)
-    payload = openai_translation_payload(
-        args,
-        openai_translation_prompt(
-            source_cues_json,
-            len(source_cues),
-            chunk_label=chunk_label,
-            previous_context=previous_context,
-            next_context=next_context,
-        ),
-    )
-    response = openai_client.responses_api_request(args, payload)
-    print_openai_usage(response, chunk_label=chunk_label)
-    parse_result = collect_openai_translations(openai_client.response_output_text(response), len(source_cues))
-    if parse_result.complete:
-        return [text for text in parse_result.texts if text is not None]
-    return repair_cue_chunk_translations_with_openai(
-        source_cues,
-        parse_result,
-        args,
-        chunk_label=chunk_label,
-        previous_context=previous_context,
-        next_context=next_context,
-    )
-
-
 def print_openai_usage(data: dict[str, object], *, chunk_label: str | None = None) -> None:
     """Print token usage when the Responses API returns usage accounting.
 
@@ -453,63 +620,6 @@ def print_openai_usage(data: dict[str, object], *, chunk_label: str | None = Non
 
     label = f" for {chunk_label}" if chunk_label else ""
     print(f"OpenAI token usage{label}: " + ", ".join(parts))
-
-
-def translate_cues_with_openai(
-    source_srt: str,
-    source_cues: list[srt.SubtitleCue],
-    english_srt_path: Path,
-    args: argparse.Namespace,
-) -> list[str]:
-    """Translate all cues using whole-file or checkpointed chunked mode.
-
-    Example: `translate_cues_with_openai(source_srt, cues, dst, args)`.
-    """
-
-    chunk_size = openai_translation_chunk_size(args, len(source_cues))
-    if chunk_size >= len(source_cues):
-        return translate_cue_chunk_with_openai(source_cues, args)
-
-    checkpoint_path = openai_translation_checkpoint_path(english_srt_path)
-    metadata = openai_translation_metadata(source_srt, source_cues, args, chunk_size)
-    context_cues = int(getattr(args, "openai_translation_context_cues", cfg.DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES))
-    translated_texts = load_openai_translation_checkpoint(checkpoint_path, metadata)
-    if translated_texts is None:
-        translated_texts = [None] * len(source_cues)
-
-    chunks = [
-        (start, min(start + chunk_size, len(source_cues)))
-        for start in range(0, len(source_cues), chunk_size)
-    ]
-    print(
-        f"OpenAI translation will use {len(chunks)} chunks "
-        f"of up to {chunk_size} cues; checkpoint: {checkpoint_path}"
-    )
-
-    for chunk_number, (start, end) in enumerate(chunks, start=1):
-        if all(translated_texts[start:end]):
-            print(f"Reusing completed OpenAI translation chunk {chunk_number}/{len(chunks)}.")
-            continue
-
-        previous_start = max(0, start - context_cues)
-        next_end = min(len(source_cues), end + context_cues)
-        chunk_label = f"chunk {chunk_number}/{len(chunks)} (global cues {start + 1}-{end})"
-        print(f"Translating OpenAI subtitle {chunk_label}...")
-        chunk_translations = translate_cue_chunk_with_openai(
-            source_cues[start:end],
-            args,
-            chunk_label=chunk_label,
-            previous_context=cue_context_text(source_cues[previous_start:start]),
-            next_context=cue_context_text(source_cues[end:next_end]),
-        )
-        translated_texts[start:end] = chunk_translations
-        save_openai_translation_checkpoint(checkpoint_path, metadata, translated_texts)
-
-    missing_indexes = [index + 1 for index, text in enumerate(translated_texts) if text is None]
-    if missing_indexes:
-        raise RuntimeError(f"OpenAI translation checkpoint is incomplete at cues: {missing_indexes[:10]}")
-
-    return [text for text in translated_texts if text is not None]
 
 
 def strip_json_code_fence(text: str) -> str:
@@ -593,7 +703,7 @@ def parse_openai_translations(output_text: str, expected_count: int) -> list[str
         raise RuntimeError(
             f"{message} Missing cue(s): {format_index_list(result.missing_indexes)}."
         )
-    texts = [text for text in result.texts if text is not None]
+    texts = result.complete_texts()
     if len(texts) != expected_count:
         raise RuntimeError(f"OpenAI returned {len(texts)} usable translations for {expected_count} subtitle cues.")
     return texts
@@ -610,7 +720,8 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
     if not source_cues:
         raise RuntimeError(f"no subtitle cues found in primary SRT: {primary_srt_path}")
 
-    translated_texts = translate_cues_with_openai(source_srt, source_cues, english_srt_path, args)
+    translator = OpenAISrtTranslator(source_srt, source_cues, english_srt_path, args)
+    translated_texts = translator.translate_texts()
     translated_cues = [
         srt.SubtitleCue(cue.start_ms, cue.end_ms, translated_text)
         for cue, translated_text in zip(source_cues, translated_texts)
@@ -618,6 +729,6 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
 
     english_srt_path.parent.mkdir(parents=True, exist_ok=True)
     english_srt_path.write_text(srt.render_srt(translated_cues, args), encoding="utf-8", newline="\n")
-    checkpoint_path = openai_translation_checkpoint_path(english_srt_path)
+    checkpoint_path = translator.checkpoint_path
     if checkpoint_path.exists():
         checkpoint_path.unlink()
