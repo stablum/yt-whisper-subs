@@ -1,6 +1,6 @@
 """mpv playback and ASS styling helpers for dual subtitles.
 
-Example: `playback.play_video(video, [primary, english], args)`.
+Example: `playback.play_video(video, [primary, english], prefs)`.
 """
 
 from __future__ import annotations
@@ -9,32 +9,80 @@ import argparse
 import os
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
 
 
-def dual_sub_primary_font_size(args: argparse.Namespace) -> float:
-    """Derive the native mpv primary subtitle font size.
+class SubtitleStyle(NamedTuple):
+    """Keep one subtitle track's mpv/ASS presentation settings cohesive.
 
-    Example: `dual_sub_primary_font_size(args)`.
+    Example: `SubtitleStyle("#FFE066", 100, 36)`.
     """
 
-    if args.dual_sub_primary_font_size is not None:
-        return args.dual_sub_primary_font_size
-    return args.dual_sub_font_size * cfg.DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE
+    color: str
+    position: float
+    font_size: float
 
 
-def dual_sub_secondary_font_size(args: argparse.Namespace) -> float:
-    """Derive the generated ASS secondary subtitle font size.
+class PlaybackPrefs(NamedTuple):
+    """Hold the complete shared playback policy for CLI and GUI launches.
 
-    Example: `dual_sub_secondary_font_size(args)`.
+    Example: `PlaybackPrefs.defaults()` opens the normal dual-subtitle view.
     """
 
-    if args.dual_sub_secondary_font_size is not None:
-        return args.dual_sub_secondary_font_size
-    return args.dual_sub_font_size
+    dual_subs: bool
+    primary: SubtitleStyle
+    secondary: SubtitleStyle
+
+    @classmethod
+    def defaults(cls) -> PlaybackPrefs:
+        """Build playback preferences from the single source of defaults.
+
+        Example: `prefs = PlaybackPrefs.defaults()`.
+        """
+
+        primary_size = cfg.DEFAULT_DUAL_SUB_FONT_SIZE * cfg.DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE
+        return cls(
+            dual_subs=True,
+            primary=SubtitleStyle(
+                cfg.DEFAULT_DUAL_SUB_PRIMARY_COLOR,
+                cfg.DEFAULT_DUAL_SUB_PRIMARY_POS,
+                primary_size,
+            ),
+            secondary=SubtitleStyle(
+                cfg.DEFAULT_DUAL_SUB_SECONDARY_COLOR,
+                cfg.DEFAULT_DUAL_SUB_SECONDARY_POS,
+                cfg.DEFAULT_DUAL_SUB_FONT_SIZE,
+            ),
+        )
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> PlaybackPrefs:
+        """Translate CLI options once at the playback boundary.
+
+        Example: `PlaybackPrefs.from_args(args)`.
+        """
+
+        primary_size = args.dual_sub_primary_font_size
+        if primary_size is None:
+            primary_size = args.dual_sub_font_size * cfg.DEFAULT_DUAL_SUB_PRIMARY_FONT_SCALE
+        secondary_size = args.dual_sub_secondary_font_size or args.dual_sub_font_size
+        return cls(
+            dual_subs=args.dual_subs,
+            primary=SubtitleStyle(
+                args.dual_sub_primary_color,
+                args.dual_sub_primary_pos,
+                primary_size,
+            ),
+            secondary=SubtitleStyle(
+                args.dual_sub_secondary_color,
+                args.dual_sub_secondary_pos,
+                secondary_size,
+            ),
+        )
 
 
 def parse_css_color(value: str) -> tuple[int, int, int, int]:
@@ -43,9 +91,7 @@ def parse_css_color(value: str) -> tuple[int, int, int, int]:
     Example: `parse_css_color("#FFE066")`.
     """
 
-    hex_value = value.strip()
-    if hex_value.startswith("#"):
-        hex_value = hex_value[1:]
+    hex_value = value.strip().removeprefix("#")
 
     if len(hex_value) == 6:
         red, green, blue = (int(hex_value[index : index + 2], 16) for index in (0, 2, 4))
@@ -202,7 +248,11 @@ def write_ass_subtitle(
     ass_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
-def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace, temp_dir: Path) -> list[Path]:
+def dual_subtitle_playback_paths(
+    srt_paths: list[Path],
+    prefs: PlaybackPrefs,
+    temp_dir: Path,
+) -> list[Path]:
     """Replace the secondary SRT with a temporary styled ASS path for mpv.
 
     Example: `dual_subtitle_playback_paths([nl, en], args, temp_dir)`.
@@ -213,18 +263,29 @@ def dual_subtitle_playback_paths(srt_paths: list[Path], args: argparse.Namespace
     write_ass_subtitle(
         srt_paths[1],
         secondary_ass,
-        color=args.dual_sub_secondary_color,
-        position=args.dual_sub_secondary_pos,
-        font_size=dual_sub_secondary_font_size(args),
+        color=prefs.secondary.color,
+        position=prefs.secondary.position,
+        font_size=prefs.secondary.font_size,
     )
 
     return [srt_paths[0], secondary_ass, *srt_paths[2:]]
 
 
-def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace) -> None:
+def sidecar_subtitles(video_path: Path) -> list[Path]:
+    """Discover subtitle sidecars in the same English-first playback order.
+
+    Example: `sidecar_subtitles(Path("abc.mkv"))`.
+    """
+
+    english = video_path.with_name(f"{video_path.stem}.en.srt")
+    primary = video_path.with_suffix(".srt")
+    return [path for path in (english, primary) if path.exists()]
+
+
+def play_video(video_path: Path, srt_paths: list[Path], prefs: PlaybackPrefs) -> None:
     """Open mpv with selected subtitle paths and optional dual-sub display.
 
-    Example: `play_video(video, [primary, english], args)`.
+    Example: `play_video(video, [primary, english], prefs)`.
     """
 
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
@@ -232,23 +293,23 @@ def play_video(video_path: Path, srt_paths: list[Path], args: argparse.Namespace
 
     temp_dir_context = None
     try:
-        if args.dual_subs and len(existing_srt_paths) >= 2:
+        if prefs.dual_subs and len(existing_srt_paths) >= 2:
             temp_dir_context = tempfile.TemporaryDirectory(prefix="yt-whisper-subs-ass-")
             temp_dir = Path(temp_dir_context.__enter__())
-            subtitle_paths = dual_subtitle_playback_paths(existing_srt_paths, args, temp_dir)
+            subtitle_paths = dual_subtitle_playback_paths(existing_srt_paths, prefs, temp_dir)
         else:
             subtitle_paths = existing_srt_paths
 
         for subtitle_path in subtitle_paths:
             cmd.append(f"--sub-file={subtitle_path}")
 
-        if args.dual_subs and len(existing_srt_paths) >= 2:
+        if prefs.dual_subs and len(existing_srt_paths) >= 2:
             cmd += [
                 "--sid=1",
                 "--secondary-sid=2",
-                f"--sub-color={mpv_subtitle_color(args.dual_sub_primary_color)}",
-                f"--sub-font-size={dual_sub_primary_font_size(args):g}",
-                f"--sub-pos={args.dual_sub_primary_pos:g}",
+                f"--sub-color={mpv_subtitle_color(prefs.primary.color)}",
+                f"--sub-font-size={prefs.primary.font_size:g}",
+                f"--sub-pos={prefs.primary.position:g}",
                 "--secondary-sub-ass-override=no",
             ]
 

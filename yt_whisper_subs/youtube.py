@@ -51,9 +51,7 @@ def youtube_video_id(url: str) -> str | None:
     """
 
     parsed = urlparse(url)
-    host = parsed.netloc.casefold()
-    if host.startswith("www."):
-        host = host[4:]
+    host = parsed.netloc.casefold().removeprefix("www.")
 
     path_parts = [part for part in parsed.path.split("/") if part]
     if host == "youtu.be":
@@ -86,6 +84,19 @@ def youtube_id_matches_video_file(path: Path, video_id: str) -> bool:
     """
 
     return path.stem == video_id or path.stem.endswith(f"[{video_id}]")
+
+
+def video_id_from_filename(path: Path) -> str | None:
+    """Recover a YouTube ID from canonical or old title-based media names.
+
+    Example: `video_id_from_filename(Path("Title [dQw4w9WgXcQ].mkv"))`.
+    """
+
+    canonical_id = normalize_youtube_video_id(path.stem)
+    if canonical_id:
+        return canonical_id
+    legacy_match = re.search(r"\[([A-Za-z0-9_-]{11})\]$", path.stem)
+    return normalize_youtube_video_id(legacy_match.group(1) if legacy_match else None)
 
 
 def canonicalize_youtube_video_filename(video_path: Path, video_id: str) -> Path:
@@ -199,13 +210,17 @@ def latest_downloaded_video(video_dir: Path, url: str) -> Path | None:
     return None
 
 
-def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argparse.Namespace) -> Path:
-    """Download a compressed source video with yt-dlp and return the final path.
+def download_command(
+    url: str,
+    video_dir: Path,
+    metadata_dir: Path,
+    paths: dict[str, Path],
+    args: argparse.Namespace,
+) -> list[str | os.PathLike[str]]:
+    """Build the metadata-preserving yt-dlp command for one video.
 
-    Example: `download_video(url, video_dir, paths, args)`.
+    Example: `download_command(url, videos, metadata, paths, args)`.
     """
-
-    video_dir.mkdir(parents=True, exist_ok=True)
 
     template = video_dir / "%(id)s.%(ext)s"
     cmd: list[str | os.PathLike[str]] = [
@@ -222,20 +237,38 @@ def download_video(url: str, video_dir: Path, paths: dict[str, Path], args: argp
         args.video_format,
         "--merge-output-format",
         args.merge_output_format,
+        "--write-info-json",
+        "--embed-metadata",
+        "--embed-info-json",
         "--print",
         "after_move:filepath",
         "-o",
         template,
+        "-o",
+        f"infojson:{metadata_dir / '%(id)s.%(ext)s'}",
     ]
-    if args.force:
-        cmd.append("--force-overwrites")
-    else:
-        cmd.append("--continue")
-
+    cmd.append("--force-overwrites" if args.force else "--continue")
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
-
     cmd.append(url)
+    return cmd
+
+
+def download_video(
+    url: str,
+    video_dir: Path,
+    metadata_dir: Path,
+    paths: dict[str, Path],
+    args: argparse.Namespace,
+) -> Path:
+    """Download a compressed source video with yt-dlp and return the final path.
+
+    Example: `download_video(url, video_dir, metadata_dir, paths, args)`.
+    """
+
+    video_dir.mkdir(parents=True, exist_ok=True)
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    cmd = download_command(url, video_dir, metadata_dir, paths, args)
     result = proc.run(cmd, capture_stdout=True, stream_stdout=True, check=False)
     lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]
     existing_paths = [Path(line) for line in lines if Path(line).exists()]

@@ -8,6 +8,13 @@ primary language subtitles, optionally translates Dutch subtitles to English
 with the OpenAI Responses API, and optionally launches `mpv` with dual
 subtitles.
 
+`yt_whisper_library.pyw` is the native Windows desktop companion. It presents
+downloaded and remote channel videos in a searchable library, persists YouTube
+metadata, tracks channel uploads, optionally runs the existing subtitle
+pipeline for new videos, and opens downloaded entries through the same `mpv`
+dual-subtitle playback implementation. It is a PySide6 desktop application,
+not a web UI and not a local web server.
+
 This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
 script without rediscovering all of the local decisions.
@@ -35,6 +42,20 @@ The script is optimized for this workflow:
 
 The script can also be used on a local video file, can skip playback, can avoid
 English translation, and can fall back to Whisper's built-in audio translation.
+
+The companion library is optimized for a second workflow:
+
+1. Scan every existing ID-named or old title-with-ID video into a durable SQLite
+   catalog.
+2. Backfill old download titles, source channels, upload dates, duration, view
+   count, description, and thumbnails from YouTube when metadata is missing.
+3. Subscribe to YouTube channel handles or URLs and display their videos,
+   Shorts, and streams whether or not they are downloaded.
+4. Check channels every four hours while the app is open or in the system tray.
+5. Optionally run the unchanged one-video subtitle pipeline for videos first
+   discovered after a channel's initial baseline check.
+6. Double-click downloaded videos to open the same English-first dual-subtitle
+   `mpv` view used by the CLI.
 
 ## Important Defaults
 
@@ -72,7 +93,11 @@ These defaults are hard-coded near the top of the script:
 | Primary subtitle position | `100` |
 | Secondary subtitle position | `8` |
 | Dual subtitle font size | `80` |
-| Primary font scale | `0.6` |
+| Primary font scale | `0.45` |
+| Library channel check interval | `4` hours |
+| Library metadata hydration batch | `12` videos per check |
+| Library close behavior | keep running in the system tray |
+| Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
 | Compaction max merged duration | `9.0` seconds |
@@ -92,6 +117,26 @@ case OpenAI receives cue text from the un-compacted primary SRT, still
 gap-extended unless `--subtitle-gap-extension 0` is used.
 
 ## Quick Start
+
+Open the native desktop library by double-clicking `yt_whisper_library.pyw`, or
+run it from PowerShell:
+
+```powershell
+python .\yt_whisper_library.pyw
+```
+
+The launcher creates or reuses `.venv`, installs `yt-dlp` and
+`PySide6-Essentials` when needed, and relaunches with `pythonw.exe`. The first
+start scans existing downloads immediately. An overdue channel check and old
+metadata backfill then run in the background without freezing the GUI.
+
+Use the same non-default output root as the CLI:
+
+```powershell
+python .\yt_whisper_library.pyw --out-dir "D:\Videos\yt-whisper-subs"
+```
+
+The existing one-video CLI remains:
 
 From the directory containing the script:
 
@@ -172,11 +217,15 @@ yt-whisper-subs\
     youtube_id.opus
   logs\
     youtube_id-YYYYMMDD-HHMMSS.log
+  metadata\
+    youtube_id.info.json
   subtitles\
     youtube_id.srt
     youtube_id.en.srt
     youtube_id.uncompact.srt
     youtube_id.en.uncompact.srt
+  library\
+    catalog.sqlite3
 ```
 
 The exact `.uncompact.*` files appear only when compaction changed an existing
@@ -197,6 +246,19 @@ The script writes subtitles in two places:
 
 This duplication is intentional. Sidecars are for playback ergonomics. The
 archive directory is for durable yield tracking.
+
+Every new YouTube download also writes the extractor's cleaned `.info.json`
+under `metadata\`, embeds normal media metadata into the downloaded container,
+and embeds the info JSON as an MKV attachment when the container supports it.
+The sidecar is the catalog's durable source for title, channel, upload time,
+duration, views, description, thumbnail URL, source URL, and other yt-dlp
+fields. The library database is a query cache and subscription store; deleting
+it does not delete any videos or metadata sidecars, and the next library start
+can rebuild local download state.
+
+Privacy note: yt-dlp warns that info JSON can contain personal information and
+temporary extractor URLs. Keep the `metadata\` directory private; the project
+does not upload these sidecars or put them in the repository.
 
 The video file is intentionally not lossless. The default yt-dlp format selector
 keeps YouTube's already-compressed audio/video streams and merges them into an
@@ -299,11 +361,18 @@ The script expects to run on Windows. It uses:
 - `torch`
 - `ffmpeg`
 - `mpv`
+- `PySide6-Essentials` for the native library GUI
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
 folder and should not depend on whichever Python packages happen to be installed
 globally.
+
+The `.pyw` library launcher bootstraps only `yt-dlp` and
+`PySide6-Essentials`, keeping a first GUI start much smaller than a Whisper/CUDA
+installation. If the user downloads a remote catalog entry, the library invokes
+`yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
+Whisper and Torch exactly as a direct CLI run would.
 
 The repository also includes a tracked `.python-version` file set to `3.14` so
 local Python tooling and the script-managed environment share the same project
@@ -374,8 +443,12 @@ python -m yt_dlp
   --progress-delta <seconds>
   -f <format selector>
   --merge-output-format <container>
+  --write-info-json
+  --embed-metadata
+  --embed-info-json
   --print after_move:filepath
   -o "%(id)s.%(ext)s"
+  -o "infojson:<metadata directory>/%(id)s.%(ext)s"
 ```
 
 Design notes:
@@ -386,6 +459,15 @@ Design notes:
   interrupted downloads can continue instead of fetching the same bytes again.
 - `--progress-delta` defaults to `1`, so progress output is visible but not too
   noisy.
+- `--write-info-json` preserves the full cleaned extractor result outside the
+  media container, where the catalog can ingest it cheaply.
+- `--embed-metadata` adds standard title, uploader, date, description, and
+  related tags supported by the selected container.
+- `--embed-info-json` also attaches the complete JSON to MKV when supported.
+- The typed `infojson:` output template keeps metadata under `metadata\`
+  instead of cluttering `videos\`. A typed output template is used instead of
+  `--paths`, because yt-dlp ignores `--paths` when the main media template is an
+  absolute path.
 - `--print after_move:filepath` gives the script the final filename.
 - The output filename is the extractor/video ID only, which avoids title-derived
   filesystem problems and makes exact cache lookup direct.
@@ -408,6 +490,76 @@ mkv
 
 `mkv` is a forgiving container for mixed codecs, which is useful for YouTube
 downloads.
+
+## Native YouTube Library
+
+The desktop library is a native PySide6/Qt application with a dark Windows UI.
+It contains:
+
+- library-wide Downloaded and Available filters;
+- a sidebar entry for every tracked channel;
+- instant title, channel, and YouTube-ID search;
+- sortable status, title, channel, published, downloaded, duration, size, and
+  view-count columns;
+- a details panel for description, local path, source URL, and the last error;
+- summary cards for videos, downloads, remote-only entries, and channels;
+- manual Check, Download, Play, and Open on YouTube actions;
+- configurable browser cookies and check interval;
+- a system tray so periodic checks continue when the main window is closed.
+
+### Existing Downloads And Metadata Backfill
+
+On startup the library scans `videos\` by exact YouTube ID. Both
+`youtube_id.mkv` and old `Title [youtube_id].mkv` forms are recognized. A matching
+`metadata\youtube_id.info.json` is ingested without network access. Older files
+without sidecars appear immediately with their best offline title and download
+time, then receive full remote metadata in bounded batches of 12 during checks.
+This avoids turning an existing large library into one unbounded burst of
+YouTube requests. Repeated Check actions continue the progressive backfill.
+
+Filesystem creation time is used as the best available historical download
+time. It is distinct from YouTube publication time and is shown in a separate
+column.
+
+### Channel Subscription Checks
+
+Track a channel with an `@handle` or a `/channel/`, `/c/`, or `/user/` URL. The
+service checks the channel's Videos, Shorts, and Streams tabs with yt-dlp's flat
+playlist mode and deduplicates them by video ID. YouTube's Atom feed supplies
+exact publication timestamps for the latest entries. Older rows without a flat
+timestamp are progressively hydrated with full per-video metadata.
+
+The default interval is four hours and can be changed from **Library →
+Settings**. The schedule is persisted in SQLite, so reopening the app performs
+an overdue check. Checks run only while the application process is open; closing
+the window keeps it in the system tray by default. Choose **Library → Quit** to
+stop checks completely.
+
+Browser cookies can be configured in the same dialog using values such as
+`firefox`, `chrome`, or `edge`. They are forwarded to both channel discovery and
+the existing download pipeline.
+
+### Safe Automatic Downloads
+
+Automatic download is a per-channel policy. The first successful channel check
+is always a baseline: it makes the existing back catalog browseable but never
+downloads it. If automatic download is enabled, only video IDs absent from the
+catalog and discovered by later checks are candidates. Active and upcoming live
+streams are excluded.
+
+An automatic or manual library download is not a second media implementation.
+It executes the existing CLI with the video's canonical URL, the shared output
+root, and `--no-play`. The normal video download, Whisper transcription, OpenAI
+translation, subtitle compaction, archival, metadata, logging, reuse, and error
+behavior therefore remain single-sourced.
+
+### Shared Playback
+
+Double-clicking a downloaded row or choosing Play invokes
+`playback.play_video` with the same English-first sidecar discovery, colors,
+positions, primary font scale, secondary ASS conversion, and mpv options as the
+CLI. Double-clicking a remote-only row offers to download it first. mpv runs in a
+background worker so the Qt window remains responsive while playback is open.
 
 ## Audio Extraction
 
@@ -1123,6 +1275,16 @@ High-level groups:
 | `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
+| `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, and catalog records. |
+| `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, and local download state. |
+| `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
+| `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
+| `yt_whisper_subs.library_model` | Sortable/searchable Qt video-table presentation. |
+| `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, and selected-video details. |
+| `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
+| `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
+| `yt_whisper_subs.library_bootstrap` / `library_app` | Managed Qt runtime bootstrap and desktop entry point. |
 
 The central data model is:
 
@@ -1141,6 +1303,11 @@ Other structural data models are deliberately close to their behavior:
 - `SubtitlePair` owns the two-file sidecar/archive subtitle contract.
 - `RunYields` owns the concrete files requested by one source run.
 - `TranslationCheckpoint` owns reusable partial OpenAI translation state.
+- `VideoMeta` composes identity, origin, and optional details without coupling
+  remote metadata to local file state.
+- `VideoRecord` adds subscription ownership and optional `LocalMedia` to that
+  metadata.
+- `LibraryDb` is the only module that owns catalog SQL.
 
 ## Future Codex Maintenance Notes
 
@@ -1160,6 +1327,12 @@ Start by preserving these invariants:
 9. Keep local Whisper/PyTorch dependencies in `.venv` beside the script.
 10. Preserve sidecar/archive repair behavior.
 11. Preserve the timestamped run log and avoid logging secrets.
+12. Keep the first channel check as a no-download baseline.
+13. Keep GUI downloads routed through the existing one-video CLI pipeline.
+14. Keep GUI and CLI mpv behavior routed through `PlaybackPrefs` and
+    `playback.play_video`.
+15. Keep YouTube metadata sidecars outside `videos\` and the SQLite catalog
+    rebuildable from local files.
 
 When changing the project, useful verification commands are:
 
@@ -1169,11 +1342,15 @@ python -m unittest discover -s tests
 python -m py_compile .\yt_whisper_subs.py
 python .\yt_whisper_subs.py --help
 python -m yt_whisper_subs --help
+python -m yt_whisper_subs.library_app --help
 ```
 
-The tracked tests currently cover the OpenAI translator's timing preservation,
-chunk repair, and checkpoint cleanup, plus `SubtitlePair` archive hydration,
-syncing, compaction, and backup behavior.
+The tracked tests cover the OpenAI translator's timing preservation, chunk
+repair, and checkpoint cleanup; `SubtitlePair` archive hydration, syncing,
+compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
+playback policy; channel normalization and timestamp mapping; SQLite catalog
+semantics; sidecar ingestion; and the crucial future-only automatic-download
+baseline.
 
 Mock the OpenAI translation path without making an API call:
 
@@ -1389,20 +1566,29 @@ This repository is licensed under the GNU General Public License version 3. See
 - Existing `.en.srt` files are treated as ready regardless of whether they were
   produced by Whisper or OpenAI. Use `--force-english` or `--force` to
   regenerate them.
-- There is no metadata sidecar recording the exact model, prompt, or compaction
-  settings used for each yield.
+- The YouTube `.info.json` sidecar does not yet record subtitle-generation
+  provenance such as Whisper/OpenAI models, prompt version, or compaction
+  settings.
 - SRT parsing is intentionally pragmatic, not a full subtitle spec
   implementation.
 - Compaction heuristics are tuned for readability, not linguistic perfection.
 - The script is Windows-first. Some paths and executable names assume Windows.
 - `--force` is broad: for URL inputs it redownloads the video too.
+- Periodic channel checks require the native app process to be open or in the
+  system tray; it does not yet register a Windows scheduled task or start at
+  login.
+- YouTube flat channel listings omit some older upload timestamps. The latest
+  entries are enriched from Atom and older rows are hydrated 12 at a time, so a
+  very large newly subscribed channel can initially show `—` for old dates.
 
 ## Possible Future Improvements
 
 These are intentionally not implemented yet:
 
-- Add a metadata JSON file per video recording source URL, video ID, models,
-  compaction settings, OpenAI model, and generation timestamps.
+- Extend the existing YouTube metadata sidecar with subtitle-generation models,
+  compaction settings, prompt version, and generation timestamps.
+- Add an opt-in Windows login/scheduled-task integration for checks when the
+  desktop app is not already running.
 - Add a `--translate-existing-srt` mode for translating an SRT without touching
   video/audio.
 - Add an optional OpenAI SDK implementation if API usage grows.
@@ -1418,9 +1604,12 @@ If you remember only one thing, remember this:
 
 ```text
 Downloaded video is the durable media yield.
+YouTube info JSON is the durable source metadata yield.
+SQLite is a rebuildable catalog plus channel-subscription state.
 Primary compacted and gap-extended SRT is the timing authority.
 OpenAI translates text only.
 The script renders English onto the primary SRT timings.
 Sidecars are for mpv; archives are for durable reuse.
 Second runs should be cheap.
+Initial channel checks must never auto-download the backlog.
 ```

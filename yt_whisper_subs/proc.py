@@ -36,6 +36,7 @@ def venv_paths() -> dict[str, Path]:
         "script_dir": cfg.PROJECT_DIR,
         "venv_dir": venv_dir,
         "python": scripts_dir / f"python{exe_suffix}",
+        "python_gui": scripts_dir / ("pythonw.exe" if os.name == "nt" else f"python{exe_suffix}"),
         "whisper": scripts_dir / f"whisper{exe_suffix}",
     }
 
@@ -64,7 +65,11 @@ def configure_stdio() -> None:
     Example: `configure_stdio()` before parsing args.
     """
 
-    for stream in (sys.stdout, sys.stderr):
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name)
+        if stream is None:
+            stream = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
+            setattr(sys, name, stream)
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
 
@@ -291,6 +296,7 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
     needs_python_deps = (
         args.install_python_deps
         or not paths["python"].exists()
+        or not paths["whisper"].exists()
         or current_minor != requested_minor
     )
 
@@ -327,6 +333,60 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
         raise RuntimeError(f"Whisper .venv not found at {paths['venv_dir']}. Re-run with --install-python-deps.")
     if not paths["whisper"].exists():
         raise RuntimeError("Whisper executable not found. Re-run with --install-python-deps.")
+
+
+def managed_module_available(python_exe: Path, module: str) -> bool:
+    """Check a module without importing it into the launcher process.
+
+    Example: `managed_module_available(python, "PySide6")`.
+    """
+
+    if not python_exe.exists():
+        return False
+    code = f"import importlib.util; raise SystemExit(importlib.util.find_spec({module!r}) is None)"
+    result = subprocess.run(
+        [str(python_exe), "-c", code],
+        env=child_process_env(),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
+    """Prepare the small managed runtime used by the native library GUI.
+
+    Example: `ensure_library_deps(venv_paths(), "3.14")` before GUI launch.
+    """
+
+    requested_minor = requested_python_minor_version(python_version)
+    current_minor = get_python_minor_version(paths["python"])
+    if current_minor != requested_minor:
+        require_command("uv")
+        paths["venv_dir"].parent.mkdir(parents=True, exist_ok=True)
+        print(f"Creating/updating Python venv in: {paths['venv_dir']}")
+        run(["uv", "venv", "--python", python_version, "--clear", paths["venv_dir"]])
+
+    missing_modules = [
+        module
+        for module in ("PySide6", "yt_dlp")
+        if not managed_module_available(paths["python"], module)
+    ]
+    if missing_modules:
+        require_command("uv")
+        print("Installing native library GUI dependencies...")
+        run(
+            [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                paths["python"],
+                "--upgrade",
+                *cfg.LIBRARY_PYTHON_PACKAGES,
+            ]
+        )
 
 
 def check_cuda(paths: dict[str, Path]) -> bool:

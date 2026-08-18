@@ -29,6 +29,7 @@ class YieldDirs(NamedTuple):
     video: Path
     audio: Path
     subs: Path
+    metadata: Path
 
     @classmethod
     def from_output_root(cls, out_dir: Path) -> YieldDirs:
@@ -37,7 +38,12 @@ class YieldDirs(NamedTuple):
         Example: `YieldDirs.from_output_root(Path("~/Videos"))`.
         """
 
-        return cls(video=out_dir / "videos", audio=out_dir / "audio", subs=out_dir / "subtitles")
+        return cls(
+            video=out_dir / "videos",
+            audio=out_dir / "audio",
+            subs=out_dir / "subtitles",
+            metadata=out_dir / "metadata",
+        )
 
     def create(self) -> None:
         """Create all yield directories before a run starts writing files.
@@ -73,7 +79,7 @@ class RunYields(NamedTuple):
     def srt_paths(self) -> list[Path]:
         """Return subtitle sidecars in the playback order expected by mpv.
 
-        Example: `playback.play_video(video, run_yields.srt_paths(), args)`.
+        Example: `playback.play_video(video, run_yields.srt_paths(), prefs)`.
         """
 
         paths = []
@@ -211,7 +217,13 @@ class PipelineRunner:
             proc.require_command("ffmpeg")
             print()
             print("Downloading compressed lossy video stream...")
-            video_path = youtube.download_video(self._args.url, self._dirs.video, self._paths, self._args)
+            video_path = youtube.download_video(
+                self._args.url,
+                self._dirs.video,
+                self._dirs.metadata,
+                self._paths,
+                self._args,
+            )
 
         if source_video_id:
             video_path = youtube.canonicalize_youtube_video_filename(video_path, source_video_id)
@@ -447,7 +459,11 @@ class PipelineRunner:
 
         print()
         print("Opening in mpv with subtitles...")
-        playback.play_video(run_yields.video, run_yields.srt_paths(), self._args)
+        playback.play_video(
+            run_yields.video,
+            run_yields.srt_paths(),
+            playback.PlaybackPrefs.from_args(self._args),
+        )
 
 
 def resolve_output_dir(out_dir: str | None) -> Path:
