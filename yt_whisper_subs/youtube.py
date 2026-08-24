@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 from pathlib import Path
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
@@ -18,6 +19,16 @@ from yt_whisper_subs import proc
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def yt_dlp_js_runtime_args() -> list[str]:
+    """Select the first installed JavaScript runtime supported by yt-dlp.
+
+    Example: an installed Node returns `["--js-runtimes", "node"]`.
+    """
+
+    runtime = next((name for name in cfg.YT_DLP_JS_RUNTIMES if shutil.which(name)), None)
+    return ["--js-runtimes", runtime] if runtime else []
 
 
 def clean_output_line(line: str) -> str:
@@ -227,6 +238,7 @@ def download_command(
         paths["python"],
         "-m",
         "yt_dlp",
+        *yt_dlp_js_runtime_args(),
         "--no-playlist",
         "--windows-filenames",
         "--part",
@@ -282,6 +294,8 @@ def download_video(
         return fallback_path
 
     if result.returncode != 0:
-        raise RuntimeError(f"yt-dlp failed with exit code {result.returncode}")
+        error_lines = [line for line in lines if line.casefold().startswith("error:")]
+        detail = error_lines[-1] if error_lines else f"yt-dlp failed with exit code {result.returncode}"
+        raise RuntimeError(detail)
 
     raise RuntimeError("could not determine downloaded video path from yt-dlp output")

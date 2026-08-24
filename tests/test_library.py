@@ -9,6 +9,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
@@ -116,6 +117,34 @@ class FakeDownloader:
         video_dir.mkdir(parents=True, exist_ok=True)
         (video_dir / f"{video_id}.mkv").write_bytes(b"video")
         report(f"Created {video_id}")
+
+
+class PipelineDownloaderTests(unittest.TestCase):
+    """Preserve the pipeline's actionable error at the GUI boundary.
+
+    Example: `PipelineDownloaderTests("test_download_reports_root_error")`.
+    """
+
+    @mock.patch("yt_whisper_subs.library_service.subprocess.Popen")
+    def test_download_reports_root_error(self, popen: mock.Mock) -> None:
+        """Show yt-dlp's HTTP failure instead of a generic wrapper message.
+
+        Example: the native error dialog includes `HTTP Error 403`.
+        """
+
+        process = popen.return_value
+        process.stdout = iter(
+            [
+                "ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
+                "error: ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
+            ]
+        )
+        process.wait.return_value = 1
+        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None)
+        downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
+
+        with self.assertRaisesRegex(RuntimeError, "HTTP Error 403"):
+            downloader.download(record, lambda _message: None)
 
 
 class LibraryDbTests(unittest.TestCase):

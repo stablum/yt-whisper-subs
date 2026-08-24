@@ -247,6 +247,7 @@ class YtDlpFeed:
             str(self._python_exe),
             "-m",
             "yt_dlp",
+            *youtube.yt_dlp_js_runtime_args(),
             "--ignore-errors",
             "--no-warnings",
             *args,
@@ -255,7 +256,7 @@ class YtDlpFeed:
             cmd[4:4] = ["--cookies-from-browser", self._cookies]
         result = subprocess.run(
             cmd,
-            env=proc.child_process_env(),
+            **proc.child_process_kwargs(),
             check=False,
             text=True,
             encoding="utf-8",

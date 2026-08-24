@@ -9,6 +9,7 @@ import argparse
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import playback
@@ -21,12 +22,14 @@ class DownloadCommandTests(unittest.TestCase):
     Example: `DownloadCommandTests("test_command_writes_and_embeds_metadata")`.
     """
 
-    def test_command_writes_and_embeds_metadata(self) -> None:
+    @mock.patch("yt_whisper_subs.youtube.shutil.which")
+    def test_command_writes_and_embeds_metadata(self, which: mock.Mock) -> None:
         """Write a sidecar and embed standard tags/info JSON into the container.
 
         Example: the downloader command contains all metadata flags.
         """
 
+        which.side_effect = lambda name: "node.exe" if name == "node" else None
         args = argparse.Namespace(
             download_progress_delta=1.0,
             video_format="bv*+ba/b",
@@ -46,6 +49,17 @@ class DownloadCommandTests(unittest.TestCase):
         self.assertIn("--embed-metadata", text)
         self.assertIn("--embed-info-json", text)
         self.assertIn(str(Path("infojson:metadata") / "%(id)s.%(ext)s"), text)
+        runtime_idx = text.index("--js-runtimes")
+        self.assertEqual(text[runtime_idx + 1], "node")
+
+    @mock.patch("yt_whisper_subs.youtube.shutil.which", return_value=None)
+    def test_command_tolerates_missing_js_runtime(self, _which: mock.Mock) -> None:
+        """Let yt-dlp explain missing runtimes when neither supported tool exists.
+
+        Example: a machine without Deno or Node can still attempt extraction.
+        """
+
+        self.assertEqual(youtube.yt_dlp_js_runtime_args(), [])
 
 
 class PlaybackPrefsTests(unittest.TestCase):

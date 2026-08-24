@@ -125,10 +125,13 @@ run it from PowerShell:
 python .\yt_whisper_library.pyw
 ```
 
-The launcher creates or reuses `.venv`, installs `yt-dlp` and
+The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials` when needed, and relaunches with `pythonw.exe`. The first
 start scans existing downloads immediately. An overdue channel check and old
-metadata backfill then run in the background without freezing the GUI.
+metadata backfill then run in the background without freezing the GUI. On
+Windows, every child operation runs without opening or flashing a terminal
+window; progress and errors remain available in the native status UI and run
+logs.
 
 Use the same non-default output root as the CLI:
 
@@ -357,6 +360,7 @@ The script expects to run on Windows. It uses:
 - `uv`
 - Python 3.14 in a script-local `.venv`
 - `yt-dlp`
+- `yt-dlp-ejs` through yt-dlp's `default` package extra
 - `openai-whisper`
 - `torch`
 - `ffmpeg`
@@ -368,7 +372,7 @@ was made because the script is intended to be portable as a single project
 folder and should not depend on whichever Python packages happen to be installed
 globally.
 
-The `.pyw` library launcher bootstraps only `yt-dlp` and
+The `.pyw` library launcher bootstraps only `yt-dlp[default]` and
 `PySide6-Essentials`, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
@@ -390,7 +394,7 @@ It installs:
 ```text
 wheel
 setuptools
-yt-dlp
+yt-dlp[default]
 openai-whisper
 torch
 ```
@@ -415,6 +419,12 @@ another Python package in the Whisper environment.
 attempts to install/update `uv`, `ffmpeg`, and `mpv` via Scoop. If Scoop is not
 available, install those tools manually.
 
+Because YouTube extraction changes frequently, the managed runtime checks for a
+new yt-dlp release at most once every seven days. Update failure is non-fatal
+when an older installation is already usable. The `default` package extra
+includes yt-dlp's EJS solver component; the script automatically enables Deno
+or Node from `PATH` (in that order) for YouTube's JavaScript challenges.
+
 ## Source Handling
 
 The script accepts exactly one source:
@@ -435,6 +445,7 @@ The download command is built around yt-dlp:
 
 ```text
 python -m yt_dlp
+  --js-runtimes <installed deno-or-node>
   --no-playlist
   --windows-filenames
   --part
@@ -506,6 +517,11 @@ It contains:
 - manual Check, Download, Play, and Open on YouTube actions;
 - configurable browser cookies and check interval;
 - a system tray so periodic checks continue when the main window is closed.
+
+All subprocesses launched from the desktop application—including dependency
+setup, channel discovery, downloads, ffmpeg, Whisper, and mpv—use Windows'
+no-console process mode. This keeps long-running background work visually quiet
+without changing the interactive output of a direct command-line run.
 
 ### Existing Downloads And Metadata Backfill
 
@@ -1482,11 +1498,14 @@ the fixed version; if a partial temporary subtitle directory remains under
 `subtitles\whisper-*`, it can be ignored because the next run creates a fresh
 temporary directory.
 
-### yt-dlp warns about JavaScript runtimes
+### yt-dlp warns about JavaScript runtimes or returns HTTP 403
 
-yt-dlp may warn that no supported JavaScript runtime is available. The script
-does not manage that dependency. Some YouTube formats may be missing until a
-runtime supported by yt-dlp is installed.
+The script installs yt-dlp's EJS component and automatically uses Deno or Node
+when either executable is on `PATH`. The managed yt-dlp package is also checked
+for updates weekly. Restart the library once to trigger an overdue update. If
+the warning remains, install a current Deno (preferred by yt-dlp) or Node release
+and ensure its executable is visible from PowerShell. Cookies may still be
+needed for private, age-gated, or account-specific videos.
 
 ### yt-dlp download output is noisy
 

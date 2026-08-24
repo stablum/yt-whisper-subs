@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 
@@ -68,7 +69,7 @@ class PipelineDownloader:
             cmd += ["--cookies-from-browser", self._cookies]
         process = subprocess.Popen(
             cmd,
-            env=proc.child_process_env(),
+            **proc.child_process_kwargs(),
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -76,11 +77,19 @@ class PipelineDownloader:
             stderr=subprocess.STDOUT,
         )
         assert process.stdout is not None
+        output_tail: deque[str] = deque(maxlen=30)
         for line in process.stdout:
             if message := line.strip():
+                output_tail.append(message)
                 report(message)
         if process.wait() != 0:
-            raise RuntimeError(f"subtitle pipeline failed for {record.meta.identity.title}")
+            error_lines = [line for line in output_tail if line.casefold().startswith("error:")]
+            detail = (
+                error_lines[-1].removeprefix("error: ")
+                if error_lines
+                else "subtitle pipeline failed"
+            )
+            raise RuntimeError(f"Download failed for {record.meta.identity.title}: {detail}")
 
 
 class LibraryService:

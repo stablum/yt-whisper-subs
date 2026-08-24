@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from yt_whisper_subs import cfg
 
@@ -74,16 +74,26 @@ def configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def child_process_env() -> dict[str, str]:
-    """Build a subprocess env that makes Python tools emit UTF-8 text.
+def child_process_kwargs() -> dict[str, Any]:
+    """Build shared UTF-8 and windowless subprocess options.
 
-    Example: `subprocess.run(cmd, env=child_process_env())`.
+    Example: `subprocess.run(cmd, **child_process_kwargs())`.
     """
 
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
-    return env
+    kwargs: dict[str, Any] = {"env": env}
+    if os.name == "nt":
+        # Console executables otherwise flash a terminal when their parent is pythonw.
+        startup_info = subprocess.STARTUPINFO()
+        startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup_info.wShowWindow = subprocess.SW_HIDE
+        kwargs.update(
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            startupinfo=startup_info,
+        )
+    return kwargs
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:
@@ -187,13 +197,12 @@ def run(
     configure_stdio()
     print()
     print(f"> {command_text(cmd)}")
-    env = child_process_env()
     command = [str(part) for part in cmd]
 
     if capture_stdout and not stream_stdout:
         result = subprocess.run(
             command,
-            env=env,
+            **child_process_kwargs(),
             check=False,
             text=True,
             encoding="utf-8",
@@ -204,7 +213,7 @@ def run(
     else:
         process = subprocess.Popen(
             command,
-            env=env,
+            **child_process_kwargs(),
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -260,7 +269,7 @@ def get_python_minor_version(python_exe: Path) -> str | None:
 
     result = subprocess.run(
         [str(python_exe), "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
-        env=child_process_env(),
+        **child_process_kwargs(),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -312,7 +321,7 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
             run(["uv", "venv", "--python", args.python_version, paths["venv_dir"]])
 
         run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "wheel", "setuptools"])
-        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "yt-dlp", "openai-whisper"])
+        run(["uv", "pip", "install", "--python", paths["python"], "--upgrade", "openai-whisper"])
 
         torch_cmd: list[str | os.PathLike[str]] = [
             "uv",
@@ -328,6 +337,8 @@ def ensure_python_deps(paths: dict[str, Path], args: argparse.Namespace) -> None
             torch_cmd += ["--reinstall-package", "torch", "--index-url", args.torch_index_url]
         torch_cmd += ["torch"]
         run(torch_cmd)
+
+    refresh_yt_dlp(paths, force=needs_python_deps)
 
     if not paths["python"].exists():
         raise RuntimeError(f"Whisper .venv not found at {paths['venv_dir']}. Re-run with --install-python-deps.")
@@ -346,12 +357,57 @@ def managed_module_available(python_exe: Path, module: str) -> bool:
     code = f"import importlib.util; raise SystemExit(importlib.util.find_spec({module!r}) is None)"
     result = subprocess.run(
         [str(python_exe), "-c", code],
-        env=child_process_env(),
+        **child_process_kwargs(),
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     return result.returncode == 0
+
+
+def _yt_dlp_update_due(paths: dict[str, Path]) -> bool:
+    """Limit network update checks while keeping the fast-moving extractor fresh.
+
+    Example: `_yt_dlp_update_due(paths)` is false for one week after a check.
+    """
+
+    stamp = paths["venv_dir"] / ".yt-dlp-update-check"
+    if not stamp.exists():
+        return True
+    age_seconds = time.time() - stamp.stat().st_mtime
+    return age_seconds >= cfg.DEFAULT_YT_DLP_UPDATE_DAYS * 24 * 60 * 60
+
+
+def refresh_yt_dlp(paths: dict[str, Path], *, force: bool = False) -> None:
+    """Install yt-dlp's default extras and periodically check for extractor fixes.
+
+    Example: `refresh_yt_dlp(paths)` updates at most once per week.
+    """
+
+    installed = managed_module_available(paths["python"], "yt_dlp")
+    if installed and not force and not _yt_dlp_update_due(paths):
+        return
+
+    require_command("uv")
+    result = run(
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            paths["python"],
+            "--upgrade",
+            cfg.YT_DLP_PYTHON_PACKAGE,
+        ],
+        check=False,
+    )
+    if result.returncode == 0:
+        stamp = paths["venv_dir"] / ".yt-dlp-update-check"
+        stamp.touch()
+        return
+    if not installed:
+        raise RuntimeError("could not install yt-dlp into the managed environment")
+    print("Warning: could not refresh yt-dlp; continuing with the installed version.")
 
 
 def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
@@ -370,7 +426,7 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
 
     missing_modules = [
         module
-        for module in ("PySide6", "yt_dlp")
+        for module in ("PySide6",)
         if not managed_module_available(paths["python"], module)
     ]
     if missing_modules:
@@ -387,6 +443,7 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
                 *cfg.LIBRARY_PYTHON_PACKAGES,
             ]
         )
+    refresh_yt_dlp(paths, force=current_minor != requested_minor)
 
 
 def check_cuda(paths: dict[str, Path]) -> bool:
