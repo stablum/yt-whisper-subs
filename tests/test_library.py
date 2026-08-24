@@ -5,6 +5,7 @@ Example: `python -m unittest tests.test_library`.
 
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
@@ -133,11 +134,9 @@ class PipelineDownloaderTests(unittest.TestCase):
         """
 
         process = popen.return_value
-        process.stdout = iter(
-            [
-                "ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
-                "error: ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
-            ]
+        process.stdout = io.StringIO(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden\n"
+            "error: ERROR: unable to download video data: HTTP Error 403: Forbidden\n"
         )
         process.wait.return_value = 1
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None)

@@ -97,6 +97,7 @@ These defaults are hard-coded near the top of the script:
 | Library channel check interval | `4` hours |
 | Library metadata hydration batch | `12` videos per check |
 | Library close behavior | keep running in the system tray |
+| Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -516,12 +517,21 @@ It contains:
 - summary cards for videos, downloads, remote-only entries, and channels;
 - manual Check, Download, Play, and Open on YouTube actions;
 - configurable browser cookies and check interval;
+- an optional timestamped activity trace for live pipeline and subprocess output;
 - a system tray so periodic checks continue when the main window is closed.
 
 All subprocesses launched from the desktop application—including dependency
 setup, channel discovery, downloads, ffmpeg, Whisper, and mpv—use Windows'
 no-console process mode. This keeps long-running background work visually quiet
 without changing the interactive output of a direct command-line run.
+
+Choose **View → Activity trace** or press **Ctrl+Shift+L** to open the dockable
+trace panel. It timestamps download progress, command lines, ffmpeg and Whisper
+output, OpenAI translation stages and token usage, channel checks, task
+completion, and failures. The newest 5,000 lines are retained in memory even
+while the panel is hidden; **Copy all** and **Clear** are available in the
+panel. Visibility is remembered across launches. Durable per-video pipeline
+logs continue to be written under `logs\`.
 
 ### Existing Downloads And Metadata Backfill
 
@@ -1296,7 +1306,7 @@ High-level groups:
 | `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable/searchable Qt video-table presentation. |
-| `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, and selected-video details. |
+| `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
@@ -1349,6 +1359,7 @@ Start by preserving these invariants:
     `playback.play_video`.
 15. Keep YouTube metadata sidecars outside `videos\` and the SQLite catalog
     rebuildable from local files.
+16. Keep hidden subprocesses observable through the timestamped activity trace.
 
 When changing the project, useful verification commands are:
 

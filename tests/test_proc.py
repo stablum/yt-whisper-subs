@@ -5,6 +5,7 @@ Example: `python -m unittest tests.test_proc`.
 
 from __future__ import annotations
 
+import io
 import os
 import subprocess
 import tempfile
@@ -40,6 +41,18 @@ class ChildProcessOptionsTests(unittest.TestCase):
         else:
             self.assertNotIn("creationflags", kwargs)
             self.assertNotIn("startupinfo", kwargs)
+
+    def test_output_records_split_terminal_progress(self) -> None:
+        """Expose carriage-return progress as individual live trace messages.
+
+        Example: yt-dlp's changing percentage becomes three GUI rows.
+        """
+
+        stream = io.StringIO("download 10%\rdownload 50%\rdownload 100%\nDone")
+        self.assertEqual(
+            list(proc.iter_output_records(stream)),
+            ["download 10%", "download 50%", "download 100%", "Done"],
+        )
 
     @mock.patch("yt_whisper_subs.proc.managed_module_available", return_value=True)
     @mock.patch("yt_whisper_subs.proc.run")

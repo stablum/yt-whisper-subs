@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -124,6 +125,24 @@ def _read_stream_chars(stream: TextIO, output_q: queue.Queue[str | None]) -> Non
             output_q.put(chunk)
     finally:
         output_q.put(None)
+
+
+def iter_output_records(stream: TextIO) -> Iterator[str]:
+    """Yield live subprocess records delimited by newline or carriage return.
+
+    Example: `iter_output_records(stream)` emits every yt-dlp progress update.
+    """
+
+    chars: list[str] = []
+    while char := stream.read(1):
+        if char in {"\n", "\r"}:
+            if message := "".join(chars).strip():
+                yield message
+            chars.clear()
+        else:
+            chars.append(char)
+    if message := "".join(chars).strip():
+        yield message
 
 
 def _stream_process_output(

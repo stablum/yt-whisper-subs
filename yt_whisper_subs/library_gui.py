@@ -50,6 +50,13 @@ QFrame#detailPanel { background: #20252e; border: 1px solid #2d3440; border-radi
 QLabel#detailTitle, QLabel#dialogHeading { font-size: 14pt; font-weight: 700; color: white; }
 QLabel#detailFacts { color: #8fc7ff; }
 QLabel#detailDescription { color: #b4bdc9; }
+QDockWidget { color: #d8dee8; background: #151920; }
+QDockWidget::title { background: #20252e; padding: 7px 10px; border-top: 1px solid #303744; }
+QLabel#traceNote { color: #8f9aaa; }
+QPlainTextEdit#activityTrace {
+  background: #0f1217; color: #c9d2df; border: 1px solid #303744;
+  selection-background-color: #294467; font-family: Consolas; font-size: 9pt;
+}
 QStatusBar { background: #11141a; color: #9ba6b4; border-top: 1px solid #2a303b; }
 QMenu { background: #222730; border: 1px solid #3a424f; padding: 5px; }
 QMenu::item { padding: 7px 26px; border-radius: 4px; }
@@ -105,6 +112,7 @@ class LibraryUi(NamedTuple):
     catalog: CatalogUi
     summary: SummaryUi
     next_check: QtWidgets.QLabel
+    trace: library_widgets.ActivityTrace
 
 
 class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWindow):
@@ -126,6 +134,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._active_task: library_workers.BackgroundTask | None = None
         self._quitting = False
         self._ui = self._build_ui()
+        self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
         self._tray = self._build_tray()
         self._connect_actions()
         self._build_menus()
@@ -163,10 +172,16 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         root.addWidget(content, 1)
         self.setCentralWidget(central)
 
+        trace = library_widgets.ActivityTrace(self)
+        self.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, trace)
+        trace_visible = self._service.db.setting("trace_visible", "0") in {"1", "True", "true"}
+        trace.setVisible(trace_visible)
+        trace.visibilityChanged.connect(self._store_trace_visibility)
+
         next_check = QtWidgets.QLabel()
         self.statusBar().addPermanentWidget(next_check)
         self.statusBar().showMessage("Ready")
-        return LibraryUi(header, catalog, summary, next_check)
+        return LibraryUi(header, catalog, summary, next_check, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
         """Create the library filters and channel-subscription list.
@@ -297,6 +312,19 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         video_menu.addAction("Download selected", self._download_selected)
         video_menu.addAction("Play selected", self._play_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
+        view_menu = self.menuBar().addMenu("View")
+        trace_action = self._ui.trace.toggleViewAction()
+        trace_action.setText("Activity trace")
+        trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
+        view_menu.addAction(trace_action)
+
+    def _store_trace_visibility(self, visible: bool) -> None:
+        """Remember whether the optional activity trace was left open.
+
+        Example: closing the dock persists `trace_visible=0`.
+        """
+
+        self._service.db.set_setting("trace_visible", int(visible))
 
     def refresh(self) -> None:
         """Reload channels, filtered videos, counts, and selection actions.

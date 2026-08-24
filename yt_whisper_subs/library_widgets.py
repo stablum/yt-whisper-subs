@@ -5,11 +5,14 @@ Example: `AddChannelDialog(parent).values()` returns subscription input.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import NamedTuple
 
 from PySide6 import QtCore
+from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
 
@@ -99,6 +102,71 @@ class DetailPanel(QtWidgets.QFrame):
             facts.append(f"Last error: {record.download_error}")
         self._facts.setText("  ·  ".join(facts))
         self._description.setText(meta.details.description.strip().replace("\n", " ") or meta.identity.url)
+
+
+class ActivityTrace(QtWidgets.QDockWidget):
+    """Retain timestamped GUI and subprocess activity in an optional dock.
+
+    Example: `trace.append_message("Downloading 25%")` records live progress.
+    """
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__("Activity trace", parent)
+        self.setObjectName("activityTraceDock")
+        self.setAllowedAreas(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea)
+        features = (
+            QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetClosable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QtWidgets.QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.setFeatures(features)
+        panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(panel)
+        layout.setContentsMargins(10, 8, 10, 10)
+        layout.setSpacing(6)
+        toolbar = QtWidgets.QHBoxLayout()
+        note = QtWidgets.QLabel("Live output is retained while this panel is hidden.")
+        note.setObjectName("traceNote")
+        copy = QtWidgets.QPushButton("Copy all")
+        clear = QtWidgets.QPushButton("Clear")
+        toolbar.addWidget(note, 1)
+        toolbar.addWidget(copy)
+        toolbar.addWidget(clear)
+        self._output = QtWidgets.QPlainTextEdit()
+        self._output.setObjectName("activityTrace")
+        self._output.setReadOnly(True)
+        self._output.setLineWrapMode(QtWidgets.QPlainTextEdit.LineWrapMode.NoWrap)
+        self._output.document().setMaximumBlockCount(cfg.DEFAULT_LIBRARY_TRACE_LINES)
+        copy.clicked.connect(self._copy_all)
+        clear.clicked.connect(self._output.clear)
+        layout.addLayout(toolbar)
+        layout.addWidget(self._output, 1)
+        self.setWidget(panel)
+
+    @QtCore.Slot(str)
+    def append_message(self, message: str) -> None:
+        """Append non-empty lines with one local timestamp and auto-scroll.
+
+        Example: `append_message("Whisper started")` adds a dated trace row.
+        """
+
+        lines = message.replace("\r\n", "\n").replace("\r", "\n").splitlines()
+        lines = [line.rstrip() for line in lines if line.strip()]
+        if not lines:
+            return
+        timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        text = "\n".join(f"[{timestamp}] {line}" for line in lines)
+        self._output.appendPlainText(text)
+        scroll_bar = self._output.verticalScrollBar()
+        scroll_bar.setValue(scroll_bar.maximum())
+
+    def _copy_all(self) -> None:
+        """Copy the complete retained trace without changing selection state.
+
+        Example: the Copy all button invokes `_copy_all()`.
+        """
+
+        QtGui.QGuiApplication.clipboard().setText(self._output.toPlainText())
 
 
 class AddChannelDialog(QtWidgets.QDialog):

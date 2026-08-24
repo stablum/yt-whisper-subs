@@ -78,10 +78,9 @@ class PipelineDownloader:
         )
         assert process.stdout is not None
         output_tail: deque[str] = deque(maxlen=30)
-        for line in process.stdout:
-            if message := line.strip():
-                output_tail.append(message)
-                report(message)
+        for message in proc.iter_output_records(process.stdout):
+            output_tail.append(message)
+            report(message)
         if process.wait() != 0:
             error_lines = [line for line in output_tail if line.casefold().startswith("error:")]
             detail = (

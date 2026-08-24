@@ -109,9 +109,10 @@ class WindowRuntimeMixin:
             return
         self._busy = True
         self.statusBar().showMessage(label)
+        self._ui.trace.append_message(f"▶ {label}")
         self._update_actions()
         task = library_workers.BackgroundTask(fn)
-        task.signals.progress.connect(self.statusBar().showMessage)
+        task.signals.progress.connect(self._report_progress)
 
         def done(result: object) -> None:
             """Restore idle state before invoking an operation-specific handler.
@@ -122,6 +123,7 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self.statusBar().showMessage("Ready", 3000)
+            self._ui.trace.append_message(f"✓ {label}")
             self._update_actions()
             if finished:
                 finished(result)
@@ -135,6 +137,8 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self.refresh()
+            self._ui.trace.append_message(f"✗ {label} · {message}")
+            self._ui.trace.append_message(trace)
             box = QtWidgets.QMessageBox(
                 QtWidgets.QMessageBox.Icon.Critical,
                 "Library task failed",
@@ -149,6 +153,15 @@ class WindowRuntimeMixin:
         task.signals.failed.connect(failed)
         self._active_task = task
         self._pool.start(task)
+
+    def _report_progress(self, message: str) -> None:
+        """Mirror one worker update into the status bar and retained trace.
+
+        Example: yt-dlp progress updates invoke `_report_progress(message)`.
+        """
+
+        self.statusBar().showMessage(message)
+        self._ui.trace.append_message(message)
 
     def _show_window(self) -> None:
         """Restore and focus the library from its system-tray action.
