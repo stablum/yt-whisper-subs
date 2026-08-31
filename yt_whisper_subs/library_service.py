@@ -17,6 +17,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback
+from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import youtube
 
@@ -67,9 +68,15 @@ class PipelineDownloader:
         ]
         if self._cookies:
             cmd += ["--cookies-from-browser", self._cookies]
+        child_kwargs = proc.child_process_kwargs()
+        child_env = dict(child_kwargs["env"])
+        child_env[progress.ENV_VIDEO_ID] = record.meta.identity.video_id
+        child_kwargs["env"] = child_env
+        current = progress.make(record.meta.identity.video_id, progress.Stage.QUEUED)
+        report(progress.encode(current))
         process = subprocess.Popen(
             cmd,
-            **proc.child_process_kwargs(),
+            **child_kwargs,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -79,6 +86,13 @@ class PipelineDownloader:
         assert process.stdout is not None
         output_tail: deque[str] = deque(maxlen=30)
         for message in proc.iter_output_records(process.stdout):
+            if update := progress.parse(message):
+                current = update
+                report(message)
+                continue
+            if update := progress.derive_tool_update(message, current):
+                current = update
+                report(progress.encode(update))
             output_tail.append(message)
             report(message)
         if process.wait() != 0:
@@ -88,7 +102,17 @@ class PipelineDownloader:
                 if error_lines
                 else "subtitle pipeline failed"
             )
+            if current.stage is not progress.Stage.FAILED:
+                current = progress.make(
+                    record.meta.identity.video_id,
+                    progress.Stage.FAILED,
+                    progress.overall_fraction(current),
+                    f"Failed · {detail}",
+                )
+                report(progress.encode(current))
             raise RuntimeError(f"Download failed for {record.meta.identity.title}: {detail}")
+        if current.stage is not progress.Stage.READY:
+            report(progress.encode(progress.make(record.meta.identity.video_id, progress.Stage.READY, 1.0)))
 
 
 class LibraryService:

@@ -9,6 +9,7 @@ import sys
 
 from yt_whisper_subs import cli
 from yt_whisper_subs import pipeline
+from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import runlog
 
@@ -30,5 +31,6 @@ def main() -> int:
         try:
             return pipeline.run_pipeline(args, paths, out_dir, log_path)
         except Exception as exc:
+            progress.emit_failure(exc)
             print(f"error: {exc}", file=sys.stderr)
             return 1

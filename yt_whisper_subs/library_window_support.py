@@ -16,6 +16,7 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import pipeline_progress as progress
 
 
 class WindowRuntimeMixin:
@@ -108,6 +109,8 @@ class WindowRuntimeMixin:
             self.statusBar().showMessage("Another library task is already running", 5000)
             return
         self._busy = True
+        self._pipeline_status_active = False
+        self._reported_stage_key = None
         self.statusBar().showMessage(label)
         self._ui.trace.append_message(f"▶ {label}")
         self._update_actions()
@@ -122,6 +125,7 @@ class WindowRuntimeMixin:
 
             self._busy = False
             self._active_task = None
+            self._pipeline_status_active = False
             self.statusBar().showMessage("Ready", 3000)
             self._ui.trace.append_message(f"✓ {label}")
             self._update_actions()
@@ -136,6 +140,7 @@ class WindowRuntimeMixin:
 
             self._busy = False
             self._active_task = None
+            self._pipeline_status_active = False
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
@@ -155,12 +160,26 @@ class WindowRuntimeMixin:
         self._pool.start(task)
 
     def _report_progress(self, message: str) -> None:
-        """Mirror one worker update into the status bar and retained trace.
+        """Route structured stages to the GUI and raw output to the trace.
 
         Example: yt-dlp progress updates invoke `_report_progress(message)`.
         """
 
-        self.statusBar().showMessage(message)
+        if update := progress.parse(message):
+            self._pipeline_status_active = True
+            self._ui.catalog.model.set_progress(update)
+            title = self._ui.catalog.model.title_for(update.video_id)
+            percent = ""
+            if update.fraction is not None or update.stage in {progress.Stage.READY, progress.Stage.FAILED}:
+                percent = f" · {progress.overall_fraction(update):.0%} overall"
+            self.statusBar().showMessage(f"{update.label}{percent} · {title}")
+            stage_key = (update.video_id, update.stage)
+            if stage_key != self._reported_stage_key:
+                self._ui.trace.append_message(f"◆ {title} · {update.label}")
+                self._reported_stage_key = stage_key
+            return
+        if not getattr(self, "_pipeline_status_active", False):
+            self.statusBar().showMessage(message)
         self._ui.trace.append_message(message)
 
     def _show_window(self) -> None:

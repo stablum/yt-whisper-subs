@@ -14,6 +14,7 @@ from yt_whisper_subs import media
 from yt_whisper_subs import openai_translate
 from yt_whisper_subs import opts
 from yt_whisper_subs import playback
+from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import subtitle_files
 from yt_whisper_subs import whisper_local
@@ -141,8 +142,10 @@ class PipelineRunner:
         Example: `runner.run()`.
         """
 
+        progress.emit(progress.Stage.PREPARING, 0.0, "Preparing pipeline")
         self._ensure_requested_tools()
         self._dirs.create()
+        progress.emit(progress.Stage.PREPARING, 1.0, "Pipeline ready")
 
         source_video_id, video_path = self._resolve_video()
         run_yields = self._build_yields(video_path, source_video_id)
@@ -150,7 +153,10 @@ class PipelineRunner:
         run_yields.print_paths(self._log_path)
 
         if run_yields.all_ready() and not self._args.force and not self._force_english(run_yields):
-            return self._reuse_ready_yields(run_yields)
+            progress.emit(progress.Stage.FINALIZING, 0.0, "Reusing completed files")
+            result = self._reuse_ready_yields(run_yields)
+            progress.emit(progress.Stage.READY, 1.0)
+            return result
 
         need_primary_generation = (not run_yields.primary.ready()) or self._args.force
         need_english_generation = run_yields.make_english and (
@@ -174,7 +180,10 @@ class PipelineRunner:
         if run_yields.make_english:
             self._generate_english_subs(run_yields)
 
+        progress.emit(progress.Stage.FINALIZING, 0.0, "Finalizing files")
         self._finish(run_yields)
+        progress.emit(progress.Stage.FINALIZING, 1.0, "Files finalized")
+        progress.emit(progress.Stage.READY, 1.0)
         return 0
 
     def _ensure_requested_tools(self) -> None:
@@ -208,10 +217,12 @@ class PipelineRunner:
             return None, media.resolve_video_path(self._args.video_file)
 
         source_video_id = youtube.youtube_video_id(self._args.url)
+        progress.emit(progress.Stage.DOWNLOADING, 0.0)
         video_path = None if self._args.force else youtube.latest_downloaded_video(self._dirs.video, self._args.url)
         if video_path:
             print()
             print(f"Found existing video yield: {video_path}")
+            progress.emit(progress.Stage.DOWNLOADING, 1.0, "Using downloaded video")
         else:
             self._ensure_python_deps()
             proc.require_command("ffmpeg")
@@ -224,6 +235,7 @@ class PipelineRunner:
                 self._paths,
                 self._args,
             )
+            progress.emit(progress.Stage.DOWNLOADING, 1.0, "Video downloaded")
 
         if source_video_id:
             video_path = youtube.canonicalize_youtube_video_filename(video_path, source_video_id)
@@ -349,10 +361,13 @@ class PipelineRunner:
 
         print()
         print(f"Extracting mono 16 kHz lossy {self._args.audio_format} audio...")
+        progress.emit(progress.Stage.EXTRACTING, 0.0)
         media.extract_audio(run_yields.video, run_yields.audio, self._args.audio_format, self._args.force)
+        progress.emit(progress.Stage.EXTRACTING, 1.0, "Audio ready")
 
         print()
         print("Running Whisper...")
+        progress.emit(progress.Stage.TRANSCRIBING, 0.0)
         whisper_local.run_whisper(
             run_yields.audio,
             run_yields.primary.sidecar,
@@ -360,6 +375,7 @@ class PipelineRunner:
             self._paths,
             self._args,
         )
+        progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
         run_yields.primary.finalize(self._args, is_english=False, label="primary")
 
     def _generate_english_subs(self, run_yields: RunYields) -> None:
@@ -389,11 +405,13 @@ class PipelineRunner:
 
         print()
         print("Generating English subtitles from indexed primary cue text with OpenAI...")
+        progress.emit(progress.Stage.TRANSLATING, 0.0, "Preparing translation")
         openai_translate.translate_srt_with_openai(
             run_yields.primary.sidecar,
             run_yields.english.sidecar,
             self._args,
         )
+        progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
         run_yields.english.align_timings_to(
             run_yields.primary.sidecar,
             self._args,
@@ -409,6 +427,7 @@ class PipelineRunner:
 
         print()
         print("Generating English subtitles from Dutch audio...")
+        progress.emit(progress.Stage.TRANSLATING, 0.0, "Preparing speech translation")
         media.extract_audio(run_yields.video, run_yields.audio, self._args.audio_format, self._args.force)
         whisper_local.run_whisper(
             run_yields.audio,
@@ -420,6 +439,7 @@ class PipelineRunner:
             language=self._args.language,
             model=opts.english_model(self._args),
         )
+        progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
         run_yields.english.finalize(self._args, is_english=True, label="English")
 
     def _finish(self, run_yields: RunYields) -> None:

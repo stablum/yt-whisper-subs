@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import openai_client
+from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import srt
 
 
@@ -213,7 +214,10 @@ class OpenAISrtTranslator:
 
         chunk_size = openai_translation_chunk_size(self._args, len(self._source_cues))
         if chunk_size >= len(self._source_cues):
-            return self._translate_chunk(self._source_cues)
+            progress.emit(progress.Stage.TRANSLATING, 0.0, "Translating subtitles · request 1/1")
+            translated = self._translate_chunk(self._source_cues)
+            progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
+            return translated
         return self._translate_checkpointed(chunk_size)
 
     @property
@@ -252,8 +256,18 @@ class OpenAISrtTranslator:
         )
 
         for chunk in chunks:
+            progress.emit(
+                progress.Stage.TRANSLATING,
+                (chunk.number - 1) / chunk.total,
+                f"Translating subtitles · chunk {chunk.number}/{chunk.total}",
+            )
             if chunk.complete_in(translated_texts):
                 print(f"Reusing completed OpenAI translation chunk {chunk.number}/{chunk.total}.")
+                progress.emit(
+                    progress.Stage.TRANSLATING,
+                    chunk.number / chunk.total,
+                    f"Translation · {chunk.number}/{chunk.total} chunks ready",
+                )
                 continue
 
             print(f"Translating OpenAI subtitle {chunk.label}...")
@@ -265,6 +279,11 @@ class OpenAISrtTranslator:
             )
             translated_texts[chunk.start : chunk.end] = chunk_translations
             checkpoint.save(translated_texts)
+            progress.emit(
+                progress.Stage.TRANSLATING,
+                chunk.number / chunk.total,
+                f"Translation · {chunk.number}/{chunk.total} chunks ready",
+            )
 
         missing_indexes = [index + 1 for index, text in enumerate(translated_texts) if text is None]
         if missing_indexes:

@@ -9,12 +9,13 @@ from datetime import datetime
 from typing import Any
 
 from PySide6 import QtCore
-from PySide6 import QtGui
 
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import pipeline_progress as progress
 
 
 SORT_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
+PROGRESS_ROLE = QtCore.Qt.ItemDataRole.UserRole + 2
 
 
 def format_timestamp(value: int | None) -> str:
@@ -25,7 +26,11 @@ def format_timestamp(value: int | None) -> str:
 
     if value is None:
         return "—"
-    return datetime.fromtimestamp(value).astimezone().strftime("%Y-%m-%d  %H:%M")
+    try:
+        timestamp = datetime.fromtimestamp(value).astimezone()
+    except (OSError, OverflowError, ValueError):
+        return "—"
+    return timestamp.strftime("%Y-%m-%d  %H:%M")
 
 
 def format_duration(seconds: float | None) -> str:
@@ -58,21 +63,23 @@ def format_size(size_bytes: int | None) -> str:
     return "—"
 
 
-def video_status(record: types.VideoRecord) -> str:
-    """Choose the most useful compact status for a table row.
+def record_progress(record: types.VideoRecord) -> progress.Update:
+    """Represent durable catalog state through the shared progress vocabulary.
 
-    Example: `video_status(record)` returns `Downloaded` when playable.
+    Example: `record_progress(downloaded).stage` is `Stage.READY`.
     """
 
+    video_id = record.meta.identity.video_id
     if record.downloaded:
-        return "Downloaded"
+        return progress.make(video_id, progress.Stage.READY, 1.0)
     if record.download_error:
-        return "Error"
-    if record.meta.details.live_status == "is_live":
-        return "Live now"
-    if record.meta.details.live_status == "is_upcoming":
-        return "Upcoming"
-    return "Available"
+        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Failed · {record.download_error}")
+    live_status = record.meta.details.live_status
+    if live_status == "is_live":
+        return progress.make(video_id, progress.Stage.LIVE)
+    if live_status == "is_upcoming":
+        return progress.make(video_id, progress.Stage.UPCOMING)
+    return progress.make(video_id, progress.Stage.AVAILABLE)
 
 
 class VideoTableModel(QtCore.QAbstractTableModel):
@@ -82,7 +89,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
     """
 
     _columns = (
-        ("Status", 110),
+        ("Pipeline", 230),
         ("Title", 420),
         ("Channel", 190),
         ("Published", 145),
@@ -95,6 +102,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
     def __init__(self) -> None:
         super().__init__()
         self._records: list[types.VideoRecord] = []
+        self._progress: dict[str, progress.Update] = {}
 
     def set_records(self, records: list[types.VideoRecord]) -> None:
         """Replace table contents in one reset for reliable proxy filtering.
@@ -113,6 +121,43 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         """
 
         return self._records[row] if 0 <= row < len(self._records) else None
+
+    def set_progress(self, update: progress.Update) -> None:
+        """Store an ephemeral pipeline update and repaint its visible row.
+
+        Example: `model.set_progress(update)` advances one video's bar.
+        """
+
+        self._progress[update.video_id] = update
+        for row, record in enumerate(self._records):
+            if record.meta.identity.video_id != update.video_id:
+                continue
+            cell = self.index(row, 0)
+            self.dataChanged.emit(cell, cell, [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE])
+            break
+
+    def progress_at(self, row: int) -> progress.Update | None:
+        """Return live progress or the durable fallback for a table row.
+
+        Example: `model.progress_at(0)` supplies the progress delegate.
+        """
+
+        record = self.record(row)
+        if not record:
+            return None
+        video_id = record.meta.identity.video_id
+        return self._progress.get(video_id) or record_progress(record)
+
+    def title_for(self, video_id: str) -> str:
+        """Resolve a progress event's video title for global status wording.
+
+        Example: `model.title_for(update.video_id)` labels the status bar.
+        """
+
+        for record in self._records:
+            if record.meta.identity.video_id == video_id:
+                return record.meta.identity.title
+        return video_id
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         """Return only top-level video rows.
@@ -145,6 +190,12 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return self._columns[section][0]
         if orientation == QtCore.Qt.Orientation.Horizontal and role == QtCore.Qt.ItemDataRole.SizeHintRole:
             return QtCore.QSize(self._columns[section][1], 34)
+        if (
+            orientation == QtCore.Qt.Orientation.Horizontal
+            and section == 0
+            and role == QtCore.Qt.ItemDataRole.ToolTipRole
+        ):
+            return "Preparing · Download · Audio · Speech-to-text · Translation · Final files"
         return None
 
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> Any:
@@ -157,23 +208,23 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return None
         record = self._records[index.row()]
         display, sort_value = self._cell_values(record, index.column())
+        update = self.progress_at(index.row())
+        if index.column() == 0 and update:
+            display = update.label
+            sort_value = progress.overall_fraction(update)
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             return display
         if role == SORT_ROLE:
             return sort_value
         if role == QtCore.Qt.ItemDataRole.UserRole:
             return record
+        if role == PROGRESS_ROLE:
+            return update
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
+            if index.column() == 0 and update:
+                overall = progress.overall_fraction(update)
+                return f"{update.label} · overall {overall:.0%}"
             return record.download_error or record.meta.identity.title
-        if role == QtCore.Qt.ItemDataRole.ForegroundRole and index.column() == 0:
-            colors = {
-                "Downloaded": "#58d68d",
-                "Error": "#ff7675",
-                "Live now": "#ff6b6b",
-                "Upcoming": "#aeb6bf",
-                "Available": "#74b9ff",
-            }
-            return QtGui.QBrush(QtGui.QColor(colors[display]))
         if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and index.column() in {5, 6, 7}:
             return int(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         return None
@@ -187,8 +238,9 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 
         meta = record.meta
         local = record.local
+        state = record_progress(record)
         values = (
-            (video_status(record), video_status(record)),
+            (state.label, progress.overall_fraction(state)),
             (meta.identity.title, meta.identity.title.casefold()),
             (meta.origin.channel, meta.origin.channel.casefold()),
             (format_timestamp(meta.origin.published_at), meta.origin.published_at or 0),

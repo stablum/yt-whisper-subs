@@ -14,6 +14,7 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
+from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_window_support
@@ -268,13 +269,16 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSortingEnabled(True)
         table.sortByColumn(3, QtCore.Qt.SortOrder.DescendingOrder)
+        table.setItemDelegateForColumn(0, library_progress.PipelineProgressDelegate(table))
         table.verticalHeader().hide()
-        table.verticalHeader().setDefaultSectionSize(38)
+        table.verticalHeader().setDefaultSectionSize(48)
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
         for column in range(model.columnCount()):
             if column != 1:
                 table.horizontalHeader().setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(0, 230)
         return CatalogUi(channels, table, model, proxy, library_widgets.DetailPanel())
 
     def _connect_actions(self) -> None:

@@ -16,6 +16,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import pipeline_progress as progress
 
 
 def make_meta(video_id: str, title: str, published_at: int = 100) -> types.VideoMeta:
@@ -142,8 +143,16 @@ class PipelineDownloaderTests(unittest.TestCase):
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None)
         downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
 
+        reports: list[str] = []
         with self.assertRaisesRegex(RuntimeError, "HTTP Error 403"):
-            downloader.download(record, lambda _message: None)
+            downloader.download(record, reports.append)
+
+        child_env = popen.call_args.kwargs["env"]
+        self.assertEqual(child_env[progress.ENV_VIDEO_ID], "aaaaaaaaaaa")
+        updates = [update for message in reports if (update := progress.parse(message))]
+        self.assertEqual(updates[0].stage, progress.Stage.QUEUED)
+        self.assertEqual(updates[-1].stage, progress.Stage.FAILED)
+        self.assertIn("HTTP Error 403", updates[-1].label)
 
 
 class LibraryDbTests(unittest.TestCase):

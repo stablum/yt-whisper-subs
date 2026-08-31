@@ -98,6 +98,7 @@ These defaults are hard-coded near the top of the script:
 | Library metadata hydration batch | `12` videos per check |
 | Library close behavior | keep running in the system tray |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
+| Library pipeline display | segmented per-video phase bar with live stage wording |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -131,8 +132,8 @@ The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 start scans existing downloads immediately. An overdue channel check and old
 metadata backfill then run in the background without freezing the GUI. On
 Windows, every child operation runs without opening or flashing a terminal
-window; progress and errors remain available in the native status UI and run
-logs.
+window; phase progress remains visible in the table and status bar, while exact
+tool output and errors remain available in the activity trace and run logs.
 
 Use the same non-default output root as the CLI:
 
@@ -511,7 +512,7 @@ It contains:
 - library-wide Downloaded and Available filters;
 - a sidebar entry for every tracked channel;
 - instant title, channel, and YouTube-ID search;
-- sortable status, title, channel, published, downloaded, duration, size, and
+- sortable pipeline, title, channel, published, downloaded, duration, size, and
   view-count columns;
 - a details panel for description, local path, source URL, and the last error;
 - summary cards for videos, downloads, remote-only entries, and channels;
@@ -532,6 +533,35 @@ completion, and failures. The newest 5,000 lines are retained in memory even
 while the panel is hidden; **Copy all** and **Clear** are available in the
 panel. Visibility is remembered across launches. Durable per-video pipeline
 logs continue to be written under `logs\`.
+
+### Pipeline Progress And Diagnostics
+
+The first table column is both a status display and an eMule/BitTorrent-style
+segmented progress bar. Its colored sections represent preparation, video
+download, audio extraction, speech-to-text, English translation, and final file
+work. The label above the bar changes through **Queued**, **Preparing**,
+**Downloading**, **Extracting audio**, **Speech-to-text**, **Translating**,
+**Finalizing**, and **Ready to play**. Available, live, upcoming, and failed
+rows use the same column, so status is not split across unrelated UI elements.
+
+Percentages are sourced where the underlying tool exposes meaningful progress:
+yt-dlp supplies download percentage, Whisper's frame progress supplies
+speech-to-text or audio-translation percentage, and OpenAI subtitle translation
+reports completed chunks. Short stages without a trustworthy percentage show
+their active segment and label without inventing one. The right-hand percentage
+is a weighted indication of the whole pipeline, not an ETA. Skipped or reused
+stages advance immediately. A failed run preserves the reached position in red
+instead of falling back to zero; hovering the cell shows its diagnostic label.
+
+The status bar mirrors the current fine-grained stage without being overwritten
+by noisy subprocess lines. Those lines still flow, timestamped, into the
+optional activity trace. This gives the normal view a calm answer to “what is
+it doing now?” and the trace a precise answer to “what exactly happened?”.
+
+The GUI child process opts into these structured events with a private
+environment variable. A direct `yt_whisper_subs.py` run does not enable that
+protocol, so its established command-line interaction and output remain
+unchanged.
 
 ### Existing Downloads And Metadata Backfill
 
@@ -1300,12 +1330,14 @@ High-level groups:
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
+| `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, and local download state. |
 | `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable/searchable Qt video-table presentation. |
+| `yt_whisper_subs.library_progress` | Native segmented pipeline-column rendering. |
 | `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
@@ -1360,6 +1392,7 @@ Start by preserving these invariants:
 15. Keep YouTube metadata sidecars outside `videos\` and the SQLite catalog
     rebuildable from local files.
 16. Keep hidden subprocesses observable through the timestamped activity trace.
+17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
 
 When changing the project, useful verification commands are:
 
@@ -1378,6 +1411,9 @@ compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; sidecar ingestion; and the crucial future-only automatic-download
 baseline.
+The progress tests additionally cover protocol round trips, opt-in CLI behavior,
+phase weighting, tool percentage recognition, GUI-child scoping, and terminal
+failure reporting.
 
 Mock the OpenAI translation path without making an API call:
 
