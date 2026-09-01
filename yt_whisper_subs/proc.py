@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from collections.abc import Iterator
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -21,6 +22,16 @@ from yt_whisper_subs import cfg
 
 
 _OUTPUT_POLL_SECONDS = 0.2
+
+
+class ChildWindow(StrEnum):
+    """Choose whether a child application's own window may be shown.
+
+    Example: mpv uses `ChildWindow.VISIBLE`; ffmpeg keeps the hidden default.
+    """
+
+    HIDDEN = "hidden"
+    VISIBLE = "visible"
 
 
 def venv_paths() -> dict[str, Path]:
@@ -75,10 +86,10 @@ def configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def child_process_kwargs() -> dict[str, Any]:
-    """Build shared UTF-8 and windowless subprocess options.
+def child_process_kwargs(window: ChildWindow = ChildWindow.HIDDEN) -> dict[str, Any]:
+    """Build shared UTF-8 options with an explicit Windows visibility policy.
 
-    Example: `subprocess.run(cmd, **child_process_kwargs())`.
+    Example: `child_process_kwargs(ChildWindow.VISIBLE)` keeps mpv visible.
     """
 
     env = os.environ.copy()
@@ -86,14 +97,13 @@ def child_process_kwargs() -> dict[str, Any]:
     env["PYTHONIOENCODING"] = "utf-8"
     kwargs: dict[str, Any] = {"env": env}
     if os.name == "nt":
-        # Console executables otherwise flash a terminal when their parent is pythonw.
-        startup_info = subprocess.STARTUPINFO()
-        startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        startup_info.wShowWindow = subprocess.SW_HIDE
-        kwargs.update(
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            startupinfo=startup_info,
-        )
+        # CREATE_NO_WINDOW suppresses a console without suppressing a GUI window.
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        if window is ChildWindow.HIDDEN:
+            startup_info = subprocess.STARTUPINFO()
+            startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startup_info.wShowWindow = subprocess.SW_HIDE
+            kwargs["startupinfo"] = startup_info
     return kwargs
 
 
@@ -207,10 +217,11 @@ def run(
     stream_stdout: bool = False,
     check: bool = True,
     silence_seconds: float | None = cfg.DEFAULT_SUBPROCESS_SILENCE_SECONDS,
+    window: ChildWindow = ChildWindow.HIDDEN,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a command while preserving live output in the run log.
 
-    Example: `run(["ffmpeg", "-version"], check=False)`.
+    Example: `run(["mpv", video], window=ChildWindow.VISIBLE)`.
     """
 
     configure_stdio()
@@ -221,7 +232,7 @@ def run(
     if capture_stdout and not stream_stdout:
         result = subprocess.run(
             command,
-            **child_process_kwargs(),
+            **child_process_kwargs(window),
             check=False,
             text=True,
             encoding="utf-8",
@@ -232,7 +243,7 @@ def run(
     else:
         process = subprocess.Popen(
             command,
-            **child_process_kwargs(),
+            **child_process_kwargs(window),
             text=True,
             encoding="utf-8",
             errors="replace",

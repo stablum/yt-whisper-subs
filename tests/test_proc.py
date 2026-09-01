@@ -19,10 +19,10 @@ from yt_whisper_subs import proc
 class ChildProcessOptionsTests(unittest.TestCase):
     """Keep UTF-8 output and window visibility policy single-sourced.
 
-    Example: `ChildProcessOptionsTests("test_child_process_options")`.
+    Example: `ChildProcessOptionsTests("test_hidden_child_process_options")`.
     """
 
-    def test_child_process_options(self) -> None:
+    def test_hidden_child_process_options(self) -> None:
         """Hide Windows child consoles while preserving the UTF-8 environment.
 
         Example: GUI-launched yt-dlp does not flash a terminal window.
@@ -38,6 +38,20 @@ class ChildProcessOptionsTests(unittest.TestCase):
             startup_info = kwargs["startupinfo"]
             self.assertTrue(startup_info.dwFlags & subprocess.STARTF_USESHOWWINDOW)
             self.assertEqual(startup_info.wShowWindow, subprocess.SW_HIDE)
+        else:
+            self.assertNotIn("creationflags", kwargs)
+            self.assertNotIn("startupinfo", kwargs)
+
+    def test_visible_application_suppresses_only_its_console(self) -> None:
+        """Allow a GUI window while preventing a companion console flash.
+
+        Example: mpv remains visible in the taskbar and Alt+Tab switcher.
+        """
+
+        kwargs = proc.child_process_kwargs(proc.ChildWindow.VISIBLE)
+        if os.name == "nt":
+            self.assertEqual(kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
+            self.assertNotIn("startupinfo", kwargs)
         else:
             self.assertNotIn("creationflags", kwargs)
             self.assertNotIn("startupinfo", kwargs)

@@ -13,6 +13,7 @@ from unittest import mock
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import playback
+from yt_whisper_subs import proc
 from yt_whisper_subs import youtube
 
 
@@ -93,6 +94,17 @@ class PlaybackPrefsTests(unittest.TestCase):
             primary.write_text("primary", encoding="utf-8")
             english.write_text("english", encoding="utf-8")
             self.assertEqual(playback.sidecar_subtitles(video), [english, primary])
+
+    @mock.patch("yt_whisper_subs.playback.proc.run")
+    def test_mpv_uses_visible_application_policy(self, run: mock.Mock) -> None:
+        """Keep mpv visible without weakening hidden background tools.
+
+        Example: GUI double-click produces a taskbar and Alt+Tab window.
+        """
+
+        playback.play_video(Path("video.mkv"), [], playback.PlaybackPrefs.defaults())
+
+        self.assertEqual(run.call_args.kwargs["window"], proc.ChildWindow.VISIBLE)
 
 
 if __name__ == "__main__":

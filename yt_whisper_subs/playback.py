@@ -314,7 +314,7 @@ def play_video(video_path: Path, srt_paths: list[Path], prefs: PlaybackPrefs) ->
             ]
 
         cmd.append(video_path)
-        proc.run(cmd, silence_seconds=None)
+        proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
     finally:
         if temp_dir_context is not None:
             temp_dir_context.__exit__(None, None, None)

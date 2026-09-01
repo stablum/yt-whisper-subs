@@ -131,8 +131,9 @@ The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials` when needed, and relaunches with `pythonw.exe`. The first
 start scans existing downloads immediately. An overdue channel check and old
 metadata backfill then run in the background without freezing the GUI. On
-Windows, every child operation runs without opening or flashing a terminal
-window; phase progress remains visible in the table and status bar, while exact
+Windows, background child operations run without opening or flashing a terminal
+window. mpv remains a normal visible application with a taskbar icon and Alt+Tab
+entry. Phase progress remains visible in the table and status bar, while exact
 tool output and errors remain available in the activity trace and run logs.
 
 Use the same non-default output root as the CLI:
@@ -521,10 +522,12 @@ It contains:
 - an optional timestamped activity trace for live pipeline and subprocess output;
 - a system tray so periodic checks continue when the main window is closed.
 
-All subprocesses launched from the desktop application—including dependency
-setup, channel discovery, downloads, ffmpeg, Whisper, and mpv—use Windows'
-no-console process mode. This keeps long-running background work visually quiet
-without changing the interactive output of a direct command-line run.
+Background subprocesses launched from the desktop application—including
+dependency setup, channel discovery, downloads, ffmpeg, and Whisper—use
+Windows' hidden, no-console process mode. mpv uses a distinct visible-application
+policy: its console is suppressed, but its video window, taskbar icon, and
+Alt+Tab entry remain visible. This keeps computational work visually quiet
+without hiding the application the user explicitly asked to open.
 
 Choose **View → Activity trace** or press **Ctrl+Shift+L** to open the dockable
 trace panel. It timestamps download progress, command lines, ffmpeg and Whisper
@@ -615,7 +618,8 @@ Double-clicking a downloaded row or choosing Play invokes
 `playback.play_video` with the same English-first sidecar discovery, colors,
 positions, primary font scale, secondary ASS conversion, and mpv options as the
 CLI. Double-clicking a remote-only row offers to download it first. mpv runs in a
-background worker so the Qt window remains responsive while playback is open.
+background worker so the Qt window remains responsive while playback is open;
+mpv itself remains a normal visible and switchable Windows application.
 
 ## Audio Extraction
 
@@ -1319,7 +1323,7 @@ High-level groups:
 | `yt_whisper_subs.cli` | CLI definition and source disambiguation. |
 | `yt_whisper_subs.opts` | Language, translation-provider, compaction, and soft-period policy helpers. |
 | `yt_whisper_subs.cfg` | Shared defaults and choices. |
-| `yt_whisper_subs.proc` | Subprocess execution, external command checks, CUDA probing, and `.venv` maintenance. |
+| `yt_whisper_subs.proc` | Subprocess execution, hidden/visible Windows child policy, external command checks, CUDA probing, and `.venv` maintenance. |
 | `yt_whisper_subs.runlog` | Timestamped run logging and log-path creation. |
 | `yt_whisper_subs.youtube` | Exact YouTube ID cache lookup, yield migration, and yt-dlp invocation. |
 | `yt_whisper_subs.media` | Local video path validation and ffmpeg audio extraction. |
@@ -1611,6 +1615,15 @@ VIDEO_ID.en.srt
 However, when the script launches `mpv`, it passes subtitle files explicitly and
 uses `--sub-auto=no`. That prevents mpv from adding extra auto-detected tracks
 on top of the ones the script selected.
+
+### mpv audio plays but no video window appears
+
+Current releases launch mpv with the visible-application child policy. Its
+console remains suppressed on Windows, while the video window must appear in
+the taskbar and Alt+Tab switcher. Background tools use the separate hidden
+policy. If audio plays without a window, confirm that the running package is
+version `0.2.4` or newer and restart the library so it loads the updated process
+policy.
 
 ### What are `.ass` files?
 
