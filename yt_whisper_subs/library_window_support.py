@@ -47,7 +47,7 @@ class WindowRuntimeMixin:
         return tray
 
     def check_now(self) -> None:
-        """Start a manual all-channel check and metadata backfill.
+        """Start a manual all-channel discovery check.
 
         Example: the toolbar and tray both invoke `check_now()`.
         """
@@ -94,6 +94,75 @@ class WindowRuntimeMixin:
         when = datetime.fromtimestamp(now + delay).astimezone().strftime("%a %H:%M")
         self._ui.next_check.setText(f"Next check: {when}")
 
+    def _schedule_metadata_backfill(self, *, idle: bool = False) -> None:
+        """Pace metadata work independently from bursty channel checks.
+
+        Example: task completion schedules one lookup for a later timer tick.
+        """
+
+        has_work = self._service.db.metadata_backlog_count() > 0
+        seconds = cfg.DEFAULT_LIBRARY_METADATA_PACE_SECONDS
+        if idle or not has_work:
+            seconds = cfg.DEFAULT_LIBRARY_METADATA_IDLE_SECONDS
+        self._metadata_timer.start(seconds * 1000)
+
+    def _metadata_tick(self) -> None:
+        """Run one quiet metadata lookup only while foreground work is idle.
+
+        Example: `_metadata_timer` invokes this at the configured safe pace.
+        """
+
+        if self._busy or self._metadata_active:
+            self._schedule_metadata_backfill()
+            return
+        self._metadata_active = True
+        task = library_workers.BackgroundTask(self._service.backfill_metadata)
+        task.signals.progress.connect(self._report_metadata)
+
+        def done(result: object) -> None:
+            """Refresh the queue after one attempted or empty maintenance tick.
+
+            Example: a successful metadata worker invokes `done(result)`.
+            """
+
+            self._metadata_active = False
+            self._metadata_task = None
+            self.refresh()
+            attempted = bool(getattr(result, "attempted", False))
+            completed = bool(getattr(result, "completed", False))
+            idle = not attempted or not completed
+            if attempted and not completed:
+                minutes = cfg.DEFAULT_LIBRARY_METADATA_IDLE_SECONDS // 60
+                self._ui.trace.append_message(
+                    f"Metadata · Queue paused for {minutes} minutes after a failed lookup"
+                )
+            self._schedule_metadata_backfill(idle=idle)
+
+        def failed(message: str, trace: str) -> None:
+            """Keep maintenance failures non-modal and retry them gently.
+
+            Example: an unexpected database error invokes `failed(message, trace)`.
+            """
+
+            self._metadata_active = False
+            self._metadata_task = None
+            self._ui.trace.append_message(f"✗ Metadata maintenance · {message}")
+            self._ui.trace.append_message(trace)
+            self._schedule_metadata_backfill(idle=True)
+
+        task.signals.finished.connect(done)
+        task.signals.failed.connect(failed)
+        self._metadata_task = task
+        self._pool.start(task)
+
+    def _report_metadata(self, message: str) -> None:
+        """Send low-priority maintenance detail to the optional trace only.
+
+        Example: a deferred lookup is visible without disturbing playback status.
+        """
+
+        self._ui.trace.append_message(f"Metadata · {message}")
+
     def _run_task(
         self,
         label: str,
@@ -108,6 +177,7 @@ class WindowRuntimeMixin:
         if self._busy:
             self.statusBar().showMessage("Another library task is already running", 5000)
             return
+        self._metadata_timer.stop()
         self._busy = True
         self._pipeline_status_active = False
         self._reported_stage_key = None
@@ -131,6 +201,7 @@ class WindowRuntimeMixin:
             self._update_actions()
             if finished:
                 finished(result)
+            self._schedule_metadata_backfill()
 
         def failed(message: str, trace: str) -> None:
             """Show a concise error with optional diagnostic details.
@@ -153,6 +224,7 @@ class WindowRuntimeMixin:
             box.setDetailedText(trace)
             box.exec()
             self.statusBar().showMessage(f"Error: {message}", 10000)
+            self._schedule_metadata_backfill()
 
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)

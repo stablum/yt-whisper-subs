@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
@@ -19,7 +21,7 @@ from yt_whisper_subs import library_types as types
 from yt_whisper_subs import pipeline_progress as progress
 
 
-def make_meta(video_id: str, title: str, published_at: int = 100) -> types.VideoMeta:
+def make_meta(video_id: str, title: str, published_at: int | None = 100) -> types.VideoMeta:
     """Build compact catalog metadata used by persistence and service tests.
 
     Example: `make_meta("aaaaaaaaaaa", "First")`.
@@ -40,6 +42,7 @@ class FakeFeed:
     def __init__(self, videos: list[types.VideoMeta]) -> None:
         self.videos = videos
         self.fail = False
+        self.video_fail = False
 
     def with_cookies(self, cookies: str | None) -> FakeFeed:
         """Keep the same fake strategy when GUI settings are reloaded.
@@ -77,6 +80,8 @@ class FakeFeed:
         Example: `feed.video_info(url).document` becomes the test sidecar.
         """
 
+        if self.video_fail:
+            raise RuntimeError("simulated metadata failure")
         meta = self.video(url)
         document = {
             "id": meta.identity.video_id,
@@ -210,6 +215,54 @@ class LibraryDbTests(unittest.TestCase):
             self.assertIsNone(db.video("bbbbbbbbbbb"))
             self.assertEqual(db.stats().channels, 0)
 
+    def test_metadata_queue_is_fair_and_cools_down_attempts(self) -> None:
+        """Prefer untouched rows and suppress attempted rows until retry time.
+
+        Example: one unavailable video cannot starve the remaining backlog.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            channel = db.add_channel("https://www.youtube.com/@example/videos", False)
+            first = make_meta("aaaaaaaaaaa", "First", None)
+            second = make_meta("bbbbbbbbbbb", "Second", None)
+            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first, second])
+            db.store_snapshot(channel.channel_id, snapshot)
+
+            attempted_id = db.metadata_backfill_ids(1, retry_before=1_000)[0]
+            db.mark_metadata_attempt(attempted_id, attempted_at=1_000)
+            next_id = db.metadata_backfill_ids(1, retry_before=999)[0]
+            self.assertNotEqual(next_id, attempted_id)
+            db.mark_metadata_attempt(next_id, attempted_at=1_001)
+
+            self.assertEqual(db.metadata_backfill_ids(1, retry_before=999), [])
+            self.assertEqual(db.metadata_backfill_ids(1, retry_before=1_000), [attempted_id])
+            self.assertEqual(db.metadata_backlog_count(), 2)
+
+    def test_initialize_migrates_an_existing_metadata_queue(self) -> None:
+        """Add queue-attempt state without discarding an existing catalog.
+
+        Example: version 0.2.5 databases open directly in version 0.2.6.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "catalog.sqlite3"
+            legacy_schema = library_db._SCHEMA.replace(
+                "    metadata_attempted_at INTEGER,\n",
+                "",
+            )
+            with closing(sqlite3.connect(path)) as conn:
+                conn.executescript(legacy_schema)
+                conn.commit()
+
+            db = library_db.LibraryDb(path)
+            db.initialize()
+
+            with closing(sqlite3.connect(path)) as conn:
+                columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(videos)")}
+            self.assertIn("metadata_attempted_at", columns)
+
 
 class LibraryServiceTests(unittest.TestCase):
     """Cover baseline safety and future-only automatic download behavior.
@@ -282,7 +335,63 @@ class LibraryServiceTests(unittest.TestCase):
             record = service.db.video(video_id)
             self.assertEqual(record.meta.identity.title, "Preserved title")
             self.assertEqual(record.meta.origin.channel, "Preserved channel")
-            self.assertEqual(service.db.missing_metadata_ids(12), [])
+            self.assertEqual(service.db.metadata_backlog_count(), 0)
+
+    def test_metadata_backfill_attempts_only_one_video(self) -> None:
+        """Hydrate one missing date per call and leave the rest queued.
+
+        Example: the GUI's minute timer cannot trigger a request burst.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            first = make_meta("aaaaaaaaaaa", "First", None)
+            second = make_meta("bbbbbbbbbbb", "Second", None)
+            feed = FakeFeed([first, second])
+            service = library_service.LibraryService(
+                out_dir,
+                {"python": Path("python")},
+                feed=feed,
+                downloader=FakeDownloader(out_dir),
+            )
+            service.add_channel("@example", False)
+            feed.videos = [
+                make_meta("aaaaaaaaaaa", "First", 100),
+                make_meta("bbbbbbbbbbb", "Second", 200),
+            ]
+
+            result = service.backfill_metadata()
+
+            self.assertTrue(result.attempted)
+            self.assertTrue(result.completed)
+            self.assertEqual(result.remaining, 1)
+            self.assertEqual(service.db.metadata_backlog_count(), 1)
+
+    def test_failed_metadata_lookup_is_deferred_without_pipeline_error(self) -> None:
+        """Cooldown an unavailable lookup without marking the download failed.
+
+        Example: a temporary YouTube refusal stays in the trace and queue.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            feed = FakeFeed([make_meta("aaaaaaaaaaa", "First", None)])
+            service = library_service.LibraryService(
+                out_dir,
+                {"python": Path("python")},
+                feed=feed,
+                downloader=FakeDownloader(out_dir),
+            )
+            service.add_channel("@example", False)
+            feed.video_fail = True
+
+            result = service.backfill_metadata()
+            cooled_down = service.backfill_metadata()
+
+            self.assertTrue(result.attempted)
+            self.assertFalse(result.completed)
+            self.assertFalse(cooled_down.attempted)
+            self.assertIsNone(service.db.video("aaaaaaaaaaa").download_error)
 
     def test_failed_initial_check_does_not_arm_backlog_download(self) -> None:
         """Keep baseline incomplete until one channel snapshot succeeds.

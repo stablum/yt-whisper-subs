@@ -11,6 +11,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_db
@@ -30,6 +31,17 @@ def _ignore_report(message: str) -> None:
 
     Example: `service.scan_local(_ignore_report)`.
     """
+
+
+class MetadataBackfillResult(NamedTuple):
+    """Describe one paced lookup without exposing scheduling to the service.
+
+    Example: `result.remaining` updates the GUI queue indicator.
+    """
+
+    attempted: bool
+    completed: bool
+    remaining: int
 
 
 class PipelineDownloader:
@@ -186,26 +198,34 @@ class LibraryService:
         report(f"Indexed {len(scanned)} downloaded video(s)")
         return len(scanned)
 
-    def backfill_metadata(self, report: ReportFn = _ignore_report) -> int:
-        """Fetch and persist missing metadata for pre-catalog downloads once.
+    def backfill_metadata(self, report: ReportFn = _ignore_report) -> MetadataBackfillResult:
+        """Attempt at most one fair, cooldown-aware metadata lookup.
 
-        Example: `service.backfill_metadata(report)` restores old titles.
+        Example: a GUI timer calls `service.backfill_metadata(report)` once.
         """
 
-        video_ids = self.db.missing_metadata_ids(cfg.DEFAULT_LIBRARY_METADATA_BATCH)
-        completed = 0
-        for idx, video_id in enumerate(video_ids, start=1):
-            report(f"Reading metadata {idx}/{len(video_ids)} · {video_id}")
-            try:
-                info = self._feed.video_info(f"https://www.youtube.com/watch?v={video_id}")
-            except Exception as exc:
-                self.db.set_download_error(video_id, f"Metadata: {exc}")
-                continue
-            self.db.upsert_video(info.meta)
-            self._write_metadata(info)
-            self.db.set_download_error(video_id, None)
-            completed += 1
-        return completed
+        retry_seconds = round(cfg.DEFAULT_LIBRARY_METADATA_RETRY_HOURS * 3600)
+        retry_before = int(time.time()) - retry_seconds
+        video_ids = self.db.metadata_backfill_ids(1, retry_before)
+        remaining = self.db.metadata_backlog_count()
+        if not video_ids:
+            return MetadataBackfillResult(False, False, remaining)
+
+        video_id = video_ids[0]
+        self.db.mark_metadata_attempt(video_id)
+        report(f"Reading queued metadata · {video_id}")
+        try:
+            info = self._feed.video_info(f"https://www.youtube.com/watch?v={video_id}")
+        except Exception as exc:
+            hours = cfg.DEFAULT_LIBRARY_METADATA_RETRY_HOURS
+            report(f"Metadata deferred for {hours:g} hours · {video_id} · {exc}")
+            return MetadataBackfillResult(True, False, remaining)
+
+        self.db.upsert_video(info.meta)
+        self._write_metadata(info)
+        remaining = self.db.metadata_backlog_count()
+        report(f"Metadata saved · {info.meta.identity.title} · {remaining:,} queued")
+        return MetadataBackfillResult(True, True, remaining)
 
     def add_channel(self, value: str, auto_download: bool, report: ReportFn = _ignore_report) -> types.Channel:
         """Subscribe and establish an initial no-auto-download history baseline.
@@ -221,7 +241,6 @@ class LibraryService:
         except Exception as exc:
             self.db.set_channel_error(channel.channel_id, str(exc))
             raise
-        self.backfill_metadata(report)
         updated = self.db.channel(channel.channel_id)
         assert updated is not None
         return updated
@@ -253,7 +272,6 @@ class LibraryService:
             except Exception as exc:
                 report(f"Auto-download failed: {exc}")
 
-        self.backfill_metadata(report)
         self.db.set_setting("last_check_at", int(time.time()))
         return len(auto_ids)
 
@@ -329,6 +347,7 @@ class LibraryService:
         """
 
         path = self.metadata_dir / f"{info.meta.identity.video_id}.info.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
         content = json.dumps(info.document, ensure_ascii=False, indent=2)
         path.write_text(content, encoding="utf-8")
 

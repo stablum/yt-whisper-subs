@@ -112,6 +112,7 @@ class LibraryUi(NamedTuple):
     header: HeaderUi
     catalog: CatalogUi
     summary: SummaryUi
+    metadata_status: QtWidgets.QLabel
     next_check: QtWidgets.QLabel
     trace: library_widgets.ActivityTrace
 
@@ -130,9 +131,14 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._scheduled_check)
+        self._metadata_timer = QtCore.QTimer(self)
+        self._metadata_timer.setSingleShot(True)
+        self._metadata_timer.timeout.connect(self._metadata_tick)
         self._busy = False
+        self._metadata_active = False
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._active_task: library_workers.BackgroundTask | None = None
+        self._metadata_task: library_workers.BackgroundTask | None = None
         self._quitting = False
         self._ui = self._build_ui()
         self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
@@ -141,6 +147,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._build_menus()
         self.refresh()
         self._schedule_next(initial=True)
+        self._schedule_metadata_backfill()
 
     def _build_ui(self) -> LibraryUi:
         """Construct the cohesive sidebar, summary, table, and details layout.
@@ -179,10 +186,12 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         trace.setVisible(trace_visible)
         trace.visibilityChanged.connect(self._store_trace_visibility)
 
+        metadata_status = QtWidgets.QLabel()
         next_check = QtWidgets.QLabel()
+        self.statusBar().addPermanentWidget(metadata_status)
         self.statusBar().addPermanentWidget(next_check)
         self.statusBar().showMessage("Ready")
-        return LibraryUi(header, catalog, summary, next_check, trace)
+        return LibraryUi(header, catalog, summary, metadata_status, next_check, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
         """Create the library filters and channel-subscription list.
@@ -348,6 +357,13 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._ui.summary.downloaded.set_value(stats.downloaded)
         self._ui.summary.pending.set_value(stats.pending)
         self._ui.summary.channels.set_value(stats.channels)
+        metadata_count = self._service.db.metadata_backlog_count()
+        metadata_text = (
+            f"Metadata: {metadata_count:,} queued · ≤1/min"
+            if metadata_count
+            else "Metadata: complete"
+        )
+        self._ui.metadata_status.setText(metadata_text)
         self._restore_video_selection(selected_id)
         self._update_actions()
 

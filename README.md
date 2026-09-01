@@ -95,7 +95,9 @@ These defaults are hard-coded near the top of the script:
 | Dual subtitle font size | `80` |
 | Primary font scale | `0.45` |
 | Library channel check interval | `4` hours |
-| Library metadata hydration batch | `12` videos per check |
+| Library metadata hydration pace | at most `1` video lookup per minute |
+| Failed metadata lookup cooldown | `24` hours |
+| Metadata queue pause after failure | `15` minutes |
 | Library close behavior | keep running in the system tray |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
@@ -129,12 +131,13 @@ python .\yt_whisper_library.pyw
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials` when needed, and relaunches with `pythonw.exe`. The first
-start scans existing downloads immediately. An overdue channel check and old
-metadata backfill then run in the background without freezing the GUI. On
-Windows, background child operations run without opening or flashing a terminal
-window. mpv remains a normal visible application with a taskbar icon and Alt+Tab
-entry. Phase progress remains visible in the table and status bar, while exact
-tool output and errors remain available in the activity trace and run logs.
+start scans existing downloads immediately. An overdue channel check and the
+gently paced metadata queue then run in the background without freezing the
+GUI. On Windows, background child operations run without opening or flashing a
+terminal window. mpv remains a normal visible application with a taskbar icon
+and Alt+Tab entry. Phase progress remains visible in the table and status bar,
+while exact tool output and errors remain available in the activity trace and
+run logs.
 
 When this launcher is started from PowerShell, WezTerm, or another terminal, the
 outer process remains attached until the managed GUI exits. Pressing **Ctrl+C**
@@ -579,9 +582,15 @@ On startup the library scans `videos\` by exact YouTube ID. Both
 `youtube_id.mkv` and old `Title [youtube_id].mkv` forms are recognized. A matching
 `metadata\youtube_id.info.json` is ingested without network access. Older files
 without sidecars appear immediately with their best offline title and download
-time, then receive full remote metadata in bounded batches of 12 during checks.
-This avoids turning an existing large library into one unbounded burst of
-YouTube requests. Repeated Check actions continue the progressive backfill.
+time, then receive full remote metadata through a separate paced queue. The app
+attempts at most one video lookup per minute, pauses the queue while a channel
+check or subtitle-pipeline task is active, and waits 24 hours before retrying a
+failed lookup. Any failure also pauses the entire queue for 15 minutes, which
+keeps a broad YouTube refusal from cascading across the backlog. Untouched rows
+always run before retries, so one unavailable video cannot block the backlog.
+This avoids request bursts while steadily restoring missing publication times.
+The status-bar footer shows the remaining queue; the activity trace records
+each saved, deferred, and queue-paused lookup.
 
 Filesystem creation time is used as the best available historical download
 time. It is distinct from YouTube publication time and is shown in a separate
@@ -600,6 +609,10 @@ Settings**. The schedule is persisted in SQLite, so reopening the app performs
 an overdue check. Checks run only while the application process is open; closing
 the window keeps it in the system tray by default. Choose **Library → Quit** to
 stop checks completely.
+
+Channel checks only discover catalog entries; they never launch a burst of
+per-video metadata requests. Metadata enrichment has its own one-item timer and
+runs only while the application process is open.
 
 Browser cookies can be configured in the same dialog using values such as
 `firefox`, `chrome`, or `edge`. They are forwarded to both channel discovery and
