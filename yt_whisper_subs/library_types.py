@@ -88,6 +88,18 @@ class ScannedMedia(NamedTuple):
     metadata_complete: bool
 
 
+class PlaybackState(NamedTuple):
+    """Persist furthest playback separately from confirmed completion.
+
+    Example: `PlaybackState(30, 120, None, now)` represents partial viewing.
+    """
+
+    position_seconds: float
+    duration_seconds: float | None
+    completed_at: int | None
+    updated_at: int
+
+
 class VideoRecord(NamedTuple):
     """Combine remote metadata, subscription ownership, and local media.
 
@@ -99,6 +111,7 @@ class VideoRecord(NamedTuple):
     discovered_at: int
     local: LocalMedia | None
     download_error: str | None
+    playback: PlaybackState | None
 
     @property
     def downloaded(self) -> bool:

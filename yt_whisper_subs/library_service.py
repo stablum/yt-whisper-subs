@@ -18,6 +18,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback
+from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import youtube
@@ -296,10 +297,10 @@ class LibraryService:
             self.db.set_download_error(video_id, str(exc))
             raise
 
-    def play(self, video_id: str) -> None:
+    def play(self, video_id: str, report: ReportFn = _ignore_report) -> None:
         """Open a downloaded record through the exact shared mpv policy.
 
-        Example: `service.play(video_id)` handles a table double-click.
+        Example: `service.play(video_id, report)` tracks GUI playback.
         """
 
         record = self.db.video(video_id)
@@ -307,7 +308,23 @@ class LibraryService:
             raise RuntimeError("download this video before playing it")
         proc.require_command("mpv")
         srts = playback.sidecar_subtitles(record.local.path)
-        playback.play_video(record.local.path, srts, playback.PlaybackPrefs.defaults())
+
+        def save(update: playback_progress.Update) -> None:
+            """Persist and publish one paced observation from mpv's IPC thread.
+
+            Example: `save(update)` refreshes both SQLite and the live table bar.
+            """
+
+            self.db.record_playback(update)
+            report(playback_progress.encode(update))
+
+        observer = playback_progress.Observer(video_id, save)
+        playback.play_video(
+            record.local.path,
+            srts,
+            playback.PlaybackPrefs.defaults(),
+            observer,
+        )
 
     def _check_channel(self, channel: types.Channel, report: ReportFn) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.

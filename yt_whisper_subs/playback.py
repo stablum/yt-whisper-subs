@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import mpv_ipc
+from yt_whisper_subs import playback_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
 
@@ -282,13 +284,21 @@ def sidecar_subtitles(video_path: Path) -> list[Path]:
     return [path for path in (english, primary) if path.exists()]
 
 
-def play_video(video_path: Path, srt_paths: list[Path], prefs: PlaybackPrefs) -> None:
+def play_video(
+    video_path: Path,
+    srt_paths: list[Path],
+    prefs: PlaybackPrefs,
+    observer: progress.Observer | None = None,
+) -> None:
     """Open mpv with selected subtitle paths and optional dual-sub display.
 
-    Example: `play_video(video, [primary, english], prefs)`.
+    Example: `play_video(video, [primary, english], prefs, observer)`.
     """
 
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
+    monitor = mpv_ipc.MpvMonitor(observer) if observer else None
+    if monitor:
+        cmd.append(monitor.mpv_option)
     existing_srt_paths = [srt_path for srt_path in srt_paths if srt_path.exists()]
 
     temp_dir_context = None
@@ -314,7 +324,11 @@ def play_video(video_path: Path, srt_paths: list[Path], prefs: PlaybackPrefs) ->
             ]
 
         cmd.append(video_path)
-        proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
+        if monitor:
+            with monitor:
+                proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
+        else:
+            proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
     finally:
         if temp_dir_context is not None:
             temp_dir_context.__exit__(None, None, None)

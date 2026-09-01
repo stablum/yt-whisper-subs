@@ -16,8 +16,10 @@ from unittest import mock
 
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
+from yt_whisper_subs import library_model
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 
 
@@ -145,7 +147,7 @@ class PipelineDownloaderTests(unittest.TestCase):
             "error: ERROR: unable to download video data: HTTP Error 403: Forbidden\n"
         )
         process.wait.return_value = 1
-        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None)
+        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
         downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
 
         reports: list[str] = []
@@ -240,16 +242,28 @@ class LibraryDbTests(unittest.TestCase):
             self.assertEqual(db.metadata_backfill_ids(1, retry_before=1_000), [attempted_id])
             self.assertEqual(db.metadata_backlog_count(), 2)
 
-    def test_initialize_migrates_an_existing_metadata_queue(self) -> None:
-        """Add queue-attempt state without discarding an existing catalog.
+    def test_initialize_migrates_an_existing_catalog(self) -> None:
+        """Add queue and playback state without discarding an existing catalog.
 
-        Example: version 0.2.5 databases open directly in version 0.2.6.
+        Example: version 0.2.6 databases open directly in version 0.3.0.
         """
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "catalog.sqlite3"
             legacy_schema = library_db._SCHEMA.replace(
                 "    metadata_attempted_at INTEGER,\n",
+                "",
+            )
+            legacy_schema = legacy_schema.replace(
+                """
+CREATE TABLE IF NOT EXISTS playback (
+    video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
+    position_seconds REAL NOT NULL DEFAULT 0,
+    duration_seconds REAL,
+    completed_at INTEGER,
+    updated_at INTEGER NOT NULL
+);
+""",
                 "",
             )
             with closing(sqlite3.connect(path)) as conn:
@@ -261,7 +275,38 @@ class LibraryDbTests(unittest.TestCase):
 
             with closing(sqlite3.connect(path)) as conn:
                 columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(videos)")}
+                tables = {
+                    str(row[0])
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                }
             self.assertIn("metadata_attempted_at", columns)
+            self.assertIn("playback", tables)
+
+    def test_playback_progress_and_completion_are_durable_and_monotonic(self) -> None:
+        """Keep furthest position and never erase a confirmed watched state.
+
+        Example: replaying from the beginning leaves a completed video at 100%.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            channel = db.add_channel("https://www.youtube.com/@example/videos", False)
+            meta = make_meta("aaaaaaaaaaa", "First")
+            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [meta])
+            db.store_snapshot(channel.channel_id, snapshot)
+
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 40, 100))
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 20, 100))
+            partial = db.video("aaaaaaaaaaa").playback
+            self.assertEqual(partial.position_seconds, 40)
+            self.assertIsNone(partial.completed_at)
+
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 99, 100, True))
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 5, 100))
+            completed = db.video("aaaaaaaaaaa").playback
+            self.assertEqual(completed.position_seconds, 100)
+            self.assertIsNotNone(completed.completed_at)
 
 
 class LibraryServiceTests(unittest.TestCase):
@@ -421,6 +466,39 @@ class LibraryServiceTests(unittest.TestCase):
 
             self.assertEqual(downloader.calls, [])
             self.assertIsNotNone(service.db.channels()[0].baseline_at)
+
+
+class LibraryModelTests(unittest.TestCase):
+    """Keep watched-column wording aligned with durable completion semantics.
+
+    Example: `LibraryModelTests("test_100_percent_requires_completion")`.
+    """
+
+    def test_100_percent_requires_completion(self) -> None:
+        """Cap position-derived display at 99 until an EOF timestamp exists.
+
+        Example: reaching duration numerically is not itself completion proof.
+        """
+
+        local = types.LocalMedia(Path("video.mkv"), 100, 5)
+        partial = types.VideoRecord(
+            make_meta("aaaaaaaaaaa", "First"),
+            None,
+            100,
+            local,
+            None,
+            types.PlaybackState(100, 100, None, 200),
+        )
+
+        partial_view = library_model.watched_progress(partial)
+        completed_view = library_model.watched_progress(
+            partial._replace(playback=types.PlaybackState(100, 100, 300, 300))
+        )
+
+        self.assertEqual(partial_view.fraction, 0.99)
+        self.assertEqual(partial_view.label, "99%")
+        self.assertEqual(completed_view.fraction, 1.0)
+        self.assertEqual(completed_view.label, "✓ 100%")
 
 
 class LibraryFeedTests(unittest.TestCase):

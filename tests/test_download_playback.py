@@ -12,7 +12,9 @@ from pathlib import Path
 from unittest import mock
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import mpv_ipc
 from yt_whisper_subs import playback
+from yt_whisper_subs import playback_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import youtube
 
@@ -105,6 +107,97 @@ class PlaybackPrefsTests(unittest.TestCase):
         playback.play_video(Path("video.mkv"), [], playback.PlaybackPrefs.defaults())
 
         self.assertEqual(run.call_args.kwargs["window"], proc.ChildWindow.VISIBLE)
+        self.assertFalse(
+            any(str(arg).startswith("--input-ipc-server=") for arg in run.call_args.args[0])
+        )
+
+    @mock.patch("yt_whisper_subs.playback.proc.run")
+    @mock.patch("yt_whisper_subs.playback.mpv_ipc.MpvMonitor")
+    def test_observer_adds_ephemeral_ipc_at_launch(
+        self,
+        monitor: mock.Mock,
+        run: mock.Mock,
+    ) -> None:
+        """Add a unique IPC option without changing or bypassing mpv config.
+
+        Example: library playback receives events while CLI playback stays plain.
+        """
+
+        monitor.return_value.mpv_option = "--input-ipc-server=test-pipe"
+        observer = progress.Observer("aaaaaaaaaaa", mock.Mock())
+
+        playback.play_video(
+            Path("video.mkv"),
+            [],
+            playback.PlaybackPrefs.defaults(),
+            observer,
+        )
+
+        cmd = [str(arg) for arg in run.call_args.args[0]]
+        self.assertIn("--input-ipc-server=test-pipe", cmd)
+        self.assertNotIn("--no-config", cmd)
+        monitor.return_value.__enter__.assert_called_once()
+
+
+class MpvEventTrackerTests(unittest.TestCase):
+    """Convert mpv property and terminal events into trustworthy progress.
+
+    Example: `MpvEventTrackerTests("test_eof_alone_reaches_100_percent")`.
+    """
+
+    def test_eof_alone_reaches_100_percent(self) -> None:
+        """Pace ordinary updates and reserve completion for the EOF reason.
+
+        Example: a position equal to duration remains 99 percent before EOF.
+        """
+
+        updates: list[progress.Update] = []
+        tracker = mpv_ipc.MpvEventTracker(
+            progress.Observer("aaaaaaaaaaa", updates.append),
+            emit_interval=5,
+        )
+        tracker.ingest({"event": "property-change", "name": "duration", "data": 100.0}, now=0)
+        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 10.0}, now=0)
+        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 40.0}, now=1)
+        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 100.0}, now=5)
+
+        self.assertEqual(len(updates), 2)
+        self.assertEqual(progress.fraction(updates[-1]), 0.99)
+
+        tracker.ingest({"event": "end-file", "reason": "eof"}, now=6)
+
+        self.assertTrue(updates[-1].completed)
+        self.assertEqual(progress.fraction(updates[-1]), 1.0)
+        self.assertFalse(tracker.finish())
+
+    def test_quit_flushes_progress_without_completion(self) -> None:
+        """Distinguish a normal window close from reaching the end of the file.
+
+        Example: `end-file: quit` persists the position below 100 percent.
+        """
+
+        updates: list[progress.Update] = []
+        tracker = mpv_ipc.MpvEventTracker(
+            progress.Observer("aaaaaaaaaaa", updates.append),
+            emit_interval=60,
+        )
+        tracker.ingest({"event": "property-change", "name": "duration", "data": 200.0}, now=0)
+        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 50.0}, now=0)
+        tracker.ingest({"event": "end-file", "reason": "quit"}, now=1)
+
+        self.assertFalse(updates[-1].completed)
+        self.assertEqual(progress.fraction(updates[-1]), 0.25)
+
+    def test_progress_protocol_round_trip(self) -> None:
+        """Carry one playback update through the existing string signal safely.
+
+        Example: a worker report becomes a typed GUI model update.
+        """
+
+        update = progress.make("aaaaaaaaaaa", 30, 120)
+
+        self.assertEqual(progress.parse(progress.encode(update)), update)
+        self.assertIsNone(progress.parse("ordinary trace output"))
 
 
 if __name__ == "__main__":

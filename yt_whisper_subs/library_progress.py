@@ -13,6 +13,24 @@ from yt_whisper_subs import library_model
 from yt_whisper_subs import pipeline_progress as progress
 
 
+def _paint_item_background(
+    delegate: QtWidgets.QStyledItemDelegate,
+    painter: QtGui.QPainter,
+    option: QtWidgets.QStyleOptionViewItem,
+    index: QtCore.QModelIndex,
+) -> None:
+    """Draw Qt's normal row and selection chrome without default cell text.
+
+    Example: both graphical delegates call this before custom painting.
+    """
+
+    cell = QtWidgets.QStyleOptionViewItem(option)
+    delegate.initStyleOption(cell, index)
+    cell.text = ""
+    style = cell.widget.style() if cell.widget else QtWidgets.QApplication.style()
+    style.drawControl(QtWidgets.QStyle.ControlElement.CE_ItemViewItem, cell, painter, cell.widget)
+
+
 class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
     """Paint a compact multi-stage bar with an honest live phase label.
 
@@ -30,11 +48,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         Example: Qt invokes `paint(...)` for every visible pipeline cell.
         """
 
-        cell = QtWidgets.QStyleOptionViewItem(option)
-        self.initStyleOption(cell, index)
-        cell.text = ""
-        style = cell.widget.style() if cell.widget else QtWidgets.QApplication.style()
-        style.drawControl(QtWidgets.QStyle.ControlElement.CE_ItemViewItem, cell, painter, cell.widget)
+        _paint_item_background(self, painter, option, index)
 
         update = index.data(library_model.PROGRESS_ROLE)
         if not isinstance(update, progress.Update):
@@ -133,3 +147,68 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
 
             x += width + gap
             start += spec.weight
+
+
+class WatchedProgressDelegate(QtWidgets.QStyledItemDelegate):
+    """Paint one calm single-track bar for durable viewing progress.
+
+    Example: the catalog installs this delegate on the Watched column.
+    """
+
+    def paint(
+        self,
+        painter: QtGui.QPainter,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> None:
+        """Draw a percentage label and blue-or-complete-green progress bar.
+
+        Example: Qt invokes `paint(...)` for each visible watched cell.
+        """
+
+        watched = index.data(library_model.WATCHED_ROLE)
+        if not isinstance(watched, library_model.WatchedProgress):
+            super().paint(painter, option, index)
+            return
+        _paint_item_background(self, painter, option, index)
+        rect = option.rect.adjusted(9, 4, -9, -4)
+        selected = bool(option.state & QtWidgets.QStyle.StateFlag.State_Selected)
+        text_color = option.palette.highlightedText().color() if selected else QtGui.QColor("#dfe7f1")
+        fill_color = QtGui.QColor("#71d99b" if watched.completed else "#4ea1f3")
+
+        painter.save()
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        painter.setPen(text_color)
+        label_rect = QtCore.QRect(rect.left(), rect.top(), rect.width(), 19)
+        painter.drawText(
+            label_rect,
+            QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter,
+            watched.label,
+        )
+        track = QtCore.QRectF(rect.left(), rect.top() + 23, rect.width(), 8)
+        painter.setPen(QtCore.Qt.PenStyle.NoPen)
+        painter.setBrush(QtGui.QColor("#343b47"))
+        painter.drawRoundedRect(track, 3, 3)
+        if watched.fraction:
+            fill = QtCore.QRectF(
+                track.left(),
+                track.top(),
+                track.width() * watched.fraction,
+                track.height(),
+            )
+            painter.setBrush(fill_color)
+            painter.drawRoundedRect(fill, 3, 3)
+        painter.restore()
+
+    def sizeHint(
+        self,
+        option: QtWidgets.QStyleOptionViewItem,
+        index: QtCore.QModelIndex,
+    ) -> QtCore.QSize:
+        """Match the pipeline delegate's two-line 48-pixel row rhythm.
+
+        Example: the Watched column reserves a 120-by-48 cell.
+        """
+
+        del option, index
+        return QtCore.QSize(120, 48)

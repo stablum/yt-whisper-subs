@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import playback_progress as playback
 
 
 _SCHEMA = """
@@ -55,6 +56,14 @@ CREATE TABLE IF NOT EXISTS media (
     size_bytes INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS playback (
+    video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
+    position_seconds REAL NOT NULL DEFAULT 0,
+    duration_seconds REAL,
+    completed_at INTEGER,
+    updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -62,6 +71,21 @@ CREATE TABLE IF NOT EXISTS settings (
 
 CREATE INDEX IF NOT EXISTS idx_videos_subscription ON videos(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC);
+"""
+
+_VIDEO_SELECT = """
+    SELECT
+        v.*,
+        m.path,
+        m.downloaded_at,
+        m.size_bytes,
+        p.position_seconds AS playback_position_seconds,
+        p.duration_seconds AS playback_duration_seconds,
+        p.completed_at AS playback_completed_at,
+        p.updated_at AS playback_updated_at
+    FROM videos v
+    LEFT JOIN media m USING(video_id)
+    LEFT JOIN playback p USING(video_id)
 """
 
 
@@ -297,9 +321,7 @@ class LibraryDb:
             clauses.append("m.video_id IS NOT NULL" if downloaded else "m.video_id IS NULL")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
-            SELECT v.*, m.path, m.downloaded_at, m.size_bytes
-            FROM videos v
-            LEFT JOIN media m USING(video_id)
+            {_VIDEO_SELECT}
             {where}
             ORDER BY COALESCE(v.published_at, v.discovered_at) DESC, v.title COLLATE NOCASE
         """
@@ -315,14 +337,43 @@ class LibraryDb:
 
         with self._connect() as conn:
             row = conn.execute(
-                """
-                SELECT v.*, m.path, m.downloaded_at, m.size_bytes
-                FROM videos v LEFT JOIN media m USING(video_id)
-                WHERE v.video_id=?
-                """,
+                f"{_VIDEO_SELECT} WHERE v.video_id=?",
                 (video_id,),
             ).fetchone()
         return self._video(row) if row else None
+
+    def record_playback(self, update: playback.Update) -> None:
+        """Persist furthest progress while making confirmed completion sticky.
+
+        Example: `db.record_playback(update)` stores one paced mpv observation.
+        """
+
+        now = int(time.time())
+        completed_at = now if update.completed else None
+        position = update.position_seconds
+        if update.completed and update.duration_seconds is not None:
+            position = max(position, update.duration_seconds)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO playback(
+                    video_id, position_seconds, duration_seconds,
+                    completed_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(video_id) DO UPDATE SET
+                    position_seconds=MAX(playback.position_seconds, excluded.position_seconds),
+                    duration_seconds=COALESCE(excluded.duration_seconds, playback.duration_seconds),
+                    completed_at=COALESCE(playback.completed_at, excluded.completed_at),
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    update.video_id,
+                    position,
+                    update.duration_seconds,
+                    completed_at,
+                    now,
+                ),
+            )
 
     def metadata_backfill_ids(self, limit: int, retry_before: int) -> list[str]:
         """Select a fair, cooldown-aware metadata work queue slice.
@@ -544,10 +595,23 @@ class LibraryDb:
         local = None
         if row["path"]:
             local = types.LocalMedia(Path(row["path"]), int(row["downloaded_at"]), int(row["size_bytes"]))
+        playback_state = None
+        if row["playback_updated_at"] is not None:
+            playback_state = types.PlaybackState(
+                float(row["playback_position_seconds"]),
+                float(row["playback_duration_seconds"])
+                if row["playback_duration_seconds"] is not None
+                else None,
+                int(row["playback_completed_at"])
+                if row["playback_completed_at"] is not None
+                else None,
+                int(row["playback_updated_at"]),
+            )
         return types.VideoRecord(
             types.VideoMeta(ident, origin, details),
             int(row["subscription_id"]) if row["subscription_id"] is not None else None,
             int(row["discovered_at"]),
             local,
             str(row["download_error"]) if row["download_error"] else None,
+            playback_state,
         )

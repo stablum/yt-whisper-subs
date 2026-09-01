@@ -277,17 +277,35 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setSortingEnabled(True)
-        table.sortByColumn(3, QtCore.Qt.SortOrder.DescendingOrder)
-        table.setItemDelegateForColumn(0, library_progress.PipelineProgressDelegate(table))
+        table.sortByColumn(library_model.PUBLISHED_COLUMN, QtCore.Qt.SortOrder.DescendingOrder)
+        table.setItemDelegateForColumn(
+            library_model.PIPELINE_COLUMN,
+            library_progress.PipelineProgressDelegate(table),
+        )
+        table.setItemDelegateForColumn(
+            library_model.WATCHED_COLUMN,
+            library_progress.WatchedProgressDelegate(table),
+        )
         table.verticalHeader().hide()
         table.verticalHeader().setDefaultSectionSize(48)
         table.horizontalHeader().setStretchLastSection(False)
-        table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.Stretch)
+        table.horizontalHeader().setSectionResizeMode(
+            library_model.TITLE_COLUMN,
+            QtWidgets.QHeaderView.ResizeMode.Stretch,
+        )
         for column in range(model.columnCount()):
-            if column != 1:
+            if column != library_model.TITLE_COLUMN:
                 table.horizontalHeader().setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Fixed)
-        table.setColumnWidth(0, 230)
+        table.horizontalHeader().setSectionResizeMode(
+            library_model.PIPELINE_COLUMN,
+            QtWidgets.QHeaderView.ResizeMode.Fixed,
+        )
+        table.horizontalHeader().setSectionResizeMode(
+            library_model.WATCHED_COLUMN,
+            QtWidgets.QHeaderView.ResizeMode.Fixed,
+        )
+        table.setColumnWidth(library_model.PIPELINE_COLUMN, 230)
+        table.setColumnWidth(library_model.WATCHED_COLUMN, 120)
         return CatalogUi(channels, table, model, proxy, library_widgets.DetailPanel())
 
     def _connect_actions(self) -> None:
@@ -506,9 +524,9 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
             """
 
             report(f"Playing {record.meta.identity.title}")
-            self._service.play(video_id)
+            self._service.play(video_id, report)
 
-        self._run_task("Opening mpv…", play)
+        self._run_task("Opening mpv…", play, lambda _: self.refresh())
 
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
         """Play a downloaded double-click or offer download for a remote row.

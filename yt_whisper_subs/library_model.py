@@ -7,15 +7,38 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from typing import NamedTuple
 
 from PySide6 import QtCore
 
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import playback_progress as playback
 from yt_whisper_subs import pipeline_progress as progress
 
 
 SORT_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
 PROGRESS_ROLE = QtCore.Qt.ItemDataRole.UserRole + 2
+WATCHED_ROLE = QtCore.Qt.ItemDataRole.UserRole + 3
+
+PIPELINE_COLUMN = 0
+WATCHED_COLUMN = 1
+TITLE_COLUMN = 2
+PUBLISHED_COLUMN = 4
+DURATION_COLUMN = 6
+SIZE_COLUMN = 7
+VIEWS_COLUMN = 8
+
+
+class WatchedProgress(NamedTuple):
+    """Provide the watched bar's normalized value, wording, and explanation.
+
+    Example: `WatchedProgress(.5, "50%", tooltip, False)` paints halfway.
+    """
+
+    fraction: float
+    label: str
+    tooltip: str
+    completed: bool
 
 
 def format_timestamp(value: int | None) -> str:
@@ -63,6 +86,49 @@ def format_size(size_bytes: int | None) -> str:
     return "—"
 
 
+def watched_progress(
+    record: types.VideoRecord,
+    update: playback.Update | None = None,
+) -> WatchedProgress | None:
+    """Combine durable and live state while reserving 100 percent for EOF.
+
+    Example: `watched_progress(record).fraction` feeds sorting and painting.
+    """
+
+    if not record.downloaded:
+        return None
+    stored = record.playback
+    stored_position = stored.position_seconds if stored else 0.0
+    live_position = update.position_seconds if update else 0.0
+    position = max(stored_position, live_position)
+    duration_candidates = (
+        update.duration_seconds if update else None,
+        stored.duration_seconds if stored else None,
+        record.meta.details.duration,
+    )
+    duration = next((value for value in duration_candidates if value and value > 0), None)
+    completed = bool(stored and stored.completed_at is not None) or bool(update and update.completed)
+    normalized = playback.make(record.meta.identity.video_id, position, duration, completed)
+    fraction = playback.fraction(normalized)
+    if completed:
+        label = "✓ 100%"
+        tooltip = (
+            f"Completed {format_timestamp(stored.completed_at)}"
+            if stored and stored.completed_at is not None
+            else "Completed during this playback"
+        )
+    elif duration:
+        label = f"{fraction:.0%}"
+        tooltip = f"Watched to {format_duration(position)} of {format_duration(duration)}"
+    elif position:
+        label = "Started"
+        tooltip = f"Watched to {format_duration(position)}; duration unavailable"
+    else:
+        label = "0%"
+        tooltip = "Not watched yet"
+    return WatchedProgress(fraction, label, tooltip, completed)
+
+
 def record_progress(record: types.VideoRecord) -> progress.Update:
     """Represent durable catalog state through the shared progress vocabulary.
 
@@ -90,6 +156,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 
     _columns = (
         ("Pipeline", 230),
+        ("Watched", 120),
         ("Title", 420),
         ("Channel", 190),
         ("Published", 145),
@@ -103,6 +170,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         super().__init__()
         self._records: list[types.VideoRecord] = []
         self._progress: dict[str, progress.Update] = {}
+        self._watched: dict[str, playback.Update] = {}
 
     def set_records(self, records: list[types.VideoRecord]) -> None:
         """Replace table contents in one reset for reliable proxy filtering.
@@ -112,6 +180,12 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 
         self.beginResetModel()
         self._records = records
+        video_ids = {record.meta.identity.video_id for record in records}
+        self._watched = {
+            video_id: update
+            for video_id, update in self._watched.items()
+            if video_id in video_ids
+        }
         self.endResetModel()
 
     def record(self, row: int) -> types.VideoRecord | None:
@@ -136,6 +210,21 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             self.dataChanged.emit(cell, cell, [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE])
             break
 
+    def set_watched_progress(self, update: playback.Update) -> None:
+        """Store one live mpv observation and repaint its graphical cell.
+
+        Example: `model.set_watched_progress(update)` advances the watched bar.
+        """
+
+        self._watched[update.video_id] = update
+        for row, record in enumerate(self._records):
+            if record.meta.identity.video_id != update.video_id:
+                continue
+            cell = self.index(row, WATCHED_COLUMN)
+            roles = [QtCore.Qt.ItemDataRole.DisplayRole, WATCHED_ROLE, SORT_ROLE]
+            self.dataChanged.emit(cell, cell, roles)
+            break
+
     def progress_at(self, row: int) -> progress.Update | None:
         """Return live progress or the durable fallback for a table row.
 
@@ -147,6 +236,18 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return None
         video_id = record.meta.identity.video_id
         return self._progress.get(video_id) or record_progress(record)
+
+    def watched_at(self, row: int) -> WatchedProgress | None:
+        """Return merged durable and live progress for one downloaded row.
+
+        Example: `model.watched_at(0)` supplies the watched-bar delegate.
+        """
+
+        record = self.record(row)
+        if not record:
+            return None
+        update = self._watched.get(record.meta.identity.video_id)
+        return watched_progress(record, update)
 
     def title_for(self, video_id: str) -> str:
         """Resolve a progress event's video title for global status wording.
@@ -192,10 +293,16 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return QtCore.QSize(self._columns[section][1], 34)
         if (
             orientation == QtCore.Qt.Orientation.Horizontal
-            and section == 0
+            and section == PIPELINE_COLUMN
             and role == QtCore.Qt.ItemDataRole.ToolTipRole
         ):
             return "Preparing · Download · Audio · Speech-to-text · Translation · Final files"
+        if (
+            orientation == QtCore.Qt.Orientation.Horizontal
+            and section == WATCHED_COLUMN
+            and role == QtCore.Qt.ItemDataRole.ToolTipRole
+        ):
+            return "Furthest observed position; 100% requires mpv to reach end-of-file"
         return None
 
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> Any:
@@ -209,9 +316,13 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         record = self._records[index.row()]
         display, sort_value = self._cell_values(record, index.column())
         update = self.progress_at(index.row())
-        if index.column() == 0 and update:
+        watched = self.watched_at(index.row())
+        if index.column() == PIPELINE_COLUMN and update:
             display = update.label
             sort_value = progress.overall_fraction(update)
+        elif index.column() == WATCHED_COLUMN:
+            display = watched.label if watched else "—"
+            sort_value = watched.fraction if watched else -1.0
         if role == QtCore.Qt.ItemDataRole.DisplayRole:
             return display
         if role == SORT_ROLE:
@@ -220,12 +331,20 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return record
         if role == PROGRESS_ROLE:
             return update
+        if role == WATCHED_ROLE:
+            return watched
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
-            if index.column() == 0 and update:
+            if index.column() == PIPELINE_COLUMN and update:
                 overall = progress.overall_fraction(update)
                 return f"{update.label} · overall {overall:.0%}"
+            if index.column() == WATCHED_COLUMN and watched:
+                return watched.tooltip
             return record.download_error or record.meta.identity.title
-        if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and index.column() in {5, 6, 7}:
+        if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and index.column() in {
+            DURATION_COLUMN,
+            SIZE_COLUMN,
+            VIEWS_COLUMN,
+        }:
             return int(QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter)
         return None
 
@@ -241,6 +360,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         state = record_progress(record)
         values = (
             (state.label, progress.overall_fraction(state)),
+            ("—", -1.0),
             (meta.identity.title, meta.identity.title.casefold()),
             (meta.origin.channel, meta.origin.channel.casefold()),
             (format_timestamp(meta.origin.published_at), meta.origin.published_at or 0),

@@ -16,6 +16,7 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 
 
@@ -237,6 +238,15 @@ class WindowRuntimeMixin:
         Example: yt-dlp progress updates invoke `_report_progress(message)`.
         """
 
+        if watched := playback_progress.parse(message):
+            self._ui.catalog.model.set_watched_progress(watched)
+            title = self._ui.catalog.model.title_for(watched.video_id)
+            fraction = playback_progress.fraction(watched)
+            label = "Watched" if watched.completed else f"Watching · {fraction:.0%}"
+            self.statusBar().showMessage(f"{label} · {title}")
+            if watched.completed:
+                self._ui.trace.append_message(f"◆ {title} · Reached end · 100% watched")
+            return
         if update := progress.parse(message):
             self._pipeline_status_active = True
             self._ui.catalog.model.set_progress(update)

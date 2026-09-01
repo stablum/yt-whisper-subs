@@ -56,6 +56,8 @@ The companion library is optimized for a second workflow:
    discovered after a channel's initial baseline check.
 6. Double-click downloaded videos to open the same English-first dual-subtitle
    `mpv` view used by the CLI.
+7. Track furthest watched position and confirmed completion for library-launched
+   playback without changing the user's mpv configuration.
 
 ## Important Defaults
 
@@ -101,6 +103,8 @@ These defaults are hard-coded near the top of the script:
 | Library close behavior | keep running in the system tray |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
+| Library watched-progress sample | every `5` seconds during mpv playback |
+| Library 100% watched rule | confirmed mpv end-of-file event only |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -523,8 +527,8 @@ It contains:
 - library-wide Downloaded and Available filters;
 - a sidebar entry for every tracked channel;
 - instant title, channel, and YouTube-ID search;
-- sortable pipeline, title, channel, published, downloaded, duration, size, and
-  view-count columns;
+- sortable pipeline, watched, title, channel, published, downloaded, duration,
+  size, and view-count columns;
 - a details panel for description, local path, source URL, and the last error;
 - summary cards for videos, downloads, remote-only entries, and channels;
 - manual Check, Download, Play, and Open on YouTube actions;
@@ -575,6 +579,29 @@ The GUI child process opts into these structured events with a private
 environment variable. A direct `yt_whisper_subs.py` run does not enable that
 protocol, so its established command-line interaction and output remain
 unchanged.
+
+### Watched Progress And Completion
+
+The **Watched** column is a compact progress bar for downloaded videos opened
+from the desktop library. While mpv is running, the app samples its playback
+position and duration every five seconds. SQLite retains the furthest observed
+position, so rewinding or replaying a video never moves the bar backward.
+
+Position-derived progress is capped at 99%. The app writes a separate
+completion timestamp only when mpv emits `end-file` with reason `eof`; that
+event alone renders the green **✓ 100%** state. Closing the window, stopping
+playback, or an mpv error flushes the last position without marking the video
+complete. Seeking directly to the end counts as completion because mpv reports
+EOF; the feature models “reached the end,” not second-by-second viewing
+coverage.
+
+Tracking uses a unique local JSON IPC named pipe supplied on that single mpv
+command line. It does not edit `mpv.conf`, pass `--no-config`, or interfere with
+`save-position-on-quit`. The endpoint disappears with the player process.
+Existing mpv watch-later files are not bulk-imported because their hashed
+filenames do not reliably distinguish never-watched from completed videos.
+Opening a resumable video from the library immediately teaches the catalog its
+resumed position.
 
 ### Existing Downloads And Metadata Backfill
 
@@ -640,6 +667,9 @@ positions, primary font scale, secondary ASS conversion, and mpv options as the
 CLI. Double-clicking a remote-only row offers to download it first. mpv runs in a
 background worker so the Qt window remains responsive while playback is open;
 mpv itself remains a normal visible and switchable Windows application.
+Library-launched playback additionally enables one ephemeral IPC endpoint so
+the Watched bar updates live. Direct CLI playback keeps its established command
+shape and terminal interaction unchanged.
 
 ## Audio Extraction
 
@@ -992,6 +1022,11 @@ Playback command shape:
 ```text
 mpv --sub-auto=no --sub-file=<primary> --sub-file=<secondary> <video>
 ```
+
+The desktop library inserts a unique
+`--input-ipc-server=yt-whisper-subs-<random-id>` option before the video. It is
+launch-scoped and does not alter persistent mpv configuration. Direct CLI
+playback omits this option.
 
 If dual subtitles are enabled and at least two subtitle files exist, the script
 does more:
@@ -1353,15 +1388,17 @@ High-level groups:
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
+| `yt_whisper_subs.mpv_ipc` | Ephemeral named-pipe connection, paced property observation, and EOF handling. |
+| `yt_whisper_subs.playback_progress` | Typed playback updates, worker-signal encoding, and completion-aware fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
-| `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, and catalog records. |
-| `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, and local download state. |
+| `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
+| `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, local downloads, and playback state. |
 | `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
-| `yt_whisper_subs.library_model` | Sortable/searchable Qt video-table presentation. |
-| `yt_whisper_subs.library_progress` | Native segmented pipeline-column rendering. |
+| `yt_whisper_subs.library_model` | Sortable/searchable Qt table and completion-aware watched presentation. |
+| `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
@@ -1387,8 +1424,8 @@ Other structural data models are deliberately close to their behavior:
 - `TranslationCheckpoint` owns reusable partial OpenAI translation state.
 - `VideoMeta` composes identity, origin, and optional details without coupling
   remote metadata to local file state.
-- `VideoRecord` adds subscription ownership and optional `LocalMedia` to that
-  metadata.
+- `VideoRecord` adds subscription ownership, optional `LocalMedia`, and optional
+  durable `PlaybackState` to that metadata.
 - `LibraryDb` is the only module that owns catalog SQL.
 
 ## Future Codex Maintenance Notes
@@ -1418,6 +1455,10 @@ Start by preserving these invariants:
 16. Keep hidden subprocesses observable through the timestamped activity trace.
 17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
 18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
+19. Keep watched progress monotonic and reserve 100% for a confirmed mpv EOF
+    event stored separately from the numeric position.
+20. Keep playback IPC launch-scoped; never rewrite or bypass the user's mpv
+    configuration.
 
 When changing the project, useful verification commands are:
 
@@ -1434,8 +1475,8 @@ The tracked tests cover the OpenAI translator's timing preservation, chunk
 repair, and checkpoint cleanup; `SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
-semantics; sidecar ingestion; and the crucial future-only automatic-download
-baseline.
+semantics; playback IPC event handling; watched completion persistence; sidecar
+ingestion; and the crucial future-only automatic-download baseline.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
