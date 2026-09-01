@@ -68,6 +68,25 @@ class ChildProcessOptionsTests(unittest.TestCase):
             ["download 10%", "download 50%", "download 100%", "Done"],
         )
 
+    @mock.patch("yt_whisper_subs.proc._terminate_process")
+    @mock.patch("yt_whisper_subs.proc._stream_process_output", side_effect=KeyboardInterrupt)
+    @mock.patch("yt_whisper_subs.proc.subprocess.Popen")
+    def test_run_terminates_child_on_keyboard_interrupt(
+        self,
+        popen: mock.Mock,
+        _stream: mock.Mock,
+        terminate: mock.Mock,
+    ) -> None:
+        """Terminate a detached child before returning terminal control.
+
+        Example: Ctrl+C at the library bootstrap cannot orphan pythonw.exe.
+        """
+
+        with self.assertRaises(KeyboardInterrupt):
+            proc.run(["child"])
+
+        terminate.assert_called_once_with(popen.return_value)
+
     @mock.patch("yt_whisper_subs.proc.managed_module_available", return_value=True)
     @mock.patch("yt_whisper_subs.proc.run")
     def test_recent_yt_dlp_check_skips_update(self, run: mock.Mock, _available: mock.Mock) -> None:

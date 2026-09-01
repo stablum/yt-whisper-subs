@@ -136,6 +136,13 @@ window. mpv remains a normal visible application with a taskbar icon and Alt+Tab
 entry. Phase progress remains visible in the table and status bar, while exact
 tool output and errors remain available in the activity trace and run logs.
 
+When this launcher is started from PowerShell, WezTerm, or another terminal, the
+outer process remains attached until the managed GUI exits. Pressing **Ctrl+C**
+now terminates that managed `pythonw.exe` process and immediately restores the
+prompt with the conventional interrupted exit code `130`. Closing the window
+can still hide it in the tray by design; use **Library → Quit** for a normal
+zero-code exit.
+
 Use the same non-default output root as the CLI:
 
 ```powershell
@@ -1346,7 +1353,7 @@ High-level groups:
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
-| `yt_whisper_subs.library_bootstrap` / `library_app` | Managed Qt runtime bootstrap and desktop entry point. |
+| `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 
 The central data model is:
 
@@ -1397,6 +1404,7 @@ Start by preserving these invariants:
     rebuildable from local files.
 16. Keep hidden subprocesses observable through the timestamped activity trace.
 17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
+18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
 
 When changing the project, useful verification commands are:
 
@@ -1418,6 +1426,9 @@ baseline.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
+Bootstrap tests cover normal managed-GUI exit propagation and Ctrl+C cleanup;
+the subprocess tests independently require child termination before an
+interrupt returns terminal control.
 
 Mock the OpenAI translation path without making an API call:
 
@@ -1445,6 +1456,17 @@ For a real API smoke test, use a tiny SRT and the `.env` file. Keep it tiny to
 avoid unnecessary cost.
 
 ## Troubleshooting
+
+### The terminal prompt does not return after closing the library window
+
+Closing the main window hides the library in the system tray by default so
+scheduled channel checks continue. That is a running application, so a terminal
+launcher correctly remains attached. Choose **Library → Quit**, use **Quit**
+from the tray menu, or disable **Keep checking when the window is closed** in
+Library Settings for a normal exit. If it was launched from a terminal,
+**Ctrl+C** is also supported: version `0.2.5` and newer terminate the managed
+`pythonw.exe` child, avoid leaving an orphan tray process, and return exit code
+`130` to the shell.
 
 ### `OPENAI_API_KEY is not set`
 

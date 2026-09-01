@@ -5,7 +5,6 @@ Example: `library_bootstrap.main()` is called by the `.pyw` launcher.
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -31,4 +30,8 @@ def main() -> int:
     proc.ensure_library_deps(paths, cfg.DEFAULT_PYTHON_VERSION)
     gui_python = paths["python_gui"] if paths["python_gui"].exists() else paths["python"]
     cmd = [str(gui_python), "-m", "yt_whisper_subs.library_app", *sys.argv[1:]]
-    return subprocess.run(cmd, **proc.child_process_kwargs(), check=False).returncode
+    try:
+        result = proc.run(cmd, check=False, silence_seconds=None)
+    except KeyboardInterrupt:
+        return 130
+    return result.returncode
