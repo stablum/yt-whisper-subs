@@ -55,8 +55,6 @@ QPushButton#filterChip:checked {
 QPushButton#filterChip:disabled { background: #20252d; border-color: #2b313b; color: #5f6875; }
 QPushButton#clearFilters { background: transparent; border: 0; color: #8fc7ff; padding: 5px 7px; }
 QPushButton#clearFilters:hover { background: #293440; color: white; }
-QFrame#statCard { background: #20252e; border: 1px solid #2d3440; border-radius: 9px; }
-QLabel#statValue { font-size: 18pt; font-weight: 700; color: white; }
 QTableView { background: #1c2028; alternate-background-color: #191d24; border: 1px solid #2d3440; border-radius: 8px; gridline-color: transparent; }
 QTableView::item { padding: 7px; border-bottom: 1px solid #262c35; }
 QTableView::item:selected { background: #294467; color: white; }
@@ -106,18 +104,6 @@ class CatalogUi(NamedTuple):
     detail: library_widgets.DetailPanel
 
 
-class SummaryUi(NamedTuple):
-    """Group summary cards so window state remains compositional.
-
-    Example: `ui.summary.total.set_value(stats.total)`.
-    """
-
-    total: library_widgets.StatCard
-    downloaded: library_widgets.StatCard
-    pending: library_widgets.StatCard
-    channels: library_widgets.StatCard
-
-
 class LibraryUi(NamedTuple):
     """Compose all durable widget references into one window attribute.
 
@@ -126,7 +112,6 @@ class LibraryUi(NamedTuple):
 
     header: HeaderUi
     catalog: CatalogUi
-    summary: SummaryUi
     metadata_status: QtWidgets.QLabel
     next_check: QtWidgets.QLabel
     trace: library_widgets.ActivityTrace
@@ -143,6 +128,8 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._service = service
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(1)
+        self._metadata_pool = QtCore.QThreadPool(self)
+        self._metadata_pool.setMaxThreadCount(1)
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._scheduled_check)
@@ -170,7 +157,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._schedule_metadata_backfill()
 
     def _build_ui(self) -> LibraryUi:
-        """Construct the cohesive sidebar, summary, table, and details layout.
+        """Construct the cohesive sidebar, filters, table, and details layout.
 
         Example: called once by `LibraryWindow.__init__()`.
         """
@@ -191,10 +178,8 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         content_layout.setContentsMargins(22, 18, 22, 16)
         content_layout.setSpacing(14)
         header, header_layout = self._build_header()
-        summary, summary_layout = self._build_summary()
         catalog = self._build_catalog(channels)
         content_layout.addLayout(header_layout)
-        content_layout.addLayout(summary_layout)
         content_layout.addWidget(catalog.filters)
         content_layout.addWidget(catalog.table, 1)
         content_layout.addWidget(catalog.detail)
@@ -212,7 +197,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self.statusBar().addPermanentWidget(metadata_status)
         self.statusBar().addPermanentWidget(next_check)
         self.statusBar().showMessage("Ready")
-        return LibraryUi(header, catalog, summary, metadata_status, next_check, trace)
+        return LibraryUi(header, catalog, metadata_status, next_check, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
         """Create the library filters and channel-subscription list.
@@ -261,25 +246,6 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         layout.addWidget(download)
         layout.addWidget(play)
         return HeaderUi(search, check, download, play), layout
-
-    @staticmethod
-    def _build_summary() -> tuple[SummaryUi, QtWidgets.QHBoxLayout]:
-        """Create four compact overview cards above the catalog table.
-
-        Example: `_build_summary()` returns cards plus their layout.
-        """
-
-        cards = SummaryUi(
-            library_widgets.StatCard("Videos"),
-            library_widgets.StatCard("Downloaded"),
-            library_widgets.StatCard("Available"),
-            library_widgets.StatCard("Channels"),
-        )
-        layout = QtWidgets.QHBoxLayout()
-        layout.setSpacing(10)
-        for card in cards:
-            layout.addWidget(card)
-        return cards, layout
 
     @staticmethod
     def _build_catalog(channels: QtWidgets.QListWidget) -> CatalogUi:
@@ -449,11 +415,6 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         _, channel_id = self._filter_key
         records = self._service.db.videos(channel_id=channel_id)
         self._ui.catalog.model.set_records(records)
-        stats = self._service.db.stats()
-        self._ui.summary.total.set_value(stats.total)
-        self._ui.summary.downloaded.set_value(stats.downloaded)
-        self._ui.summary.pending.set_value(stats.pending)
-        self._ui.summary.channels.set_value(stats.channels)
         metadata_count = self._service.db.metadata_backlog_count()
         metadata_text = (
             f"Metadata: {metadata_count:,} queued · ≤1/min"
@@ -481,11 +442,12 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
             item = QtWidgets.QListWidgetItem(text)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, key)
             widget.addItem(item)
-        heading = QtWidgets.QListWidgetItem("  TRACKED CHANNELS")
+        tracked = self._service.db.channels()
+        heading = QtWidgets.QListWidgetItem(f"  TRACKED CHANNELS · {len(tracked):,}")
         heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
         heading.setForeground(QtGui.QColor("#778292"))
         widget.addItem(heading)
-        for channel in self._service.db.channels():
+        for channel in tracked:
             auto = "⚡" if channel.auto_download else "  "
             error = "  !" if channel.last_error else ""
             item = QtWidgets.QListWidgetItem(f"{auto}  {channel.title}{error}")
@@ -503,25 +465,35 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         widget.blockSignals(False)
 
     def _add_channel(self) -> None:
-        """Collect a subscription and establish its initial history in a worker.
+        """Show a subscription immediately, then hydrate it in the foreground lane.
 
         Example: the sidebar button invokes `_add_channel()`.
         """
 
+        if self._busy:
+            self.statusBar().showMessage("Finish the current foreground task before adding a channel", 5000)
+            return
         dialog = library_widgets.AddChannelDialog(self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         value, auto = dialog.values()
+        try:
+            channel = self._service.track_channel(value, auto)
+        except ValueError as exc:
+            QtWidgets.QMessageBox.warning(self, "Track channel", str(exc))
+            return
+        self._filter_key = ("channel", channel.channel_id)
+        self.refresh()
 
-        def add(report: Callable[[str], None]) -> types.Channel:
-            """Bind dialog values into the background service call.
+        def initialize(report: Callable[[str], None]) -> types.Channel:
+            """Bind the persisted placeholder into its foreground network check.
 
-            Example: `add(report)` is executed by one worker.
+            Example: `initialize(report)` replaces `@ruis` with its YouTube title.
             """
 
-            return self._service.add_channel(value, auto, report)
+            return self._service.initialize_channel(channel.channel_id, report)
 
-        self._run_task("Adding channel…", add, lambda _: self.refresh())
+        self._run_task(f"Adding {channel.title}…", initialize, lambda _: self.refresh())
 
     def _remove_channel(self) -> None:
         """Confirm and remove the selected subscription and remote-only rows.

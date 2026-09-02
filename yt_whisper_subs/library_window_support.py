@@ -154,7 +154,7 @@ class WindowRuntimeMixin:
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
         self._metadata_task = task
-        self._pool.start(task)
+        self._metadata_pool.start(task)
 
     def _report_metadata(self, message: str) -> None:
         """Send low-priority maintenance detail to the optional trace only.

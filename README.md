@@ -106,6 +106,7 @@ These defaults are hard-coded near the top of the script:
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library 100% watched rule | confirmed mpv end-of-file event only |
 | Library smart view | remembered across launches; search and channel remain independent |
+| Library task priority | explicit user actions bypass background metadata maintenance |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -532,7 +533,6 @@ It contains:
 - sortable pipeline, watched, title, channel, published, downloaded, duration,
   size, and view-count columns;
 - a details panel for description, local path, source URL, and the last error;
-- summary cards for videos, downloads, remote-only entries, and channels;
 - manual Check, Download, Play, and Open on YouTube actions;
 - configurable browser cookies and check interval;
 - an optional timestamped activity trace for live pipeline and subprocess output;
@@ -574,6 +574,11 @@ faceted overview as well as navigation: while searching one channel, it still
 shows how many matching results are downloaded, unfinished, or in need of
 attention. Empty inactive views become unavailable rather than leading to a
 surprising blank table.
+
+These contextual counts replace the older four-card Videos, Downloaded,
+Available, and Channels summary row, reclaiming vertical space for the catalog.
+The global channel count remains beside the **Tracked channels** sidebar
+heading.
 
 Only one smart view can be active, so availability and viewing-state filters
 cannot contradict each other. Channel selection remains in the sidebar and
@@ -661,6 +666,14 @@ service checks the channel's Videos, Shorts, and Streams tabs with yt-dlp's flat
 playlist mode and deduplicates them by video ID. YouTube's Atom feed supplies
 exact publication timestamps for the latest entries. Older rows without a flat
 timestamp are progressively hydrated with full per-video metadata.
+
+Tracking is visible immediately: the app first persists and selects a compact
+handle-based placeholder in the sidebar, then resolves the official channel
+title and initial history in its foreground worker lane. Background metadata
+hydration uses a separate single-worker maintenance lane, so a lookup already
+in progress may finish quietly but cannot leave an explicit Add channel action
+waiting behind the backlog. No further maintenance lookup starts while a
+foreground task is active.
 
 The default interval is four hours and can be changed from **Library →
 Settings**. The schedule is persisted in SQLite, so reopening the app performs
@@ -1430,9 +1443,9 @@ High-level groups:
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
-| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, summary cards, selected-video details, and activity trace. |
+| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
-| `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_window_support` | Priority-separated foreground/metadata task scheduling, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 
@@ -1492,6 +1505,8 @@ Start by preserving these invariants:
     configuration.
 21. Keep smart-view predicates single-sourced with their facet counts; channel,
     search, and view scopes must remain independently composable.
+22. Persist new channel placeholders before network discovery, and never queue
+    explicit foreground actions behind metadata maintenance.
 
 When changing the project, useful verification commands are:
 

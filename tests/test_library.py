@@ -45,6 +45,7 @@ class FakeFeed:
         self.videos = videos
         self.fail = False
         self.video_fail = False
+        self.channel_calls = 0
 
     def with_cookies(self, cookies: str | None) -> FakeFeed:
         """Keep the same fake strategy when GUI settings are reloaded.
@@ -61,6 +62,7 @@ class FakeFeed:
         Example: `feed.channel(url).videos` mirrors `feed.videos`.
         """
 
+        self.channel_calls += 1
         if self.fail:
             raise RuntimeError("simulated first-check failure")
         return types.ChannelSnapshot(url, "UC-example", "Example channel", list(self.videos))
@@ -177,7 +179,7 @@ class LibraryDbTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
-            channel = db.add_channel("https://www.youtube.com/@example/videos", True)
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", True)
             first = make_meta("aaaaaaaaaaa", "First")
             snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first])
             self.assertEqual(db.store_snapshot(channel.channel_id, snapshot), ["aaaaaaaaaaa"])
@@ -191,7 +193,8 @@ class LibraryDbTests(unittest.TestCase):
             db.reconcile_media([types.ScannedMedia(second, local, True)])
             self.assertTrue(db.video("bbbbbbbbbbb").downloaded)
             self.assertFalse(db.video("aaaaaaaaaaa").downloaded)
-            self.assertEqual(db.stats(), types.LibraryStats(2, 1, 1, 1))
+            self.assertEqual(len(db.videos()), 2)
+            self.assertEqual(len(db.channels()), 1)
 
     def test_channel_removal_keeps_download(self) -> None:
         """Delete unneeded remote history but retain locally downloaded rows.
@@ -202,7 +205,7 @@ class LibraryDbTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
-            channel = db.add_channel("https://www.youtube.com/@example/videos", False)
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             local_meta = make_meta("aaaaaaaaaaa", "Local")
             pending_meta = make_meta("bbbbbbbbbbb", "Pending")
             snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [local_meta, pending_meta])
@@ -215,7 +218,7 @@ class LibraryDbTests(unittest.TestCase):
 
             self.assertIsNotNone(db.video("aaaaaaaaaaa"))
             self.assertIsNone(db.video("bbbbbbbbbbb"))
-            self.assertEqual(db.stats().channels, 0)
+            self.assertEqual(db.channels(), [])
 
     def test_metadata_queue_is_fair_and_cools_down_attempts(self) -> None:
         """Prefer untouched rows and suppress attempted rows until retry time.
@@ -226,7 +229,7 @@ class LibraryDbTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
-            channel = db.add_channel("https://www.youtube.com/@example/videos", False)
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             first = make_meta("aaaaaaaaaaa", "First", None)
             second = make_meta("bbbbbbbbbbb", "Second", None)
             snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first, second])
@@ -291,7 +294,7 @@ CREATE TABLE IF NOT EXISTS playback (
         with tempfile.TemporaryDirectory() as tmp:
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
-            channel = db.add_channel("https://www.youtube.com/@example/videos", False)
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             meta = make_meta("aaaaaaaaaaa", "First")
             snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [meta])
             db.store_snapshot(channel.channel_id, snapshot)
@@ -333,7 +336,8 @@ class LibraryServiceTests(unittest.TestCase):
                 feed=feed,
                 downloader=downloader,
             )
-            service.add_channel("@example", True)
+            channel = service.track_channel("@example", True)
+            service.initialize_channel(channel.channel_id)
             self.assertEqual(downloader.calls, [])
 
             second = make_meta("bbbbbbbbbbb", "Second", 200)
@@ -399,7 +403,8 @@ class LibraryServiceTests(unittest.TestCase):
                 feed=feed,
                 downloader=FakeDownloader(out_dir),
             )
-            service.add_channel("@example", False)
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
             feed.videos = [
                 make_meta("aaaaaaaaaaa", "First", 100),
                 make_meta("bbbbbbbbbbb", "Second", 200),
@@ -427,7 +432,8 @@ class LibraryServiceTests(unittest.TestCase):
                 feed=feed,
                 downloader=FakeDownloader(out_dir),
             )
-            service.add_channel("@example", False)
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
             feed.video_fail = True
 
             result = service.backfill_metadata()
@@ -455,8 +461,12 @@ class LibraryServiceTests(unittest.TestCase):
                 feed=feed,
                 downloader=downloader,
             )
+            channel = service.track_channel("@example", True)
+            self.assertEqual(channel.title, "@example")
+            self.assertEqual(feed.channel_calls, 0)
             with self.assertRaisesRegex(RuntimeError, "simulated"):
-                service.add_channel("@example", True)
+                service.initialize_channel(channel.channel_id)
+            self.assertEqual(feed.channel_calls, 1)
             channel = service.db.channels()[0]
             self.assertIsNone(channel.baseline_at)
             self.assertIsNotNone(channel.checked_at)
@@ -599,6 +609,7 @@ class LibraryFeedTests(unittest.TestCase):
                 "https://www.youtube.com/@example/streams",
             ],
         )
+        self.assertEqual(library_feed.channel_placeholder("@ruis"), "@ruis")
 
     def test_video_meta_maps_useful_fields(self) -> None:
         """Preserve title, channel, upload time, duration, views, and description.

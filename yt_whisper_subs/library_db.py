@@ -137,10 +137,10 @@ class LibraryDb:
         finally:
             conn.close()
 
-    def add_channel(self, url: str, auto_download: bool) -> types.Channel:
+    def add_channel(self, url: str, title: str, auto_download: bool) -> types.Channel:
         """Add a subscription placeholder before its first network check.
 
-        Example: `db.add_channel(url, auto_download=False)`.
+        Example: `db.add_channel(url, "@handle", False)` is visible immediately.
         """
 
         now = int(time.time())
@@ -151,7 +151,7 @@ class LibraryDb:
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT(url) DO UPDATE SET auto_download=excluded.auto_download
                 """,
-                (url, url, int(auto_download), now),
+                (url, title, int(auto_download), now),
             )
             row = conn.execute("SELECT * FROM channels WHERE url=?", (url,)).fetchone()
         assert row is not None
@@ -424,26 +424,6 @@ class LibraryDb:
             ).fetchone()
         assert row is not None
         return int(row[0])
-
-    def stats(self) -> types.LibraryStats:
-        """Count channels and local/remote videos for summary cards.
-
-        Example: `stats = db.stats()`.
-        """
-
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    (SELECT COUNT(*) FROM videos) AS total,
-                    (SELECT COUNT(*) FROM media) AS downloaded,
-                    (SELECT COUNT(*) FROM channels) AS channels
-                """
-            ).fetchone()
-        assert row is not None
-        total = int(row["total"])
-        downloaded = int(row["downloaded"])
-        return types.LibraryStats(total, downloaded, total - downloaded, int(row["channels"]))
 
     def setting(self, key: str, default: str) -> str:
         """Read a persisted application setting with a supplied default.

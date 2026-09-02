@@ -53,6 +53,21 @@ def normalize_channel_url(value: str) -> str:
     return urlunparse(("https", "www.youtube.com", path, "", "", ""))
 
 
+def channel_placeholder(url: str) -> str:
+    """Derive a recognizable sidebar label before YouTube returns the title.
+
+    Example: `channel_placeholder("https://youtube.com/@ruis/videos")` is `@ruis`.
+    """
+
+    parsed = urlparse(normalize_channel_url(url))
+    parts = [part for part in parsed.path.split("/") if part]
+    if parts and parts[0].startswith("@"):
+        return parts[0]
+    if len(parts) >= 2 and parts[0] in {"channel", "c", "user"}:
+        return parts[1]
+    return url
+
+
 def channel_tab_urls(url: str) -> list[str]:
     """Expand a canonical subscription into videos, Shorts, and streams tabs.
 

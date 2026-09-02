@@ -131,7 +131,7 @@ class PipelineDownloader:
 class LibraryService:
     """Coordinate cohesive catalog operations independently from Qt widgets.
 
-    Example: `service.add_channel("@OpenAI", False, report)`.
+    Example: `service.track_channel("@OpenAI", False)` persists immediately.
     """
 
     def __init__(
@@ -228,15 +228,30 @@ class LibraryService:
         report(f"Metadata saved · {info.meta.identity.title} · {remaining:,} queued")
         return MetadataBackfillResult(True, True, remaining)
 
-    def add_channel(self, value: str, auto_download: bool, report: ReportFn = _ignore_report) -> types.Channel:
-        """Subscribe and establish an initial no-auto-download history baseline.
+    def track_channel(self, value: str, auto_download: bool) -> types.Channel:
+        """Persist a recognizable subscription placeholder without network work.
 
-        Example: `service.add_channel("@handle", True, report)`.
+        Example: `track_channel("@ruis", False)` can refresh the sidebar immediately.
         """
 
         url = library_feed.normalize_channel_url(value)
-        channel = self.db.add_channel(url, auto_download)
-        report(f"Checking {url}")
+        title = library_feed.channel_placeholder(url)
+        return self.db.add_channel(url, title, auto_download)
+
+    def initialize_channel(
+        self,
+        channel_id: int,
+        report: ReportFn = _ignore_report,
+    ) -> types.Channel:
+        """Fetch one new subscription's title and safe initial history baseline.
+
+        Example: `initialize_channel(channel.channel_id, report)` runs in the foreground lane.
+        """
+
+        channel = self.db.channel(channel_id)
+        if not channel:
+            raise RuntimeError("tracked channel no longer exists")
+        report(f"Checking {channel.url}")
         try:
             self._check_channel(channel, report)
         except Exception as exc:

@@ -150,15 +150,3 @@ class ChannelSnapshot(NamedTuple):
     youtube_id: str | None
     title: str
     videos: list[VideoMeta]
-
-
-class LibraryStats(NamedTuple):
-    """Provide compact counts for the GUI summary cards.
-
-    Example: `stats.pending` is the remote-only video count.
-    """
-
-    total: int
-    downloaded: int
-    pending: int
-    channels: int

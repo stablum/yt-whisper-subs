@@ -1,4 +1,4 @@
-"""Reusable dialogs and summary/detail widgets for the native library.
+"""Reusable controls, dialogs, and details for the native library.
 
 Example: `AddChannelDialog(parent).values()` returns subscription input.
 """
@@ -26,34 +26,6 @@ class SettingsValues(NamedTuple):
     check_hours: float
     cookies_from_browser: str
     minimize_to_tray: bool
-
-
-class StatCard(QtWidgets.QFrame):
-    """Show one large library count with a compact explanatory label.
-
-    Example: `StatCard("Downloaded")`.
-    """
-
-    def __init__(self, title: str) -> None:
-        super().__init__()
-        self.setObjectName("statCard")
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(16, 10, 16, 10)
-        layout.setSpacing(1)
-        self._value = QtWidgets.QLabel("0")
-        self._value.setObjectName("statValue")
-        label = QtWidgets.QLabel(title)
-        label.setObjectName("statLabel")
-        layout.addWidget(self._value)
-        layout.addWidget(label)
-
-    def set_value(self, value: int) -> None:
-        """Update the prominent numeric count.
-
-        Example: `card.set_value(stats.total)`.
-        """
-
-        self._value.setText(f"{value:,}")
 
 
 class SmartFilterBar(QtWidgets.QFrame):
