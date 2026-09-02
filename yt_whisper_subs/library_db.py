@@ -92,7 +92,7 @@ _VIDEO_SELECT = """
 class LibraryDb:
     """Own catalog SQL while opening one SQLite connection per worker thread.
 
-    Example: `db.videos(downloaded=True)` lists playable records.
+    Example: `db.videos(channel_id=1)` lists one subscription's catalog.
     """
 
     def __init__(self, path: Path) -> None:
@@ -305,11 +305,10 @@ class LibraryDb:
         self,
         *,
         channel_id: int | None = None,
-        downloaded: bool | None = None,
     ) -> list[types.VideoRecord]:
-        """Query catalog records for table filters without leaking SQL to Qt.
+        """Query one channel scope while leaving interactive filtering to Qt.
 
-        Example: `db.videos(channel_id=1, downloaded=False)`.
+        Example: `db.videos(channel_id=1)` feeds every smart view for a channel.
         """
 
         clauses: list[str] = []
@@ -317,8 +316,6 @@ class LibraryDb:
         if channel_id is not None:
             clauses.append("v.subscription_id=?")
             params.append(channel_id)
-        if downloaded is not None:
-            clauses.append("m.video_id IS NOT NULL" if downloaded else "m.video_id IS NULL")
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = f"""
             {_VIDEO_SELECT}

@@ -500,6 +500,76 @@ class LibraryModelTests(unittest.TestCase):
         self.assertEqual(completed_view.fraction, 1.0)
         self.assertEqual(completed_view.label, "✓ 100%")
 
+    def test_smart_views_compose_search_counts_and_live_progress(self) -> None:
+        """Keep smart-view facets useful inside search and live playback changes.
+
+        Example: an Unwatched row moves to Continue after its first mpv update.
+        """
+
+        local = types.LocalMedia(Path("video.mkv"), 100, 5)
+        records = [
+            types.VideoRecord(make_meta("aaaaaaaaaaa", "Remote"), None, 100, None, None, None),
+            types.VideoRecord(make_meta("bbbbbbbbbbb", "Fresh"), None, 100, local, None, None),
+            types.VideoRecord(
+                make_meta("ccccccccccc", "Partial"),
+                None,
+                100,
+                local,
+                None,
+                types.PlaybackState(25, 100, None, 200),
+            ),
+            types.VideoRecord(
+                make_meta("ddddddddddd", "Finished"),
+                None,
+                100,
+                local,
+                None,
+                types.PlaybackState(100, 100, 300, 300),
+            ),
+            types.VideoRecord(make_meta("eeeeeeeeeee", "Broken"), None, 100, None, "HTTP 403", None),
+        ]
+        model = library_model.VideoTableModel()
+        model.set_records(records)
+        proxy = library_model.VideoFilterModel()
+        proxy.setSourceModel(model)
+
+        counts = proxy.facet_counts()
+        self.assertEqual(counts[library_model.VideoView.ALL], 5)
+        self.assertEqual(counts[library_model.VideoView.ON_DEVICE], 3)
+        self.assertEqual(counts[library_model.VideoView.AVAILABLE], 2)
+        self.assertEqual(counts[library_model.VideoView.UNWATCHED], 1)
+        self.assertEqual(counts[library_model.VideoView.CONTINUE], 1)
+        self.assertEqual(counts[library_model.VideoView.WATCHED], 1)
+        self.assertEqual(counts[library_model.VideoView.ISSUES], 1)
+
+        proxy.set_view(library_model.VideoView.UNWATCHED)
+        self.assertEqual(proxy.rowCount(), 1)
+        model.set_watched_progress(playback_progress.make("bbbbbbbbbbb", 10, 100))
+        self.assertEqual(proxy.rowCount(), 0)
+        self.assertEqual(proxy.facet_counts()[library_model.VideoView.CONTINUE], 2)
+
+        proxy.set_view(library_model.VideoView.CONTINUE)
+        proxy.set_search("partial")
+        self.assertEqual(proxy.rowCount(), 1)
+        searched = proxy.facet_counts()
+        self.assertEqual(searched[library_model.VideoView.ALL], 1)
+        self.assertEqual(searched[library_model.VideoView.CONTINUE], 1)
+
+    def test_smart_view_keys_restore_safely(self) -> None:
+        """Persist human-independent view keys and reject stale settings safely.
+
+        Example: an unknown key opens All instead of an empty library.
+        """
+
+        self.assertEqual(
+            library_model.VideoView.from_key("on_device"),
+            library_model.VideoView.ON_DEVICE,
+        )
+        self.assertEqual(
+            library_model.VideoView.from_key("removed-view"),
+            library_model.VideoView.ALL,
+        )
+
 
 class LibraryFeedTests(unittest.TestCase):
     """Cover channel normalization and yt-dlp field mapping.

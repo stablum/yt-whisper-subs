@@ -56,6 +56,87 @@ class StatCard(QtWidgets.QFrame):
         self._value.setText(f"{value:,}")
 
 
+class SmartFilterBar(QtWidgets.QFrame):
+    """Present task-oriented catalog views as counted, exclusive filter chips.
+
+    Example: `bar.set_counts(proxy.facet_counts(), proxy.rowCount(), False)`.
+    """
+
+    view_changed = QtCore.Signal(int)
+    reset_requested = QtCore.Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("filterBar")
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(11, 9, 11, 9)
+        layout.setSpacing(6)
+        eyebrow = QtWidgets.QLabel("SHOW")
+        eyebrow.setObjectName("filterEyebrow")
+        layout.addWidget(eyebrow)
+
+        self._group = QtWidgets.QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._buttons: dict[library_model.VideoView, QtWidgets.QPushButton] = {}
+        for spec in library_model.VIDEO_VIEWS:
+            button = QtWidgets.QPushButton(spec.label)
+            button.setObjectName("filterChip")
+            button.setCheckable(True)
+            button.setToolTip(spec.tooltip)
+            button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            self._group.addButton(button, int(spec.view))
+            self._buttons[spec.view] = button
+            layout.addWidget(button)
+        self._buttons[library_model.VideoView.ALL].setChecked(True)
+        self._group.idClicked.connect(self.view_changed.emit)
+
+        layout.addStretch(1)
+        self._result = QtWidgets.QLabel("0 videos")
+        self._result.setObjectName("filterResult")
+        self._clear = QtWidgets.QPushButton("Clear")
+        self._clear.setObjectName("clearFilters")
+        self._clear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._clear.clicked.connect(lambda: self.reset_requested.emit())
+        self._clear.hide()
+        layout.addWidget(self._result)
+        layout.addWidget(self._clear)
+
+    def set_view(self, view: library_model.VideoView) -> None:
+        """Synchronize checked chip state without synthesizing a user click.
+
+        Example: startup restores a persisted `VideoView.CONTINUE` selection.
+        """
+
+        self._buttons[view].setChecked(True)
+
+    def set_counts(
+        self,
+        counts: dict[library_model.VideoView, int],
+        visible: int,
+        search_active: bool,
+    ) -> None:
+        """Refresh chip badges, availability, result wording, and reset affordance.
+
+        Example: zero-result inactive views become quiet and non-clickable.
+        """
+
+        active = library_model.VideoView(self._group.checkedId())
+        labels = {spec.view: spec.label for spec in library_model.VIDEO_VIEWS}
+        for view, button in self._buttons.items():
+            count = counts.get(view, 0)
+            button.setText(f"{labels[view]}  {count:,}")
+            button.setEnabled(bool(count) or view in {active, library_model.VideoView.ALL})
+
+        available = counts.get(library_model.VideoView.ALL, 0)
+        noun = "match" if search_active else "video"
+        if visible == available:
+            text = f"{visible:,} {noun}{'' if visible == 1 else 's'}"
+        else:
+            text = f"{visible:,} of {available:,} {noun}{'' if available == 1 else 's'}"
+        self._result.setText(text)
+        self._clear.setVisible(search_active or active is not library_model.VideoView.ALL)
+
+
 class DetailPanel(QtWidgets.QFrame):
     """Present the selected video's useful metadata without table clutter.
 

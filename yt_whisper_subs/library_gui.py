@@ -41,6 +41,20 @@ QPushButton:disabled { color: #697381; background: #22262d; }
 QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: white; font-weight: 600; }
 QPushButton#primaryButton:hover { background: #2b83db; }
 QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
+QFrame#filterBar { background: #1e232c; border: 1px solid #303844; border-radius: 9px; }
+QLabel#filterEyebrow { color: #778292; font-size: 8pt; font-weight: 700; padding: 0 5px 0 2px; }
+QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }
+QPushButton#filterChip {
+  background: #272d37; border: 1px solid #353e4b; border-radius: 13px;
+  color: #aeb8c6; padding: 5px 10px;
+}
+QPushButton#filterChip:hover { background: #303946; border-color: #485567; color: #e6edf5; }
+QPushButton#filterChip:checked {
+  background: #254f78; border-color: #4ea1f3; color: #ffffff; font-weight: 600;
+}
+QPushButton#filterChip:disabled { background: #20252d; border-color: #2b313b; color: #5f6875; }
+QPushButton#clearFilters { background: transparent; border: 0; color: #8fc7ff; padding: 5px 7px; }
+QPushButton#clearFilters:hover { background: #293440; color: white; }
 QFrame#statCard { background: #20252e; border: 1px solid #2d3440; border-radius: 9px; }
 QLabel#statValue { font-size: 18pt; font-weight: 700; color: white; }
 QTableView { background: #1c2028; alternate-background-color: #191d24; border: 1px solid #2d3440; border-radius: 8px; gridline-color: transparent; }
@@ -88,6 +102,7 @@ class CatalogUi(NamedTuple):
     table: QtWidgets.QTableView
     model: library_model.VideoTableModel
     proxy: library_model.VideoFilterModel
+    filters: library_widgets.SmartFilterBar
     detail: library_widgets.DetailPanel
 
 
@@ -141,6 +156,11 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._quitting = False
         self._ui = self._build_ui()
+        saved_view = library_model.VideoView.from_key(
+            self._service.db.setting("video_view", library_model.VideoView.ALL.key)
+        )
+        self._ui.catalog.proxy.set_view(saved_view)
+        self._ui.catalog.filters.set_view(saved_view)
         self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
         self._tray = self._build_tray()
         self._connect_actions()
@@ -175,6 +195,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         catalog = self._build_catalog(channels)
         content_layout.addLayout(header_layout)
         content_layout.addLayout(summary_layout)
+        content_layout.addWidget(catalog.filters)
         content_layout.addWidget(catalog.table, 1)
         content_layout.addWidget(catalog.detail)
         root.addWidget(content, 1)
@@ -306,7 +327,8 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         )
         table.setColumnWidth(library_model.PIPELINE_COLUMN, 230)
         table.setColumnWidth(library_model.WATCHED_COLUMN, 120)
-        return CatalogUi(channels, table, model, proxy, library_widgets.DetailPanel())
+        filters = library_widgets.SmartFilterBar()
+        return CatalogUi(channels, table, model, proxy, filters, library_widgets.DetailPanel())
 
     def _connect_actions(self) -> None:
         """Wire model selections and controls after all widgets exist.
@@ -315,6 +337,10 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         """
 
         self._ui.header.search.textChanged.connect(self._ui.catalog.proxy.set_search)
+        self._ui.catalog.filters.view_changed.connect(self._video_view_changed)
+        self._ui.catalog.filters.reset_requested.connect(self._clear_filters)
+        self._ui.catalog.proxy.criteria_changed.connect(self._refresh_smart_filters)
+        self._ui.catalog.model.dataChanged.connect(self._refresh_smart_filters)
         self._ui.header.check.clicked.connect(self.check_now)
         self._ui.header.download.clicked.connect(self._download_selected)
         self._ui.header.play.clicked.connect(self._play_selected)
@@ -344,6 +370,13 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         video_menu.addAction("Play selected", self._play_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
         view_menu = self.menuBar().addMenu("View")
+        search_action = view_menu.addAction("Focus search")
+        search_action.setShortcut(QtGui.QKeySequence.StandardKey.Find)
+        search_action.triggered.connect(self._focus_search)
+        clear_filters = view_menu.addAction("Clear filters")
+        clear_filters.setShortcut(QtGui.QKeySequence("Ctrl+Shift+F"))
+        clear_filters.triggered.connect(self._clear_filters)
+        view_menu.addSeparator()
         trace_action = self._ui.trace.toggleViewAction()
         trace_action.setText("Activity trace")
         trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
@@ -357,6 +390,53 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
 
         self._service.db.set_setting("trace_visible", int(visible))
 
+    @QtCore.Slot(int)
+    def _video_view_changed(self, view_id: int) -> None:
+        """Apply and remember one smart view selected from the filter bar.
+
+        Example: clicking Continue filters to started, unfinished videos.
+        """
+
+        view = library_model.VideoView(view_id)
+        self._ui.catalog.proxy.set_view(view)
+        self._ui.catalog.filters.set_view(view)
+        self._service.db.set_setting("video_view", view.key)
+
+    @QtCore.Slot()
+    def _refresh_smart_filters(self) -> None:
+        """Update facet counts and result wording from the current proxy scope.
+
+        Example: search and live mpv progress both refresh the chip counts.
+        """
+
+        proxy = self._ui.catalog.proxy
+        self._ui.catalog.filters.set_counts(
+            proxy.facet_counts(),
+            proxy.rowCount(),
+            bool(self._ui.header.search.text().strip()),
+        )
+
+    @QtCore.Slot()
+    def _clear_filters(self) -> None:
+        """Reset search and smart view while preserving channel selection.
+
+        Example: Ctrl+Shift+F restores every video in the selected channel.
+        """
+
+        self._ui.header.search.clear()
+        self._video_view_changed(int(library_model.VideoView.ALL))
+        self._refresh_smart_filters()
+
+    @QtCore.Slot()
+    def _focus_search(self) -> None:
+        """Focus and select the search query through the standard Ctrl+F action.
+
+        Example: View → Focus search makes keyboard filtering immediate.
+        """
+
+        self._ui.header.search.setFocus()
+        self._ui.header.search.selectAll()
+
     def refresh(self) -> None:
         """Reload channels, filtered videos, counts, and selection actions.
 
@@ -366,9 +446,8 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         selected_video = self._selected_record()
         selected_id = selected_video.meta.identity.video_id if selected_video else None
         self._refresh_channels()
-        kind, channel_id = self._filter_key
-        downloaded = True if kind == "downloaded" else False if kind == "pending" else None
-        records = self._service.db.videos(channel_id=channel_id, downloaded=downloaded)
+        _, channel_id = self._filter_key
+        records = self._service.db.videos(channel_id=channel_id)
         self._ui.catalog.model.set_records(records)
         stats = self._service.db.stats()
         self._ui.summary.total.set_value(stats.total)
@@ -382,6 +461,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
             else "Metadata: complete"
         )
         self._ui.metadata_status.setText(metadata_text)
+        self._refresh_smart_filters()
         self._restore_video_selection(selected_id)
         self._update_actions()
 
@@ -396,8 +476,6 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         widget.clear()
         items: list[tuple[str, tuple[str, int | None]]] = [
             ("▦  All videos", ("all", None)),
-            ("●  Downloaded", ("downloaded", None)),
-            ("○  Available", ("pending", None)),
         ]
         for text, key in items:
             item = QtWidgets.QListWidgetItem(text)

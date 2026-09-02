@@ -6,6 +6,7 @@ Example: `VideoTableModel().set_records(db.videos())`.
 from __future__ import annotations
 
 from datetime import datetime
+import enum
 from typing import Any
 from typing import NamedTuple
 
@@ -32,13 +33,72 @@ VIEWS_COLUMN = 8
 class WatchedProgress(NamedTuple):
     """Provide the watched bar's normalized value, wording, and explanation.
 
-    Example: `WatchedProgress(.5, "50%", tooltip, False)` paints halfway.
+    Example: `WatchedProgress(.5, "50%", tooltip, False, True)` paints halfway.
     """
 
     fraction: float
     label: str
     tooltip: str
     completed: bool
+    started: bool
+
+
+class VideoView(enum.IntEnum):
+    """Name each mutually exclusive task-oriented catalog view.
+
+    Example: `VideoView.CONTINUE` selects videos started but not completed.
+    """
+
+    ALL = 0
+    ON_DEVICE = 1
+    AVAILABLE = 2
+    UNWATCHED = 3
+    CONTINUE = 4
+    WATCHED = 5
+    ISSUES = 6
+
+    @property
+    def key(self) -> str:
+        """Return the stable lowercase value persisted in library settings.
+
+        Example: `VideoView.ON_DEVICE.key` is `"on_device"`.
+        """
+
+        return self.name.lower()
+
+    @classmethod
+    def from_key(cls, key: str) -> VideoView:
+        """Restore a persisted key, falling back safely to the full catalog.
+
+        Example: `VideoView.from_key("watched")` restores that smart view.
+        """
+
+        try:
+            return cls[key.upper()]
+        except KeyError:
+            return cls.ALL
+
+
+class VideoViewSpec(NamedTuple):
+    """Keep each smart view's wording and explanation beside its identity.
+
+    Example: filter chips are generated directly from `VIDEO_VIEWS`.
+    """
+
+    view: VideoView
+    label: str
+    tooltip: str
+
+
+VIDEO_VIEWS = (
+    VideoViewSpec(VideoView.ALL, "All", "Every video in the current library or channel"),
+    VideoViewSpec(VideoView.ON_DEVICE, "On device", "Downloaded videos ready to play"),
+    VideoViewSpec(VideoView.AVAILABLE, "Available", "Tracked videos not downloaded yet"),
+    VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Downloaded videos not started yet"),
+    VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos that have not reached the end"),
+    VideoViewSpec(VideoView.WATCHED, "Watched", "Videos confirmed complete by mpv"),
+    VideoViewSpec(VideoView.ISSUES, "Issues", "Videos whose latest download or processing attempt failed"),
+)
 
 
 def format_timestamp(value: int | None) -> str:
@@ -126,7 +186,36 @@ def watched_progress(
     else:
         label = "0%"
         tooltip = "Not watched yet"
-    return WatchedProgress(fraction, label, tooltip, completed)
+    return WatchedProgress(fraction, label, tooltip, completed, position > 0 or completed)
+
+
+def accepts_view(
+    record: types.VideoRecord,
+    watched: WatchedProgress | None,
+    view: VideoView,
+) -> bool:
+    """Apply one smart-view strategy without coupling it to Qt widgets.
+
+    Example: `accepts_view(record, watched, VideoView.CONTINUE)` detects partial viewing.
+    """
+
+    if view is VideoView.ALL:
+        return True
+    if view is VideoView.ON_DEVICE:
+        return record.downloaded
+    if view is VideoView.AVAILABLE:
+        return not record.downloaded
+    if view is VideoView.ISSUES:
+        return bool(record.download_error)
+    if not watched:
+        return False
+    if view is VideoView.WATCHED:
+        return watched.completed
+    if view is VideoView.CONTINUE:
+        return watched.started and not watched.completed
+    if view is VideoView.UNWATCHED:
+        return not watched.started
+    return True
 
 
 def record_progress(record: types.VideoRecord) -> progress.Update:
@@ -376,14 +465,17 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 
 
 class VideoFilterModel(QtCore.QSortFilterProxyModel):
-    """Apply instant title/channel/ID search while preserving table sorting.
+    """Compose search and one task-oriented smart view with stable sorting.
 
-    Example: `proxy.set_search("lecture")` filters across useful text.
+    Example: `proxy.set_view(VideoView.CONTINUE)` shows partial viewing.
     """
+
+    criteria_changed = QtCore.Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self._search = ""
+        self._view = VideoView.ALL
         self.setSortRole(SORT_ROLE)
         self.setDynamicSortFilter(True)
 
@@ -393,8 +485,54 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         Example: `proxy.set_search(search_box.text())`.
         """
 
-        self._search = text.strip().casefold()
-        self.invalidateFilter()
+        search = text.strip().casefold()
+        if search == self._search:
+            return
+        self.beginFilterChange()
+        self._search = search
+        self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
+        self.criteria_changed.emit()
+
+    @property
+    def view(self) -> VideoView:
+        """Expose the active smart view for persistence and filter-bar state.
+
+        Example: `proxy.view is VideoView.ALL` identifies an unfiltered catalog.
+        """
+
+        return self._view
+
+    def set_view(self, view: VideoView) -> None:
+        """Replace the active smart view while retaining search and sorting.
+
+        Example: `proxy.set_view(VideoView.AVAILABLE)` shows remote-only rows.
+        """
+
+        if view is self._view:
+            return
+        self.beginFilterChange()
+        self._view = view
+        self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
+        self.criteria_changed.emit()
+
+    def facet_counts(self) -> dict[VideoView, int]:
+        """Count every smart view within the current channel and search scope.
+
+        Example: the filter bar uses `facet_counts()[VideoView.CONTINUE]`.
+        """
+
+        counts = {spec.view: 0 for spec in VIDEO_VIEWS}
+        model = self.sourceModel()
+        if not isinstance(model, VideoTableModel):
+            return counts
+        for row in range(model.rowCount()):
+            record = model.record(row)
+            if not record or not self._matches_search(record):
+                continue
+            watched = model.watched_at(row)
+            for spec in VIDEO_VIEWS:
+                counts[spec.view] += int(accepts_view(record, watched, spec.view))
+        return counts
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
         """Match search text against title, channel, and YouTube ID.
@@ -402,14 +540,23 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         Example: Qt calls this for each candidate source row.
         """
 
-        if not self._search:
-            return True
         model = self.sourceModel()
         if not isinstance(model, VideoTableModel):
             return True
         record = model.record(source_row)
         if not record:
             return False
+        watched = model.watched_at(source_row)
+        return self._matches_search(record) and accepts_view(record, watched, self._view)
+
+    def _matches_search(self, record: types.VideoRecord) -> bool:
+        """Match one record against normalized title, channel, or YouTube ID text.
+
+        Example: facet counts call this before evaluating every smart view.
+        """
+
+        if not self._search:
+            return True
         ident = record.meta.identity
         haystack = " ".join((ident.title, record.meta.origin.channel, ident.video_id)).casefold()
         return self._search in haystack

@@ -105,6 +105,7 @@ These defaults are hard-coded near the top of the script:
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library 100% watched rule | confirmed mpv end-of-file event only |
+| Library smart view | remembered across launches; search and channel remain independent |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -524,9 +525,10 @@ downloads.
 The desktop library is a native PySide6/Qt application with a dark Windows UI.
 It contains:
 
-- library-wide Downloaded and Available filters;
+- counted smart views for All, On device, Available, Unwatched, Continue,
+  Watched, and Issues;
 - a sidebar entry for every tracked channel;
-- instant title, channel, and YouTube-ID search;
+- instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable pipeline, watched, title, channel, published, downloaded, duration,
   size, and view-count columns;
 - a details panel for description, local path, source URL, and the last error;
@@ -550,6 +552,35 @@ completion, and failures. The newest 5,000 lines are retained in memory even
 while the panel is hidden; **Copy all** and **Clear** are available in the
 panel. Visibility is remembered across launches. Durable per-video pipeline
 logs continue to be written under `logs\`.
+
+### Smart Views And Search
+
+The compact **Show** shelf above the table answers common library questions
+without opening dialogs or combining contradictory dropdowns:
+
+- **All** shows the complete current library or selected channel.
+- **On device** shows every downloaded, playable video.
+- **Available** shows tracked videos that have not been downloaded.
+- **Unwatched** shows downloaded videos with no observed playback position.
+- **Continue** shows videos that were started but have not reached confirmed
+  end-of-file.
+- **Watched** shows videos with confirmed mpv completion.
+- **Issues** isolates videos whose latest download or subtitle processing
+  attempt failed.
+
+The number on every chip is calculated from the current channel and search
+scope, but independently of the selected chip. This makes the shelf a small
+faceted overview as well as navigation: while searching one channel, it still
+shows how many matching results are downloaded, unfinished, or in need of
+attention. Empty inactive views become unavailable rather than leading to a
+surprising blank table.
+
+Only one smart view can be active, so availability and viewing-state filters
+cannot contradict each other. Channel selection remains in the sidebar and
+free-text search remains in the top bar; all three scopes compose. **Clear** or
+**Ctrl+Shift+F** resets search and the smart view without leaving the selected
+channel. **Ctrl+F** focuses search. The chosen smart view is remembered across
+application launches.
 
 ### Pipeline Progress And Diagnostics
 
@@ -1397,9 +1428,9 @@ High-level groups:
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, local downloads, and playback state. |
 | `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
-| `yt_whisper_subs.library_model` | Sortable/searchable Qt table and completion-aware watched presentation. |
+| `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
-| `yt_whisper_subs.library_widgets` | Native dialogs, summary cards, selected-video details, and activity trace. |
+| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, summary cards, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Scheduling, system tray, task lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
@@ -1459,6 +1490,8 @@ Start by preserving these invariants:
     event stored separately from the numeric position.
 20. Keep playback IPC launch-scoped; never rewrite or bypass the user's mpv
     configuration.
+21. Keep smart-view predicates single-sourced with their facet counts; channel,
+    search, and view scopes must remain independently composable.
 
 When changing the project, useful verification commands are:
 
@@ -1475,8 +1508,9 @@ The tracked tests cover the OpenAI translator's timing preservation, chunk
 repair, and checkpoint cleanup; `SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
-semantics; playback IPC event handling; watched completion persistence; sidecar
-ingestion; and the crucial future-only automatic-download baseline.
+semantics; playback IPC event handling; watched completion persistence; smart
+view classification, live transitions, search-scoped counts, sidecar ingestion;
+and the crucial future-only automatic-download baseline.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
