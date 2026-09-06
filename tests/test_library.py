@@ -157,6 +157,8 @@ class PipelineDownloaderTests(unittest.TestCase):
             downloader.download(record, reports.append)
 
         child_env = popen.call_args.kwargs["env"]
+        cmd = [str(part) for part in popen.call_args.args[0]]
+        self.assertIn("--chapters", cmd)
         self.assertEqual(child_env[progress.ENV_VIDEO_ID], "aaaaaaaaaaa")
         updates = [update for message in reports if (update := progress.parse(message))]
         self.assertEqual(updates[0].stage, progress.Stage.QUEUED)

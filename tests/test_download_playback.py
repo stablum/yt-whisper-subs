@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import media
 from yt_whisper_subs import mpv_ipc
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress as progress
@@ -130,13 +131,68 @@ class PlaybackPrefsTests(unittest.TestCase):
             Path("video.mkv"),
             [],
             playback.PlaybackPrefs.defaults(),
-            observer,
+            playback.PlaybackSession(observer=observer),
         )
 
         cmd = [str(arg) for arg in run.call_args.args[0]]
         self.assertIn("--input-ipc-server=test-pipe", cmd)
         self.assertNotIn("--no-config", cmd)
         monitor.return_value.__enter__.assert_called_once()
+
+
+class MediaDurationTests(unittest.TestCase):
+    """Keep chapter density tied to the actual video container duration.
+
+    Example: `MediaDurationTests("test_ffprobe_duration_is_milliseconds")`.
+    """
+
+    @mock.patch("yt_whisper_subs.media.proc.require_command")
+    @mock.patch("yt_whisper_subs.media.proc.run")
+    def test_ffprobe_duration_is_milliseconds(self, run: mock.Mock, require: mock.Mock) -> None:
+        """Convert ffprobe's fractional seconds without parsing human output.
+
+        Example: `12.345` seconds becomes `12345` milliseconds.
+        """
+
+        run.return_value.stdout = "12.345\n"
+
+        self.assertEqual(media.probe_duration_ms(Path("video.mkv")), 12_345)
+        require.assert_called_once_with("ffprobe")
+        self.assertIn("format=duration", run.call_args.args[0])
+
+
+class PlaybackChapterTests(unittest.TestCase):
+    """Verify launch-only mpv chapter navigation options.
+
+    Example: `PlaybackChapterTests("test_launch_adds_chapters_and_exact_start_without_config_changes")`.
+    """
+
+    @mock.patch("yt_whisper_subs.playback.proc.run")
+    def test_launch_adds_chapters_and_exact_start_without_config_changes(self, run: mock.Mock) -> None:
+        """Load generated navigation only for this mpv process and seek locally.
+
+        Example: a GUI chapter double-click starts at 12:30.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            chapter_path = Path(tmp) / "video.chapters.ffmetadata"
+            chapter_path.write_text(";FFMETADATA1\n", encoding="utf-8")
+            session = playback.PlaybackSession(
+                chapter_path=chapter_path,
+                start_seconds=750.0,
+            )
+
+            playback.play_video(
+                Path("video.mkv"),
+                [],
+                playback.PlaybackPrefs.defaults(),
+                session,
+            )
+
+        cmd = [str(arg) for arg in run.call_args.args[0]]
+        self.assertIn(f"--chapters-file={chapter_path}", cmd)
+        self.assertIn("--start=750", cmd)
+        self.assertNotIn("--no-config", cmd)
 
 
 class MpvEventTrackerTests(unittest.TestCase):

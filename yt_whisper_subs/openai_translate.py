@@ -333,7 +333,7 @@ class OpenAISrtTranslator:
             ),
         )
         response = openai_client.responses_api_request(self._args, payload)
-        print_openai_usage(response, chunk_label=chunk_label)
+        openai_client.print_usage(response, label=chunk_label)
         parse_result = collect_openai_translations(openai_client.response_output_text(response), len(source_cues))
         if parse_result.complete:
             return parse_result.complete_texts()
@@ -366,7 +366,7 @@ class OpenAISrtTranslator:
         label = f" for {chunk_label}" if chunk_label else ""
         print(
             f"OpenAI returned an incomplete translation{label}; "
-            f"requesting repair for cue(s) {format_index_list(missing_indexes)}."
+            f"requesting repair for cue(s) {openai_client.format_index_list(missing_indexes)}."
         )
 
         missing_cues = [source_cues[index - 1] for index in missing_indexes]
@@ -385,7 +385,7 @@ class OpenAISrtTranslator:
             ),
         )
         response = openai_client.responses_api_request(self._args, payload)
-        print_openai_usage(response, chunk_label=repair_label)
+        openai_client.print_usage(response, label=repair_label)
         repaired_texts = parse_openai_translations(openai_client.response_output_text(response), len(missing_cues))
 
         texts = list(parse_result.texts)
@@ -396,7 +396,7 @@ class OpenAISrtTranslator:
         if still_missing:
             raise RuntimeError(
                 "OpenAI translation repair did not fill cue(s): "
-                f"{format_index_list(still_missing)}"
+                f"{openai_client.format_index_list(still_missing)}"
             )
 
         return [text for text in texts if text is not None]
@@ -602,70 +602,6 @@ def openai_translation_payload(args: argparse.Namespace, prompt: str) -> dict[st
     }
 
 
-def format_index_list(indexes: list[int], *, limit: int = 12) -> str:
-    """Format cue indexes compactly for human error messages.
-
-    Example: `format_index_list([1, 2, 3])`.
-    """
-
-    if len(indexes) <= limit:
-        return ", ".join(str(index) for index in indexes)
-    shown = ", ".join(str(index) for index in indexes[:limit])
-    return f"{shown}, ... ({len(indexes)} total)"
-
-
-def print_openai_usage(data: dict[str, object], *, chunk_label: str | None = None) -> None:
-    """Print token usage when the Responses API returns usage accounting.
-
-    Example: `print_openai_usage(response, chunk_label="chunk 1")`.
-    """
-
-    usage = data.get("usage")
-    if not isinstance(usage, dict):
-        return
-
-    input_tokens = usage.get("input_tokens")
-    output_tokens = usage.get("output_tokens")
-    total_tokens = usage.get("total_tokens")
-    output_details = usage.get("output_tokens_details")
-    reasoning_tokens = None
-    if isinstance(output_details, dict):
-        reasoning_tokens = output_details.get("reasoning_tokens")
-
-    parts: list[str] = []
-    if isinstance(input_tokens, int):
-        parts.append(f"input={input_tokens}")
-    if isinstance(output_tokens, int):
-        parts.append(f"output={output_tokens}")
-    if isinstance(reasoning_tokens, int):
-        parts.append(f"reasoning={reasoning_tokens}")
-    if isinstance(total_tokens, int):
-        parts.append(f"total={total_tokens}")
-    if not parts:
-        return
-
-    label = f" for {chunk_label}" if chunk_label else ""
-    print(f"OpenAI token usage{label}: " + ", ".join(parts))
-
-
-def strip_json_code_fence(text: str) -> str:
-    """Accept JSON wrapped in a Markdown code fence despite strict prompting.
-
-    Example: `strip_json_code_fence("```json\\n{}\\n```")`.
-    """
-
-    stripped = text.strip()
-    if not stripped.startswith("```"):
-        return stripped
-
-    lines = stripped.splitlines()
-    if lines and lines[0].startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
-
-
 def collect_openai_translations(output_text: str, expected_count: int) -> OpenAITranslationParseResult:
     """Validate translated cue JSON while retaining partial valid entries.
 
@@ -673,7 +609,7 @@ def collect_openai_translations(output_text: str, expected_count: int) -> OpenAI
     """
 
     try:
-        payload = json.loads(strip_json_code_fence(output_text))
+        payload = json.loads(openai_client.strip_json_code_fence(output_text))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"OpenAI returned invalid translation JSON: {exc}") from exc
 

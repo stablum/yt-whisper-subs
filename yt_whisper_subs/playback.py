@@ -87,6 +87,17 @@ class PlaybackPrefs(NamedTuple):
         )
 
 
+class PlaybackSession(NamedTuple):
+    """Hold launch-specific observation, chapter, and seek behavior together.
+
+    Example: `PlaybackSession(chapter_path=path, start_seconds=90)`.
+    """
+
+    observer: progress.Observer | None = None
+    chapter_path: Path | None = None
+    start_seconds: float | None = None
+
+
 def parse_css_color(value: str) -> tuple[int, int, int, int]:
     """Parse #RRGGBB or #RRGGBBAA subtitle colors.
 
@@ -288,17 +299,22 @@ def play_video(
     video_path: Path,
     srt_paths: list[Path],
     prefs: PlaybackPrefs,
-    observer: progress.Observer | None = None,
+    session: PlaybackSession | None = None,
 ) -> None:
-    """Open mpv with selected subtitle paths and optional dual-sub display.
+    """Open mpv with selected subtitles and cohesive launch-only additions.
 
-    Example: `play_video(video, [primary, english], prefs, observer)`.
+    Example: `play_video(video, srts, prefs, PlaybackSession(observer=observer))`.
     """
 
+    session = session or PlaybackSession()
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
-    monitor = mpv_ipc.MpvMonitor(observer) if observer else None
+    monitor = mpv_ipc.MpvMonitor(session.observer) if session.observer else None
     if monitor:
         cmd.append(monitor.mpv_option)
+    if session.chapter_path and session.chapter_path.exists():
+        cmd.append(f"--chapters-file={session.chapter_path}")
+    if session.start_seconds is not None:
+        cmd.append(f"--start={max(0.0, session.start_seconds):g}")
     existing_srt_paths = [srt_path for srt_path in srt_paths if srt_path.exists()]
 
     temp_dir_context = None

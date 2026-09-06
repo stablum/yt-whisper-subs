@@ -29,6 +29,7 @@ class Stage(StrEnum):
     EXTRACTING = "extracting"
     TRANSCRIBING = "transcribing"
     TRANSLATING = "translating"
+    CHAPTERING = "chaptering"
     FINALIZING = "finalizing"
     READY = "ready"
     FAILED = "failed"
@@ -50,10 +51,11 @@ class StageSpec(NamedTuple):
 
 STAGE_SPECS = (
     StageSpec(Stage.PREPARING, "Preparing", 0.03, "#8f9aaa"),
-    StageSpec(Stage.DOWNLOADING, "Downloading", 0.34, "#4ea1f3"),
+    StageSpec(Stage.DOWNLOADING, "Downloading", 0.32, "#4ea1f3"),
     StageSpec(Stage.EXTRACTING, "Extracting audio", 0.07, "#55d6be"),
-    StageSpec(Stage.TRANSCRIBING, "Speech-to-text", 0.33, "#a78bfa"),
-    StageSpec(Stage.TRANSLATING, "Translating", 0.18, "#f3bd63"),
+    StageSpec(Stage.TRANSCRIBING, "Speech-to-text", 0.30, "#a78bfa"),
+    StageSpec(Stage.TRANSLATING, "Translating", 0.16, "#f3bd63"),
+    StageSpec(Stage.CHAPTERING, "Creating chapters", 0.07, "#f27bbd"),
     StageSpec(Stage.FINALIZING, "Finalizing", 0.05, "#58d68d"),
 )
 _WORK_SPECS = {spec.stage: spec for spec in STAGE_SPECS}

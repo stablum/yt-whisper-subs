@@ -9,8 +9,10 @@ import argparse
 from pathlib import Path
 from typing import NamedTuple
 
+from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import media
+from yt_whisper_subs import openai_chapters
 from yt_whisper_subs import openai_translate
 from yt_whisper_subs import opts
 from yt_whisper_subs import playback
@@ -22,7 +24,7 @@ from yt_whisper_subs import youtube
 
 
 class YieldDirs(NamedTuple):
-    """Output directories that hold durable video, audio, and subtitle yields.
+    """Output directories that hold durable media, subtitle, and chapter yields.
 
     Example: `YieldDirs.from_output_root(out_dir).create()`.
     """
@@ -31,6 +33,7 @@ class YieldDirs(NamedTuple):
     audio: Path
     subs: Path
     metadata: Path
+    chapters: Path
 
     @classmethod
     def from_output_root(cls, out_dir: Path) -> YieldDirs:
@@ -44,6 +47,7 @@ class YieldDirs(NamedTuple):
             audio=out_dir / "audio",
             subs=out_dir / "subtitles",
             metadata=out_dir / "metadata",
+            chapters=out_dir / "chapters",
         )
 
     def create(self) -> None:
@@ -57,7 +61,7 @@ class YieldDirs(NamedTuple):
 
 
 class RunYields(NamedTuple):
-    """Concrete file yields for one source video and optional English subtitles.
+    """Concrete file yields for one source video and optional AI additions.
 
     Example: `run_yields.primary.ready()`.
     """
@@ -67,6 +71,8 @@ class RunYields(NamedTuple):
     primary: subtitle_files.SubtitlePair
     english: subtitle_files.SubtitlePair
     make_english: bool
+    chapters: chapters.ChapterFiles
+    make_chapters: bool
 
     def all_ready(self) -> bool:
         """Check whether all requested durable yields are already present.
@@ -75,7 +81,8 @@ class RunYields(NamedTuple):
         """
 
         english_ready = (not self.make_english) or self.english.ready()
-        return self.video.exists() and self.primary.ready() and english_ready
+        chapters_ready = (not self.make_chapters) or self.chapters.ready()
+        return self.video.exists() and self.primary.ready() and english_ready and chapters_ready
 
     def srt_paths(self) -> list[Path]:
         """Return subtitle sidecars in the playback order expected by mpv.
@@ -104,6 +111,8 @@ class RunYields(NamedTuple):
         if self.make_english:
             print(f"English SRT: {self.english.sidecar}")
             print(f"English Archive SRT: {self.english.archive}")
+        if self.make_chapters or self.chapters.ready():
+            print(f"Chapters: {self.chapters.archive}")
 
     def print_done(self, log_path: Path) -> None:
         """Print the final run summary after generation or cheap reuse.
@@ -121,6 +130,8 @@ class RunYields(NamedTuple):
         if self.make_english:
             print(f"English Subs: {self.english.sidecar}")
             print(f"English Archive Subs: {self.english.archive}")
+        if self.chapters.ready():
+            print(f"Chapters: {self.chapters.archive}")
 
 
 class PipelineRunner:
@@ -152,7 +163,12 @@ class PipelineRunner:
         self._prepare_existing_subtitles(run_yields)
         run_yields.print_paths(self._log_path)
 
-        if run_yields.all_ready() and not self._args.force and not self._force_english(run_yields):
+        if (
+            run_yields.all_ready()
+            and not self._args.force
+            and not self._force_english(run_yields)
+            and not self._force_chapters(run_yields)
+        ):
             progress.emit(progress.Stage.FINALIZING, 0.0, "Reusing completed files")
             result = self._reuse_ready_yields(run_yields)
             progress.emit(progress.Stage.READY, 1.0)
@@ -179,6 +195,8 @@ class PipelineRunner:
 
         if run_yields.make_english:
             self._generate_english_subs(run_yields)
+        if run_yields.make_chapters:
+            self._generate_chapters(run_yields)
 
         progress.emit(progress.Stage.FINALIZING, 0.0, "Finalizing files")
         self._finish(run_yields)
@@ -272,12 +290,15 @@ class PipelineRunner:
             archive=self._dirs.subs / f"{video_base}.en.srt",
         )
         audio_path = self._dirs.audio / f"{video_base}.{self._args.audio_format}"
+        chapter_files = chapters.ChapterFiles.in_directory(self._dirs.chapters, video_base)
         return RunYields(
             video=video_path,
             audio=audio_path,
             primary=primary_pair,
             english=english_pair,
             make_english=make_english,
+            chapters=chapter_files,
+            make_chapters=bool(getattr(self._args, "chapters", False)),
         )
 
     def _prepare_existing_subtitles(self, run_yields: RunYields) -> None:
@@ -442,6 +463,38 @@ class PipelineRunner:
         progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
         run_yields.english.finalize(self._args, is_english=True, label="English")
 
+    def _generate_chapters(self, run_yields: RunYields) -> None:
+        """Create a durable bilingual chapter plan from final subtitle cues.
+
+        Example: `self._generate_chapters(run_yields)` follows translation.
+        """
+
+        if run_yields.chapters.ready() and not self._args.force and not self._force_chapters(run_yields):
+            print()
+            print("Chapter plan already exists. Use --force-chapters or --force to regenerate.")
+            return
+
+        print()
+        print("Creating bilingual topic chapters with OpenAI...")
+        progress.emit(progress.Stage.CHAPTERING, 0.0, "Reading timestamped transcript")
+        english_path = run_yields.english.sidecar if run_yields.english.ready() else None
+        duration_ms = media.probe_duration_ms(run_yields.video)
+        source = openai_chapters.ChapterSource(
+            video_id=run_yields.video.stem,
+            primary_language=self._args.language,
+            primary_srt=run_yields.primary.sidecar,
+            english_srt=english_path,
+            duration_ms=duration_ms,
+        )
+        chapter_set = openai_chapters.generate_chapters(
+            source,
+            run_yields.chapters,
+            self._args,
+        )
+        count = len(chapter_set.chapters)
+        progress.emit(progress.Stage.CHAPTERING, 1.0, f"Created {count} bilingual chapters")
+        print(f"Created {count} bilingual chapters: {run_yields.chapters.archive}")
+
     def _finish(self, run_yields: RunYields) -> None:
         """Clean up optional audio and either print summary or open playback.
 
@@ -471,6 +524,14 @@ class PipelineRunner:
 
         return run_yields.make_english and bool(getattr(self._args, "force_english", False))
 
+    def _force_chapters(self, run_yields: RunYields) -> bool:
+        """Check whether only the chapter plan should be regenerated.
+
+        Example: `self._force_chapters(run_yields)` keeps subtitles reusable.
+        """
+
+        return run_yields.make_chapters and bool(getattr(self._args, "force_chapters", False))
+
     def _play(self, run_yields: RunYields) -> None:
         """Launch mpv with the sidecar subtitles selected for this run.
 
@@ -483,6 +544,7 @@ class PipelineRunner:
             run_yields.video,
             run_yields.srt_paths(),
             playback.PlaybackPrefs.from_args(self._args),
+            playback.PlaybackSession(chapter_path=run_yields.chapters.ensure_mpv()),
         )
 
 

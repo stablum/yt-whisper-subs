@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
+from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
@@ -78,9 +79,45 @@ class PipelineDownloader:
             "--out-dir",
             str(self._out_dir),
             "--no-play",
+            "--chapters",
         ]
         if self._cookies:
             cmd += ["--cookies-from-browser", self._cookies]
+        self._run(record, cmd, "Download", report)
+
+    def generate_chapters(self, record: types.VideoRecord, report: ReportFn) -> None:
+        """Regenerate chapters through the CLI while reusing local durable yields.
+
+        Example: `generate_chapters(record, report)` avoids Whisper and yt-dlp.
+        """
+
+        if not record.local:
+            raise RuntimeError("download this video before generating chapters")
+        cmd = [
+            str(self._python_exe),
+            str(cfg.PROJECT_DIR / "yt_whisper_subs.py"),
+            "--video-file",
+            str(record.local.path),
+            "--out-dir",
+            str(self._out_dir),
+            "--no-play",
+            "--chapters",
+            "--force-chapters",
+        ]
+        self._run(record, cmd, "Chapter generation", report)
+
+    def _run(
+        self,
+        record: types.VideoRecord,
+        cmd: list[str],
+        operation: str,
+        report: ReportFn,
+    ) -> None:
+        """Stream one hidden CLI operation into trace and structured progress.
+
+        Example: `_run(record, cmd, "Download", report)` keeps one protocol.
+        """
+
         child_kwargs = proc.child_process_kwargs()
         child_env = dict(child_kwargs["env"])
         child_env[progress.ENV_VIDEO_ID] = record.meta.identity.video_id
@@ -123,7 +160,7 @@ class PipelineDownloader:
                     f"Failed · {detail}",
                 )
                 report(progress.encode(current))
-            raise RuntimeError(f"Download failed for {record.meta.identity.title}: {detail}")
+            raise RuntimeError(f"{operation} failed for {record.meta.identity.title}: {detail}")
         if current.stage is not progress.Stage.READY:
             report(progress.encode(progress.make(record.meta.identity.video_id, progress.Stage.READY, 1.0)))
 
@@ -312,10 +349,43 @@ class LibraryService:
             self.db.set_download_error(video_id, str(exc))
             raise
 
-    def play(self, video_id: str, report: ReportFn = _ignore_report) -> None:
+    def chapter_set(self, video_id: str) -> chapters.ChapterSet | None:
+        """Load the selected video's durable chapter plan when available.
+
+        Example: `service.chapter_set(video_id)` feeds the inspector pane.
+        """
+
+        return chapters.ChapterFiles.for_video(self.out_dir, video_id).load()
+
+    def generate_chapters(
+        self,
+        video_id: str,
+        report: ReportFn = _ignore_report,
+    ) -> chapters.ChapterSet:
+        """Regenerate chapters for an existing downloaded video.
+
+        Example: `service.generate_chapters(video_id, report)` backs the GUI action.
+        """
+
+        record = self.db.video(video_id)
+        if not record or not record.local or not record.local.path.exists():
+            raise RuntimeError("download this video before generating chapters")
+        self._downloader.generate_chapters(record, report)
+        chapter_set = self.chapter_set(video_id)
+        if not chapter_set:
+            raise RuntimeError("chapter pipeline completed without a readable chapter plan")
+        return chapter_set
+
+    def play(
+        self,
+        video_id: str,
+        report: ReportFn = _ignore_report,
+        *,
+        start_seconds: float | None = None,
+    ) -> None:
         """Open a downloaded record through the exact shared mpv policy.
 
-        Example: `service.play(video_id, report)` tracks GUI playback.
+        Example: `service.play(video_id, report, start_seconds=90)` jumps to a chapter.
         """
 
         record = self.db.video(video_id)
@@ -334,11 +404,17 @@ class LibraryService:
             report(playback_progress.encode(update))
 
         observer = playback_progress.Observer(video_id, save)
+        chapter_path = chapters.ChapterFiles.for_video(self.out_dir, video_id).ensure_mpv()
+        session = playback.PlaybackSession(
+            observer=observer,
+            chapter_path=chapter_path,
+            start_seconds=start_seconds,
+        )
         playback.play_video(
             record.local.path,
             srts,
             playback.PlaybackPrefs.defaults(),
-            observer,
+            session,
         )
 
     def _check_channel(self, channel: types.Channel, report: ReportFn) -> list[str]:

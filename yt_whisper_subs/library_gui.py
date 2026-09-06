@@ -13,69 +13,15 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import library_chapter_actions
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
+from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_window_support
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import library_workers
-
-
-_STYLE = """
-QMainWindow, QDialog { background: #171a21; color: #eef2f7; }
-QWidget { color: #eef2f7; font-family: "Segoe UI"; font-size: 10pt; }
-QFrame#sidebar { background: #11141a; border-right: 1px solid #2a303b; }
-QLabel#appTitle { font-size: 18pt; font-weight: 700; color: #ffffff; }
-QLabel#appSubtitle, QLabel#statLabel, QLabel#settingsNote { color: #8f9aaa; }
-QListWidget { background: transparent; border: 0; outline: 0; padding: 4px; }
-QListWidget::item { padding: 9px 10px; margin: 2px 0; border-radius: 6px; }
-QListWidget::item:selected { background: #26364d; color: #8fc7ff; }
-QLineEdit, QComboBox, QDoubleSpinBox {
-  background: #222730; border: 1px solid #343b47; border-radius: 7px; padding: 7px 9px;
-}
-QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus { border-color: #4ea1f3; }
-QPushButton { background: #2b313c; border: 1px solid #3a424f; border-radius: 7px; padding: 7px 13px; }
-QPushButton:hover { background: #353d49; }
-QPushButton:disabled { color: #697381; background: #22262d; }
-QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: white; font-weight: 600; }
-QPushButton#primaryButton:hover { background: #2b83db; }
-QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
-QFrame#filterBar { background: #1e232c; border: 1px solid #303844; border-radius: 9px; }
-QLabel#filterEyebrow { color: #778292; font-size: 8pt; font-weight: 700; padding: 0 5px 0 2px; }
-QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }
-QPushButton#filterChip {
-  background: #272d37; border: 1px solid #353e4b; border-radius: 13px;
-  color: #aeb8c6; padding: 5px 10px;
-}
-QPushButton#filterChip:hover { background: #303946; border-color: #485567; color: #e6edf5; }
-QPushButton#filterChip:checked {
-  background: #254f78; border-color: #4ea1f3; color: #ffffff; font-weight: 600;
-}
-QPushButton#filterChip:disabled { background: #20252d; border-color: #2b313b; color: #5f6875; }
-QPushButton#clearFilters { background: transparent; border: 0; color: #8fc7ff; padding: 5px 7px; }
-QPushButton#clearFilters:hover { background: #293440; color: white; }
-QTableView { background: #1c2028; alternate-background-color: #191d24; border: 1px solid #2d3440; border-radius: 8px; gridline-color: transparent; }
-QTableView::item { padding: 7px; border-bottom: 1px solid #262c35; }
-QTableView::item:selected { background: #294467; color: white; }
-QHeaderView::section { background: #222730; color: #aeb8c6; border: 0; border-bottom: 1px solid #363e4a; padding: 8px; font-weight: 600; }
-QFrame#detailPanel { background: #20252e; border: 1px solid #2d3440; border-radius: 9px; }
-QLabel#detailTitle, QLabel#dialogHeading { font-size: 14pt; font-weight: 700; color: white; }
-QLabel#detailFacts { color: #8fc7ff; }
-QLabel#detailDescription { color: #b4bdc9; }
-QDockWidget { color: #d8dee8; background: #151920; }
-QDockWidget::title { background: #20252e; padding: 7px 10px; border-top: 1px solid #303744; }
-QLabel#traceNote { color: #8f9aaa; }
-QPlainTextEdit#activityTrace {
-  background: #0f1217; color: #c9d2df; border: 1px solid #303744;
-  selection-background-color: #294467; font-family: Consolas; font-size: 9pt;
-}
-QStatusBar { background: #11141a; color: #9ba6b4; border-top: 1px solid #2a303b; }
-QMenu { background: #222730; border: 1px solid #3a424f; padding: 5px; }
-QMenu::item { padding: 7px 26px; border-radius: 4px; }
-QMenu::item:selected { background: #294467; }
-QToolTip { background: #2b313c; color: white; border: 1px solid #4b5564; }
-"""
 
 
 class HeaderUi(NamedTuple):
@@ -117,7 +63,11 @@ class LibraryUi(NamedTuple):
     trace: library_widgets.ActivityTrace
 
 
-class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWindow):
+class LibraryWindow(
+    library_chapter_actions.ChapterActionsMixin,
+    library_window_support.WindowRuntimeMixin,
+    QtWidgets.QMainWindow,
+):
     """Coordinate native widgets, service tasks, scheduling, and tray life.
 
     Example: `window = LibraryWindow(service); window.show()`.
@@ -165,7 +115,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self.setWindowTitle("YouTube Library · yt-whisper-subs")
         self.resize(1480, 900)
         self.setMinimumSize(1050, 650)
-        self.setStyleSheet(_STYLE)
+        self.setStyleSheet(library_theme.STYLE)
         central = QtWidgets.QWidget()
         root = QtWidgets.QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -310,6 +260,8 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         self._ui.header.check.clicked.connect(self.check_now)
         self._ui.header.download.clicked.connect(self._download_selected)
         self._ui.header.play.clicked.connect(self._play_selected)
+        self._ui.catalog.detail.generate_requested.connect(self._generate_chapters_selected)
+        self._ui.catalog.detail.chapter_activated.connect(self._play_chapter)
         self._ui.catalog.channels.currentItemChanged.connect(self._channel_filter_changed)
         selection = self._ui.catalog.table.selectionModel()
         selection.selectionChanged.connect(self._selection_changed)
@@ -334,6 +286,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         video_menu = self.menuBar().addMenu("Video")
         video_menu.addAction("Download selected", self._download_selected)
         video_menu.addAction("Play selected", self._play_selected)
+        video_menu.addAction("Generate chapters", self._generate_chapters_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
         view_menu = self.menuBar().addMenu("View")
         search_action = view_menu.addAction("Focus search")
@@ -553,31 +506,6 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
 
         self._run_task("Starting download…", download, lambda _: self.refresh())
 
-    def _play_selected(self) -> None:
-        """Open the selected local video with shared dual-subtitle mpv behavior.
-
-        Example: the Play button invokes `_play_selected()`.
-        """
-
-        record = self._selected_record()
-        if not record:
-            return
-        if not record.downloaded:
-            self._download_selected()
-            return
-        video_id = record.meta.identity.video_id
-
-        def play(report: Callable[[str], None]) -> None:
-            """Keep mpv and its temporary ASS sidecar off the GUI thread.
-
-            Example: `play(report)` blocks only its background worker.
-            """
-
-            report(f"Playing {record.meta.identity.title}")
-            self._service.play(video_id, report)
-
-        self._run_task("Opening mpv…", play, lambda _: self.refresh())
-
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
         """Play a downloaded double-click or offer download for a remote row.
 
@@ -655,7 +583,10 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
         """
 
         record = self._selected_record()
-        self._ui.catalog.detail.set_record(record)
+        chapter_set = None
+        if record:
+            chapter_set = self._service.chapter_set(record.meta.identity.video_id)
+        self._ui.catalog.detail.set_record(record, chapter_set)
         self._update_actions()
 
     def _selected_record(self) -> types.VideoRecord | None:
@@ -711,6 +642,7 @@ class LibraryWindow(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWi
 
         record = self._selected_record()
         enabled = record is not None and not self._busy
+        self._ui.catalog.detail.set_busy(self._busy)
         self._ui.header.download.setEnabled(enabled and not record.downloaded if record else False)
         self._ui.header.play.setEnabled(enabled and record.downloaded if record else False)
         self._ui.header.check.setEnabled(not self._busy)

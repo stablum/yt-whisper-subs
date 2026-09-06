@@ -193,3 +193,67 @@ def response_output_text(data: dict[str, object]) -> str:
         status = data.get("status")
         raise RuntimeError(f"OpenAI response did not include output text; status={status!r}")
     return text
+
+
+def print_usage(data: dict[str, object], *, label: str | None = None) -> None:
+    """Print Responses API token accounting with an optional operation label.
+
+    Example: `print_usage(response, label="chapter plan")`.
+    """
+
+    usage = data.get("usage")
+    if not isinstance(usage, dict):
+        return
+
+    input_tokens = usage.get("input_tokens")
+    output_tokens = usage.get("output_tokens")
+    total_tokens = usage.get("total_tokens")
+    output_details = usage.get("output_tokens_details")
+    reasoning_tokens = None
+    if isinstance(output_details, dict):
+        reasoning_tokens = output_details.get("reasoning_tokens")
+
+    parts: list[str] = []
+    if isinstance(input_tokens, int):
+        parts.append(f"input={input_tokens}")
+    if isinstance(output_tokens, int):
+        parts.append(f"output={output_tokens}")
+    if isinstance(reasoning_tokens, int):
+        parts.append(f"reasoning={reasoning_tokens}")
+    if isinstance(total_tokens, int):
+        parts.append(f"total={total_tokens}")
+    if not parts:
+        return
+
+    suffix = f" for {label}" if label else ""
+    print(f"OpenAI token usage{suffix}: " + ", ".join(parts))
+
+
+def strip_json_code_fence(text: str) -> str:
+    """Accept JSON wrapped in a Markdown fence despite structured prompting.
+
+    Example: `strip_json_code_fence("```json\\n{}\\n```")`.
+    """
+
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+
+    lines = stripped.splitlines()
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def format_index_list(indexes: list[int], *, limit: int = 12) -> str:
+    """Format integer indexes compactly for API validation errors.
+
+    Example: `format_index_list([1, 2, 3])`.
+    """
+
+    if len(indexes) <= limit:
+        return ", ".join(str(index) for index in indexes)
+    shown = ", ".join(str(index) for index in indexes[:limit])
+    return f"{shown}, ... ({len(indexes)} total)"

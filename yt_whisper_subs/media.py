@@ -74,3 +74,30 @@ def extract_audio(video_path: Path, audio_path: Path, audio_format: str, force: 
             audio_path,
         ]
     )
+
+
+def probe_duration_ms(video_path: Path) -> int | None:
+    """Read container duration with ffprobe, falling back cleanly on unknowns.
+
+    Example: `probe_duration_ms(video)` supplies chapter-density math.
+    """
+
+    proc.require_command("ffprobe")
+    result = proc.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ],
+        capture_stdout=True,
+    )
+    try:
+        duration_ms = round(float((result.stdout or "").strip()) * 1000)
+    except ValueError:
+        return None
+    return duration_ms if duration_ms > 0 else None

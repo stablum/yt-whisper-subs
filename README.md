@@ -5,8 +5,9 @@ for YouTube videos and local video files. The implementation lives in the
 `yt_whisper_subs/` package. It downloads a lossy compressed video when given a
 URL, extracts a small lossy audio track, runs local OpenAI Whisper to create
 primary language subtitles, optionally translates Dutch subtitles to English
-with the OpenAI Responses API, and optionally launches `mpv` with dual
-subtitles.
+with the OpenAI Responses API, can create bilingual topic chapters from the
+finished timestamped transcript, and optionally launches `mpv` with dual
+subtitles and chapter navigation.
 
 `yt_whisper_library.pyw` is the native Windows desktop companion. It presents
 downloaded and remote channel videos in a searchable library, persists YouTube
@@ -35,10 +36,12 @@ The script is optimized for this workflow:
    markings as the compacted and gap-extended Dutch SRT.
 7. Store subtitle archives under `~/Videos/yt-whisper-subs/subtitles`.
 8. Store the `.srt` sidecars beside the video so `mpv` can discover them.
-9. Write a timestamped run log under `~/Videos/yt-whisper-subs/logs`.
-10. Re-run cheaply: if the video and requested subtitles already exist, skip
-   download, audio extraction, CUDA checks, Whisper, and OpenAI, then just open
-   `mpv`.
+9. When requested, generate durable primary-language/English topic chapters
+   whose boundaries are mapped locally to real subtitle timestamps.
+10. Write a timestamped run log under `~/Videos/yt-whisper-subs/logs`.
+11. Re-run cheaply: if the video and requested subtitles/chapters already
+    exist, skip download, audio extraction, CUDA checks, Whisper, and OpenAI,
+    then just open `mpv`.
 
 The script can also be used on a local video file, can skip playback, can avoid
 English translation, and can fall back to Whisper's built-in audio translation.
@@ -58,6 +61,8 @@ The companion library is optimized for a second workflow:
    `mpv` view used by the CLI.
 7. Track furthest watched position and confirmed completion for library-launched
    playback without changing the user's mpv configuration.
+8. Generate bilingual chapters for new downloads, show them in the selected-video
+   inspector, and double-click any chapter to open mpv at that moment.
 
 ## Important Defaults
 
@@ -76,6 +81,8 @@ These defaults are hard-coded near the top of the script:
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
 | OpenAI translation context | `3` neighboring cues |
+| AI chapter density | at least `1` chapter per `4` minutes; 15 for 60 minutes |
+| CLI chapter generation | opt-in with `--chapters`; library downloads enable it |
 | Subprocess silence heartbeat | `60` seconds |
 | OpenAI env file | `.env` beside the script |
 | Run logs | timestamped under `~/Videos/yt-whisper-subs/logs` |
@@ -201,6 +208,18 @@ Regenerate only the English subtitle yield from the existing Dutch SRT:
 python .\yt_whisper_subs.py --force-english "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
+Generate chapters while otherwise reusing existing yields:
+
+```powershell
+python .\yt_whisper_subs.py --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Regenerate only an existing chapter plan:
+
+```powershell
+python .\yt_whisper_subs.py --force-chapters "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
 Use local Whisper audio translation instead of OpenAI SRT translation:
 
 ```powershell
@@ -246,6 +265,9 @@ yt-whisper-subs\
     youtube_id.en.srt
     youtube_id.uncompact.srt
     youtube_id.en.uncompact.srt
+  chapters\
+    youtube_id.chapters.json
+    youtube_id.chapters.ffmetadata
   library\
     catalog.sqlite3
 ```
@@ -268,6 +290,11 @@ The script writes subtitles in two places:
 
 This duplication is intentional. Sidecars are for playback ergonomics. The
 archive directory is for durable yield tracking.
+
+Chapter JSON is the authoritative bilingual plan, including exact millisecond
+boundaries, generation time, language, model, and video duration. The adjacent
+FFmetadata file is a derived mpv input. It can be reconstructed from JSON and
+does not modify or remux the downloaded video.
 
 Every new YouTube download also writes the extractor's cleaned `.info.json`
 under `metadata\`, embeds normal media metadata into the downloaded container,
@@ -318,6 +345,7 @@ otherwise:
     check CUDA if --device cuda
   generate primary subtitles if needed
   generate English subtitles if requested and needed
+  generate bilingual chapters if requested and needed
   optionally delete audio
   optionally play in mpv
 ```
@@ -371,6 +399,12 @@ rerunning Whisper.
 `--force-english` is the supported shortcut for that common case. It keeps the
 cached video, audio, and primary Dutch subtitles, then regenerates only the
 Dutch-to-English subtitle yield when English generation is enabled for the run.
+
+`--force-chapters` similarly implies `--chapters` and regenerates only the
+chapter plan from reusable subtitles. It does not redownload the video, and it
+does not rerun Whisper when primary subtitles already exist. Direct CLI chapter
+generation remains opt-in so established one-video CLI interaction and API cost
+do not change unexpectedly; native-library downloads explicitly enable it.
 
 ## Dependency Management
 
@@ -532,7 +566,8 @@ It contains:
 - instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable pipeline, watched, title, channel, published, downloaded, duration,
   size, and view-count columns;
-- a details panel for description, local path, source URL, and the last error;
+- a selected-video inspector for description, local path, errors, and a
+  scrollable bilingual chapter list with exact jump points;
 - manual Check, Download, Play, and Open on YouTube actions;
 - configurable browser cookies and check interval;
 - an optional timestamped activity trace for live pipeline and subprocess output;
@@ -547,7 +582,7 @@ without hiding the application the user explicitly asked to open.
 
 Choose **View → Activity trace** or press **Ctrl+Shift+L** to open the dockable
 trace panel. It timestamps download progress, command lines, ffmpeg and Whisper
-output, OpenAI translation stages and token usage, channel checks, task
+output, OpenAI translation/chapter stages and token usage, channel checks, task
 completion, and failures. The newest 5,000 lines are retained in memory even
 while the panel is hidden; **Copy all** and **Clear** are available in the
 panel. Visibility is remembered across launches. Durable per-video pipeline
@@ -591,10 +626,11 @@ application launches.
 
 The first table column is both a status display and an eMule/BitTorrent-style
 segmented progress bar. Its colored sections represent preparation, video
-download, audio extraction, speech-to-text, English translation, and final file
-work. The label above the bar changes through **Queued**, **Preparing**,
+download, audio extraction, speech-to-text, English translation, AI chapter
+planning, and final file work. The label above the bar changes through
+**Queued**, **Preparing**,
 **Downloading**, **Extracting audio**, **Speech-to-text**, **Translating**,
-**Finalizing**, and **Ready to play**. Available, live, upcoming, and failed
+**Creating chapters**, **Finalizing**, and **Ready to play**. Available, live, upcoming, and failed
 rows use the same column, so status is not split across unrelated UI elements.
 
 Percentages are sourced where the underlying tool exposes meaningful progress:
@@ -700,7 +736,8 @@ streams are excluded.
 An automatic or manual library download is not a second media implementation.
 It executes the existing CLI with the video's canonical URL, the shared output
 root, and `--no-play`. The normal video download, Whisper transcription, OpenAI
-translation, subtitle compaction, archival, metadata, logging, reuse, and error
+translation, bilingual chapter generation, subtitle compaction, archival,
+metadata, logging, reuse, and error
 behavior therefore remain single-sourced.
 
 ### Shared Playback
@@ -714,6 +751,12 @@ mpv itself remains a normal visible and switchable Windows application.
 Library-launched playback additionally enables one ephemeral IPC endpoint so
 the Watched bar updates live. Direct CLI playback keeps its established command
 shape and terminal interaction unchanged.
+
+When a chapter plan exists, both GUI and CLI playback add its derived
+`--chapters-file` only to that mpv launch. The GUI inspector shows the primary
+title and English title together; double-clicking a row also passes `--start`
+with that chapter's trusted local timestamp. Neither behavior edits mpv config,
+and mpv's normal chapter keys/menu can navigate the same plan.
 
 ## Audio Extraction
 
@@ -950,6 +993,47 @@ Cost controls are intentionally conservative by default:
 Raise the model, reasoning effort, or context window only when quality demands
 it for a specific source.
 
+### Bilingual AI Chapters
+
+Chapter planning is intentionally a fresh Responses API request rather than a
+continuation of a translation conversation. Translation is checkpointed in
+independent cue chunks and has a strict cue-by-cue objective; chaptering is a
+whole-video editorial task. Keeping the requests stateless (`store: false`, no
+conversation or previous-response ID) prevents partial translation retries from
+leaking into chapter structure and makes regeneration deterministic and
+independently retryable.
+
+The planner does not trust the model to invent timestamps. It:
+
+1. Reads the actual container duration with hidden `ffprobe`, plus the final
+   primary SRT and, when available, its exactly aligned English SRT. Transcript
+   duration is the fallback for containers that do not expose a duration.
+2. Coalesces cues into at most 240 chronological transcript windows, normally
+   about 30 seconds each.
+3. Requests strict JSON containing only a window index plus a concise title in
+   the primary language and in English.
+4. Requires the first chapter at the opening window, increasing unique indexes,
+   whole-video coverage, and a minimum density of one chapter per four minutes.
+   A 60-minute video therefore requires at least 15 chapters.
+5. Maps every returned index back to the locally held SRT timestamp and writes
+   the authoritative JSON plus a derived mpv FFmetadata sidecar.
+
+If structured output fails local validation, one fresh correction request is
+made with the specific validation error. No incomplete plan is persisted.
+Chapter creation uses the same OpenAI model, reasoning effort, timeout, retry,
+and `.env` settings as translation. It works from the primary transcript even
+when no English SRT exists; the planner still produces both title languages.
+
+Native-library downloads request chapters automatically. For an older local
+download, select it and use **Generate** in the chapter pane or **Video →
+Generate chapters**. The action reuses the local video and subtitles. Use
+`--chapters` to opt a direct CLI run in, `--force-chapters` to regenerate only
+the plan, and `--chapter-minutes` to adjust minimum density.
+
+Privacy and cost note: chapter generation sends the timestamped transcript text
+to OpenAI in one additional request, with at most one validation-repair request.
+This is separate from any requests used to translate the subtitles.
+
 ### Fallback: Whisper Audio Translation
 
 The older path is still available:
@@ -1144,7 +1228,7 @@ Exactly one source must be provided.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--out-dir DIR` | `~/Videos/yt-whisper-subs` | Root for `videos`, `audio`, and `subtitles`. |
+| `--out-dir DIR` | `~/Videos/yt-whisper-subs` | Root for media, subtitles, chapters, metadata, logs, and library state. |
 | `--language LANGUAGE` | `nl` | Whisper language code, or `auto`. |
 | `--task transcribe|translate` | `transcribe` | Primary Whisper task. |
 
@@ -1171,8 +1255,8 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--no-english-for-dutch` | off | Disable automatic English subtitles for Dutch input. |
 | `--english-translation-provider openai|whisper` | `openai` | Select OpenAI SRT translation or Whisper audio translation. |
 | `--english-model MODEL` | conditional | Whisper model for the `whisper` provider only. |
-| `--openai-translation-model MODEL` | `gpt-5-mini` | Model for OpenAI SRT translation. |
-| `--openai-reasoning-effort EFFORT` | `low` | Reasoning effort for OpenAI SRT translation. |
+| `--openai-translation-model MODEL` | `gpt-5-mini` | Model shared by OpenAI SRT translation and chapter generation. |
+| `--openai-reasoning-effort EFFORT` | `low` | Reasoning effort shared by OpenAI translation and chapters. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
 | `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full cue-list request. |
@@ -1188,6 +1272,14 @@ none, minimal, low, medium, high, xhigh
 The default `gpt-5-mini` model accepts `minimal`, `low`, `medium`, and `high`.
 The script validates that combination before sending a request, because the API
 rejects `none` and `xhigh` for `gpt-5-mini`.
+
+### Chapters
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--chapters` | off in direct CLI; on for library downloads | Generate durable primary-language/English chapters from finished subtitles. |
+| `--force-chapters` | off | Imply `--chapters` and regenerate only the chapter plan while reusing media/subtitles. |
+| `--chapter-minutes FLOAT` | `4` | Maximum average minutes per chapter; real topic transitions choose boundaries. |
 
 ### Download And Media
 
@@ -1238,6 +1330,7 @@ Colors must be `#RRGGBB` or `#RRGGBBAA`.
 | --- | --- | --- |
 | `--force` | off | Re-download URL videos and regenerate subtitles. |
 | `--force-english` | off | Regenerate only the English subtitle yield from existing primary subtitles when possible. |
+| `--force-chapters` | off | Regenerate only chapters from existing subtitles when possible. |
 | `--install-tools` | off | Install/update `uv`, `ffmpeg`, and `mpv` via Scoop. |
 
 ### Logging
@@ -1428,10 +1521,12 @@ High-level groups:
 | `yt_whisper_subs.media` | Local video path validation and ffmpeg audio extraction. |
 | `yt_whisper_subs.whisper_local` | Whisper CLI execution and model-cache cleanup. |
 | `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, cue compaction, and gap extension. |
-| `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, and response text extraction. |
+| `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, response text extraction, JSON cleanup, and shared usage reporting. |
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
+| `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
+| `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
-| `yt_whisper_subs.playback` | ASS secondary subtitles and mpv dual-subtitle launch. |
+| `yt_whisper_subs.playback` | ASS secondary subtitles and launch-scoped mpv subtitle, chapter, seek, and observer policy. |
 | `yt_whisper_subs.mpv_ipc` | Ephemeral named-pipe connection, paced property observation, and EOF handling. |
 | `yt_whisper_subs.playback_progress` | Typed playback updates, worker-signal encoding, and completion-aware fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
@@ -1443,9 +1538,11 @@ High-level groups:
 | `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
-| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, selected-video details, and activity trace. |
+| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
+| `yt_whisper_subs.library_chapter_actions` | GUI chapter generation and timestamp-aware playback mixin. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Priority-separated foreground/metadata task scheduling, system tray, lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 
@@ -1466,6 +1563,8 @@ Other structural data models are deliberately close to their behavior:
 - `SubtitlePair` owns the two-file sidecar/archive subtitle contract.
 - `RunYields` owns the concrete files requested by one source run.
 - `TranslationCheckpoint` owns reusable partial OpenAI translation state.
+- `ChapterSet` and `ChapterFiles` own authoritative bilingual plans and their
+  derived mpv sidecars.
 - `VideoMeta` composes identity, origin, and optional details without coupling
   remote metadata to local file state.
 - `VideoRecord` adds subscription ownership, optional `LocalMedia`, and optional
@@ -1507,6 +1606,12 @@ Start by preserving these invariants:
     search, and view scopes must remain independently composable.
 22. Persist new channel placeholders before network discovery, and never queue
     explicit foreground actions behind metadata maintenance.
+23. Keep chapter requests stateless and separate from translation requests;
+    model output selects transcript-window indexes, never authoritative times.
+24. Keep chapter JSON authoritative and FFmetadata derived; never rewrite the
+    downloaded media or the user's mpv configuration for chapters.
+25. Preserve a minimum default chapter density of one per four minutes, so an
+    hour-long video receives at least 15 chapters.
 
 When changing the project, useful verification commands are:
 
@@ -1520,7 +1625,9 @@ python -m yt_whisper_subs.library_app --help
 ```
 
 The tracked tests cover the OpenAI translator's timing preservation, chunk
-repair, and checkpoint cleanup; `SubtitlePair` archive hydration, syncing,
+repair, and checkpoint cleanup; bilingual chapter density, stateless payloads,
+validation repair, exact timestamp mapping, persistence, and mpv sidecars;
+`SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
@@ -1727,6 +1834,21 @@ python .\yt_whisper_subs.py --force-english "https://www.youtube.com/watch?v=VID
 The script should reuse the video and primary subtitles, then regenerate
 English with the selected Dutch-to-English provider.
 
+### I want chapters for an existing download
+
+Select the downloaded row in the native library and click **Generate** in the
+chapter pane. From the CLI, request only the missing chapter yield with:
+
+```powershell
+python .\yt_whisper_subs.py --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+If a plan already exists and should be replaced, use `--force-chapters` instead.
+Both paths reuse the local video and subtitle yields; they do not rerun yt-dlp
+or Whisper when those prerequisite yields exist. If subtitles are missing, the
+normal pipeline creates them first. The new stage and OpenAI token usage appear
+in the activity trace and timestamped run log.
+
 ### `mpv` does not auto-detect subtitles
 
 The script writes sidecar subtitles beside the video specifically for
@@ -1766,6 +1888,8 @@ This repository is licensed under the GNU General Public License version 3. See
 
 - The OpenAI translation path is chunked by cue count. Very long videos can
   still be expensive.
+- Chapter generation is a separate whole-transcript OpenAI request and can add
+  cost for long videos; input is compressed to at most 240 timed windows.
 - `--language auto` does not trigger automatic English-for-Dutch translation.
 - Existing `.en.srt` files are treated as ready regardless of whether they were
   produced by Whisper or OpenAI. Use `--force-english` or `--force` to

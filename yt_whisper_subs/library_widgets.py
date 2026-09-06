@@ -12,9 +12,11 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import openai_chapters
 
 
 class SettingsValues(NamedTuple):
@@ -110,16 +112,25 @@ class SmartFilterBar(QtWidgets.QFrame):
 
 
 class DetailPanel(QtWidgets.QFrame):
-    """Present the selected video's useful metadata without table clutter.
+    """Present selected-video metadata and navigable bilingual chapters.
 
-    Example: `detail.set_record(record)` updates title and description.
+    Example: `detail.set_record(record, chapter_set)` updates the inspector.
     """
+
+    chapter_activated = QtCore.Signal(float)
+    generate_requested = QtCore.Signal()
 
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("detailPanel")
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(18, 12, 18, 12)
+        self.setMinimumHeight(235)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        info = QtWidgets.QWidget()
+        info_layout = QtWidgets.QVBoxLayout(info)
+        info_layout.setContentsMargins(18, 14, 18, 14)
         self._title = QtWidgets.QLabel("Select a video")
         self._title.setObjectName("detailTitle")
         self._title.setWordWrap(True)
@@ -128,22 +139,65 @@ class DetailPanel(QtWidgets.QFrame):
         self._facts.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self._description = QtWidgets.QLabel("")
         self._description.setWordWrap(True)
-        self._description.setMaximumHeight(52)
         self._description.setObjectName("detailDescription")
-        layout.addWidget(self._title)
-        layout.addWidget(self._facts)
-        layout.addWidget(self._description)
+        self._description.setAlignment(
+            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft
+        )
+        info_layout.addWidget(self._title)
+        info_layout.addWidget(self._facts)
+        info_layout.addWidget(self._description, 1)
 
-    def set_record(self, record: types.VideoRecord | None) -> None:
-        """Render a selected record or reset to the empty state.
+        chapter_panel = QtWidgets.QFrame()
+        chapter_panel.setObjectName("chapterPanel")
+        chapter_panel.setMinimumWidth(430)
+        chapter_layout = QtWidgets.QVBoxLayout(chapter_panel)
+        chapter_layout.setContentsMargins(14, 10, 12, 10)
+        chapter_layout.setSpacing(5)
+        heading_layout = QtWidgets.QHBoxLayout()
+        self._chapter_heading = QtWidgets.QLabel("CHAPTERS")
+        self._chapter_heading.setObjectName("chapterHeading")
+        self._generate = QtWidgets.QPushButton("✦  Generate")
+        self._generate.setObjectName("chapterGenerate")
+        self._generate.clicked.connect(self.generate_requested.emit)
+        heading_layout.addWidget(self._chapter_heading)
+        heading_layout.addStretch(1)
+        heading_layout.addWidget(self._generate)
+        self._chapter_hint = QtWidgets.QLabel("Select a downloaded video")
+        self._chapter_hint.setObjectName("chapterHint")
+        self._chapters = QtWidgets.QListWidget()
+        self._chapters.setObjectName("chapterList")
+        self._chapters.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._chapters.itemDoubleClicked.connect(self._activate_chapter)
+        chapter_layout.addLayout(heading_layout)
+        chapter_layout.addWidget(self._chapter_hint)
+        chapter_layout.addWidget(self._chapters, 1)
+
+        layout.addWidget(info, 1)
+        layout.addWidget(chapter_panel)
+        self._downloaded = False
+        self._busy = False
+        self._generate.setEnabled(False)
+
+    def set_record(
+        self,
+        record: types.VideoRecord | None,
+        chapter_set: chapters.ChapterSet | None = None,
+    ) -> None:
+        """Render a selected record, its chapter plan, or the empty state.
 
         Example: `detail.set_record(None)` clears stale selection.
         """
 
+        self._chapters.clear()
+        self._downloaded = bool(record and record.downloaded)
         if not record:
             self._title.setText("Select a video")
             self._facts.clear()
             self._description.clear()
+            self._chapter_heading.setText("CHAPTERS")
+            self._chapter_hint.setText("Select a downloaded video")
+            self._generate.setText("✦  Generate")
+            self._update_generate_action()
             return
         meta = record.meta
         self._title.setText(meta.identity.title)
@@ -155,6 +209,65 @@ class DetailPanel(QtWidgets.QFrame):
             facts.append(f"Last error: {record.download_error}")
         self._facts.setText("  ·  ".join(facts))
         self._description.setText(meta.details.description.strip().replace("\n", " ") or meta.identity.url)
+        self._render_chapters(chapter_set)
+
+    def set_busy(self, busy: bool) -> None:
+        """Keep contextual generation disabled while foreground work runs.
+
+        Example: `detail.set_busy(True)` follows task dispatch.
+        """
+
+        self._busy = busy
+        self._update_generate_action()
+
+    def _render_chapters(self, chapter_set: chapters.ChapterSet | None) -> None:
+        """Populate bilingual jump rows or explain how to create them.
+
+        Example: `_render_chapters(chapter_set)` displays exact timestamps.
+        """
+
+        if not self._downloaded:
+            self._chapter_heading.setText("CHAPTERS")
+            self._chapter_hint.setText("Download this video to create chapters")
+            self._generate.setText("✦  Generate")
+            self._update_generate_action()
+            return
+        if not chapter_set:
+            self._chapter_heading.setText("CHAPTERS")
+            self._chapter_hint.setText("No chapter plan yet · generated from your subtitles")
+            self._generate.setText("✦  Generate")
+            self._update_generate_action()
+            return
+
+        self._chapter_heading.setText(f"CHAPTERS  ·  {len(chapter_set.chapters)}")
+        self._chapter_hint.setText("Double-click a chapter to play from that moment")
+        self._generate.setText("↻  Regenerate")
+        for chapter in chapter_set.chapters:
+            timestamp = openai_chapters.format_time(chapter.start_ms)
+            text = f"{timestamp:>7}    {chapter.primary_title}\n          {chapter.english_title}"
+            item = QtWidgets.QListWidgetItem(text)
+            item.setData(QtCore.Qt.ItemDataRole.UserRole, chapter.start_ms / 1000)
+            item.setToolTip(f"Play from {timestamp}")
+            self._chapters.addItem(item)
+        self._update_generate_action()
+
+    def _activate_chapter(self, item: QtWidgets.QListWidgetItem) -> None:
+        """Emit the trusted local seek time stored on one chapter row.
+
+        Example: double-clicking `12:30` emits `750.0` seconds.
+        """
+
+        start_seconds = item.data(QtCore.Qt.ItemDataRole.UserRole)
+        if isinstance(start_seconds, (int, float)):
+            self.chapter_activated.emit(float(start_seconds))
+
+    def _update_generate_action(self) -> None:
+        """Apply download and busy constraints to the contextual AI action.
+
+        Example: `_update_generate_action()` disables remote-only videos.
+        """
+
+        self._generate.setEnabled(self._downloaded and not self._busy)
 
 
 class ActivityTrace(QtWidgets.QDockWidget):

@@ -73,7 +73,7 @@ def parse_args() -> argparse.Namespace:
         "--openai-translation-model",
         default=cfg.DEFAULT_OPENAI_TRANSLATION_MODEL,
         help=(
-            "OpenAI model used for SRT English translation. "
+            "OpenAI model used for SRT English translation and chapter generation. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_MODEL}."
         ),
     )
@@ -82,7 +82,7 @@ def parse_args() -> argparse.Namespace:
         choices=("none", "minimal", "low", "medium", "high", "xhigh"),
         default=cfg.DEFAULT_OPENAI_TRANSLATION_REASONING,
         help=(
-            "OpenAI reasoning effort for SRT English translation. "
+            "OpenAI reasoning effort for SRT English translation and chapter generation. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_REASONING}."
         ),
     )
@@ -125,6 +125,28 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Optional .env file to load before calling OpenAI. "
             f"Default: {cfg.DEFAULT_OPENAI_ENV_FILE}."
+        ),
+    )
+    parser.add_argument(
+        "--chapters",
+        action="store_true",
+        help=(
+            "Generate a bilingual chapter plan from the finished subtitles with a fresh, "
+            "stateless OpenAI request. The library enables this for its downloads."
+        ),
+    )
+    parser.add_argument(
+        "--force-chapters",
+        action="store_true",
+        help="Regenerate only the bilingual chapter plan while reusing video and subtitles.",
+    )
+    parser.add_argument(
+        "--chapter-minutes",
+        type=float,
+        default=cfg.DEFAULT_CHAPTER_MINUTES,
+        help=(
+            "Maximum average minutes per generated chapter. Topic changes still decide exact boundaries. "
+            f"Default: {cfg.DEFAULT_CHAPTER_MINUTES:g}."
         ),
     )
     parser.add_argument("--task", choices=("transcribe", "translate"), default="transcribe")
@@ -361,6 +383,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("--openai-translation-chunk-cues must be 0 or greater")
     if args.openai_translation_context_cues < 0:
         parser.error("--openai-translation-context-cues must be 0 or greater")
+    if args.chapter_minutes <= 0:
+        parser.error("--chapter-minutes must be greater than 0")
     if args.subtitle_gap_extension < 0:
         parser.error("--subtitle-gap-extension must be 0 or greater")
     if (
@@ -378,5 +402,8 @@ def parse_args() -> argparse.Namespace:
             args.url = args.source
         else:
             args.video_file = args.source
+
+    if args.force_chapters:
+        args.chapters = True
 
     return args

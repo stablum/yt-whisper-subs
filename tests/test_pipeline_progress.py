@@ -27,8 +27,10 @@ class PipelineProgressTests(unittest.TestCase):
 
         update = progress.make("abc", progress.Stage.DOWNLOADING, 0.5, "Downloading · 50%")
         self.assertEqual(progress.parse(progress.encode(update)), update)
-        self.assertAlmostEqual(progress.overall_fraction(update), 0.03 + 0.34 * 0.5)
+        self.assertAlmostEqual(progress.overall_fraction(update), 0.03 + 0.32 * 0.5)
         self.assertEqual(progress.overall_fraction(progress.make("abc", progress.Stage.READY)), 1.0)
+        self.assertAlmostEqual(sum(spec.weight for spec in progress.STAGE_SPECS), 1.0)
+        self.assertEqual(progress.stage_label(progress.Stage.CHAPTERING), "Creating chapters")
 
     def test_tool_output_advances_only_its_current_stage(self) -> None:
         """Interpret real tool percentages without guessing across phase boundaries.
