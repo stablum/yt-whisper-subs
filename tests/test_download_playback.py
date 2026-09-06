@@ -6,6 +6,8 @@ Example: `python -m unittest tests.test_download_playback`.
 from __future__ import annotations
 
 import argparse
+import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -125,19 +127,76 @@ class PlaybackPrefsTests(unittest.TestCase):
         """
 
         monitor.return_value.mpv_option = "--input-ipc-server=test-pipe"
+        monitor.return_value.seek.return_value = True
         observer = progress.Observer("aaaaaaaaaaa", mock.Mock())
+        control = playback.PlaybackControl()
+
+        def assert_active(*_args: object, **_kwargs: object) -> None:
+            """Verify the controller is published throughout the blocking run.
+
+            Example: the GUI can seek while `proc.run` waits for mpv to exit.
+            """
+
+            self.assertTrue(control.seek("aaaaaaaaaaa", 90))
+
+        run.side_effect = assert_active
 
         playback.play_video(
             Path("video.mkv"),
             [],
             playback.PlaybackPrefs.defaults(),
-            playback.PlaybackSession(observer=observer),
+            playback.PlaybackSession(observer=observer, control=control),
         )
 
         cmd = [str(arg) for arg in run.call_args.args[0]]
         self.assertIn("--input-ipc-server=test-pipe", cmd)
         self.assertNotIn("--no-config", cmd)
         monitor.return_value.__enter__.assert_called_once()
+        self.assertFalse(control.seek("aaaaaaaaaaa", 90))
+
+
+class MpvCommandTests(unittest.TestCase):
+    """Verify launch-scoped mpv commands and active-video isolation.
+
+    Example: `MpvCommandTests("test_early_seek_is_queued_until_connection")`.
+    """
+
+    def test_early_seek_is_queued_until_connection(self) -> None:
+        """Retain an exact seek issued before mpv creates its named pipe.
+
+        Example: an immediate chapter double-click still reaches the player.
+        """
+
+        monitor = mpv_ipc.MpvMonitor(progress.Observer("aaaaaaaaaaa", mock.Mock()))
+        self.assertTrue(monitor.seek(75.25))
+        stream = io.BytesIO()
+
+        monitor._initialize_stream(stream)
+
+        messages = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertEqual(
+            messages[-1],
+            {"command": ["seek", 75.25, "absolute+exact"]},
+        )
+        monitor._closed.set()
+        self.assertFalse(monitor.seek(90))
+
+    def test_control_rejects_other_or_closed_sessions(self) -> None:
+        """Send commands only to the matching active video and stop at exit.
+
+        Example: a chapter from another selection cannot move the player.
+        """
+
+        control = playback.PlaybackControl()
+        monitor = mock.Mock()
+        monitor.seek.return_value = True
+        control.activate("aaaaaaaaaaa", monitor)
+
+        self.assertTrue(control.seek("aaaaaaaaaaa", 12))
+        self.assertFalse(control.seek("bbbbbbbbbbb", 12))
+        control.deactivate(monitor)
+        self.assertFalse(control.seek("aaaaaaaaaaa", 12))
+        monitor.seek.assert_called_once_with(12)
 
 
 class MediaDurationTests(unittest.TestCase):

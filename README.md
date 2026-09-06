@@ -62,7 +62,7 @@ The companion library is optimized for a second workflow:
 7. Track furthest watched position and confirmed completion for library-launched
    playback without changing the user's mpv configuration.
 8. Generate bilingual chapters for new downloads, show them in the selected-video
-   inspector, and double-click any chapter to open mpv at that moment.
+   inspector, and double-click any chapter to open or seek mpv at that moment.
 
 ## Important Defaults
 
@@ -754,9 +754,13 @@ shape and terminal interaction unchanged.
 
 When a chapter plan exists, both GUI and CLI playback add its derived
 `--chapters-file` only to that mpv launch. The GUI inspector shows the primary
-title and English title together; double-clicking a row also passes `--start`
-with that chapter's trusted local timestamp. Neither behavior edits mpv config,
-and mpv's normal chapter keys/menu can navigate the same plan.
+title and English title together. If that same library video is already playing,
+double-clicking a chapter sends an exact absolute seek over its existing
+launch-scoped IPC connection. A click made while the named pipe is still opening
+is queued safely. If no matching player is active, the normal background action
+opens mpv with `--start` at the chapter's trusted local timestamp. A player for a
+different video is never moved. None of this edits mpv config, and mpv's normal
+chapter keys/menu can navigate the same plan.
 
 ## Audio Extraction
 
@@ -1526,8 +1530,8 @@ High-level groups:
 | `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
 | `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
-| `yt_whisper_subs.playback` | ASS secondary subtitles and launch-scoped mpv subtitle, chapter, seek, and observer policy. |
-| `yt_whisper_subs.mpv_ipc` | Ephemeral named-pipe connection, paced property observation, and EOF handling. |
+| `yt_whisper_subs.playback` | ASS secondary subtitles, launch-scoped mpv policy, and thread-safe ownership of the active library player. |
+| `yt_whisper_subs.mpv_ipc` | Duplex ephemeral named-pipe connection, queued exact seeks, paced property observation, and EOF handling. |
 | `yt_whisper_subs.playback_progress` | Typed playback updates, worker-signal encoding, and completion-aware fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
@@ -1539,7 +1543,7 @@ High-level groups:
 | `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
-| `yt_whisper_subs.library_chapter_actions` | GUI chapter generation and timestamp-aware playback mixin. |
+| `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Priority-separated foreground/metadata task scheduling, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
@@ -1612,6 +1616,8 @@ Start by preserving these invariants:
     downloaded media or the user's mpv configuration for chapters.
 25. Preserve a minimum default chapter density of one per four minutes, so an
     hour-long video receives at least 15 chapters.
+26. Route chapter jumps only to a matching active library player; otherwise use
+    the existing launch-at-time path, without persistent mpv configuration.
 
 When changing the project, useful verification commands are:
 

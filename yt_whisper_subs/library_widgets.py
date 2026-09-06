@@ -240,14 +240,14 @@ class DetailPanel(QtWidgets.QFrame):
             return
 
         self._chapter_heading.setText(f"CHAPTERS  ·  {len(chapter_set.chapters)}")
-        self._chapter_hint.setText("Double-click a chapter to play from that moment")
+        self._chapter_hint.setText("Double-click a chapter to jump to that moment")
         self._generate.setText("↻  Regenerate")
         for chapter in chapter_set.chapters:
             timestamp = openai_chapters.format_time(chapter.start_ms)
             text = f"{timestamp:>7}    {chapter.primary_title}\n          {chapter.english_title}"
             item = QtWidgets.QListWidgetItem(text)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, chapter.start_ms / 1000)
-            item.setToolTip(f"Play from {timestamp}")
+            item.setToolTip(f"Jump to {timestamp}")
             self._chapters.addItem(item)
         self._update_generate_action()
 

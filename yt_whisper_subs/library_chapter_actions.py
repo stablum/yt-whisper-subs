@@ -9,6 +9,8 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import openai_chapters
+
 
 class ChapterActionsMixin:
     """Add contextual chapter generation and playback to a library window.
@@ -47,11 +49,19 @@ class ChapterActionsMixin:
 
     @QtCore.Slot(float)
     def _play_chapter(self, start_seconds: float) -> None:
-        """Open the selected download at an inspector chapter boundary.
+        """Seek its active mpv session or open at an inspector boundary.
 
         Example: double-clicking a chapter invokes `_play_chapter(750)`.
         """
 
+        record = self._selected_record()
+        if record and self._service.seek(record.meta.identity.video_id, start_seconds):
+            timestamp = openai_chapters.format_time(round(start_seconds * 1000))
+            title = record.meta.identity.title
+            message = f"Seek → {timestamp} · {title}"
+            self.statusBar().showMessage(message, 3_000)
+            self._ui.trace.append_message(message)
+            return
         self._play_from(start_seconds)
 
     def _play_from(self, start_seconds: float | None) -> None:

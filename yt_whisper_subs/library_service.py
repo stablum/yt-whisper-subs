@@ -188,6 +188,7 @@ class LibraryService:
         cookies = self.cookies_from_browser()
         self._feed = feed or library_feed.YtDlpFeed(paths["python"], cookies)
         self._downloader = downloader or PipelineDownloader(paths["python"], self.out_dir, cookies)
+        self._playback = playback.PlaybackControl()
 
     def reload_clients(self) -> None:
         """Apply changed cookie settings to subsequent network operations.
@@ -409,6 +410,7 @@ class LibraryService:
             observer=observer,
             chapter_path=chapter_path,
             start_seconds=start_seconds,
+            control=self._playback,
         )
         playback.play_video(
             record.local.path,
@@ -416,6 +418,14 @@ class LibraryService:
             playback.PlaybackPrefs.defaults(),
             session,
         )
+
+    def seek(self, video_id: str, seconds: float) -> bool:
+        """Seek the matching library-owned mpv process when it is active.
+
+        Example: `service.seek(video_id, 90)` avoids opening a second player.
+        """
+
+        return self._playback.seek(video_id, seconds)
 
     def _check_channel(self, channel: types.Channel, report: ReportFn) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.

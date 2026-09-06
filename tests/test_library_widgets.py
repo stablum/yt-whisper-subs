@@ -9,12 +9,15 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtWidgets  # noqa: E402
 
 from yt_whisper_subs import chapters  # noqa: E402
+from yt_whisper_subs import library_chapter_actions  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
 
@@ -70,6 +73,42 @@ class DetailPanelTests(unittest.TestCase):
             self.assertTrue(generate.isEnabled())
             panel.set_busy(True)
             self.assertFalse(generate.isEnabled())
+
+    def test_chapter_action_seeks_matching_active_player(self) -> None:
+        """Prefer the running mpv process without entering the busy task lane.
+
+        Example: a chapter double-click moves the already visible player.
+        """
+
+        record = self._record(Path(__file__))
+        window = mock.Mock()
+        window._selected_record.return_value = record
+        window._service.seek.return_value = True
+        window._ui = SimpleNamespace(trace=mock.Mock())
+
+        library_chapter_actions.ChapterActionsMixin._play_chapter(window, 90.0)
+
+        window._service.seek.assert_called_once_with("aaaaaaaaaaa", 90.0)
+        window._play_from.assert_not_called()
+        window.statusBar().showMessage.assert_called_once_with(
+            "Seek → 1:30 · Example",
+            3_000,
+        )
+        window._ui.trace.append_message.assert_called_once()
+
+    def test_chapter_action_launches_when_no_matching_player(self) -> None:
+        """Retain launch-at-time behavior when the selected video is not active.
+
+        Example: a stopped video opens directly at the chosen chapter.
+        """
+
+        window = mock.Mock()
+        window._selected_record.return_value = self._record(Path(__file__))
+        window._service.seek.return_value = False
+
+        library_chapter_actions.ChapterActionsMixin._play_chapter(window, 90.0)
+
+        window._play_from.assert_called_once_with(90.0)
 
     @staticmethod
     def _record(path: Path) -> types.VideoRecord:

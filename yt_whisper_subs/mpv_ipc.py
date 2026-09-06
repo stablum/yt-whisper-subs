@@ -6,12 +6,14 @@ Example: `MpvMonitor(observer)` adds no persistent mpv configuration.
 from __future__ import annotations
 
 import json
+import math
 import os
 import socket
 import tempfile
 import threading
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import BinaryIO, NamedTuple
 
@@ -138,6 +140,10 @@ class MpvMonitor:
         self._observer = observer
         self._endpoint = _new_endpoint()
         self._stop = threading.Event()
+        self._closed = threading.Event()
+        self._write_lock = threading.Lock()
+        self._stream: BinaryIO | None = None
+        self._pending: deque[bytes] = deque()
         self._thread = threading.Thread(
             target=self._listen,
             daemon=True,
@@ -169,6 +175,9 @@ class MpvMonitor:
         """
 
         del exc_type, exc, traceback
+        # Refuse new commands once the owning mpv process has returned, while
+        # still allowing the reader a moment to persist its final EOF event.
+        self._closed.set()
         # Give mpv's closed pipe time to deliver its final EOF event before cancellation.
         self._thread.join(timeout=1)
         if self._thread.is_alive():
@@ -176,6 +185,37 @@ class MpvMonitor:
             self._thread.join(timeout=1)
         if path := self._endpoint.socket_path:
             path.unlink(missing_ok=True)
+
+    def seek(self, seconds: float) -> bool:
+        """Seek this mpv session absolutely, queueing while its pipe connects.
+
+        Example: `monitor.seek(750)` jumps the active player to 12:30.
+        """
+
+        if not _is_number(seconds) or not math.isfinite(float(seconds)):
+            return False
+        command = {"command": ["seek", max(0.0, float(seconds)), "absolute+exact"]}
+        return self._send(command)
+
+    def _send(self, command: dict[str, object]) -> bool:
+        """Write one JSON command safely or retain it until connection startup.
+
+        Example: `_send({"command": [...]})` shares the listener's duplex pipe.
+        """
+
+        encoded = json.dumps(command, separators=(",", ":")).encode() + b"\n"
+        with self._write_lock:
+            if self._closed.is_set():
+                return False
+            if self._stream is None:
+                self._pending.append(encoded)
+                return True
+            try:
+                self._stream.write(encoded)
+                self._stream.flush()
+            except (OSError, ValueError):
+                return False
+        return True
 
     def _listen(self) -> None:
         """Connect, request time properties, and consume newline JSON events.
@@ -186,13 +226,11 @@ class MpvMonitor:
         tracker = MpvEventTracker(self._observer)
         stream = self._connect()
         if stream is None:
+            self._closed.set()
             return
         try:
             with stream:
-                for request_id, name in enumerate(("time-pos", "duration"), start=1):
-                    command = {"command": ["observe_property", request_id, name]}
-                    stream.write(json.dumps(command, separators=(",", ":")).encode() + b"\n")
-                stream.flush()
+                self._initialize_stream(stream)
                 while not self._stop.is_set() and (line := stream.readline()):
                     try:
                         payload = json.loads(line)
@@ -206,7 +244,31 @@ class MpvMonitor:
             if not self._stop.is_set():
                 print(f"Warning: mpv progress IPC stopped: {exc}")
         finally:
+            with self._write_lock:
+                self._stream = None
+            self._closed.set()
             tracker.finish()
+
+    def _initialize_stream(self, stream: BinaryIO) -> None:
+        """Publish observed properties, then flush commands queued at launch.
+
+        Example: `_initialize_stream(pipe)` makes early chapter clicks reliable.
+        """
+
+        commands = [
+            {"command": ["observe_property", request_id, name]}
+            for request_id, name in enumerate(("time-pos", "duration"), start=1)
+        ]
+        encoded = [
+            json.dumps(command, separators=(",", ":")).encode() + b"\n"
+            for command in commands
+        ]
+        with self._write_lock:
+            self._stream = stream
+            for message in (*encoded, *self._pending):
+                stream.write(message)
+            self._pending.clear()
+            stream.flush()
 
     def _connect(self) -> BinaryIO | None:
         """Retry briefly while mpv creates its local pipe or socket.

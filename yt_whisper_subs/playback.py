@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import NamedTuple
 
@@ -87,6 +88,49 @@ class PlaybackPrefs(NamedTuple):
         )
 
 
+class PlaybackControl:
+    """Expose safe commands for the one library-owned active mpv session.
+
+    Example: `control.seek(video_id, 90)` targets only the matching video.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._video_id: str | None = None
+        self._monitor: mpv_ipc.MpvMonitor | None = None
+
+    def activate(self, video_id: str, monitor: mpv_ipc.MpvMonitor) -> None:
+        """Publish a monitor just before its matching mpv process starts.
+
+        Example: `control.activate("abc", monitor)` enables queued early seeks.
+        """
+
+        with self._lock:
+            self._video_id = video_id
+            self._monitor = monitor
+
+    def deactivate(self, monitor: mpv_ipc.MpvMonitor) -> None:
+        """Clear the session only when the same monitor is still active.
+
+        Example: `control.deactivate(monitor)` follows mpv process exit.
+        """
+
+        with self._lock:
+            if self._monitor is monitor:
+                self._video_id = None
+                self._monitor = None
+
+    def seek(self, video_id: str, seconds: float) -> bool:
+        """Seek only a matching active video without launching another player.
+
+        Example: `control.seek("abc", 750)` returns false for another video.
+        """
+
+        with self._lock:
+            monitor = self._monitor if self._video_id == video_id else None
+        return monitor.seek(seconds) if monitor else False
+
+
 class PlaybackSession(NamedTuple):
     """Hold launch-specific observation, chapter, and seek behavior together.
 
@@ -96,6 +140,7 @@ class PlaybackSession(NamedTuple):
     observer: progress.Observer | None = None
     chapter_path: Path | None = None
     start_seconds: float | None = None
+    control: PlaybackControl | None = None
 
 
 def parse_css_color(value: str) -> tuple[int, int, int, int]:
@@ -341,8 +386,14 @@ def play_video(
 
         cmd.append(video_path)
         if monitor:
-            with monitor:
-                proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
+            if session.control and session.observer:
+                session.control.activate(session.observer.video_id, monitor)
+            try:
+                with monitor:
+                    proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
+            finally:
+                if session.control:
+                    session.control.deactivate(monitor)
         else:
             proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)
     finally:
