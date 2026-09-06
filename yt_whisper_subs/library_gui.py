@@ -24,6 +24,10 @@ from yt_whisper_subs import library_widgets
 from yt_whisper_subs import library_workers
 
 
+_TABLE_LAYOUT_SETTING = "video_table_header_v1"
+_TABLE_LAYOUT_SAVE_DELAY_MS = 250
+
+
 class HeaderUi(NamedTuple):
     """Group search and action controls owned by the top toolbar.
 
@@ -93,6 +97,10 @@ class LibraryWindow(
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._quitting = False
         self._ui = self._build_ui()
+        self._table_layout_timer = QtCore.QTimer(self)
+        self._table_layout_timer.setSingleShot(True)
+        self._table_layout_timer.timeout.connect(self._store_table_layout)
+        self._restore_table_layout()
         saved_view = library_model.VideoView.from_key(
             self._service.db.setting("video_view", library_model.VideoView.ALL.key)
         )
@@ -197,11 +205,10 @@ class LibraryWindow(
         layout.addWidget(play)
         return HeaderUi(search, check, download, play), layout
 
-    @staticmethod
-    def _build_catalog(channels: QtWidgets.QListWidget) -> CatalogUi:
+    def _build_catalog(self, channels: QtWidgets.QListWidget) -> CatalogUi:
         """Create the model-backed table and selected-video detail panel.
 
-        Example: `_build_catalog().table` is sortable by every column.
+        Example: `_build_catalog(channels).table` is sortable by every column.
         """
 
         model = library_model.VideoTableModel()
@@ -225,26 +232,35 @@ class LibraryWindow(
         )
         table.verticalHeader().hide()
         table.verticalHeader().setDefaultSectionSize(48)
-        table.horizontalHeader().setStretchLastSection(False)
-        table.horizontalHeader().setSectionResizeMode(
-            library_model.TITLE_COLUMN,
-            QtWidgets.QHeaderView.ResizeMode.Stretch,
-        )
-        for column in range(model.columnCount()):
-            if column != library_model.TITLE_COLUMN:
-                table.horizontalHeader().setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(
-            library_model.PIPELINE_COLUMN,
-            QtWidgets.QHeaderView.ResizeMode.Fixed,
-        )
-        table.horizontalHeader().setSectionResizeMode(
-            library_model.WATCHED_COLUMN,
-            QtWidgets.QHeaderView.ResizeMode.Fixed,
-        )
-        table.setColumnWidth(library_model.PIPELINE_COLUMN, 230)
-        table.setColumnWidth(library_model.WATCHED_COLUMN, 120)
+        table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self._apply_default_table_layout(table, model)
         filters = library_widgets.SmartFilterBar()
         return CatalogUi(channels, table, model, proxy, filters, library_widgets.DetailPanel())
+
+    @staticmethod
+    def _apply_default_table_layout(
+        table: QtWidgets.QTableView,
+        model: library_model.VideoTableModel,
+    ) -> None:
+        """Enable interactive columns and apply the model's readable defaults.
+
+        Example: View → Reset column layout invokes this for the video table.
+        """
+
+        header = table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionsMovable(True)
+        header.setFirstSectionMovable(True)
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
+        for visual_idx, column in enumerate(range(model.columnCount())):
+            header.moveSection(header.visualIndex(column), visual_idx)
+            size = model.headerData(
+                column,
+                QtCore.Qt.Orientation.Horizontal,
+                QtCore.Qt.ItemDataRole.SizeHintRole,
+            )
+            if isinstance(size, QtCore.QSize):
+                table.setColumnWidth(column, size.width())
 
     def _connect_actions(self) -> None:
         """Wire model selections and controls after all widgets exist.
@@ -266,6 +282,12 @@ class LibraryWindow(
         selection = self._ui.catalog.table.selectionModel()
         selection.selectionChanged.connect(self._selection_changed)
         self._ui.catalog.table.doubleClicked.connect(self._activate_video)
+        header = self._ui.catalog.table.horizontalHeader()
+        header.sectionMoved.connect(self._schedule_table_layout_store)
+        header.sectionResized.connect(self._schedule_table_layout_store)
+        app = QtWidgets.QApplication.instance()
+        if app:
+            app.aboutToQuit.connect(self._store_table_layout)
 
     def _build_menus(self) -> None:
         """Expose less-frequent channel, settings, and quit actions natively.
@@ -296,6 +318,8 @@ class LibraryWindow(
         clear_filters.setShortcut(QtGui.QKeySequence("Ctrl+Shift+F"))
         clear_filters.triggered.connect(self._clear_filters)
         view_menu.addSeparator()
+        view_menu.addAction("Reset column layout", self._reset_table_layout)
+        view_menu.addSeparator()
         trace_action = self._ui.trace.toggleViewAction()
         trace_action.setText("Activity trace")
         trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
@@ -308,6 +332,50 @@ class LibraryWindow(
         """
 
         self._service.db.set_setting("trace_visible", int(visible))
+
+    def _restore_table_layout(self) -> None:
+        """Restore Qt's versioned header state after applying safe defaults.
+
+        Example: reopening the library restores column widths and positions.
+        """
+
+        encoded = self._service.db.setting(_TABLE_LAYOUT_SETTING, "")
+        if not encoded:
+            return
+        try:
+            state = QtCore.QByteArray.fromBase64(encoded.encode("ascii"))
+        except UnicodeEncodeError:
+            return
+        self._ui.catalog.table.horizontalHeader().restoreState(state)
+
+    def _schedule_table_layout_store(self, *_change: int) -> None:
+        """Debounce repeated drag updates into one small settings write.
+
+        Example: resizing a column restarts the 250 ms save timer.
+        """
+
+        self._table_layout_timer.start(_TABLE_LAYOUT_SAVE_DELAY_MS)
+
+    def _store_table_layout(self) -> None:
+        """Persist the native header state containing widths and visual order.
+
+        Example: application shutdown flushes the latest table arrangement.
+        """
+
+        header = self._ui.catalog.table.horizontalHeader()
+        encoded = bytes(header.saveState().toBase64()).decode("ascii")
+        self._service.db.set_setting(_TABLE_LAYOUT_SETTING, encoded)
+
+    def _reset_table_layout(self) -> None:
+        """Return every video column to its shipped order and width.
+
+        Example: View → Reset column layout repairs an awkward arrangement.
+        """
+
+        catalog = self._ui.catalog
+        self._apply_default_table_layout(catalog.table, catalog.model)
+        self._table_layout_timer.stop()
+        self._store_table_layout()
 
     @QtCore.Slot(int)
     def _video_view_changed(self, view_id: int) -> None:

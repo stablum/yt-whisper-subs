@@ -18,6 +18,8 @@ from PySide6 import QtWidgets  # noqa: E402
 
 from yt_whisper_subs import chapters  # noqa: E402
 from yt_whisper_subs import library_chapter_actions  # noqa: E402
+from yt_whisper_subs import library_gui  # noqa: E402
+from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
 
@@ -122,6 +124,96 @@ class DetailPanelTests(unittest.TestCase):
         details = types.VideoDetails(180, 10, "Description", None, "not_live")
         local = types.LocalMedia(path, 2, path.stat().st_size)
         return types.VideoRecord(types.VideoMeta(ident, origin, details), 1, 1, local, None, None)
+
+
+class HeaderLayoutTests(unittest.TestCase):
+    """Verify interactive video columns and durable native header state.
+
+    Example: `HeaderLayoutTests("test_width_and_order_round_trip")`.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Create the QApplication required by table and header widgets.
+
+        Example: handled once when this test class runs independently.
+        """
+
+        cls._app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def test_width_and_order_round_trip(self) -> None:
+        """Restore a moved and resized column into a fresh table.
+
+        Example: Title remains first and 333 pixels wide after restart.
+        """
+
+        source, _model = self._table()
+        source_header = source.horizontalHeader()
+        source_header.moveSection(source_header.visualIndex(library_model.TITLE_COLUMN), 0)
+        source.setColumnWidth(library_model.TITLE_COLUMN, 333)
+        source_db = mock.Mock()
+        source_window = self._window(source, source_db)
+
+        library_gui.LibraryWindow._store_table_layout(source_window)
+
+        key, encoded = source_db.set_setting.call_args.args
+        self.assertEqual(key, "video_table_header_v1")
+        target, _model = self._table()
+        target_db = mock.Mock()
+        target_db.setting.return_value = encoded
+        target_window = self._window(target, target_db)
+        library_gui.LibraryWindow._restore_table_layout(target_window)
+        target_header = target.horizontalHeader()
+        self.assertEqual(target_header.visualIndex(library_model.TITLE_COLUMN), 0)
+        self.assertEqual(target.columnWidth(library_model.TITLE_COLUMN), 333)
+
+    def test_default_layout_is_movable_resizable_and_resettable(self) -> None:
+        """Keep every section interactive and recover the shipped arrangement.
+
+        Example: View → Reset column layout puts Title back in column three.
+        """
+
+        table, model = self._table()
+        header = table.horizontalHeader()
+        self.assertTrue(header.sectionsMovable())
+        for column in range(model.columnCount()):
+            self.assertEqual(
+                header.sectionResizeMode(column),
+                QtWidgets.QHeaderView.ResizeMode.Interactive,
+            )
+        header.moveSection(header.visualIndex(library_model.TITLE_COLUMN), 0)
+        table.setColumnWidth(library_model.TITLE_COLUMN, 333)
+
+        library_gui.LibraryWindow._apply_default_table_layout(table, model)
+
+        self.assertEqual(header.visualIndex(library_model.TITLE_COLUMN), library_model.TITLE_COLUMN)
+        self.assertEqual(table.columnWidth(library_model.TITLE_COLUMN), 420)
+
+    @staticmethod
+    def _table() -> tuple[QtWidgets.QTableView, library_model.VideoTableModel]:
+        """Create one table using the production default-layout policy.
+
+        Example: `_table()` supplies a source or simulated restarted table.
+        """
+
+        model = library_model.VideoTableModel()
+        table = QtWidgets.QTableView()
+        table.setModel(model)
+        library_gui.LibraryWindow._apply_default_table_layout(table, model)
+        return table, model
+
+    @staticmethod
+    def _window(table: QtWidgets.QTableView, db: mock.Mock) -> SimpleNamespace:
+        """Build the small window-shaped collaborator used by persistence methods.
+
+        Example: `_window(table, db)` avoids booting background library work.
+        """
+
+        catalog = SimpleNamespace(table=table)
+        return SimpleNamespace(
+            _ui=SimpleNamespace(catalog=catalog),
+            _service=SimpleNamespace(db=db),
+        )
 
 
 if __name__ == "__main__":

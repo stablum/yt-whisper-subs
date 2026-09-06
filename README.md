@@ -113,6 +113,7 @@ These defaults are hard-coded near the top of the script:
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library 100% watched rule | confirmed mpv end-of-file event only |
 | Library smart view | remembered across launches; search and channel remain independent |
+| Library column layout | resizable, reorderable, and remembered across launches |
 | Library task priority | explicit user actions bypass background metadata maintenance |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
@@ -564,8 +565,8 @@ It contains:
   Watched, and Issues;
 - a sidebar entry for every tracked channel;
 - instant title, channel, and YouTube-ID search that composes with smart views;
-- sortable pipeline, watched, title, channel, published, downloaded, duration,
-  size, and view-count columns;
+- sortable, resizable, and reorderable pipeline, watched, title, channel,
+  published, downloaded, duration, size, and view-count columns;
 - a selected-video inspector for description, local path, errors, and a
   scrollable bilingual chapter list with exact jump points;
 - manual Check, Download, Play, and Open on YouTube actions;
@@ -621,6 +622,13 @@ free-text search remains in the top bar; all three scopes compose. **Clear** or
 **Ctrl+Shift+F** resets search and the smart view without leaving the selected
 channel. **Ctrl+F** focuses search. The chosen smart view is remembered across
 application launches.
+
+Every table header divider can be dragged to resize its column, and every
+header can be dragged left or right to change the visual order. Qt's native
+header state is saved in the library database shortly after each change and
+again when the app exits, then restored on the next launch. Choose **View →
+Reset column layout** to return to the shipped order and readable default
+widths. Sorting remains available by clicking any header.
 
 ### Pipeline Progress And Diagnostics
 
@@ -1547,7 +1555,7 @@ High-level groups:
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
 | `yt_whisper_subs.library_window_support` | Priority-separated foreground/metadata task scheduling, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
-| `yt_whisper_subs.library_gui` | Main native window layout and user interaction. |
+| `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 
 The central data model is:
@@ -1618,6 +1626,8 @@ Start by preserving these invariants:
     hour-long video receives at least 15 chapters.
 26. Route chapter jumps only to a matching active library player; otherwise use
     the existing launch-at-time path, without persistent mpv configuration.
+27. Keep table layout state in the existing settings store, with model-provided
+    default widths and a visible reset action.
 
 When changing the project, useful verification commands are:
 
@@ -1638,7 +1648,8 @@ compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
-and the crucial future-only automatic-download baseline.
+native table-header resizing, reordering, persistence, and reset behavior; and
+the crucial future-only automatic-download baseline.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
