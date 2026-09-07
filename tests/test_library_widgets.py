@@ -80,6 +80,17 @@ class DetailPanelTests(unittest.TestCase):
             panel.set_busy(True)
             self.assertFalse(generate.isEnabled())
 
+    def test_settings_round_trip_recent_history_and_date_cutoff(self) -> None:
+        """Expose bounded history and an optional calendar cutoff natively.
+
+        Example: April 2026 is returned as `2026-04-01` after Save.
+        """
+
+        values = library_widgets.SettingsValues(4, "firefox", True, 50, "2026-04-01")
+        dialog = library_widgets.SettingsDialog(values)
+
+        self.assertEqual(dialog.values(), values)
+
     def test_chapter_action_seeks_matching_active_player(self) -> None:
         """Prefer the running mpv process without entering the busy task lane.
 

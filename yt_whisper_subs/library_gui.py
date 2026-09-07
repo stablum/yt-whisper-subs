@@ -591,11 +591,19 @@ class LibraryWindow(
                 self._download_selected()
 
     def _edit_settings(self) -> None:
-        """Persist scheduling and browser-cookie settings from one dialog.
+        """Persist scheduling, retention, browser, and tray settings.
 
         Example: Library → Settings invokes `_edit_settings()`.
         """
 
+        raw_recent = self._service.db.setting(
+            "channel_recent_limit",
+            str(cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT),
+        )
+        try:
+            recent = int(raw_recent)
+        except ValueError:
+            recent = cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT
         current = library_widgets.SettingsValues(
             float(self._service.db.setting("check_hours", str(cfg.DEFAULT_LIBRARY_CHECK_HOURS))),
             self._service.db.setting("cookies_from_browser", ""),
@@ -604,6 +612,8 @@ class LibraryWindow(
                 str(int(cfg.DEFAULT_LIBRARY_MINIMIZE_TO_TRAY)),
             )
             in {"1", "True", "true"},
+            recent,
+            self._service.db.setting("channel_published_after", ""),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -612,7 +622,15 @@ class LibraryWindow(
         self._service.db.set_setting("check_hours", values.check_hours)
         self._service.db.set_setting("cookies_from_browser", values.cookies_from_browser)
         self._service.db.set_setting("minimize_to_tray", int(values.minimize_to_tray))
+        self._service.db.set_setting("channel_recent_limit", values.channel_recent_limit)
+        self._service.db.set_setting("channel_published_after", values.channel_published_after)
         self._service.reload_clients()
+        pruned = self._service.apply_retention()
+        if pruned:
+            self._ui.trace.append_message(
+                f"Retention · Removed {pruned:,} dated remote-only video(s)"
+            )
+            self.refresh()
         self._schedule_next()
 
     def _open_selected_url(self) -> None:

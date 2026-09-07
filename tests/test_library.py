@@ -56,16 +56,22 @@ class FakeFeed:
         del cookies
         return self
 
-    def channel(self, url: str) -> types.ChannelSnapshot:
+    def channel(
+        self,
+        url: str,
+        policy: library_feed.ChannelScanPolicy,
+        known_ids: set[str],
+    ) -> types.ChannelSnapshot:
         """Return the current simulated uploads for one channel check.
 
-        Example: `feed.channel(url).videos` mirrors `feed.videos`.
+        Example: `feed.channel(url, policy, ids).videos` mirrors `feed.videos`.
         """
 
+        del policy, known_ids
         self.channel_calls += 1
         if self.fail:
             raise RuntimeError("simulated first-check failure")
-        return types.ChannelSnapshot(url, "UC-example", "Example channel", list(self.videos))
+        return types.ChannelSnapshot(url, "UC-example", "Example channel", list(self.videos), True)
 
     def video(self, url: str) -> types.VideoMeta:
         """Resolve one fake video by its ID-bearing URL.
@@ -183,11 +189,17 @@ class LibraryDbTests(unittest.TestCase):
             db.initialize()
             channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", True)
             first = make_meta("aaaaaaaaaaa", "First")
-            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first])
-            self.assertEqual(db.store_snapshot(channel.channel_id, snapshot), ["aaaaaaaaaaa"])
+            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first], True)
+            self.assertEqual(
+                db.store_snapshot(channel.channel_id, snapshot).new_ids,
+                ["aaaaaaaaaaa"],
+            )
             second = make_meta("bbbbbbbbbbb", "Second", 200)
             snapshot = snapshot._replace(videos=[second, first])
-            self.assertEqual(db.store_snapshot(channel.channel_id, snapshot), ["bbbbbbbbbbb"])
+            self.assertEqual(
+                db.store_snapshot(channel.channel_id, snapshot).new_ids,
+                ["bbbbbbbbbbb"],
+            )
 
             local_path = Path(tmp) / "bbbbbbbbbbb.mkv"
             local_path.write_bytes(b"video")
@@ -210,7 +222,13 @@ class LibraryDbTests(unittest.TestCase):
             channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             local_meta = make_meta("aaaaaaaaaaa", "Local")
             pending_meta = make_meta("bbbbbbbbbbb", "Pending")
-            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [local_meta, pending_meta])
+            snapshot = types.ChannelSnapshot(
+                channel.url,
+                "UC-example",
+                "Example",
+                [local_meta, pending_meta],
+                True,
+            )
             db.store_snapshot(channel.channel_id, snapshot)
             path = Path(tmp) / "aaaaaaaaaaa.mkv"
             path.write_bytes(b"video")
@@ -221,6 +239,78 @@ class LibraryDbTests(unittest.TestCase):
             self.assertIsNotNone(db.video("aaaaaaaaaaa"))
             self.assertIsNone(db.video("bbbbbbbbbbb"))
             self.assertEqual(db.channels(), [])
+
+    def test_bounded_snapshot_prunes_only_remote_history(self) -> None:
+        """Remove entries outside a complete slice while preserving downloads.
+
+        Example: an old local video survives when only the newest remote row remains.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
+            local_old = make_meta("aaaaaaaaaaa", "Local old", 10)
+            remote_old = make_meta("bbbbbbbbbbb", "Remote old", 20)
+            recent = make_meta("ccccccccccc", "Recent", 30)
+            snapshot = types.ChannelSnapshot(
+                channel.url,
+                "UC-example",
+                "Example",
+                [recent, remote_old, local_old],
+                True,
+            )
+            db.store_snapshot(channel.channel_id, snapshot)
+            path = Path(tmp) / "aaaaaaaaaaa.mkv"
+            path.write_bytes(b"video")
+            local = types.LocalMedia(path, 40, path.stat().st_size)
+            db.reconcile_media([types.ScannedMedia(local_old, local, True)])
+
+            result = db.store_snapshot(
+                channel.channel_id,
+                snapshot._replace(videos=[recent]),
+            )
+
+            self.assertEqual(result.pruned, 1)
+            self.assertIsNone(db.video("bbbbbbbbbbb"))
+            self.assertIsNotNone(db.video("aaaaaaaaaaa"))
+            self.assertTrue(db.video("aaaaaaaaaaa").downloaded)
+
+    def test_incomplete_snapshot_does_not_prune_and_cutoff_keeps_downloads(self) -> None:
+        """Avoid destructive sync after a failed tab and protect local old rows.
+
+        Example: a Shorts failure preserves history until a complete refresh.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
+            local_old = make_meta("aaaaaaaaaaa", "Local old", 10)
+            remote_old = make_meta("bbbbbbbbbbb", "Remote old", 20)
+            snapshot = types.ChannelSnapshot(
+                channel.url,
+                "UC-example",
+                "Example",
+                [remote_old, local_old],
+                True,
+            )
+            db.store_snapshot(channel.channel_id, snapshot)
+            path = Path(tmp) / "aaaaaaaaaaa.mkv"
+            path.write_bytes(b"video")
+            local = types.LocalMedia(path, 30, path.stat().st_size)
+            db.reconcile_media([types.ScannedMedia(local_old, local, True)])
+
+            result = db.store_snapshot(
+                channel.channel_id,
+                snapshot._replace(videos=[local_old], complete=False),
+            )
+            removed = db.prune_remote_before(25)
+
+            self.assertEqual(result.pruned, 0)
+            self.assertEqual(removed, 1)
+            self.assertIsNone(db.video("bbbbbbbbbbb"))
+            self.assertTrue(db.video("aaaaaaaaaaa").downloaded)
 
     def test_metadata_queue_is_fair_and_cools_down_attempts(self) -> None:
         """Prefer untouched rows and suppress attempted rows until retry time.
@@ -234,7 +324,13 @@ class LibraryDbTests(unittest.TestCase):
             channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             first = make_meta("aaaaaaaaaaa", "First", None)
             second = make_meta("bbbbbbbbbbb", "Second", None)
-            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [first, second])
+            snapshot = types.ChannelSnapshot(
+                channel.url,
+                "UC-example",
+                "Example",
+                [first, second],
+                True,
+            )
             db.store_snapshot(channel.channel_id, snapshot)
 
             attempted_id = db.metadata_backfill_ids(1, retry_before=1_000)[0]
@@ -298,7 +394,7 @@ CREATE TABLE IF NOT EXISTS playback (
             db.initialize()
             channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
             meta = make_meta("aaaaaaaaaaa", "First")
-            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [meta])
+            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [meta], True)
             db.store_snapshot(channel.channel_id, snapshot)
 
             db.record_playback(playback_progress.make("aaaaaaaaaaa", 40, 100))
@@ -645,6 +741,75 @@ class LibraryFeedTests(unittest.TestCase):
 
         value = library_feed._rss_timestamp("2026-08-18T12:30:00+00:00")
         self.assertEqual(value, 1787056200)
+
+    def test_recent_tab_expands_only_until_known_overlap(self) -> None:
+        """Bound ordinary checks but bridge a gap larger than the normal slice.
+
+        Example: a known ID at position 76 expands a 50-entry request to 100.
+        """
+
+        feed = library_feed.YtDlpFeed(Path("python"))
+        entries = [{"id": f"{idx:011d}"} for idx in range(80)]
+
+        def response(args: list[str]) -> dict[str, object]:
+            """Return as many fake playlist entries as the yt-dlp limit requests.
+
+            Example: `--playlist-end 50` returns the first 50 simulated IDs.
+            """
+
+            limit = int(args[args.index("--playlist-end") + 1])
+            return {"entries": entries[:limit]}
+
+        policy = library_feed.ChannelScanPolicy(50, 200, None)
+        known_id = str(entries[75]["id"])
+        with mock.patch.object(feed, "_json", side_effect=response) as run:
+            info = feed._channel_tab("https://example.test/videos", policy, {known_id})
+
+        limits = [int(call.args[0][2]) for call in run.call_args_list]
+        self.assertEqual(limits, [50, 100])
+        self.assertEqual(len(info["entries"]), 80)
+
+    def test_initial_tab_uses_one_bounded_request(self) -> None:
+        """Keep a new subscription light when no overlap must be recovered.
+
+        Example: initial discovery asks yt-dlp for only the configured 50 rows.
+        """
+
+        feed = library_feed.YtDlpFeed(Path("python"))
+        info = {"entries": [{"id": "aaaaaaaaaaa"}]}
+        policy = library_feed.ChannelScanPolicy(50, 500, None)
+        with mock.patch.object(feed, "_json", return_value=info) as run:
+            result = feed._channel_tab("https://example.test/videos", policy, set())
+
+        self.assertIs(result, info)
+        self.assertEqual(run.call_args.args[0][1:3], ["--playlist-end", "50"])
+
+    def test_channel_cutoff_filters_dated_entries_but_keeps_unknown_dates(self) -> None:
+        """Apply a publication cutoff without guessing when metadata is absent.
+
+        Example: a pre-April row is removed while an undated row awaits hydration.
+        """
+
+        feed = library_feed.YtDlpFeed(Path("python"))
+        info = {
+            "channel": "Example",
+            "channel_id": "UC-example",
+            "entries": [
+                {"id": "aaaaaaaaaaa", "timestamp": 100},
+                {"id": "bbbbbbbbbbb", "timestamp": 300},
+                {"id": "ccccccccccc"},
+            ],
+        }
+        policy = library_feed.ChannelScanPolicy(50, 500, 200)
+        with (
+            mock.patch.object(feed, "_channel_tab", return_value=info),
+            mock.patch.object(feed, "_rss_dates", return_value={}),
+        ):
+            snapshot = feed.channel("@example", policy)
+
+        ids = [meta.identity.video_id for meta in snapshot.videos]
+        self.assertEqual(ids, ["bbbbbbbbbbb", "ccccccccccc"])
+        self.assertTrue(snapshot.complete)
 
 
 if __name__ == "__main__":

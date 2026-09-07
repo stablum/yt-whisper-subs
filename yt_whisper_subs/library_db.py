@@ -10,6 +10,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import NamedTuple
 
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback_progress as playback
@@ -87,6 +88,16 @@ _VIDEO_SELECT = """
     LEFT JOIN media m USING(video_id)
     LEFT JOIN playback p USING(video_id)
 """
+
+
+class SnapshotResult(NamedTuple):
+    """Report new discoveries and remote rows removed by bounded retention.
+
+    Example: `result.pruned` feeds a concise channel-check trace message.
+    """
+
+    new_ids: list[str]
+    pruned: int
 
 
 class LibraryDb:
@@ -206,10 +217,10 @@ class LibraryDb:
             )
             conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
 
-    def store_snapshot(self, channel_id: int, snapshot: types.ChannelSnapshot) -> list[str]:
-        """Persist one channel check and return genuinely new video IDs.
+    def store_snapshot(self, channel_id: int, snapshot: types.ChannelSnapshot) -> SnapshotResult:
+        """Persist a bounded snapshot and prune absent remote-only history.
 
-        Example: `new_ids = db.store_snapshot(channel_id, snapshot)`.
+        Example: `db.store_snapshot(channel_id, snapshot).new_ids` drives automation.
         """
 
         now = int(time.time())
@@ -238,7 +249,42 @@ class LibraryDb:
                     now,
                     metadata_checked_at=metadata_checked_at,
                 )
-        return new_ids
+            pruned = self._prune_snapshot(conn, channel_id, snapshot) if snapshot.complete else 0
+        return SnapshotResult(new_ids, pruned)
+
+    def channel_video_ids(self, channel_id: int) -> set[str]:
+        """Return IDs used to stop adaptive history expansion at overlap.
+
+        Example: `db.channel_video_ids(1)` anchors the next recent scan.
+        """
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT video_id FROM videos WHERE subscription_id=?",
+                (channel_id,),
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def prune_remote_before(self, published_at: int | None) -> int:
+        """Delete dated remote-only rows older than an optional cutoff.
+
+        Example: `prune_remote_before(april_2026)` never deletes local media.
+        """
+
+        if published_at is None:
+            return 0
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM videos
+                WHERE published_at < ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM media WHERE media.video_id=videos.video_id
+                  )
+                """,
+                (published_at,),
+            )
+        return max(0, cursor.rowcount)
 
     def set_channel_error(self, channel_id: int, message: str) -> None:
         """Persist a failed check without discarding its previous catalog.
@@ -449,6 +495,37 @@ class LibraryDb:
                 """,
                 (key, str(value)),
             )
+
+    @staticmethod
+    def _prune_snapshot(
+        conn: sqlite3.Connection,
+        channel_id: int,
+        snapshot: types.ChannelSnapshot,
+    ) -> int:
+        """Retain this complete recent slice plus every downloaded video.
+
+        Example: a 50-item bounded refresh removes older remote-only rows.
+        """
+
+        conn.execute(
+            "CREATE TEMP TABLE retained_snapshot(video_id TEXT PRIMARY KEY) WITHOUT ROWID"
+        )
+        conn.executemany(
+            "INSERT INTO retained_snapshot(video_id) VALUES (?)",
+            ((meta.identity.video_id,) for meta in snapshot.videos),
+        )
+        cursor = conn.execute(
+            """
+            DELETE FROM videos
+            WHERE subscription_id=?
+              AND NOT EXISTS (
+                  SELECT 1 FROM media WHERE media.video_id=videos.video_id
+              )
+              AND video_id NOT IN (SELECT video_id FROM retained_snapshot)
+            """,
+            (channel_id,),
+        )
+        return max(0, cursor.rowcount)
 
     @staticmethod
     def _upsert_video(

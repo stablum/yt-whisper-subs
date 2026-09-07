@@ -141,12 +141,13 @@ class Channel(NamedTuple):
 
 
 class ChannelSnapshot(NamedTuple):
-    """Return one yt-dlp channel check as a cohesive immutable result.
+    """Return a channel slice and whether all tabs were safe to synchronize.
 
-    Example: `snapshot.videos` contains flat-playlist discoveries.
+    Example: `snapshot.complete` permits pruning entries absent from the slice.
     """
 
     url: str
     youtube_id: str | None
     title: str
     videos: list[VideoMeta]
+    complete: bool

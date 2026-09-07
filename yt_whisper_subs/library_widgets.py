@@ -20,14 +20,16 @@ from yt_whisper_subs import openai_chapters
 
 
 class SettingsValues(NamedTuple):
-    """Return scheduler and yt-dlp preferences as one cohesive value.
+    """Return scheduler, retention, and yt-dlp preferences cohesively.
 
-    Example: `SettingsValues(4, "firefox", True)`.
+    Example: `SettingsValues(4, "firefox", True, 50, "2026-04-01")`.
     """
 
     check_hours: float
     cookies_from_browser: str
     minimize_to_tray: bool
+    channel_recent_limit: int
+    channel_published_after: str
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -349,7 +351,7 @@ class AddChannelDialog(QtWidgets.QDialog):
         heading = QtWidgets.QLabel("Add a channel")
         heading.setObjectName("dialogHeading")
         explanation = QtWidgets.QLabel(
-            "Enter an @handle or channel URL. Existing uploads become browsable; "
+            "Enter an @handle or channel URL. Recent uploads become browsable; "
             "automatic download starts only for videos discovered by later checks."
         )
         explanation.setWordWrap(True)
@@ -390,7 +392,7 @@ class AddChannelDialog(QtWidgets.QDialog):
 
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Edit scheduling, browser cookies, and tray lifetime preferences.
+    """Edit scheduling, retention, browser, and tray preferences.
 
     Example: `dialog.values()` supplies durable settings after acceptance.
     """
@@ -412,14 +414,30 @@ class SettingsDialog(QtWidgets.QDialog):
         self._cookies.setEditable(True)
         self._cookies.addItems(["", "firefox", "chrome", "edge", "brave"])
         self._cookies.setCurrentText(values.cookies_from_browser)
+        self._recent = QtWidgets.QSpinBox()
+        self._recent.setRange(1, cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT)
+        self._recent.setSuffix(" per section")
+        self._recent.setValue(values.channel_recent_limit)
+        self._cutoff = QtWidgets.QDateEdit()
+        self._cutoff.setCalendarPopup(True)
+        self._cutoff.setDisplayFormat("yyyy-MM-dd")
+        no_cutoff = QtCore.QDate(2005, 1, 1)
+        self._cutoff.setMinimumDate(no_cutoff)
+        self._cutoff.setMaximumDate(QtCore.QDate.currentDate())
+        self._cutoff.setSpecialValueText("No cutoff")
+        cutoff = QtCore.QDate.fromString(values.channel_published_after, "yyyy-MM-dd")
+        self._cutoff.setDate(cutoff if cutoff.isValid() else no_cutoff)
         self._tray = QtWidgets.QCheckBox("Keep checking when the window is closed")
         self._tray.setChecked(values.minimize_to_tray)
         form.addRow("Check every", self._hours)
         form.addRow("Cookies from browser", self._cookies)
+        form.addRow("Recent history", self._recent)
+        form.addRow("Published since", self._cutoff)
         form.addRow("Background", self._tray)
         note = QtWidgets.QLabel(
             "Scheduled checks run while the app is open or living in the system tray. "
-            "The first subscription check establishes history and never downloads a channel backlog."
+            "Recent history applies independently to Videos, Shorts, and Streams. Older "
+            "remote entries are removed; downloaded videos are always preserved."
         )
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
@@ -439,8 +457,14 @@ class SettingsDialog(QtWidgets.QDialog):
         Example: `settings = dialog.values()` after Save.
         """
 
+        cutoff = self._cutoff.date()
+        published_after = cutoff.toString("yyyy-MM-dd")
+        if cutoff == self._cutoff.minimumDate():
+            published_after = ""
         return SettingsValues(
             self._hours.value(),
             self._cookies.currentText().strip(),
             self._tray.isChecked(),
+            self._recent.value(),
+            published_after,
         )

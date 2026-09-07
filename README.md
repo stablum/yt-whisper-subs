@@ -52,8 +52,8 @@ The companion library is optimized for a second workflow:
    catalog.
 2. Backfill old download titles, source channels, upload dates, duration, view
    count, description, and thumbnails from YouTube when metadata is missing.
-3. Subscribe to YouTube channel handles or URLs and display their videos,
-   Shorts, and streams whether or not they are downloaded.
+3. Subscribe to YouTube channel handles or URLs and display a bounded recent
+   history of their videos, Shorts, and streams plus every local download.
 4. Check channels every four hours while the app is open or in the system tray.
 5. Optionally run the unchanged one-video subtitle pipeline for videos first
    discovered after a channel's initial baseline check.
@@ -104,6 +104,9 @@ These defaults are hard-coded near the top of the script:
 | Dual subtitle font size | `80` |
 | Primary font scale | `0.45` |
 | Library channel check interval | `4` hours |
+| Recent channel history | `50` entries per Videos/Shorts/Streams section |
+| Adaptive channel scan ceiling | `500` entries per section when bridging an offline gap |
+| Earliest publication date | optional; disabled until configured |
 | Library metadata hydration pace | at most `1` video lookup per minute |
 | Failed metadata lookup cooldown | `24` hours |
 | Metadata queue pause after failure | `15` minutes |
@@ -707,9 +710,12 @@ column.
 
 Track a channel with an `@handle` or a `/channel/`, `/c/`, or `/user/` URL. The
 service checks the channel's Videos, Shorts, and Streams tabs with yt-dlp's flat
-playlist mode and deduplicates them by video ID. YouTube's Atom feed supplies
-exact publication timestamps for the latest entries. Older rows without a flat
-timestamp are progressively hydrated with full per-video metadata.
+playlist mode and deduplicates them by video ID. A normal check requests only
+the newest 50 entries from each section. If that slice contains no already-known
+ID, the request expands geometrically up to 500 entries so a long offline gap is
+less likely to hide uploads. YouTube's Atom feed supplies exact publication
+timestamps for the latest entries. Remaining rows without a flat timestamp are
+progressively hydrated with full per-video metadata.
 
 Tracking is visible immediately: the app first persists and selects a compact
 handle-based placeholder in the sidebar, then queues resolution of the official
@@ -721,6 +727,16 @@ not compete for CPU, GPU, disk, or network resources. The activity trace marks
 waiting entries as **Channel queued** and records when each really starts.
 Metadata hydration is low priority, schedules only one item at a time, and does
 not add its entire backlog to the queue.
+
+Configure both controls under **Library → Settings**. **Recent history** is a
+per-section count, so the default retains at most roughly 150 deduplicated
+remote entries per channel. **Published since** is optional; choose a date such
+as `2026-04-01` to discard older remote entries. Saving a cutoff immediately
+removes rows already known to be older. Each later successful channel refresh
+also removes remote-only rows outside its complete bounded snapshot, including
+old rows whose date was never available. A partial refresh never prunes.
+Downloaded videos, subtitle and chapter files, metadata, and playback history
+are exempt from both retention controls.
 
 The default interval is four hours and can be changed from **Library →
 Settings**. The schedule is persisted in SQLite, so reopening the app performs
@@ -1548,9 +1564,9 @@ High-level groups:
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
-| `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, metadata, settings, local downloads, and playback state. |
-| `yt_whisper_subs.library_feed` | yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
-| `yt_whisper_subs.library_service` | Local scanning, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
+| `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
+| `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Shorts/Streams discovery, Atom timestamps, and full metadata lookup. |
+| `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
@@ -1631,6 +1647,8 @@ Start by preserving these invariants:
     the existing launch-at-time path, without persistent mpv configuration.
 27. Keep table layout state in the existing settings store, with model-provided
     default widths and a visible reset action.
+28. Bound each channel section, expand only to recover known overlap, prune only
+    complete snapshots, and never remove a downloaded video through retention.
 
 When changing the project, useful verification commands are:
 
@@ -1651,9 +1669,10 @@ compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
-native table-header resizing, reordering, persistence, and reset behavior; and
-channel additions queued during active video work; and the crucial future-only
-automatic-download baseline.
+native table-header resizing, reordering, persistence, and reset behavior;
+channel additions queued during active video work; the crucial future-only
+automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
+retention that preserves local media.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

@@ -10,6 +10,8 @@ import subprocess
 import time
 from collections import deque
 from collections.abc import Callable
+from datetime import datetime
+from datetime import timezone
 from pathlib import Path
 from typing import NamedTuple
 
@@ -261,6 +263,20 @@ class LibraryService:
             return MetadataBackfillResult(True, False, remaining)
 
         self.db.upsert_video(info.meta)
+        policy = self._channel_policy()
+        record = self.db.video(video_id)
+        expired = (
+            policy.published_after is not None
+            and info.meta.origin.published_at is not None
+            and info.meta.origin.published_at < policy.published_after
+            and record is not None
+            and not record.downloaded
+        )
+        if expired:
+            removed = self.db.prune_remote_before(policy.published_after)
+            remaining = self.db.metadata_backlog_count()
+            report(f"Metadata expired by retention · {video_id} · {removed:,} removed")
+            return MetadataBackfillResult(True, True, remaining)
         self._write_metadata(info)
         remaining = self.db.metadata_backlog_count()
         report(f"Metadata saved · {info.meta.identity.title} · {remaining:,} queued")
@@ -377,6 +393,14 @@ class LibraryService:
             raise RuntimeError("chapter pipeline completed without a readable chapter plan")
         return chapter_set
 
+    def apply_retention(self) -> int:
+        """Prune dated remote-only rows immediately after settings change.
+
+        Example: `service.apply_retention()` removes known pre-April entries.
+        """
+
+        return self.db.prune_remote_before(self._channel_policy().published_after)
+
     def play(
         self,
         video_id: str,
@@ -434,12 +458,50 @@ class LibraryService:
         """
 
         initial_check = channel.baseline_at is None
-        snapshot = self._feed.channel(channel.url)
-        new_ids = self.db.store_snapshot(channel.channel_id, snapshot)
-        report(f"{snapshot.title}: {len(snapshot.videos)} known, {len(new_ids)} new")
+        known_ids = self.db.channel_video_ids(channel.channel_id)
+        snapshot = self._feed.channel(channel.url, self._channel_policy(), known_ids)
+        result = self.db.store_snapshot(channel.channel_id, snapshot)
+        entry_word = "entry" if result.pruned == 1 else "entries"
+        pruned = f", {result.pruned} old remote {entry_word} removed"
+        report(
+            f"{snapshot.title}: {len(snapshot.videos)} retained, "
+            f"{len(result.new_ids)} new{pruned if result.pruned else ''}"
+        )
         if initial_check or not channel.auto_download:
             return []
-        return new_ids
+        return result.new_ids
+
+    def _channel_policy(self) -> library_feed.ChannelScanPolicy:
+        """Build bounded discovery policy from validated persisted settings.
+
+        Example: the default scans 50 recent entries from each channel tab.
+        """
+
+        raw_limit = self.db.setting(
+            "channel_recent_limit",
+            str(cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT),
+        )
+        try:
+            requested_limit = int(raw_limit)
+        except ValueError:
+            requested_limit = cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT
+        limit = min(
+            cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT,
+            max(1, requested_limit),
+        )
+        published_after = None
+        cutoff = self.db.setting("channel_published_after", "").strip()
+        try:
+            if cutoff:
+                value = datetime.strptime(cutoff, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                published_after = int(value.timestamp())
+        except ValueError:
+            pass
+        return library_feed.ChannelScanPolicy(
+            limit,
+            cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT,
+            published_after,
+        )
 
     def _metadata_sidecars(self) -> dict[str, types.VideoMeta]:
         """Load new metadata-directory and older video-directory info JSON.

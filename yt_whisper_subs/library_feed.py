@@ -1,16 +1,18 @@
 """yt-dlp metadata discovery for YouTube channels and individual videos.
 
-Example: `YtDlpFeed(python).channel("https://youtube.com/@handle")`.
+Example: `YtDlpFeed(python).channel(url, policy, known_ids)`.
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Collection
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
 from typing import Any
+from typing import NamedTuple
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 from urllib.request import Request
@@ -21,6 +23,17 @@ import yt_whisper_subs
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import proc
 from yt_whisper_subs import youtube
+
+
+class ChannelScanPolicy(NamedTuple):
+    """Bound channel history while expanding enough to find known overlap.
+
+    Example: `ChannelScanPolicy(50, 500, None)` keeps normal checks compact.
+    """
+
+    recent_limit: int
+    max_limit: int
+    published_after: int | None
 
 
 def normalize_channel_url(value: str) -> str:
@@ -195,20 +208,27 @@ class YtDlpFeed:
 
         return type(self)(self._python_exe, cookies_from_browser or None)
 
-    def channel(self, url: str) -> types.ChannelSnapshot:
-        """Fetch one complete flat channel listing without downloading media.
+    def channel(
+        self,
+        url: str,
+        policy: ChannelScanPolicy,
+        known_ids: Collection[str] = (),
+    ) -> types.ChannelSnapshot:
+        """Fetch bounded channel tabs, expanding to overlap known history.
 
-        Example: `snapshot = feed.channel(channel_url)`.
+        Example: `feed.channel(url, policy, known_ids)` avoids full archives.
         """
 
         normalized_url = normalize_channel_url(url)
         tab_infos = []
+        complete = True
         for idx, tab_url in enumerate(channel_tab_urls(normalized_url)):
             try:
-                tab_infos.append(self._json(["--flat-playlist", "--dump-single-json", tab_url]))
+                tab_infos.append(self._channel_tab(tab_url, policy, known_ids))
             except RuntimeError:
                 if idx == 0:
                     raise
+                complete = False
         info = tab_infos[0]
         videos = []
         seen_ids: set[str] = set()
@@ -228,12 +248,65 @@ class YtDlpFeed:
         youtube_id = str(youtube_id) if youtube_id else None
         if youtube_id:
             rss_dates = self._rss_dates(youtube_id)
-            videos = [self._with_published_at(meta, rss_dates.get(meta.identity.video_id)) for meta in videos]
+            videos = [
+                self._with_published_at(meta, rss_dates.get(meta.identity.video_id))
+                for meta in videos
+            ]
+        if policy.published_after is not None:
+            videos = [
+                meta
+                for meta in videos
+                if meta.origin.published_at is None
+                or meta.origin.published_at >= policy.published_after
+            ]
 
-        title = str(info.get("channel") or info.get("uploader") or info.get("title") or normalized_url)
+        title = str(
+            info.get("channel")
+            or info.get("uploader")
+            or info.get("title")
+            or normalized_url
+        )
         if title.endswith(" - Videos"):
             title = title.removesuffix(" - Videos")
-        return types.ChannelSnapshot(normalized_url, youtube_id, title, videos)
+        return types.ChannelSnapshot(normalized_url, youtube_id, title, videos, complete)
+
+    def _channel_tab(
+        self,
+        url: str,
+        policy: ChannelScanPolicy,
+        known_ids: Collection[str],
+    ) -> dict[str, Any]:
+        """Grow a recent slice only until it overlaps persisted channel IDs.
+
+        Example: 50, 100, then 200 entries bridge an unusually long absence.
+        """
+
+        limit = policy.recent_limit
+        while True:
+            info = self._json(
+                [
+                    "--flat-playlist",
+                    "--playlist-end",
+                    str(limit),
+                    "--dump-single-json",
+                    url,
+                ]
+            )
+            entries = [
+                entry
+                for entry in info.get("entries") or []
+                if isinstance(entry, dict)
+            ]
+            entry_ids = {
+                video_id
+                for entry in entries
+                if (video_id := youtube.normalize_youtube_video_id(str(entry.get("id") or "")))
+            }
+            has_overlap = bool(entry_ids.intersection(known_ids))
+            exhausted = len(entries) < limit
+            if not known_ids or has_overlap or exhausted or limit >= policy.max_limit:
+                return info
+            limit = min(limit * 2, policy.max_limit)
 
     def video(self, url: str) -> types.VideoMeta:
         """Fetch full metadata for one downloaded or selected video.
