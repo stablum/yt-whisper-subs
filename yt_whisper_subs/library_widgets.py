@@ -436,8 +436,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Background", self._tray)
         note = QtWidgets.QLabel(
             "Scheduled checks run while the app is open or living in the system tray. "
-            "Recent history applies independently to Videos, Shorts, and Streams. Older "
-            "remote entries are removed; downloaded videos are always preserved."
+            "Recent history applies independently to Videos and Streams; Shorts are "
+            "ignored. Older remote entries are removed; downloaded videos are always preserved."
         )
         note.setWordWrap(True)
         note.setObjectName("settingsNote")

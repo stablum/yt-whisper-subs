@@ -224,6 +224,7 @@ class LibraryDb:
         """
 
         now = int(time.time())
+        baseline_at = now if snapshot.complete else None
         with self._connect() as conn:
             known_ids = {row[0] for row in conn.execute("SELECT video_id FROM videos")}
             new_ids = [
@@ -238,7 +239,14 @@ class LibraryDb:
                     baseline_at=COALESCE(baseline_at, ?), last_error=NULL
                 WHERE id=?
                 """,
-                (snapshot.url, snapshot.youtube_id, snapshot.title, now, now, channel_id),
+                (
+                    snapshot.url,
+                    snapshot.youtube_id,
+                    snapshot.title,
+                    now,
+                    baseline_at,
+                    channel_id,
+                ),
             )
             for meta in snapshot.videos:
                 metadata_checked_at = now if meta.origin.published_at is not None else None

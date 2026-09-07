@@ -461,6 +461,10 @@ class LibraryService:
         known_ids = self.db.channel_video_ids(channel.channel_id)
         snapshot = self._feed.channel(channel.url, self._channel_policy(), known_ids)
         result = self.db.store_snapshot(channel.channel_id, snapshot)
+        if not snapshot.complete:
+            warning = "Partial refresh: Streams could not be checked; history preserved"
+            self.db.set_channel_error(channel.channel_id, warning)
+            report(f"{snapshot.title}: {warning}")
         entry_word = "entry" if result.pruned == 1 else "entries"
         pruned = f", {result.pruned} old remote {entry_word} removed"
         report(

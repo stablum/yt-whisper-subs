@@ -44,6 +44,7 @@ class FakeFeed:
     def __init__(self, videos: list[types.VideoMeta]) -> None:
         self.videos = videos
         self.fail = False
+        self.complete = True
         self.video_fail = False
         self.channel_calls = 0
 
@@ -71,7 +72,13 @@ class FakeFeed:
         self.channel_calls += 1
         if self.fail:
             raise RuntimeError("simulated first-check failure")
-        return types.ChannelSnapshot(url, "UC-example", "Example channel", list(self.videos), True)
+        return types.ChannelSnapshot(
+            url,
+            "UC-example",
+            "Example channel",
+            list(self.videos),
+            self.complete,
+        )
 
     def video(self, url: str) -> types.VideoMeta:
         """Resolve one fake video by its ID-bearing URL.
@@ -279,7 +286,7 @@ class LibraryDbTests(unittest.TestCase):
     def test_incomplete_snapshot_does_not_prune_and_cutoff_keeps_downloads(self) -> None:
         """Avoid destructive sync after a failed tab and protect local old rows.
 
-        Example: a Shorts failure preserves history until a complete refresh.
+        Example: a Streams extraction failure preserves history until recovery.
         """
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -575,6 +582,42 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertEqual(downloader.calls, [])
             self.assertIsNotNone(service.db.channels()[0].baseline_at)
 
+    def test_partial_refresh_is_visible_and_cannot_establish_baseline(self) -> None:
+        """Keep incomplete discovery safe and explain why history remains.
+
+        Example: a real Streams failure records a warning until a full retry.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            old = make_meta("aaaaaaaaaaa", "Existing")
+            feed = FakeFeed([old])
+            feed.complete = False
+            downloader = FakeDownloader(out_dir)
+            service = library_service.LibraryService(
+                out_dir,
+                {"python": Path("python")},
+                feed=feed,
+                downloader=downloader,
+            )
+            channel = service.track_channel("@example", True)
+
+            service.initialize_channel(channel.channel_id)
+
+            partial = service.db.channel(channel.channel_id)
+            self.assertIsNotNone(partial)
+            self.assertIsNone(partial.baseline_at)
+            self.assertIn("Partial refresh", partial.last_error)
+
+            feed.complete = True
+            feed.videos.insert(0, make_meta("bbbbbbbbbbb", "Also existing", 200))
+            service.check_all()
+
+            recovered = service.db.channel(channel.channel_id)
+            self.assertIsNotNone(recovered.baseline_at)
+            self.assertIsNone(recovered.last_error)
+            self.assertEqual(downloader.calls, [])
+
 
 class LibraryModelTests(unittest.TestCase):
     """Keep watched-column wording aligned with durable completion semantics.
@@ -703,7 +746,6 @@ class LibraryFeedTests(unittest.TestCase):
             library_feed.channel_tab_urls("@example"),
             [
                 "https://www.youtube.com/@example/videos",
-                "https://www.youtube.com/@example/shorts",
                 "https://www.youtube.com/@example/streams",
             ],
         )
@@ -783,6 +825,24 @@ class LibraryFeedTests(unittest.TestCase):
 
         self.assertIs(result, info)
         self.assertEqual(run.call_args.args[0][1:3], ["--playlist-end", "50"])
+
+    def test_absent_streams_tab_is_a_complete_empty_section(self) -> None:
+        """Treat a channel without streams as valid instead of a partial failure.
+
+        Example: yt-dlp's normal missing-tab result still permits safe pruning.
+        """
+
+        feed = library_feed.YtDlpFeed(Path("python"))
+        policy = library_feed.ChannelScanPolicy(50, 500, None)
+        error = RuntimeError("This channel does not have a streams tab")
+        with mock.patch.object(feed, "_json", side_effect=error):
+            info = feed._channel_tab(
+                "https://youtube.com/@example/streams",
+                policy,
+                set(),
+            )
+
+        self.assertEqual(info, {"entries": []})
 
     def test_channel_cutoff_filters_dated_entries_but_keeps_unknown_dates(self) -> None:
         """Apply a publication cutoff without guessing when metadata is absent.

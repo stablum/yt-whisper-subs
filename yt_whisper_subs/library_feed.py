@@ -82,9 +82,9 @@ def channel_placeholder(url: str) -> str:
 
 
 def channel_tab_urls(url: str) -> list[str]:
-    """Expand a canonical subscription into videos, Shorts, and streams tabs.
+    """Expand a subscription into the long-form videos and streams tabs.
 
-    Example: `channel_tab_urls(url)` returns three flat-playlist sources.
+    Example: `channel_tab_urls(url)` deliberately excludes Shorts.
     """
 
     parsed = urlparse(normalize_channel_url(url))
@@ -92,7 +92,18 @@ def channel_tab_urls(url: str) -> list[str]:
     if parts and parts[-1] in {"videos", "shorts", "streams"}:
         parts.pop()
     base = urlunparse(("https", "www.youtube.com", "/" + "/".join(parts), "", "", ""))
-    return [f"{base}/{tab}" for tab in ("videos", "shorts", "streams")]
+    return [f"{base}/{tab}" for tab in ("videos", "streams")]
+
+
+def _is_missing_channel_tab(url: str, message: str) -> bool:
+    """Recognize yt-dlp's authoritative response for an absent channel tab.
+
+    Example: a channel without `/streams` has a valid empty streams section.
+    """
+
+    tab = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1].casefold()
+    marker = f"does not have a {tab} tab"
+    return tab in {"videos", "streams"} and marker in message.casefold()
 
 
 def timestamp_from_info(info: dict[str, Any]) -> int | None:
@@ -283,15 +294,20 @@ class YtDlpFeed:
 
         limit = policy.recent_limit
         while True:
-            info = self._json(
-                [
-                    "--flat-playlist",
-                    "--playlist-end",
-                    str(limit),
-                    "--dump-single-json",
-                    url,
-                ]
-            )
+            try:
+                info = self._json(
+                    [
+                        "--flat-playlist",
+                        "--playlist-end",
+                        str(limit),
+                        "--dump-single-json",
+                        url,
+                    ]
+                )
+            except RuntimeError as exc:
+                if _is_missing_channel_tab(url, str(exc)):
+                    return {"entries": []}
+                raise
             entries = [
                 entry
                 for entry in info.get("entries") or []
