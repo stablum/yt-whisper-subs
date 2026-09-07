@@ -82,8 +82,6 @@ class LibraryWindow(
         self._service = service
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(1)
-        self._metadata_pool = QtCore.QThreadPool(self)
-        self._metadata_pool.setMaxThreadCount(1)
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._scheduled_check)
@@ -95,6 +93,7 @@ class LibraryWindow(
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._active_task: library_workers.BackgroundTask | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
+        self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
         self._ui = self._build_ui()
         self._table_layout_timer = QtCore.QTimer(self)
@@ -486,14 +485,11 @@ class LibraryWindow(
         widget.blockSignals(False)
 
     def _add_channel(self) -> None:
-        """Show a subscription immediately, then hydrate it in the foreground lane.
+        """Show a subscription immediately, then queue its network hydration.
 
         Example: the sidebar button invokes `_add_channel()`.
         """
 
-        if self._busy:
-            self.statusBar().showMessage("Finish the current foreground task before adding a channel", 5000)
-            return
         dialog = library_widgets.AddChannelDialog(self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
@@ -507,14 +503,14 @@ class LibraryWindow(
         self.refresh()
 
         def initialize(report: Callable[[str], None]) -> types.Channel:
-            """Bind the persisted placeholder into its foreground network check.
+            """Bind the persisted placeholder into its queued network check.
 
             Example: `initialize(report)` replaces `@ruis` with its YouTube title.
             """
 
             return self._service.initialize_channel(channel.channel_id, report)
 
-        self._run_task(f"Adding {channel.title}…", initialize, lambda _: self.refresh())
+        self._queue_channel_task(f"Adding {channel.title}…", initialize)
 
     def _remove_channel(self) -> None:
         """Confirm and remove the selected subscription and remote-only rows.

@@ -113,7 +113,7 @@ class WindowRuntimeMixin:
         Example: `_metadata_timer` invokes this at the configured safe pace.
         """
 
-        if self._busy or self._metadata_active:
+        if self._busy or self._channel_tasks or self._metadata_active:
             self._schedule_metadata_backfill()
             return
         self._metadata_active = True
@@ -154,7 +154,7 @@ class WindowRuntimeMixin:
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
         self._metadata_task = task
-        self._metadata_pool.start(task)
+        self._pool.start(task, -1)
 
     def _report_metadata(self, message: str) -> None:
         """Send low-priority maintenance detail to the optional trace only.
@@ -163,6 +163,81 @@ class WindowRuntimeMixin:
         """
 
         self._ui.trace.append_message(f"Metadata · {message}")
+
+    def _queue_channel_task(
+        self,
+        label: str,
+        fn: Callable[[Callable[[str], None]], Any],
+    ) -> None:
+        """Queue channel hydration behind work in the single execution lane.
+
+        Example: `@ruis` appears now and resolves after the active download.
+        """
+
+        self._metadata_timer.stop()
+        queued = self._busy or bool(self._channel_tasks)
+        task = library_workers.BackgroundTask(fn)
+        task_id = id(task)
+        self._channel_tasks[task_id] = task
+        task.signals.progress.connect(self._report_channel)
+        if queued:
+            self._ui.trace.append_message(f"○ Channel queued · {label}")
+
+        def started() -> None:
+            """Mark the moment this channel reaches its serial worker slot.
+
+            Example: the second queued subscription starts after the first.
+            """
+
+            self._ui.trace.append_message(f"▶ {label}")
+
+        def done(_result: object) -> None:
+            """Refresh the hydrated sidebar without disturbing pipeline state.
+
+            Example: a resolved YouTube title replaces the saved placeholder.
+            """
+
+            self._channel_tasks.pop(task_id, None)
+            self._ui.trace.append_message(f"✓ {label}")
+            self.refresh()
+            if not self._busy:
+                self.statusBar().showMessage("Channel added", 3_000)
+            self._schedule_metadata_backfill()
+
+        def failed(message: str, trace: str) -> None:
+            """Expose a channel error without changing the active video task.
+
+            Example: a failed lookup leaves its visible sidebar placeholder.
+            """
+
+            self._channel_tasks.pop(task_id, None)
+            self.refresh()
+            self._ui.trace.append_message(f"✗ {label} · {message}")
+            self._ui.trace.append_message(trace)
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Warning,
+                "Could not initialize channel",
+                message,
+                parent=self,
+            )
+            box.setDetailedText(trace)
+            box.open()
+            if not self._busy:
+                self.statusBar().showMessage(f"Channel error: {message}", 10_000)
+            self._schedule_metadata_backfill(idle=True)
+
+        task.signals.started.connect(started)
+        task.signals.finished.connect(done)
+        task.signals.failed.connect(failed)
+        self._pool.start(task)
+
+    def _report_channel(self, message: str) -> None:
+        """Trace channel discovery without overwriting video progress wording.
+
+        Example: yt-dlp channel output appears as `Channel · ...` in the trace.
+        """
+
+        self._ui.trace.append_message(f"Channel · {message}")
 
     def _run_task(
         self,

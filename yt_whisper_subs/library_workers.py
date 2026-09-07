@@ -18,6 +18,7 @@ class TaskSignals(QtCore.QObject):
     Example: `signals.progress.connect(status_bar.showMessage)`.
     """
 
+    started = QtCore.Signal()
     progress = QtCore.Signal(str)
     finished = QtCore.Signal(object)
     failed = QtCore.Signal(str, str)
@@ -41,6 +42,7 @@ class BackgroundTask(QtCore.QRunnable):
         Example: Qt's thread pool invokes `run()`.
         """
 
+        self.signals.started.emit()
         try:
             result = self._fn(self.signals.progress.emit)
         except Exception as exc:

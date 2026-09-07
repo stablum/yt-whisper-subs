@@ -114,7 +114,7 @@ These defaults are hard-coded near the top of the script:
 | Library 100% watched rule | confirmed mpv end-of-file event only |
 | Library smart view | remembered across launches; search and channel remain independent |
 | Library column layout | resizable, reorderable, and remembered across launches |
-| Library task priority | explicit user actions bypass background metadata maintenance |
+| Library execution queue | one worker; channel placeholders are immediate and lookups wait their turn |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -712,12 +712,15 @@ exact publication timestamps for the latest entries. Older rows without a flat
 timestamp are progressively hydrated with full per-video metadata.
 
 Tracking is visible immediately: the app first persists and selects a compact
-handle-based placeholder in the sidebar, then resolves the official channel
-title and initial history in its foreground worker lane. Background metadata
-hydration uses a separate single-worker maintenance lane, so a lookup already
-in progress may finish quietly but cannot leave an explicit Add channel action
-waiting behind the backlog. No further maintenance lookup starts while a
-foreground task is active.
+handle-based placeholder in the sidebar, then queues resolution of the official
+channel title and initial history. You can therefore enter several channels
+while a download, Whisper transcription, translation, or earlier channel lookup
+is running; every placeholder appears at once. The actual work uses one shared
+single-worker queue and starts later in entry order, so expensive operations do
+not compete for CPU, GPU, disk, or network resources. The activity trace marks
+waiting entries as **Channel queued** and records when each really starts.
+Metadata hydration is low priority, schedules only one item at a time, and does
+not add its entire backlog to the queue.
 
 The default interval is four hours and can be changed from **Library →
 Settings**. The schedule is persisted in SQLite, so reopening the app performs
@@ -1553,7 +1556,7 @@ High-level groups:
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
-| `yt_whisper_subs.library_window_support` | Priority-separated foreground/metadata task scheduling, system tray, lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_window_support` | Single-lane task queuing, low-priority metadata pacing, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
@@ -1616,8 +1619,8 @@ Start by preserving these invariants:
     configuration.
 21. Keep smart-view predicates single-sourced with their facet counts; channel,
     search, and view scopes must remain independently composable.
-22. Persist new channel placeholders before network discovery, and never queue
-    explicit foreground actions behind metadata maintenance.
+22. Persist new channel placeholders before network discovery, allow multiple
+    additions while busy, and serialize their lookups with video work.
 23. Keep chapter requests stateless and separate from translation requests;
     model output selects transcript-window indexes, never authoritative times.
 24. Keep chapter JSON authoritative and FFmetadata derived; never rewrite the
@@ -1649,7 +1652,8 @@ playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
 native table-header resizing, reordering, persistence, and reset behavior; and
-the crucial future-only automatic-download baseline.
+channel additions queued during active video work; and the crucial future-only
+automatic-download baseline.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

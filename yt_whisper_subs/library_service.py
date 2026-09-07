@@ -283,7 +283,7 @@ class LibraryService:
     ) -> types.Channel:
         """Fetch one new subscription's title and safe initial history baseline.
 
-        Example: `initialize_channel(channel.channel_id, report)` runs in the foreground lane.
+        Example: `initialize_channel(channel.channel_id, report)` runs in the shared serial lane.
         """
 
         channel = self.db.channel(channel_id)

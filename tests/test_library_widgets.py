@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6 import QtCore  # noqa: E402
 from PySide6 import QtWidgets  # noqa: E402
 
 from yt_whisper_subs import chapters  # noqa: E402
@@ -21,7 +23,9 @@ from yt_whisper_subs import library_chapter_actions  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
+from yt_whisper_subs import library_window_support  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
+from yt_whisper_subs import library_workers  # noqa: E402
 
 
 class DetailPanelTests(unittest.TestCase):
@@ -214,6 +218,116 @@ class HeaderLayoutTests(unittest.TestCase):
             _ui=SimpleNamespace(catalog=catalog),
             _service=SimpleNamespace(db=db),
         )
+
+
+class ChannelQueueTests(unittest.TestCase):
+    """Keep subscription input immediate while execution remains serial.
+
+    Example: `ChannelQueueTests("test_add_is_allowed_during_video_work")`.
+    """
+
+    @mock.patch("yt_whisper_subs.library_gui.library_widgets.AddChannelDialog")
+    def test_add_is_allowed_during_video_work(self, dialog_cls: mock.Mock) -> None:
+        """Persist and display a channel even while the video lane is busy.
+
+        Example: several handles can be entered during one Whisper run.
+        """
+
+        dialog_cls.return_value.exec.return_value = QtWidgets.QDialog.DialogCode.Accepted
+        dialog_cls.return_value.values.return_value = ("@ruis", False)
+        channel = SimpleNamespace(channel_id=7, title="@ruis")
+        window = mock.Mock()
+        window._busy = True
+        window._service.track_channel.return_value = channel
+
+        library_gui.LibraryWindow._add_channel(window)
+
+        window._service.track_channel.assert_called_once_with("@ruis", False)
+        window.refresh.assert_called_once()
+        label, initialize = window._queue_channel_task.call_args.args
+        self.assertEqual(label, "Adding @ruis…")
+        report = mock.Mock()
+        initialize(report)
+        window._service.initialize_channel.assert_called_once_with(7, report)
+
+    def test_channel_lookups_share_the_single_worker_queue(self) -> None:
+        """Queue multiple lookups on the same one-thread pool as video jobs.
+
+        Example: two new channels wait behind an active download in entry order.
+        """
+
+        window = SimpleNamespace(
+            _busy=True,
+            _channel_tasks={},
+            _metadata_timer=mock.Mock(),
+            _pool=mock.Mock(),
+            _ui=SimpleNamespace(trace=mock.Mock()),
+            _report_channel=mock.Mock(),
+        )
+        task_fn = mock.Mock()
+
+        library_window_support.WindowRuntimeMixin._queue_channel_task(
+            window,
+            "Adding first…",
+            task_fn,
+        )
+        library_window_support.WindowRuntimeMixin._queue_channel_task(
+            window,
+            "Adding second…",
+            task_fn,
+        )
+
+        self.assertEqual(window._pool.start.call_count, 2)
+        self.assertEqual(len(window._channel_tasks), 2)
+        queued = [call.args[0] for call in window._ui.trace.append_message.call_args_list]
+        self.assertIn("○ Channel queued · Adding first…", queued)
+        self.assertIn("○ Channel queued · Adding second…", queued)
+
+    def test_single_worker_executes_waiting_channels_in_order(self) -> None:
+        """Verify queued work cannot overlap and retains submission order.
+
+        Example: first and second channel lookups follow the active download.
+        """
+
+        pool = QtCore.QThreadPool()
+        pool.setMaxThreadCount(1)
+        entered = threading.Event()
+        release = threading.Event()
+        order: list[str] = []
+
+        def active(_report: object) -> None:
+            """Occupy the sole execution slot until both lookups are waiting.
+
+            Example: this represents a long-running subtitle pipeline.
+            """
+
+            entered.set()
+            release.wait(2)
+
+        def first(_report: object) -> None:
+            """Record the first queued channel lookup.
+
+            Example: the first submitted handle resolves first.
+            """
+
+            order.append("first")
+
+        def second(_report: object) -> None:
+            """Record the second queued channel lookup.
+
+            Example: the second submitted handle resolves second.
+            """
+
+            order.append("second")
+
+        pool.start(library_workers.BackgroundTask(active))
+        self.assertTrue(entered.wait(2))
+        pool.start(library_workers.BackgroundTask(first))
+        pool.start(library_workers.BackgroundTask(second))
+        release.set()
+
+        self.assertTrue(pool.waitForDone(5_000))
+        self.assertEqual(order, ["first", "second"])
 
 
 if __name__ == "__main__":
