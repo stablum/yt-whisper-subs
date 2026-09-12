@@ -65,7 +65,11 @@ The companion library is optimized for a second workflow:
    inspector, and double-click any chapter to open or seek mpv at that moment.
 9. Cancel the active download/transcription/translation pipeline without stopping
    playback or discarding channel work already waiting in the serial queue.
-10. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
+10. Pause and resume the active pipeline process tree without discarding its
+    in-memory model state.
+11. Recover a pipeline left by a system crash from durable stage checkpoints and
+    reuse every complete or partial yield when the user clicks Resume.
+12. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
     one-click Repair action instead of claiming that the pipeline is complete.
 
 ## Important Defaults
@@ -115,6 +119,7 @@ These defaults are hard-coded near the top of the script:
 | Failed metadata lookup cooldown | `24` hours |
 | Metadata queue pause after failure | `15` minutes |
 | Library close behavior | keep running in the system tray |
+| Start with Windows | disabled; optional per-user quiet tray launch |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
@@ -123,6 +128,8 @@ These defaults are hard-coded near the top of the script:
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library execution queue | one heavy-work lane; playback launches independently |
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
+| Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
+| Library crash recovery | durable stage/overall-progress checkpoint; one-click Resume |
 | Library yield removal | confirmed exact per-video manifest; individual non-recursive unlinks |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
@@ -153,7 +160,7 @@ python .\yt_whisper_library.pyw
 ```
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
-`PySide6-Essentials` when needed, and relaunches with `pythonw.exe`. The first
+`PySide6-Essentials` and `psutil` when needed, and relaunches with `pythonw.exe`. The first
 start scans existing downloads immediately. An overdue channel check and the
 gently paced metadata queue then run in the background without freezing the
 GUI. On Windows, background child operations run without opening or flashing a
@@ -168,6 +175,13 @@ now terminates that managed `pythonw.exe` process and immediately restores the
 prompt with the conventional interrupted exit code `130`. Closing the window
 can still hide it in the tray by design; use **Library → Quit** for a normal
 zero-code exit.
+
+Choose **Library → Settings**, enable **Start quietly in the system tray when I
+sign in**, and click Save to start the library with the current Windows user.
+This writes one exact value under the current user's standard Windows Run key,
+needs no administrator rights, preserves the selected output root, and uses
+`pythonw.exe`, so login does not flash a terminal. Disabling the checkbox removes
+only that value. Manual launches still open the main window normally.
 
 Use the same non-default output root as the CLI:
 
@@ -429,14 +443,15 @@ The script expects to run on Windows. It uses:
 - `ffmpeg`
 - `mpv`
 - `PySide6-Essentials` for the native library GUI
+- `psutil` for pausing and resuming the complete owned pipeline process tree
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
 folder and should not depend on whichever Python packages happen to be installed
 globally.
 
-The `.pyw` library launcher bootstraps only `yt-dlp[default]` and
-`PySide6-Essentials`, keeping a first GUI start much smaller than a Whisper/CUDA
+The `.pyw` library launcher bootstraps only `yt-dlp[default]`,
+`PySide6-Essentials`, and `psutil`, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
 Whisper and Torch exactly as a direct CLI run would.
@@ -578,10 +593,15 @@ It contains:
   published, downloaded, duration, size, and view-count columns;
 - a selected-video inspector for description, local path, errors, and a
   scrollable bilingual chapter list with exact jump points;
-- manual Check, Download/Repair, Cancel, Play, Open on YouTube, and exact-yield removal actions;
-- configurable browser cookies and check interval;
+- manual Check, Download/Repair/Resume, Pause, Cancel, Play, Open on YouTube,
+  and exact-yield removal actions;
+- configurable browser cookies, check interval, and current-user Windows login start;
 - an optional timestamped activity trace for live pipeline and subprocess output;
 - a system tray so periodic checks continue when the main window is closed.
+
+The native title bar includes the current application version. That value comes
+directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
+it is not duplicated in the window code.
 
 Background subprocesses launched from the desktop application—including
 dependency setup, channel discovery, downloads, ffmpeg, and Whisper—use
@@ -669,6 +689,26 @@ The GUI child process opts into these structured events with a private
 environment variable. A direct `yt_whisper_subs.py` run does not enable that
 protocol, so its established command-line interaction and output remain
 unchanged.
+
+### Pause, Resume, And Crash Recovery
+
+While a video pipeline is active, the toolbar exposes **Pause** and **Cancel**.
+Pause (or **Ctrl+Shift+P**) suspends the GUI-owned CLI process and its full child
+tree, including yt-dlp, ffmpeg, Whisper, or the currently active Python request.
+The amber bar retains the exact reached overall position and the button changes
+to **Resume**. Playback remains independent and can still be started while the
+pipeline is paused. Cancel remains available from the paused state.
+
+Pipeline kind, stage, label, and overall fraction are checkpointed in SQLite at
+phase changes and whole percentage points. A normal completion, reported error,
+or explicit cancellation removes that recovery marker. If Windows, the machine,
+or the GUI process terminates without reaching a normal outcome, the next launch
+marks the row **Interrupted** and offers **Resume** without a confirmation dialog.
+The resumed operation uses the normal idempotent pipeline: yt-dlp continues its
+`.part` file, completed media/audio/subtitles are reused, OpenAI translation can
+reuse its chunk checkpoint, and only unfinished work reruns. Whisper itself does
+not expose a serializable in-memory CUDA checkpoint, so a crash during that one
+stage restarts speech-to-text while preserving all earlier stages.
 
 ### Watched Progress And Completion
 
@@ -1605,9 +1645,11 @@ High-level groups:
 | `yt_whisper_subs.playback_progress` | Typed playback updates, worker-signal encoding, and completion-aware fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
+| `yt_whisper_subs.library_pipeline` | Controlled CLI pipeline launch, process-tree pause/resume, trace forwarding, and durable progress checkpointing. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
+| `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
 | `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
@@ -1616,12 +1658,13 @@ High-level groups:
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
 | `yt_whisper_subs.library_window_actions` | Selection, settings, download/repair, and manifest-confirmed removal actions. |
 | `yt_whisper_subs.library_yields` | Exact non-recursive per-video yield inventory and individual-file removal. |
-| `yt_whisper_subs.task_cancel` | Qt-independent cancellation tokens and blocking-work stop-hook scope. |
-| `yt_whisper_subs.library_workers` | Background Qt task signalling with distinct completion, failure, and cancellation outcomes. |
-| `yt_whisper_subs.library_window_support` | Serialized cancellable heavy-work scheduling, independent playback, metadata pacing, system tray, lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.task_cancel` | Qt-independent task controls for cooperative pause/resume, cancellation, and active process hooks. |
+| `yt_whisper_subs.library_workers` | Background Qt task signalling with pause/resume plus distinct completion, failure, and cancellation outcomes. |
+| `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
+| `yt_whisper_subs.windows_startup` | Exact per-user HKCU Run registration and safely quoted quiet-tray launch command. |
 
 The central data model is:
 
@@ -2003,8 +2046,8 @@ This repository is licensed under the GNU General Public License version 3. See
 - The script is Windows-first. Some paths and executable names assume Windows.
 - `--force` is broad: for URL inputs it redownloads the video too.
 - Periodic channel checks require the native app process to be open or in the
-  system tray; it does not yet register a Windows scheduled task or start at
-  login.
+  system tray; the optional current-user login setting starts it quietly, but
+  there is intentionally no privileged Windows service or scheduled task.
 - YouTube flat channel listings omit some upload timestamps. Atom enriches the
   latest entries, while remaining retained rows are hydrated one at a time at
   the configured gentle pace and can temporarily show `—` for their date.
@@ -2015,8 +2058,6 @@ These are intentionally not implemented yet:
 
 - Extend the existing YouTube metadata sidecar with subtitle-generation models,
   compaction settings, prompt version, and generation timestamps.
-- Add an opt-in Windows login/scheduled-task integration for checks when the
-  desktop app is not already running.
 - Add a `--translate-existing-srt` mode for translating an SRT without touching
   video/audio.
 - Add an optional OpenAI SDK implementation if API usage grows.

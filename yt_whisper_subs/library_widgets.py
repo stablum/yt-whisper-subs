@@ -17,17 +17,19 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import openai_chapters
+from yt_whisper_subs import windows_startup
 
 
 class SettingsValues(NamedTuple):
     """Return scheduler, retention, and yt-dlp preferences cohesively.
 
-    Example: `SettingsValues(4, "firefox", True, 50, "2026-04-01")`.
+    Example: `SettingsValues(4, "firefox", True, False, 50, "2026-04-01")`.
     """
 
     check_hours: float
     cookies_from_browser: str
     minimize_to_tray: bool
+    start_with_windows: bool
     channel_recent_limit: int
     channel_published_after: str
 
@@ -392,7 +394,7 @@ class AddChannelDialog(QtWidgets.QDialog):
 
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Edit scheduling, retention, browser, and tray preferences.
+    """Edit scheduling, retention, browser, tray, and login preferences.
 
     Example: `dialog.values()` supplies durable settings after acceptance.
     """
@@ -429,13 +431,21 @@ class SettingsDialog(QtWidgets.QDialog):
         self._cutoff.setDate(cutoff if cutoff.isValid() else no_cutoff)
         self._tray = QtWidgets.QCheckBox("Keep checking when the window is closed")
         self._tray.setChecked(values.minimize_to_tray)
+        self._startup = QtWidgets.QCheckBox("Start quietly in the system tray when I sign in")
+        self._startup.setObjectName("startWithWindows")
+        self._startup.setChecked(values.start_with_windows)
+        self._startup.setEnabled(windows_startup.supported())
+        if not windows_startup.supported():
+            self._startup.setToolTip("Available only on Windows")
         form.addRow("Check every", self._hours)
         form.addRow("Cookies from browser", self._cookies)
         form.addRow("Recent history", self._recent)
         form.addRow("Published since", self._cutoff)
         form.addRow("Background", self._tray)
+        form.addRow("Windows", self._startup)
         note = QtWidgets.QLabel(
             "Scheduled checks run while the app is open or living in the system tray. "
+            "Start with Windows is per-user and needs no administrator rights. "
             "Recent history applies independently to Videos and Streams; Shorts are "
             "ignored. Older remote entries are removed; downloaded videos are always preserved."
         )
@@ -465,6 +475,7 @@ class SettingsDialog(QtWidgets.QDialog):
             self._hours.value(),
             self._cookies.currentText().strip(),
             self._tray.isChecked(),
+            self._startup.isChecked(),
             self._recent.value(),
             published_after,
         )

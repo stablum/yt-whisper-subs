@@ -22,7 +22,10 @@ def main() -> int:
     paths = proc.venv_paths()
     current = Path(sys.executable).resolve()
     managed_executables = {paths["python"].resolve(), paths["python_gui"].resolve()}
-    if current in managed_executables and proc.managed_module_available(paths["python"], "PySide6"):
+    if current in managed_executables and all(
+        proc.managed_module_available(paths["python"], module)
+        for module in cfg.LIBRARY_REQUIRED_MODULES
+    ):
         from yt_whisper_subs import library_app
 
         return library_app.main(sys.argv[1:])

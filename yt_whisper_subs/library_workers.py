@@ -36,7 +36,7 @@ class BackgroundTask(QtCore.QRunnable):
     def __init__(self, fn: Callable[[Callable[[str], None]], Any]) -> None:
         super().__init__()
         self._fn = fn
-        self._cancel = task_cancel.CancellationToken()
+        self._control = task_cancel.TaskControl()
         self.signals = TaskSignals()
 
     @property
@@ -46,7 +46,32 @@ class BackgroundTask(QtCore.QRunnable):
         Example: the Cancel button disables after its first click.
         """
 
-        return self._cancel.cancelled
+        return self._control.cancelled
+
+    @property
+    def paused(self) -> bool:
+        """Expose whether this worker is currently suspended.
+
+        Example: the active pipeline button reads this to show Resume.
+        """
+
+        return self._control.paused
+
+    def pause(self) -> bool:
+        """Pause cooperative work and its active child-process tree.
+
+        Example: the Pause button suspends Whisper without discarding it.
+        """
+
+        return self._control.pause()
+
+    def resume(self) -> bool:
+        """Continue a previously paused worker and child-process tree.
+
+        Example: the Resume button continues at the same active stage.
+        """
+
+        return self._control.resume()
 
     def cancel(self) -> bool:
         """Request a cooperative stop without terminating the Qt thread.
@@ -54,7 +79,7 @@ class BackgroundTask(QtCore.QRunnable):
         Example: active child tools stop while the reusable worker pool survives.
         """
 
-        return self._cancel.cancel()
+        return self._control.cancel()
 
     @QtCore.Slot()
     def run(self) -> None:
@@ -71,14 +96,14 @@ class BackgroundTask(QtCore.QRunnable):
             Example: a channel loop stops before emitting its next status line.
             """
 
-            self._cancel.checkpoint()
+            self._control.checkpoint()
             self.signals.progress.emit(message)
 
         try:
-            with task_cancel.activate(self._cancel):
-                self._cancel.checkpoint()
+            with task_cancel.activate(self._control):
+                self._control.checkpoint()
                 result = self._fn(report)
-                self._cancel.checkpoint()
+                self._control.checkpoint()
         except task_cancel.CancelledError:
             self.signals.cancelled.emit()
         except Exception as exc:

@@ -13,10 +13,11 @@ from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_job_db
 from yt_whisper_subs import playback_progress as playback
 
 
-_SCHEMA = """
+_SCHEMA = f"""
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS channels (
@@ -65,6 +66,8 @@ CREATE TABLE IF NOT EXISTS playback (
     updated_at INTEGER NOT NULL
 );
 
+{library_job_db.SCHEMA}
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -100,7 +103,7 @@ class SnapshotResult(NamedTuple):
     pruned: int
 
 
-class LibraryDb:
+class LibraryDb(library_job_db.PipelineJobDbMixin):
     """Own catalog SQL while opening one SQLite connection per worker thread.
 
     Example: `db.videos(channel_id=1)` lists one subscription's catalog.

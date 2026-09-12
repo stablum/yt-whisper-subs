@@ -13,6 +13,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import yt_whisper_subs
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore  # noqa: E402
@@ -87,10 +89,50 @@ class DetailPanelTests(unittest.TestCase):
         Example: April 2026 is returned as `2026-04-01` after Save.
         """
 
-        values = library_widgets.SettingsValues(4, "firefox", True, 50, "2026-04-01")
+        values = library_widgets.SettingsValues(4, "firefox", True, False, 50, "2026-04-01")
         dialog = library_widgets.SettingsDialog(values)
 
         self.assertEqual(dialog.values(), values)
+
+    def test_window_title_uses_the_package_version_source(self) -> None:
+        """Keep the visible version derived from the sole package constant.
+
+        Example: a patch bump changes the title without another version edit.
+        """
+
+        self.assertTrue(library_gui.WINDOW_TITLE.endswith(f"v{yt_whisper_subs.__version__}"))
+
+    @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.set_enabled")
+    @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.is_enabled")
+    @mock.patch("yt_whisper_subs.library_window_actions.library_widgets.SettingsDialog")
+    def test_gui_settings_control_windows_login_start(
+        self,
+        dialog_cls: mock.Mock,
+        is_enabled: mock.Mock,
+        set_enabled: mock.Mock,
+    ) -> None:
+        """Read and update the real per-user registration through Settings.
+
+        Example: saving the checked box registers the current output root.
+        """
+
+        is_enabled.return_value = False
+        values = library_widgets.SettingsValues(4, "", True, True, 50, "")
+        dialog_cls.return_value.exec.return_value = QtWidgets.QDialog.DialogCode.Accepted
+        dialog_cls.return_value.values.return_value = values
+        db = mock.Mock()
+        db.setting.side_effect = lambda _key, default: default
+        root = Path("D:/Videos")
+        window = mock.Mock()
+        window._service.out_dir = root
+        window._service.db = db
+        window._service.apply_retention.return_value = 0
+
+        library_gui.LibraryWindow._edit_settings(window)
+
+        is_enabled.assert_called_once_with(root)
+        set_enabled.assert_called_once_with(True, root)
+        db.set_setting.assert_any_call("check_hours", 4)
 
     def test_chapter_action_seeks_matching_active_player(self) -> None:
         """Prefer the running mpv process without entering the busy task lane.
@@ -164,18 +206,23 @@ class DetailPanelTests(unittest.TestCase):
             download=mock.Mock(),
             play=mock.Mock(),
             check=mock.Mock(),
+            pause=mock.Mock(),
             cancel=mock.Mock(),
         )
         detail = mock.Mock()
+        task = mock.Mock(cancel_requested=False, paused=False)
         window = SimpleNamespace(
             _busy=True,
             _selected_record=lambda: record,
+            _service=SimpleNamespace(db=mock.Mock()),
             _ui=SimpleNamespace(
                 header=header,
                 catalog=SimpleNamespace(detail=detail),
             ),
-            _active_task=mock.Mock(cancel_requested=False),
+            _active_progress=mock.Mock(),
+            _active_task=task,
             _cancel_action=mock.Mock(),
+            _pause_action=mock.Mock(),
             _remove_action=mock.Mock(),
         )
 
@@ -185,7 +232,33 @@ class DetailPanelTests(unittest.TestCase):
         header.download.setEnabled.assert_called_once_with(False)
         header.play.setEnabled.assert_called_once_with(True)
         header.check.setEnabled.assert_called_once_with(False)
+        header.pause.setVisible.assert_called_once_with(True)
         header.cancel.setVisible.assert_called_once_with(True)
+
+    def test_pause_action_suspends_and_checkpoints_active_pipeline(self) -> None:
+        """Pause the process tree and retain its durable recovery state.
+
+        Example: a speech-to-text pause keeps its reached fraction visible.
+        """
+
+        task = mock.Mock(paused=False)
+        task.pause.return_value = True
+        update = library_window_support.progress.make(
+            "aaaaaaaaaaa",
+            library_window_support.progress.Stage.TRANSCRIBING,
+            0.25,
+        )
+        window = mock.Mock()
+        window._active_task = task
+        window._active_progress = update
+
+        library_window_support.WindowRuntimeMixin._pause_active_task(window)
+
+        task.pause.assert_called_once_with()
+        window._service.set_pipeline_paused.assert_called_once_with("aaaaaaaaaaa", True)
+        paused = window._ui.catalog.model.set_progress.call_args.args[0]
+        self.assertEqual(paused.stage, library_window_support.progress.Stage.PAUSED)
+        self.assertAlmostEqual(paused.fraction, 0.03 + 0.32 + 0.07 + 0.30 * 0.25)
 
     def test_remote_double_click_starts_without_confirmation(self) -> None:
         """Treat direct activation as sufficient intent to start processing.

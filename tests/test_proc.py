@@ -68,6 +68,33 @@ class ChildProcessOptionsTests(unittest.TestCase):
         else:
             self.assertTrue(kwargs["start_new_session"])
 
+    @mock.patch("yt_whisper_subs.proc._load_psutil")
+    def test_process_tree_pause_and_resume_include_descendants(self, load: mock.Mock) -> None:
+        """Suspend a pipeline parent and resume its child before the parent.
+
+        Example: Whisper and its ffmpeg subprocess remain one controlled unit.
+        """
+
+        parent = mock.Mock(pid=10)
+        child = mock.Mock(pid=11)
+        parent.children.side_effect = ([child], [child])
+        psutil = load.return_value
+        psutil.Process.return_value = parent
+        psutil.NoSuchProcess = ProcessLookupError
+        psutil.AccessDenied = PermissionError
+        psutil.ZombieProcess = ChildProcessError
+        control = proc.ProcessTreeControl(10)
+        resumed: list[str] = []
+        parent.resume.side_effect = lambda: resumed.append("parent")
+        child.resume.side_effect = lambda: resumed.append("child")
+
+        control.suspend()
+        control.resume()
+
+        parent.suspend.assert_called_once_with()
+        child.suspend.assert_called_once_with()
+        self.assertEqual(resumed, ["child", "parent"])
+
     def test_output_records_split_terminal_progress(self) -> None:
         """Expose carriage-return progress as individual live trace messages.
 

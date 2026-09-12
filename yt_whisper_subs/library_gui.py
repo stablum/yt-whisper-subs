@@ -12,6 +12,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+import yt_whisper_subs
 from yt_whisper_subs import library_chapter_actions
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
@@ -27,6 +28,7 @@ from yt_whisper_subs import pipeline_progress as progress
 
 _TABLE_LAYOUT_SETTING = "video_table_header_v1"
 _TABLE_LAYOUT_SAVE_DELAY_MS = 250
+WINDOW_TITLE = f"YouTube Library · yt-whisper-subs v{yt_whisper_subs.__version__}"
 
 
 class HeaderUi(NamedTuple):
@@ -39,6 +41,7 @@ class HeaderUi(NamedTuple):
     check: QtWidgets.QPushButton
     download: QtWidgets.QPushButton
     play: QtWidgets.QPushButton
+    pause: QtWidgets.QPushButton
     cancel: QtWidgets.QPushButton
 
 
@@ -99,6 +102,7 @@ class LibraryWindow(
         self._metadata_active = False
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._active_task: library_workers.BackgroundTask | None = None
+        self._paused_progress: progress.Update | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
@@ -118,6 +122,7 @@ class LibraryWindow(
         self._connect_actions()
         self._build_menus()
         self.refresh()
+        self._restore_interrupted_pipelines()
         self._schedule_next(initial=True)
         self._schedule_metadata_backfill()
 
@@ -127,7 +132,7 @@ class LibraryWindow(
         Example: called once by `LibraryWindow.__init__()`.
         """
 
-        self.setWindowTitle("YouTube Library · yt-whisper-subs")
+        self.setWindowTitle(WINDOW_TITLE)
         self.resize(1480, 900)
         self.setMinimumSize(1050, 650)
         self.setStyleSheet(library_theme.STYLE)
@@ -205,6 +210,8 @@ class LibraryWindow(
         check = QtWidgets.QPushButton("↻  Check now")
         download = QtWidgets.QPushButton("↓  Download")
         play = QtWidgets.QPushButton("▶  Play")
+        pause = QtWidgets.QPushButton("Ⅱ  Pause")
+        pause.hide()
         cancel = QtWidgets.QPushButton("■  Cancel")
         cancel.setObjectName("dangerButton")
         cancel.hide()
@@ -212,9 +219,10 @@ class LibraryWindow(
         layout.addWidget(search, 1)
         layout.addWidget(check)
         layout.addWidget(download)
+        layout.addWidget(pause)
         layout.addWidget(cancel)
         layout.addWidget(play)
-        return HeaderUi(search, check, download, play, cancel), layout
+        return HeaderUi(search, check, download, play, pause, cancel), layout
 
     def _build_catalog(self, channels: QtWidgets.QListWidget) -> CatalogUi:
         """Create the model-backed table and selected-video detail panel.
@@ -286,6 +294,7 @@ class LibraryWindow(
         self._ui.catalog.model.dataChanged.connect(self._refresh_smart_filters)
         self._ui.header.check.clicked.connect(self.check_now)
         self._ui.header.download.clicked.connect(self._download_selected)
+        self._ui.header.pause.clicked.connect(self._pause_active_task)
         self._ui.header.cancel.clicked.connect(self._cancel_active_task)
         self._ui.header.play.clicked.connect(self._play_selected)
         self._ui.catalog.detail.generate_requested.connect(self._generate_chapters_selected)
@@ -323,6 +332,8 @@ class LibraryWindow(
         video_menu.addAction("Generate chapters", self._generate_chapters_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
         video_menu.addSeparator()
+        self._pause_action = video_menu.addAction("Pause current pipeline", self._pause_active_task)
+        self._pause_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+P"))
         self._cancel_action = video_menu.addAction("Cancel current operation", self._cancel_active_task)
         self._cancel_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
         self._remove_action = video_menu.addAction("Remove download and yields…", self._remove_selected)

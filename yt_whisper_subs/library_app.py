@@ -24,6 +24,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     parser = argparse.ArgumentParser(description="Open the native yt-whisper-subs YouTube library.")
     parser.add_argument("--out-dir", help="Output root shared with the subtitle CLI.")
+    parser.add_argument(
+        "--start-hidden",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     return parser.parse_args(argv)
 
 
@@ -47,7 +52,9 @@ def main(argv: list[str] | None = None) -> int:
         QtWidgets.QMessageBox.critical(None, "Could not open YouTube Library", str(exc))
         return 1
     window = library_gui.LibraryWindow(service)
-    window.show()
+    start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()
+    if not start_in_tray:
+        window.show()
     return qt_app.exec()
 
 

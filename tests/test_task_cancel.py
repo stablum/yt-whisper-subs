@@ -14,8 +14,8 @@ from yt_whisper_subs import library_yields
 from yt_whisper_subs import task_cancel
 
 
-class CancellationTokenTests(unittest.TestCase):
-    """Keep cancellation idempotent and scoped to active blocking work.
+class TaskControlTests(unittest.TestCase):
+    """Keep pause and cancellation scoped to active blocking work.
 
     Example: a registered process stop hook runs once on the first request.
     """
@@ -26,13 +26,34 @@ class CancellationTokenTests(unittest.TestCase):
         Example: the worker maps this exception to its cancelled Qt signal.
         """
 
-        token = task_cancel.CancellationToken()
+        control = task_cancel.TaskControl()
         stop = mock.Mock()
-        with self.assertRaises(task_cancel.CancelledError):
-            with token.stoppable(stop):
-                self.assertTrue(token.cancel())
-        self.assertFalse(token.cancel())
+        with self.assertRaises(task_cancel.CancelledError), control.controllable(
+            stop,
+            mock.Mock(),
+            mock.Mock(),
+        ):
+            self.assertTrue(control.cancel())
+        self.assertFalse(control.cancel())
         stop.assert_called_once_with()
+
+    def test_pause_and_resume_invoke_active_process_hooks(self) -> None:
+        """Toggle the active process tree without cancelling the worker.
+
+        Example: Whisper can continue after an arbitrary user pause.
+        """
+
+        control = task_cancel.TaskControl()
+        pause = mock.Mock()
+        resume = mock.Mock()
+        with control.controllable(mock.Mock(), pause, resume):
+            self.assertTrue(control.pause())
+            self.assertTrue(control.paused)
+            self.assertTrue(control.resume())
+
+        pause.assert_called_once_with()
+        resume.assert_called_once_with()
+        self.assertFalse(control.paused)
 
 
 class VideoYieldRemovalTests(unittest.TestCase):

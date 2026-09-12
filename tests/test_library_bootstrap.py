@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
+from yt_whisper_subs import library_app
 from yt_whisper_subs import library_bootstrap
 
 
@@ -71,6 +72,15 @@ class LibraryBootstrapTests(unittest.TestCase):
                 result = library_bootstrap.main()
 
         self.assertEqual(result, 130)
+
+    def test_library_parser_accepts_private_tray_start(self) -> None:
+        """Carry the login-only hidden flag without changing manual launches.
+
+        Example: Windows Run supplies `--start-hidden`; normal launch does not.
+        """
+
+        self.assertTrue(library_app.parse_args(["--start-hidden"]).start_hidden)
+        self.assertFalse(library_app.parse_args([]).start_hidden)
 
     @staticmethod
     def _paths(root: Path) -> dict[str, Path]:

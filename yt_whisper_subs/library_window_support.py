@@ -256,11 +256,11 @@ class WindowRuntimeMixin:
         self._metadata_timer.stop()
         self._busy = True
         self._active_progress = None
+        self._paused_progress = None
         self._pipeline_status_active = False
         self._reported_stage_key = None
         self.statusBar().showMessage(label)
         self._ui.trace.append_message(f"▶ {label}")
-        self._update_actions()
         task = library_workers.BackgroundTask(fn)
         task.signals.progress.connect(self._report_progress)
 
@@ -274,6 +274,7 @@ class WindowRuntimeMixin:
             self._active_task = None
             self._pipeline_status_active = False
             self._active_progress = None
+            self._paused_progress = None
             self.statusBar().showMessage("Ready", 3000)
             self._ui.trace.append_message(f"✓ {label}")
             self._update_actions()
@@ -291,6 +292,7 @@ class WindowRuntimeMixin:
             self._active_task = None
             self._pipeline_status_active = False
             self._active_progress = None
+            self._paused_progress = None
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
@@ -327,6 +329,7 @@ class WindowRuntimeMixin:
                 )
                 self._ui.catalog.model.set_progress(cancelled_update)
             self._active_progress = None
+            self._paused_progress = None
             self.statusBar().showMessage("Operation cancelled", 8_000)
             self._ui.trace.append_message(f"■ Cancelled · {label}")
             self._update_actions()
@@ -334,7 +337,71 @@ class WindowRuntimeMixin:
 
         task.signals.cancelled.connect(cancelled)
         self._active_task = task
+        self._update_actions()
         self._pool.start(task)
+
+    def _pause_active_task(self) -> None:
+        """Toggle suspension of the active video pipeline and its process tree.
+
+        Example: Ctrl+Shift+P freezes and later continues Whisper in memory.
+        """
+
+        task = self._active_task
+        update = self._active_progress
+        if not task or not update:
+            return
+        if task.paused:
+            if not task.resume():
+                return
+            self._service.set_pipeline_paused(update.video_id, False)
+            original = self._paused_progress or update
+            self._active_progress = original
+            resuming = progress.make(
+                original.video_id,
+                original.stage,
+                original.fraction,
+                f"Resuming · {progress.stage_label(original.stage)}",
+            )
+            self._ui.catalog.model.set_progress(resuming)
+            self.statusBar().showMessage(resuming.label)
+            self._ui.trace.append_message("▶ Pipeline resumed")
+        else:
+            if not task.pause():
+                return
+            self._service.set_pipeline_paused(update.video_id, True)
+            self._paused_progress = update
+            paused = progress.make(
+                update.video_id,
+                progress.Stage.PAUSED,
+                progress.overall_fraction(update),
+                f"Paused · {progress.stage_label(update.stage)}",
+            )
+            self._ui.catalog.model.set_progress(paused)
+            self.statusBar().showMessage(paused.label)
+            self._ui.trace.append_message("Ⅱ Pipeline paused")
+        self._update_actions()
+
+    def _restore_interrupted_pipelines(self) -> None:
+        """Expose unclean prior work as a one-click resumable table state.
+
+        Example: a system crash leaves an amber Resume row after restart.
+        """
+
+        jobs = self._service.recover_pipeline_jobs()
+        for job in jobs:
+            label = f"Interrupted · {job.label} · click Resume"
+            interrupted = progress.make(
+                job.video_id,
+                progress.Stage.INTERRUPTED,
+                job.fraction,
+                label,
+            )
+            self._ui.catalog.model.set_progress(interrupted)
+        if jobs:
+            self._ui.trace.append_message(
+                f"Recovery · {len(jobs)} interrupted pipeline(s) ready to resume"
+            )
+            self._update_actions()
 
     def _cancel_active_task(self) -> None:
         """Request cancellation of the active heavy task and its child tools.
@@ -456,9 +523,12 @@ class WindowRuntimeMixin:
             self._show_watched_progress(watched, update_status=True)
             return
         if update := progress.parse(message):
+            first_pipeline_update = self._active_progress is None
             self._pipeline_status_active = True
             self._active_progress = update
             self._ui.catalog.model.set_progress(update)
+            if first_pipeline_update:
+                self._update_actions()
             title = self._ui.catalog.model.title_for(update.video_id)
             percent = ""
             terminal = {progress.Stage.READY, progress.Stage.FAILED, progress.Stage.CANCELLED}

@@ -61,4 +61,5 @@ AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 MEDIA_SUFFIXES = (".mkv", ".mp4", ".webm")
 YT_DLP_PYTHON_PACKAGE = "yt-dlp[default]"
 YT_DLP_JS_RUNTIMES = ("deno", "node")
-LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials",)
+LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil")
+LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials", "psutil")

@@ -62,6 +62,8 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
             progress.Stage.READY: "#71d99b",
             progress.Stage.FAILED: "#ff8b8b",
             progress.Stage.CANCELLED: "#f3bd63",
+            progress.Stage.PAUSED: "#f3bd63",
+            progress.Stage.INTERRUPTED: "#f3bd63",
             progress.Stage.LIVE: "#ff8b8b",
         }
         if not selected and update.stage in state_colors:
@@ -82,7 +84,13 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         painter.drawText(label_rect, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, label)
 
         overall = progress.overall_fraction(update)
-        terminal = {progress.Stage.READY, progress.Stage.FAILED, progress.Stage.CANCELLED}
+        terminal = {
+            progress.Stage.READY,
+            progress.Stage.FAILED,
+            progress.Stage.CANCELLED,
+            progress.Stage.PAUSED,
+            progress.Stage.INTERRUPTED,
+        }
         show_percent = update.fraction is not None or update.stage in terminal
         if show_percent:
             painter.setPen(muted_color)
@@ -127,7 +135,11 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         x = track.left()
         start = 0.0
         failed = update.stage is progress.Stage.FAILED
-        cancelled = update.stage is progress.Stage.CANCELLED
+        paused = update.stage in {
+            progress.Stage.CANCELLED,
+            progress.Stage.PAUSED,
+            progress.Stage.INTERRUPTED,
+        }
         for idx, spec in enumerate(progress.STAGE_SPECS):
             width = usable_width * spec.weight
             if idx == len(progress.STAGE_SPECS) - 1:
@@ -143,7 +155,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
                 color_name = spec.color
                 if failed:
                     color_name = "#ff7675"
-                elif cancelled:
+                elif paused:
                     color_name = "#d9a441"
                 color = QtGui.QColor(color_name)
                 painter.setBrush(color)

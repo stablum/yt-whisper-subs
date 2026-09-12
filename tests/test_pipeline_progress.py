@@ -34,6 +34,10 @@ class PipelineProgressTests(unittest.TestCase):
         cancelled = progress.make("abc", progress.Stage.CANCELLED, 0.42)
         self.assertEqual(progress.stage_label(cancelled.stage), "Cancelled")
         self.assertEqual(progress.overall_fraction(cancelled), 0.42)
+        paused = progress.make("abc", progress.Stage.PAUSED, 0.42)
+        interrupted = progress.make("abc", progress.Stage.INTERRUPTED, 0.42)
+        self.assertEqual(progress.overall_fraction(paused), 0.42)
+        self.assertEqual(progress.overall_fraction(interrupted), 0.42)
 
     def test_tool_output_advances_only_its_current_stage(self) -> None:
         """Interpret real tool percentages without guessing across phase boundaries.

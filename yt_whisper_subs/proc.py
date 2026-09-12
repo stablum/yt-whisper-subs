@@ -161,6 +161,82 @@ def request_process_tree_termination(process: subprocess.Popen[str]) -> None:
         return
 
 
+class ProcessTreeControl:
+    """Suspend and resume one owned subprocess tree as a cohesive unit.
+
+    Example: `ProcessTreeControl(child.pid).suspend()` pauses Whisper and ffmpeg.
+    """
+
+    def __init__(self, pid: int) -> None:
+        self._pid = pid
+        self._lock = threading.Lock()
+        self._suspended: dict[int, Any] = {}
+
+    def suspend(self) -> None:
+        """Freeze the parent first, then all descendants without opening a window.
+
+        Example: a GUI Pause click keeps the in-memory model available to resume.
+        """
+
+        psutil = _load_psutil()
+        ignored = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
+        with self._lock:
+            if self._suspended:
+                return
+            try:
+                root = psutil.Process(self._pid)
+                root.suspend()
+            except ignored:
+                return
+            targets = {root.pid: root}
+            for child in root.children(recursive=True):
+                try:
+                    child.suspend()
+                    targets[child.pid] = child
+                except ignored:
+                    continue
+            # A second pass closes the small race where an existing child forks.
+            for child in root.children(recursive=True):
+                if child.pid in targets:
+                    continue
+                try:
+                    child.suspend()
+                    targets[child.pid] = child
+                except ignored:
+                    continue
+            self._suspended = targets
+
+    def resume(self) -> None:
+        """Continue every process suspended by this controller, children first.
+
+        Example: Resume continues the same active model or network request.
+        """
+
+        psutil = _load_psutil()
+        ignored = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
+        with self._lock:
+            targets = tuple(reversed(self._suspended.values()))
+            self._suspended = {}
+        for target in targets:
+            try:
+                target.resume()
+            except ignored:
+                continue
+
+
+def _load_psutil() -> Any:
+    """Load the managed process library only where tree control is exercised.
+
+    Example: the stdlib bootstrap can import `proc` before psutil is installed.
+    """
+
+    try:
+        import psutil
+    except ImportError as exc:  # pragma: no cover - bootstrap installs it first
+        raise RuntimeError("psutil is required to pause a pipeline") from exc
+    return psutil
+
+
 def _read_stream_chars(stream: TextIO, output_q: queue.Queue[str | None]) -> None:
     """Move blocking pipe reads into a queue so the parent can stay responsive.
 
@@ -493,7 +569,7 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
 
     missing_modules = [
         module
-        for module in ("PySide6",)
+        for module in cfg.LIBRARY_REQUIRED_MODULES
         if not managed_module_available(paths["python"], module)
     ]
     if missing_modules:

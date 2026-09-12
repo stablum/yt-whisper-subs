@@ -17,6 +17,7 @@ from unittest import mock
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_model
+from yt_whisper_subs import library_pipeline
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback_progress
@@ -150,7 +151,7 @@ class PipelineDownloaderTests(unittest.TestCase):
     Example: `PipelineDownloaderTests("test_download_reports_root_error")`.
     """
 
-    @mock.patch("yt_whisper_subs.library_service.subprocess.Popen")
+    @mock.patch("yt_whisper_subs.library_pipeline.subprocess.Popen")
     def test_download_reports_root_error(self, popen: mock.Mock) -> None:
         """Show yt-dlp's HTTP failure instead of a generic wrapper message.
 
@@ -164,7 +165,7 @@ class PipelineDownloaderTests(unittest.TestCase):
         )
         process.wait.return_value = 1
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
-        downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
+        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
 
         reports: list[str] = []
         with self.assertRaisesRegex(RuntimeError, "HTTP Error 403"):
@@ -179,9 +180,9 @@ class PipelineDownloaderTests(unittest.TestCase):
         self.assertEqual(updates[-1].stage, progress.Stage.FAILED)
         self.assertIn("HTTP Error 403", updates[-1].label)
 
-    @mock.patch("yt_whisper_subs.library_service.proc.request_process_tree_termination")
-    @mock.patch("yt_whisper_subs.library_service.proc.iter_output_records")
-    @mock.patch("yt_whisper_subs.library_service.subprocess.Popen")
+    @mock.patch("yt_whisper_subs.library_pipeline.proc.request_process_tree_termination")
+    @mock.patch("yt_whisper_subs.library_pipeline.proc.iter_output_records")
+    @mock.patch("yt_whisper_subs.library_pipeline.subprocess.Popen")
     def test_cancel_terminates_pipeline_tree_without_failure_state(
         self,
         popen: mock.Mock,
@@ -197,7 +198,7 @@ class PipelineDownloaderTests(unittest.TestCase):
         process.stdout = io.StringIO()
         process.poll.return_value = None
         process.wait.return_value = 1
-        token = task_cancel.CancellationToken()
+        token = task_cancel.TaskControl()
 
         def cancel_during_read(_stream: object) -> tuple[object, ...]:
             """Model the Cancel click after the child process was registered.
@@ -210,7 +211,7 @@ class PipelineDownloaderTests(unittest.TestCase):
 
         records.side_effect = cancel_during_read
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
-        downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
+        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
 
         with task_cancel.activate(token), self.assertRaises(task_cancel.CancelledError):
             downloader.download(record, mock.Mock())
@@ -927,6 +928,64 @@ class LibraryFeedTests(unittest.TestCase):
         ids = [meta.identity.video_id for meta in snapshot.videos]
         self.assertEqual(ids, ["bbbbbbbbbbb", "ccccccccccc"])
         self.assertTrue(snapshot.complete)
+
+
+class PipelineRecoveryTests(unittest.TestCase):
+    """Keep unclean work resumable while clearing all handled outcomes.
+
+    Example: a stale running job becomes an interrupted GUI row at restart.
+    """
+
+    def test_running_job_recovers_with_reached_stage_and_fraction(self) -> None:
+        """Persist meaningful progress and mark stale execution interrupted.
+
+        Example: a crash during Whisper restores its reached overall bar position.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            db.upsert_video(make_meta("aaaaaaaaaaa", "Example"))
+            db.begin_pipeline_job("aaaaaaaaaaa", types.PipelineKind.DOWNLOAD)
+            update = progress.make("aaaaaaaaaaa", progress.Stage.TRANSCRIBING, 0.5)
+            db.update_pipeline_job(update)
+
+            jobs = db.recover_pipeline_jobs()
+
+            self.assertEqual(len(jobs), 1)
+            self.assertEqual(jobs[0].state, types.PipelineJobState.INTERRUPTED)
+            self.assertEqual(jobs[0].stage, progress.Stage.TRANSCRIBING.value)
+            self.assertAlmostEqual(jobs[0].fraction, progress.overall_fraction(update))
+
+    def test_tracker_clears_handled_failure_but_keeps_hard_interruption(self) -> None:
+        """Distinguish an ordinary pipeline error from abrupt process death.
+
+        Example: RuntimeError is final; BaseException remains recoverable.
+        """
+
+        class HardInterruption(BaseException):
+            """Model process death outside Python's handled exception boundary.
+
+            Example: a power loss never reaches the context manager normally.
+            """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            db.upsert_video(make_meta("aaaaaaaaaaa", "Example"))
+            tracker = library_pipeline.PipelineJobTracker(
+                db,
+                "aaaaaaaaaaa",
+                types.PipelineKind.DOWNLOAD,
+                mock.Mock(),
+            )
+            with self.assertRaises(RuntimeError), tracker:
+                raise RuntimeError("handled")
+            self.assertIsNone(db.pipeline_job("aaaaaaaaaaa"))
+
+            with self.assertRaises(HardInterruption), tracker:
+                raise HardInterruption()
+            self.assertIsNotNone(db.pipeline_job("aaaaaaaaaaa"))
 
 
 if __name__ == "__main__":

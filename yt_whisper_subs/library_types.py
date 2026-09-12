@@ -6,6 +6,7 @@ Example: `VideoMeta(identity, origin, details)` describes one YouTube item.
 from __future__ import annotations
 
 from pathlib import Path
+from enum import StrEnum
 from typing import NamedTuple
 from typing import Any
 
@@ -97,6 +98,43 @@ class PlaybackState(NamedTuple):
     position_seconds: float
     duration_seconds: float | None
     completed_at: int | None
+    updated_at: int
+
+
+class PipelineKind(StrEnum):
+    """Name a durable operation that can be recovered after interruption.
+
+    Example: `PipelineKind.DOWNLOAD` resumes the complete subtitle pipeline.
+    """
+
+    DOWNLOAD = "download"
+    CHAPTERS = "chapters"
+
+
+class PipelineJobState(StrEnum):
+    """Distinguish live, paused, and restart-recoverable pipeline work.
+
+    Example: startup converts a stale `RUNNING` job to `INTERRUPTED`.
+    """
+
+    RUNNING = "running"
+    PAUSED = "paused"
+    INTERRUPTED = "interrupted"
+
+
+class PipelineJob(NamedTuple):
+    """Persist enough pipeline state to explain and resume interrupted work.
+
+    Example: `job.fraction` restores the reached graphical progress position.
+    """
+
+    video_id: str
+    kind: PipelineKind
+    state: PipelineJobState
+    stage: str
+    fraction: float
+    label: str
+    started_at: int
     updated_at: int
 
 

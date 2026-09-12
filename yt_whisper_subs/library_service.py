@@ -6,11 +6,8 @@ Example: `LibraryService(out_dir, paths).check_all(report)`.
 from __future__ import annotations
 
 import json
-import subprocess
 import time
-from collections import deque
 from collections.abc import Callable
-from contextlib import nullcontext
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
@@ -20,11 +17,11 @@ from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
+from yt_whisper_subs import library_pipeline
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_yields
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress
-from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import task_cancel
 from yt_whisper_subs import youtube
@@ -51,132 +48,6 @@ class MetadataBackfillResult(NamedTuple):
     remaining: int
 
 
-class PipelineDownloader:
-    """Run the existing CLI pipeline as the library's download strategy.
-
-    Example: `downloader.download(record, report)` preserves CLI behavior.
-    """
-
-    def __init__(self, python_exe: Path, out_dir: Path, cookies: str | None = None) -> None:
-        self._python_exe = python_exe
-        self._out_dir = out_dir
-        self._cookies = cookies
-
-    def with_cookies(self, cookies: str | None) -> PipelineDownloader:
-        """Return a downloader configured for private or age-gated feeds.
-
-        Example: `downloader.with_cookies("firefox")`.
-        """
-
-        return type(self)(self._python_exe, self._out_dir, cookies or None)
-
-    def download(self, record: types.VideoRecord, report: ReportFn) -> None:
-        """Generate all normal durable yields without opening mpv afterward.
-
-        Example: `download(record, status.emit)` runs the shared CLI.
-        """
-
-        cmd = [
-            str(self._python_exe),
-            str(cfg.PROJECT_DIR / "yt_whisper_subs.py"),
-            "--url",
-            record.meta.identity.url,
-            "--out-dir",
-            str(self._out_dir),
-            "--no-play",
-            "--chapters",
-        ]
-        if self._cookies:
-            cmd += ["--cookies-from-browser", self._cookies]
-        self._run(record, cmd, "Download", report)
-
-    def generate_chapters(self, record: types.VideoRecord, report: ReportFn) -> None:
-        """Regenerate chapters through the CLI while reusing local durable yields.
-
-        Example: `generate_chapters(record, report)` avoids Whisper and yt-dlp.
-        """
-
-        if not record.local:
-            raise RuntimeError("download this video before generating chapters")
-        cmd = [
-            str(self._python_exe),
-            str(cfg.PROJECT_DIR / "yt_whisper_subs.py"),
-            "--video-file",
-            str(record.local.path),
-            "--out-dir",
-            str(self._out_dir),
-            "--no-play",
-            "--chapters",
-            "--force-chapters",
-        ]
-        self._run(record, cmd, "Chapter generation", report)
-
-    def _run(
-        self,
-        record: types.VideoRecord,
-        cmd: list[str],
-        operation: str,
-        report: ReportFn,
-    ) -> None:
-        """Stream one hidden CLI operation into trace and structured progress.
-
-        Example: `_run(record, cmd, "Download", report)` keeps one protocol.
-        """
-
-        child_kwargs = proc.isolated_process_kwargs()
-        child_env = dict(child_kwargs["env"])
-        child_env[progress.ENV_VIDEO_ID] = record.meta.identity.video_id
-        child_kwargs["env"] = child_env
-        current = progress.make(record.meta.identity.video_id, progress.Stage.QUEUED)
-        report(progress.encode(current))
-        process = subprocess.Popen(
-            cmd,
-            **child_kwargs,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
-        assert process.stdout is not None
-        output_tail: deque[str] = deque(maxlen=30)
-        cancel = task_cancel.current()
-        stop = lambda: proc.request_process_tree_termination(process)
-        context = cancel.stoppable(stop) if cancel else nullcontext()
-        with context:
-            for message in proc.iter_output_records(process.stdout):
-                if update := progress.parse(message):
-                    current = update
-                    report(message)
-                    continue
-                if update := progress.derive_tool_update(message, current):
-                    current = update
-                    report(progress.encode(update))
-                output_tail.append(message)
-                report(message)
-            returncode = process.wait()
-            if cancel:
-                cancel.checkpoint()
-        if returncode != 0:
-            error_lines = [line for line in output_tail if line.casefold().startswith("error:")]
-            detail = (
-                error_lines[-1].removeprefix("error: ")
-                if error_lines
-                else "subtitle pipeline failed"
-            )
-            if current.stage is not progress.Stage.FAILED:
-                current = progress.make(
-                    record.meta.identity.video_id,
-                    progress.Stage.FAILED,
-                    progress.overall_fraction(current),
-                    f"Failed · {detail}",
-                )
-                report(progress.encode(current))
-            raise RuntimeError(f"{operation} failed for {record.meta.identity.title}: {detail}")
-        if current.stage is not progress.Stage.READY:
-            report(progress.encode(progress.make(record.meta.identity.video_id, progress.Stage.READY, 1.0)))
-
-
 class LibraryService:
     """Coordinate cohesive catalog operations independently from Qt widgets.
 
@@ -189,7 +60,7 @@ class LibraryService:
         paths: dict[str, Path],
         *,
         feed: library_feed.YtDlpFeed | None = None,
-        downloader: PipelineDownloader | None = None,
+        downloader: library_pipeline.PipelineDownloader | None = None,
     ) -> None:
         self.out_dir = out_dir.resolve()
         self.paths = paths
@@ -199,7 +70,11 @@ class LibraryService:
         self.db.initialize()
         cookies = self.cookies_from_browser()
         self._feed = feed or library_feed.YtDlpFeed(paths["python"], cookies)
-        self._downloader = downloader or PipelineDownloader(paths["python"], self.out_dir, cookies)
+        self._downloader = downloader or library_pipeline.PipelineDownloader(
+            paths["python"],
+            self.out_dir,
+            cookies,
+        )
         self._playback = playback.PlaybackControl()
 
     def reload_clients(self) -> None:
@@ -376,8 +251,15 @@ class LibraryService:
             raise RuntimeError("live and upcoming videos cannot be downloaded from the library yet")
         self.db.set_download_error(video_id, None)
         try:
-            self._downloader.download(record, report)
-            self.scan_local(report)
+            tracker = library_pipeline.PipelineJobTracker(
+                self.db,
+                video_id,
+                types.PipelineKind.DOWNLOAD,
+                report,
+            )
+            with tracker as tracked_report:
+                self._downloader.download(record, tracked_report)
+                self.scan_local(tracked_report)
         except task_cancel.CancelledError:
             self.scan_local()
             raise
@@ -412,6 +294,37 @@ class LibraryService:
         self.db.set_download_error(manifest.video_id, None)
         return removed
 
+    def recover_pipeline_jobs(self) -> list[types.PipelineJob]:
+        """Load work left live by an unclean prior application exit.
+
+        Example: the window re-queues the single pipeline active at a crash.
+        """
+
+        return self.db.recover_pipeline_jobs()
+
+    def resume_pipeline_job(
+        self,
+        job: types.PipelineJob,
+        report: ReportFn = _ignore_report,
+    ) -> None:
+        """Dispatch a recovered job through the same idempotent pipeline path.
+
+        Example: completed media is reused while missing subtitle stages rerun.
+        """
+
+        if job.kind is types.PipelineKind.CHAPTERS:
+            self.generate_chapters(job.video_id, report)
+            return
+        self.download(job.video_id, report)
+
+    def set_pipeline_paused(self, video_id: str, paused: bool) -> None:
+        """Mirror live suspension state into the durable recovery record.
+
+        Example: a crash while paused remains recoverable at next startup.
+        """
+
+        self.db.set_pipeline_job_paused(video_id, paused)
+
     def chapter_set(self, video_id: str) -> chapters.ChapterSet | None:
         """Load the selected video's durable chapter plan when available.
 
@@ -433,7 +346,14 @@ class LibraryService:
         record = self.db.video(video_id)
         if not record or not record.local or not record.local.path.exists():
             raise RuntimeError("download this video before generating chapters")
-        self._downloader.generate_chapters(record, report)
+        tracker = library_pipeline.PipelineJobTracker(
+            self.db,
+            video_id,
+            types.PipelineKind.CHAPTERS,
+            report,
+        )
+        with tracker as tracked_report:
+            self._downloader.generate_chapters(record, tracked_report)
         chapter_set = self.chapter_set(video_id)
         if not chapter_set:
             raise RuntimeError("chapter pipeline completed without a readable chapter plan")

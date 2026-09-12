@@ -15,6 +15,7 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_widgets
+from yt_whisper_subs import windows_startup
 
 
 class WindowActionsMixin:
@@ -32,11 +33,24 @@ class WindowActionsMixin:
         record = self._selected_record()
         if not record:
             return
+        video_id = record.meta.identity.video_id
+        job = self._service.db.pipeline_job(video_id)
+        if job and job.state is types.PipelineJobState.INTERRUPTED:
+
+            def resume(report: Callable[[str], None]) -> None:
+                """Bind the durable job to the shared idempotent pipeline.
+
+                Example: completed media is reused after a prior system crash.
+                """
+
+                self._service.resume_pipeline_job(job, report)
+
+            self._run_task("Resuming interrupted pipeline…", resume, lambda _: self.refresh())
+            return
         issue = library_model.local_pipeline_issue(record)
         if record.downloaded and not issue and not record.download_error:
             self._play_selected()
             return
-        video_id = record.meta.identity.video_id
 
         def download(report: Callable[[str], None]) -> None:
             """Bind the selected video ID into a worker-safe call.
@@ -59,8 +73,10 @@ class WindowActionsMixin:
             return
         self._ui.catalog.table.selectRow(index.row())
         record = self._record_from_proxy_index(index)
+        job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
         issue = library_model.local_pipeline_issue(record) if record else None
-        if record and record.downloaded and not issue and not record.download_error:
+        recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)
+        if record and record.downloaded and not issue and not record.download_error and not recoverable:
             self._play_selected()
         elif record:
             self._download_selected()
@@ -102,7 +118,7 @@ class WindowActionsMixin:
         self._run_task("Removing download…", remove, lambda _: self.refresh())
 
     def _edit_settings(self) -> None:
-        """Persist scheduling, retention, browser, and tray settings.
+        """Persist scheduling, retention, browser, tray, and login settings.
 
         Example: Library -> Settings invokes `_edit_settings()`.
         """
@@ -123,6 +139,7 @@ class WindowActionsMixin:
                 str(int(cfg.DEFAULT_LIBRARY_MINIMIZE_TO_TRAY)),
             )
             in {"1", "True", "true"},
+            windows_startup.is_enabled(self._service.out_dir),
             recent,
             self._service.db.setting("channel_published_after", ""),
         )
@@ -130,6 +147,15 @@ class WindowActionsMixin:
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
+        try:
+            windows_startup.set_enabled(values.start_with_windows, self._service.out_dir)
+        except (OSError, RuntimeError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Could not update Windows startup",
+                str(exc),
+            )
+            return
         self._service.db.set_setting("check_hours", values.check_hours)
         self._service.db.set_setting("cookies_from_browser", values.cookies_from_browser)
         self._service.db.set_setting("minimize_to_tray", int(values.minimize_to_tray))
@@ -231,16 +257,30 @@ class WindowActionsMixin:
 
         record = self._selected_record()
         issue = library_model.local_pipeline_issue(record) if record else None
-        can_process = bool(record and not self._busy and (not record.downloaded or issue or record.download_error))
+        job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
+        recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)
+        can_process = bool(
+            record
+            and not self._busy
+            and (recoverable or not record.downloaded or issue or record.download_error)
+        )
         can_play = bool(record and record.downloaded)
         self._ui.catalog.detail.set_busy(self._busy)
         needs_repair = bool(record and record.downloaded and (issue or record.download_error))
-        self._ui.header.download.setText("↻  Repair" if needs_repair else "↓  Download")
+        process_text = "▶  Resume" if recoverable else ("↻  Repair" if needs_repair else "↓  Download")
+        self._ui.header.download.setText(process_text)
         self._ui.header.download.setEnabled(can_process)
         self._ui.header.play.setEnabled(can_play)
         self._ui.header.check.setEnabled(not self._busy)
+        pipeline_active = bool(self._busy and self._active_progress and self._active_task)
+        paused = bool(self._active_task and self._active_task.paused)
+        self._ui.header.pause.setVisible(pipeline_active)
+        self._ui.header.pause.setText("▶  Resume" if paused else "Ⅱ  Pause")
+        self._ui.header.pause.setEnabled(pipeline_active)
         self._ui.header.cancel.setVisible(self._busy)
         task = self._active_task
         self._ui.header.cancel.setEnabled(bool(task and not task.cancel_requested))
         self._cancel_action.setEnabled(bool(task and not task.cancel_requested))
+        self._pause_action.setText("Resume current pipeline" if paused else "Pause current pipeline")
+        self._pause_action.setEnabled(pipeline_active)
         self._remove_action.setEnabled(bool(record and record.downloaded and not self._busy))
