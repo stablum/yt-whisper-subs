@@ -26,6 +26,7 @@ from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_window_support  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
 from yt_whisper_subs import library_workers  # noqa: E402
+from yt_whisper_subs import playback_progress  # noqa: E402
 
 
 class DetailPanelTests(unittest.TestCase):
@@ -126,6 +127,60 @@ class DetailPanelTests(unittest.TestCase):
         library_chapter_actions.ChapterActionsMixin._play_chapter(window, 90.0)
 
         window._play_from.assert_called_once_with(90.0)
+
+    def test_playback_dispatches_outside_busy_work_lane(self) -> None:
+        """Keep a downloaded video playable while another video is processing.
+
+        Example: an active Whisper task does not queue or reject an mpv launch.
+        """
+
+        record = self._record(Path(__file__))
+        window = mock.Mock()
+        window._busy = True
+        window._selected_record.return_value = record
+
+        library_chapter_actions.ChapterActionsMixin._play_from(window, None)
+
+        window._run_task.assert_not_called()
+        window._run_playback.assert_called_once()
+        label, play, _finished = window._run_playback.call_args.args
+        self.assertEqual(label, "Opening mpv…")
+        report = mock.Mock()
+        play(report)
+        window._service.play.assert_called_once_with(
+            "aaaaaaaaaaa",
+            report,
+            start_seconds=None,
+        )
+
+    def test_play_button_remains_enabled_during_processing(self) -> None:
+        """Separate play availability from the heavy-operation busy flag.
+
+        Example: Download and Check stay disabled while Play remains enabled.
+        """
+
+        record = self._record(Path(__file__))
+        header = SimpleNamespace(
+            download=mock.Mock(),
+            play=mock.Mock(),
+            check=mock.Mock(),
+        )
+        detail = mock.Mock()
+        window = SimpleNamespace(
+            _busy=True,
+            _selected_record=lambda: record,
+            _ui=SimpleNamespace(
+                header=header,
+                catalog=SimpleNamespace(detail=detail),
+            ),
+        )
+
+        library_gui.LibraryWindow._update_actions(window)
+
+        detail.set_busy.assert_called_once_with(True)
+        header.download.setEnabled.assert_called_once_with(False)
+        header.play.setEnabled.assert_called_once_with(True)
+        header.check.setEnabled.assert_called_once_with(False)
 
     @staticmethod
     def _record(path: Path) -> types.VideoRecord:
@@ -339,6 +394,86 @@ class ChannelQueueTests(unittest.TestCase):
 
         self.assertTrue(pool.waitForDone(5_000))
         self.assertEqual(order, ["first", "second"])
+
+
+class PlaybackLaneTests(unittest.TestCase):
+    """Verify playback can run beside the serialized heavy-operation queue.
+
+    Example: mpv starts while a simulated Whisper worker occupies its lane.
+    """
+
+    def test_playback_progress_preserves_active_pipeline_status(self) -> None:
+        """Keep concurrent watched updates out of the busy status bar.
+
+        Example: an mpv observation updates its row without hiding Translation.
+        """
+
+        window = mock.Mock()
+        window._busy = True
+        update = playback_progress.make("aaaaaaaaaaa", 30, 100)
+
+        library_window_support.WindowRuntimeMixin._report_playback(
+            window,
+            playback_progress.encode(update),
+        )
+
+        window._show_watched_progress.assert_called_once_with(
+            update,
+            update_status=False,
+        )
+
+    def test_playback_starts_while_heavy_worker_is_occupied(self) -> None:
+        """Use independent thread pools for visible playback and compute work.
+
+        Example: playback enters before the blocked heavy task is released.
+        """
+
+        heavy_pool = QtCore.QThreadPool()
+        heavy_pool.setMaxThreadCount(1)
+        playback_pool = QtCore.QThreadPool()
+        playback_pool.setMaxThreadCount(2)
+        heavy_entered = threading.Event()
+        release_heavy = threading.Event()
+        playback_entered = threading.Event()
+
+        def heavy(_report: object) -> None:
+            """Hold the serial lane to model an active subtitle pipeline.
+
+            Example: release_heavy ends the simulated Whisper operation.
+            """
+
+            heavy_entered.set()
+            release_heavy.wait(2)
+
+        def play(_report: object) -> None:
+            """Record immediate entry into the independent playback lane.
+
+            Example: setting playback_entered represents mpv launch.
+            """
+
+            playback_entered.set()
+
+        window = SimpleNamespace(
+            _busy=True,
+            _playback_pool=playback_pool,
+            _playback_tasks={},
+            _ui=SimpleNamespace(trace=mock.Mock()),
+            _report_playback=mock.Mock(),
+            statusBar=mock.Mock(),
+        )
+        heavy_pool.start(library_workers.BackgroundTask(heavy))
+        self.assertTrue(heavy_entered.wait(2))
+
+        library_window_support.WindowRuntimeMixin._run_playback(
+            window,
+            "Opening mpv…",
+            play,
+        )
+
+        self.assertTrue(playback_entered.wait(2))
+        release_heavy.set()
+        self.assertTrue(heavy_pool.waitForDone(5_000))
+        self.assertTrue(playback_pool.waitForDone(5_000))
 
 
 if __name__ == "__main__":

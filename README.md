@@ -117,7 +117,7 @@ These defaults are hard-coded near the top of the script:
 | Library 100% watched rule | confirmed mpv end-of-file event only |
 | Library smart view | remembered across launches; search and channel remain independent |
 | Library column layout | resizable, reorderable, and remembered across launches |
-| Library execution queue | one worker; channel placeholders are immediate and lookups wait their turn |
+| Library execution queue | one heavy-work lane; playback launches independently |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -780,6 +780,11 @@ positions, primary font scale, secondary ASS conversion, and mpv options as the
 CLI. Double-clicking a remote-only row offers to download it first. mpv runs in a
 background worker so the Qt window remains responsive while playback is open;
 mpv itself remains a normal visible and switchable Windows application.
+Playback uses a dedicated worker lane, so a downloaded video opens immediately
+while another video is downloading, running Whisper, translating, or generating
+chapters. Those expensive operations remain serialized one at a time. Playback
+progress updates its table row without replacing the active pipeline stage in
+the status bar.
 Library-launched playback additionally enables one ephemeral IPC endpoint so
 the Watched bar updates live. Direct CLI playback keeps its established command
 shape and terminal interaction unchanged.
@@ -1577,7 +1582,7 @@ High-level groups:
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
 | `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
-| `yt_whisper_subs.library_window_support` | Single-lane task queuing, low-priority metadata pacing, system tray, lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_window_support` | Serialized heavy-work scheduling, independent playback, metadata pacing, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
@@ -1658,6 +1663,8 @@ Start by preserving these invariants:
     empty section rather than a partial-refresh failure.
 30. Do not establish the automatic-download baseline from a partial channel
     refresh; surface the warning and retry safely.
+31. Keep visible mpv playback independent from the serialized heavy-work lane,
+    while retaining live watched progress and pipeline status.
 
 When changing the project, useful verification commands are:
 
@@ -1681,7 +1688,7 @@ view classification, live transitions, search-scoped counts, sidecar ingestion;
 native table-header resizing, reordering, persistence, and reset behavior;
 channel additions queued during active video work; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
-retention that preserves local media.
+retention that preserves local media; and playback dispatch during active work.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

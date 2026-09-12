@@ -88,4 +88,4 @@ class ChapterActionsMixin:
             self._service.play(video_id, report, start_seconds=start_seconds)
 
         status = "Opening chapter in mpv…" if start_seconds is not None else "Opening mpv…"
-        self._run_task(status, play, lambda _: self.refresh())
+        self._run_playback(status, play, lambda _: self.refresh())

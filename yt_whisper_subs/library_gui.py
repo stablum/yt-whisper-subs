@@ -82,6 +82,9 @@ class LibraryWindow(
         self._service = service
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(1)
+        self._playback_pool = QtCore.QThreadPool(self)
+        playback_threads = max(2, QtCore.QThread.idealThreadCount())
+        self._playback_pool.setMaxThreadCount(playback_threads)
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._scheduled_check)
@@ -94,6 +97,7 @@ class LibraryWindow(
         self._active_task: library_workers.BackgroundTask | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
+        self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
         self._ui = self._build_ui()
         self._table_layout_timer = QtCore.QTimer(self)
@@ -723,8 +727,9 @@ class LibraryWindow(
         """
 
         record = self._selected_record()
-        enabled = record is not None and not self._busy
         self._ui.catalog.detail.set_busy(self._busy)
-        self._ui.header.download.setEnabled(enabled and not record.downloaded if record else False)
-        self._ui.header.play.setEnabled(enabled and record.downloaded if record else False)
+        can_download = bool(record and not self._busy and not record.downloaded)
+        can_play = bool(record and record.downloaded)
+        self._ui.header.download.setEnabled(can_download)
+        self._ui.header.play.setEnabled(can_play)
         self._ui.header.check.setEnabled(not self._busy)

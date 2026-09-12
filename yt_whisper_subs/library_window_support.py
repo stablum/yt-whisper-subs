@@ -307,6 +307,95 @@ class WindowRuntimeMixin:
         self._active_task = task
         self._pool.start(task)
 
+    def _run_playback(
+        self,
+        label: str,
+        fn: Callable[[Callable[[str], None]], Any],
+        finished: Callable[[object], None] | None = None,
+    ) -> None:
+        """Launch mpv outside the serialized compute and network lane.
+
+        Example: _run_playback("Opening mpv…", service.play) works during Whisper.
+        """
+
+        task = library_workers.BackgroundTask(fn)
+        task_id = id(task)
+        self._playback_tasks[task_id] = task
+        self._ui.trace.append_message(f"▶ {label}")
+        if not self._busy:
+            self.statusBar().showMessage(label)
+
+        def done(result: object) -> None:
+            """Release one player worker after its visible mpv process exits.
+
+            Example: closing mpv invokes done(None) and refreshes watched state.
+            """
+
+            self._playback_tasks.pop(task_id, None)
+            self._ui.trace.append_message(f"✓ {label}")
+            if not self._busy:
+                self.statusBar().showMessage("Ready", 3_000)
+            if finished:
+                finished(result)
+
+        def failed(message: str, trace: str) -> None:
+            """Expose a playback-only failure without disturbing active work.
+
+            Example: missing mpv opens a non-blocking error while Whisper continues.
+            """
+
+            self._playback_tasks.pop(task_id, None)
+            self._ui.trace.append_message(f"✗ {label} · {message}")
+            self._ui.trace.append_message(trace)
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Critical,
+                "Playback failed",
+                message,
+                parent=self,
+            )
+            box.setDetailedText(trace)
+            box.open()
+            if not self._busy:
+                self.statusBar().showMessage(f"Playback error: {message}", 10_000)
+
+        task.signals.progress.connect(self._report_playback)
+        task.signals.finished.connect(done)
+        task.signals.failed.connect(failed)
+        self._playback_pool.start(task)
+
+    def _report_playback(self, message: str) -> None:
+        """Update watched state without overwriting an active pipeline stage.
+
+        Example: mpv progress updates its row while translation remains in the status bar.
+        """
+
+        if watched := playback_progress.parse(message):
+            self._show_watched_progress(watched, update_status=not self._busy)
+            return
+        if not self._busy:
+            self.statusBar().showMessage(message)
+        self._ui.trace.append_message(f"Playback · {message}")
+
+    def _show_watched_progress(
+        self,
+        watched: playback_progress.Update,
+        *,
+        update_status: bool,
+    ) -> None:
+        """Render one mpv observation with optional status-bar ownership.
+
+        Example: concurrent playback updates its row without hiding Whisper's label.
+        """
+
+        self._ui.catalog.model.set_watched_progress(watched)
+        title = self._ui.catalog.model.title_for(watched.video_id)
+        fraction = playback_progress.fraction(watched)
+        label = "Watched" if watched.completed else f"Watching · {fraction:.0%}"
+        if update_status:
+            self.statusBar().showMessage(f"{label} · {title}")
+        if watched.completed:
+            self._ui.trace.append_message(f"◆ {title} · Reached end · 100% watched")
+
     def _report_progress(self, message: str) -> None:
         """Route structured stages to the GUI and raw output to the trace.
 
@@ -314,13 +403,7 @@ class WindowRuntimeMixin:
         """
 
         if watched := playback_progress.parse(message):
-            self._ui.catalog.model.set_watched_progress(watched)
-            title = self._ui.catalog.model.title_for(watched.video_id)
-            fraction = playback_progress.fraction(watched)
-            label = "Watched" if watched.completed else f"Watching · {fraction:.0%}"
-            self.statusBar().showMessage(f"{label} · {title}")
-            if watched.completed:
-                self._ui.trace.append_message(f"◆ {title} · Reached end · 100% watched")
+            self._show_watched_progress(watched, update_status=True)
             return
         if update := progress.parse(message):
             self._pipeline_status_active = True
