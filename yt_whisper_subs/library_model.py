@@ -12,10 +12,10 @@ from typing import NamedTuple
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback_progress as playback
 from yt_whisper_subs import pipeline_progress as progress
-from yt_whisper_subs import srt
 
 
 SORT_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
@@ -29,6 +29,7 @@ PUBLISHED_COLUMN = 4
 DURATION_COLUMN = 6
 SIZE_COLUMN = 7
 VIEWS_COLUMN = 8
+_UNCHECKED = object()
 
 
 class WatchedProgress(NamedTuple):
@@ -194,6 +195,7 @@ def accepts_view(
     record: types.VideoRecord,
     watched: WatchedProgress | None,
     view: VideoView,
+    issue: str | None | object = _UNCHECKED,
 ) -> bool:
     """Apply one smart-view strategy without coupling it to Qt widgets.
 
@@ -207,7 +209,8 @@ def accepts_view(
     if view is VideoView.AVAILABLE:
         return not record.downloaded
     if view is VideoView.ISSUES:
-        return bool(record.download_error or local_pipeline_issue(record))
+        resolved = library_artifacts.pipeline_issue(record) if issue is _UNCHECKED else issue
+        return bool(record.download_error or resolved)
     if not watched:
         return False
     if view is VideoView.WATCHED:
@@ -219,7 +222,10 @@ def accepts_view(
     return True
 
 
-def record_progress(record: types.VideoRecord) -> progress.Update:
+def record_progress(
+    record: types.VideoRecord,
+    issue: str | None | object = _UNCHECKED,
+) -> progress.Update:
     """Represent durable catalog state through the shared progress vocabulary.
 
     Example: `record_progress(downloaded).stage` is `Stage.READY`.
@@ -228,8 +234,9 @@ def record_progress(record: types.VideoRecord) -> progress.Update:
     video_id = record.meta.identity.video_id
     if record.download_error:
         return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Failed · {record.download_error}")
-    if issue := local_pipeline_issue(record):
-        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Incomplete · {issue}")
+    resolved = library_artifacts.pipeline_issue(record) if issue is _UNCHECKED else issue
+    if resolved:
+        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Incomplete · {resolved}")
     if record.downloaded:
         return progress.make(video_id, progress.Stage.READY, 1.0)
     live_status = record.meta.details.live_status
@@ -240,31 +247,13 @@ def record_progress(record: types.VideoRecord) -> progress.Update:
     return progress.make(video_id, progress.Stage.AVAILABLE)
 
 
-def local_pipeline_issue(record: types.VideoRecord) -> str | None:
-    """Describe a missing or corrupt required subtitle beside local media.
-
-    Example: a NUL-only Dutch SRT returns `Dutch subtitles are invalid`.
-    """
-
-    if not record.local:
-        return None
-    video = record.local.path
-    if not video.is_file():
-        return None
-    primary = video.with_suffix(".srt")
-    english = video.with_name(f"{video.stem}.en.srt")
-    if not srt.file_has_cues(primary):
-        return "Dutch subtitles are missing or invalid"
-    if not srt.file_has_cues(english):
-        return "English subtitles are missing or invalid"
-    return None
-
-
 class VideoTableModel(QtCore.QAbstractTableModel):
     """Expose typed catalog records as a sortable, read-only Qt table.
 
     Example: `model.record(index.row())` returns the selected video.
     """
+
+    facets_changed = QtCore.Signal()
 
     _columns = (
         ("Pipeline", 230),
@@ -281,10 +270,18 @@ class VideoTableModel(QtCore.QAbstractTableModel):
     def __init__(self) -> None:
         super().__init__()
         self._records: list[types.VideoRecord] = []
+        self._row_by_id: dict[str, int] = {}
+        self._issues: dict[str, str | None] = {}
+        self._durable_progress: dict[str, progress.Update] = {}
         self._progress: dict[str, progress.Update] = {}
         self._watched: dict[str, playback.Update] = {}
+        self._watched_views: dict[str, WatchedProgress | None] = {}
 
-    def set_records(self, records: list[types.VideoRecord]) -> None:
+    def set_records(
+        self,
+        records: list[types.VideoRecord],
+        issues: dict[str, str | None] | None = None,
+    ) -> None:
         """Replace table contents in one reset for reliable proxy filtering.
 
         Example: `model.set_records(db.videos())` after a check.
@@ -292,11 +289,42 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 
         self.beginResetModel()
         self._records = records
-        video_ids = {record.meta.identity.video_id for record in records}
+        self._row_by_id = {
+            record.meta.identity.video_id: row
+            for row, record in enumerate(records)
+        }
+        self._issues = (
+            issues
+            if issues is not None
+            else {
+                record.meta.identity.video_id: library_artifacts.pipeline_issue(record)
+                for record in records
+            }
+        )
+        self._durable_progress = {
+            record.meta.identity.video_id: record_progress(
+                record,
+                self._issues.get(record.meta.identity.video_id),
+            )
+            for record in records
+        }
+        video_ids = self._row_by_id.keys()
+        self._progress = {
+            video_id: update
+            for video_id, update in self._progress.items()
+            if video_id in video_ids
+        }
         self._watched = {
             video_id: update
             for video_id, update in self._watched.items()
             if video_id in video_ids
+        }
+        self._watched_views = {
+            record.meta.identity.video_id: watched_progress(
+                record,
+                self._watched.get(record.meta.identity.video_id),
+            )
+            for record in records
         }
         self.endResetModel()
 
@@ -315,12 +343,11 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         """
 
         self._progress[update.video_id] = update
-        for row, record in enumerate(self._records):
-            if record.meta.identity.video_id != update.video_id:
-                continue
-            cell = self.index(row, 0)
-            self.dataChanged.emit(cell, cell, [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE])
-            break
+        row = self._row_by_id.get(update.video_id)
+        if row is not None:
+            cell = self.index(row, PIPELINE_COLUMN)
+            roles = [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE]
+            self.dataChanged.emit(cell, cell, roles)
 
     def set_watched_progress(self, update: playback.Update) -> None:
         """Store one live mpv observation and repaint its graphical cell.
@@ -329,13 +356,13 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         """
 
         self._watched[update.video_id] = update
-        for row, record in enumerate(self._records):
-            if record.meta.identity.video_id != update.video_id:
-                continue
+        row = self._row_by_id.get(update.video_id)
+        if row is not None:
+            self._watched_views[update.video_id] = watched_progress(self._records[row], update)
             cell = self.index(row, WATCHED_COLUMN)
             roles = [QtCore.Qt.ItemDataRole.DisplayRole, WATCHED_ROLE, SORT_ROLE]
             self.dataChanged.emit(cell, cell, roles)
-            break
+            self.facets_changed.emit()
 
     def progress_at(self, row: int) -> progress.Update | None:
         """Return live progress or the durable fallback for a table row.
@@ -347,7 +374,42 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         if not record:
             return None
         video_id = record.meta.identity.video_id
-        return self._progress.get(video_id) or record_progress(record)
+        return self._progress.get(video_id) or self._durable_progress.get(video_id)
+
+    def issue_at(self, row: int) -> str | None:
+        """Return cached artifact health without touching the filesystem.
+
+        Example: smart views call `model.issue_at(row)` during filtering.
+        """
+
+        record = self.record(row)
+        return self.issue_for(record.meta.identity.video_id) if record else None
+
+    def issue_for(self, video_id: str) -> str | None:
+        """Resolve cached health for action wording by stable YouTube ID.
+
+        Example: `model.issue_for(video_id)` decides whether Repair is shown.
+        """
+
+        return self._issues.get(video_id)
+
+    def set_issue(self, video_id: str, issue: str | None) -> None:
+        """Reconcile one row after an explicit file-stamp health check.
+
+        Example: selecting a row refreshes externally edited subtitle state.
+        """
+
+        if self._issues.get(video_id) == issue:
+            return
+        row = self._row_by_id.get(video_id)
+        if row is None:
+            return
+        self._issues[video_id] = issue
+        self._durable_progress[video_id] = record_progress(self._records[row], issue)
+        cell = self.index(row, PIPELINE_COLUMN)
+        roles = [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE]
+        self.dataChanged.emit(cell, cell, roles)
+        self.facets_changed.emit()
 
     def watched_at(self, row: int) -> WatchedProgress | None:
         """Return merged durable and live progress for one downloaded row.
@@ -358,8 +420,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         record = self.record(row)
         if not record:
             return None
-        update = self._watched.get(record.meta.identity.video_id)
-        return watched_progress(record, update)
+        return self._watched_views.get(record.meta.identity.video_id)
 
     def title_for(self, video_id: str) -> str:
         """Resolve a progress event's video title for global status wording.
@@ -367,10 +428,16 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         Example: `model.title_for(update.video_id)` labels the status bar.
         """
 
-        for record in self._records:
-            if record.meta.identity.video_id == video_id:
-                return record.meta.identity.title
-        return video_id
+        row = self._row_by_id.get(video_id)
+        return self._records[row].meta.identity.title if row is not None else video_id
+
+    def row_for(self, video_id: str) -> int | None:
+        """Resolve a stable YouTube ID to its source row in constant time.
+
+        Example: selection restoration calls `model.row_for(video_id)`.
+        """
+
+        return self._row_by_id.get(video_id)
 
     def rowCount(self, parent: QtCore.QModelIndex = QtCore.QModelIndex()) -> int:
         """Return only top-level video rows.
@@ -426,33 +493,36 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         if not index.isValid():
             return None
         record = self._records[index.row()]
-        display, sort_value = self._cell_values(record, index.column())
-        update = self.progress_at(index.row())
-        watched = self.watched_at(index.row())
-        if index.column() == PIPELINE_COLUMN and update:
-            display = update.label
-            sort_value = progress.overall_fraction(update)
-        elif index.column() == WATCHED_COLUMN:
-            display = watched.label if watched else "—"
-            sort_value = watched.fraction if watched else -1.0
-        if role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return display
-        if role == SORT_ROLE:
-            return sort_value
         if role == QtCore.Qt.ItemDataRole.UserRole:
             return record
         if role == PROGRESS_ROLE:
-            return update
+            return self.progress_at(index.row())
         if role == WATCHED_ROLE:
-            return watched
+            return self.watched_at(index.row())
+        column = index.column()
+        if role in {QtCore.Qt.ItemDataRole.DisplayRole, SORT_ROLE}:
+            if column == PIPELINE_COLUMN:
+                update = self.progress_at(index.row())
+                if not update:
+                    return None
+                if role == QtCore.Qt.ItemDataRole.DisplayRole:
+                    return update.label
+                return progress.overall_fraction(update)
+            if column == WATCHED_COLUMN:
+                watched = self.watched_at(index.row())
+                if role == QtCore.Qt.ItemDataRole.DisplayRole:
+                    return watched.label if watched else "—"
+                return watched.fraction if watched else -1.0
+            display, sort_value = self._cell_values(record, column)
+            return display if role == QtCore.Qt.ItemDataRole.DisplayRole else sort_value
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
-            if index.column() == PIPELINE_COLUMN and update:
+            if column == PIPELINE_COLUMN and (update := self.progress_at(index.row())):
                 overall = progress.overall_fraction(update)
                 return f"{update.label} · overall {overall:.0%}"
-            if index.column() == WATCHED_COLUMN and watched:
+            if column == WATCHED_COLUMN and (watched := self.watched_at(index.row())):
                 return watched.tooltip
             return record.download_error or record.meta.identity.title
-        if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and index.column() in {
+        if role == QtCore.Qt.ItemDataRole.TextAlignmentRole and column in {
             DURATION_COLUMN,
             SIZE_COLUMN,
             VIEWS_COLUMN,
@@ -464,27 +534,28 @@ class VideoTableModel(QtCore.QAbstractTableModel):
     def _cell_values(record: types.VideoRecord, column: int) -> tuple[str, object]:
         """Keep display and sort values co-located for each visible field.
 
-        Example: `_cell_values(record, 1)` yields the title twice.
+        Example: `_cell_values(record, 2)` yields display and sort title.
         """
 
         meta = record.meta
-        local = record.local
-        state = record_progress(record)
-        values = (
-            (state.label, progress.overall_fraction(state)),
-            ("—", -1.0),
-            (meta.identity.title, meta.identity.title.casefold()),
-            (meta.origin.channel, meta.origin.channel.casefold()),
-            (format_timestamp(meta.origin.published_at), meta.origin.published_at or 0),
-            (format_timestamp(local.downloaded_at if local else None), local.downloaded_at if local else 0),
-            (format_duration(meta.details.duration), meta.details.duration or 0),
-            (format_size(local.size_bytes if local else None), local.size_bytes if local else 0),
-            (
-                f"{meta.details.view_count:,}" if meta.details.view_count is not None else "—",
-                meta.details.view_count or 0,
-            ),
-        )
-        return values[column]
+        if column == TITLE_COLUMN:
+            return meta.identity.title, meta.identity.title.casefold()
+        if column == 3:
+            return meta.origin.channel, meta.origin.channel.casefold()
+        if column == PUBLISHED_COLUMN:
+            return format_timestamp(meta.origin.published_at), meta.origin.published_at or 0
+        if column == 5:
+            downloaded_at = record.local.downloaded_at if record.local else None
+            return format_timestamp(downloaded_at), downloaded_at or 0
+        if column == DURATION_COLUMN:
+            return format_duration(meta.details.duration), meta.details.duration or 0
+        if column == SIZE_COLUMN:
+            size = record.local.size_bytes if record.local else None
+            return format_size(size), size or 0
+        if column == VIEWS_COLUMN:
+            views = meta.details.view_count
+            return f"{views:,}" if views is not None else "—", views or 0
+        return "—", -1.0
 
 
 class VideoFilterModel(QtCore.QSortFilterProxyModel):
@@ -499,6 +570,7 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         super().__init__()
         self._search = ""
         self._view = VideoView.ALL
+        self._channel_id: int | None = None
         self.setSortRole(SORT_ROLE)
         self.setDynamicSortFilter(True)
 
@@ -538,6 +610,19 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
         self.criteria_changed.emit()
 
+    def set_channel(self, channel_id: int | None) -> None:
+        """Filter the resident catalog by subscription without reloading SQL.
+
+        Example: `proxy.set_channel(7)` switches the sidebar immediately.
+        """
+
+        if channel_id == self._channel_id:
+            return
+        self.beginFilterChange()
+        self._channel_id = channel_id
+        self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
+        self.criteria_changed.emit()
+
     def facet_counts(self) -> dict[VideoView, int]:
         """Count every smart view within the current channel and search scope.
 
@@ -550,11 +635,20 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
             return counts
         for row in range(model.rowCount()):
             record = model.record(row)
-            if not record or not self._matches_search(record):
+            if not record or not self._matches_scope(record) or not self._matches_search(record):
                 continue
             watched = model.watched_at(row)
-            for spec in VIDEO_VIEWS:
-                counts[spec.view] += int(accepts_view(record, watched, spec.view))
+            issue = model.issue_at(row)
+            counts[VideoView.ALL] += 1
+            counts[VideoView.ON_DEVICE if record.downloaded else VideoView.AVAILABLE] += 1
+            counts[VideoView.ISSUES] += int(bool(record.download_error or issue))
+            if watched:
+                if watched.completed:
+                    counts[VideoView.WATCHED] += 1
+                elif watched.started:
+                    counts[VideoView.CONTINUE] += 1
+                else:
+                    counts[VideoView.UNWATCHED] += 1
         return counts
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
@@ -569,8 +663,21 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         record = model.record(source_row)
         if not record:
             return False
+        if not self._matches_scope(record) or not self._matches_search(record):
+            return False
+        if self._view is VideoView.ALL:
+            return True
         watched = model.watched_at(source_row)
-        return self._matches_search(record) and accepts_view(record, watched, self._view)
+        issue = model.issue_at(source_row)
+        return accepts_view(record, watched, self._view, issue)
+
+    def _matches_scope(self, record: types.VideoRecord) -> bool:
+        """Apply the selected sidebar channel against the in-memory record.
+
+        Example: All videos uses a `None` channel and accepts every row.
+        """
+
+        return self._channel_id is None or record.subscription_id == self._channel_id
 
     def _matches_search(self, record: types.VideoRecord) -> bool:
         """Match one record against normalized title, channel, or YouTube ID text.

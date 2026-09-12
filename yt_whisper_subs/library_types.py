@@ -176,6 +176,16 @@ class Channel(NamedTuple):
     checked_at: int | None
     baseline_at: int | None
     last_error: str | None
+    pinned_at: int | None
+
+    @property
+    def pinned(self) -> bool:
+        """Expose whether this channel belongs to the priority shelf.
+
+        Example: `channel.pinned` chooses the starred sidebar section.
+        """
+
+        return self.pinned_at is not None
 
 
 class ChannelSnapshot(NamedTuple):

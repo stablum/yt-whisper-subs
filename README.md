@@ -54,22 +54,23 @@ The companion library is optimized for a second workflow:
    count, description, and thumbnails from YouTube when metadata is missing.
 3. Subscribe to YouTube channel handles or URLs and display a bounded recent
    history of their long-form videos and streams plus every local download.
-4. Check channels every four hours while the app is open or in the system tray.
-5. Optionally run the unchanged one-video subtitle pipeline for videos first
+4. Pin the most relevant subscriptions into a dedicated quick-access shelf.
+5. Check channels every four hours while the app is open or in the system tray.
+6. Optionally run the unchanged one-video subtitle pipeline for videos first
    discovered after a channel's initial baseline check.
-6. Double-click downloaded videos to open the same English-first dual-subtitle
+7. Double-click downloaded videos to open the same English-first dual-subtitle
    `mpv` view used by the CLI.
-7. Track furthest watched position and confirmed completion for library-launched
+8. Track furthest watched position and confirmed completion for library-launched
    playback without changing the user's mpv configuration.
-8. Generate bilingual chapters for new downloads, show them in the selected-video
+9. Generate bilingual chapters for new downloads, show them in the selected-video
    inspector, and double-click any chapter to open or seek mpv at that moment.
-9. Cancel the active download/transcription/translation pipeline without stopping
+10. Cancel the active download/transcription/translation pipeline without stopping
    playback or discarding channel work already waiting in the serial queue.
-10. Pause and resume the active pipeline process tree without discarding its
+11. Pause and resume the active pipeline process tree without discarding its
     in-memory model state.
-11. Recover a pipeline left by a system crash from durable stage checkpoints and
+12. Recover a pipeline left by a system crash from durable stage checkpoints and
     reuse every complete or partial yield when the user clicks Resume.
-12. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
+13. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
     one-click Repair action instead of claiming that the pipeline is complete.
 
 ## Important Defaults
@@ -125,6 +126,7 @@ These defaults are hard-coded near the top of the script:
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library 100% watched rule | confirmed mpv end-of-file event only |
 | Library smart view | remembered across launches; search and channel remain independent |
+| Channel quick access | persistent starred Pinned shelf; right-click or `Alt+P` |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library execution queue | one heavy-work lane; playback launches independently |
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
@@ -587,7 +589,7 @@ It contains:
 
 - counted smart views for All, On device, Available, Unwatched, Continue,
   Watched, and Issues;
-- a sidebar entry for every tracked channel;
+- a counted, starred **Pinned** shelf above the regular channel list;
 - instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable, resizable, and reorderable pipeline, watched, title, channel,
   published, downloaded, duration, size, and view-count columns;
@@ -602,6 +604,36 @@ It contains:
 The native title bar includes the current application version. That value comes
 directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
 it is not duplicated in the window code.
+
+### Pinned Channels
+
+Channels that matter most can be moved to the starred **Pinned** shelf at the
+top of the sidebar. Select a channel and use **Channel → Pin selected channel**,
+press **Alt+P**, or right-click the row and choose **Pin to quick access**.
+Pinned channels are shown only in that shelf, so they are not duplicated in the
+long regular list. The most recently pinned channel appears first; unpinned
+channels remain alphabetical. Pin state is durable SQLite subscription data and
+survives restarts. The same context menu also exposes automatic-download and
+stop-tracking controls.
+
+### Responsiveness And Derived-State Safety
+
+Channel selection no longer queries SQLite or resets and resorts thousands of
+table rows. The complete current catalog lives in one Qt source model and the
+selected channel is applied by its proxy as an in-memory scope. Stable YouTube
+IDs have an O(1) row index for pipeline/playback updates and selection restore;
+facet counts classify each matching row once instead of evaluating every view
+strategy repeatedly. Cell painting formats only the requested field and never
+opens or parses a file. Pipeline progress updates do not recalculate watched
+facets, while playback updates do so only when their classification can change.
+
+SQLite, media, SRT, and chapter files remain the sources of truth. The only
+cross-refresh cache contains derived SRT validity and parsed chapter data. Every
+entry carries the authoritative file path, size, and nanosecond modification
+time, so changing, replacing, deleting, or creating a sidecar invalidates that
+entry automatically. Catalog mutations still trigger a fresh SQLite snapshot.
+WAL mode is configured once when the database opens instead of being renegotiated
+for every short read connection.
 
 Background subprocesses launched from the desktop application—including
 dependency setup, channel discovery, downloads, ffmpeg, and Whisper—use
@@ -643,8 +675,7 @@ surprising blank table.
 
 These contextual counts replace the older four-card Videos, Downloaded,
 Available, and Channels summary row, reclaiming vertical space for the catalog.
-The global channel count remains beside the **Tracked channels** sidebar
-heading.
+The sidebar shows separate counts for the **Pinned** and regular channel shelves.
 
 Only one smart view can be active, so availability and viewing-state filters
 cannot contradict each other. Channel selection remains in the sidebar and
@@ -1650,9 +1681,10 @@ High-level groups:
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
+| `yt_whisper_subs.library_artifacts` | File-stamped SRT-health and parsed-chapter cache for I/O-free Qt painting. |
 | `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
-| `yt_whisper_subs.library_model` | Sortable Qt table, composable search/smart-view proxy, facet counts, and completion-aware watched presentation. |
+| `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |

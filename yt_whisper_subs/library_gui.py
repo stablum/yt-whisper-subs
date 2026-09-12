@@ -101,6 +101,7 @@ class LibraryWindow(
         self._active_progress: progress.Update | None = None
         self._metadata_active = False
         self._filter_key: tuple[str, int | None] = ("all", None)
+        self._channels_by_id: dict[int, types.Channel] = {}
         self._active_task: library_workers.BackgroundTask | None = None
         self._paused_progress: progress.Update | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
@@ -239,6 +240,7 @@ class LibraryWindow(
         table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setWordWrap(False)
         table.setSortingEnabled(True)
         table.sortByColumn(library_model.PUBLISHED_COLUMN, QtCore.Qt.SortOrder.DescendingOrder)
         table.setItemDelegateForColumn(
@@ -291,7 +293,7 @@ class LibraryWindow(
         self._ui.catalog.filters.view_changed.connect(self._video_view_changed)
         self._ui.catalog.filters.reset_requested.connect(self._clear_filters)
         self._ui.catalog.proxy.criteria_changed.connect(self._refresh_smart_filters)
-        self._ui.catalog.model.dataChanged.connect(self._refresh_smart_filters)
+        self._ui.catalog.model.facets_changed.connect(self._refresh_smart_filters)
         self._ui.header.check.clicked.connect(self.check_now)
         self._ui.header.download.clicked.connect(self._download_selected)
         self._ui.header.pause.clicked.connect(self._pause_active_task)
@@ -300,6 +302,8 @@ class LibraryWindow(
         self._ui.catalog.detail.generate_requested.connect(self._generate_chapters_selected)
         self._ui.catalog.detail.chapter_activated.connect(self._play_chapter)
         self._ui.catalog.channels.currentItemChanged.connect(self._channel_filter_changed)
+        self._ui.catalog.channels.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self._ui.catalog.channels.customContextMenuRequested.connect(self._show_channel_context_menu)
         selection = self._ui.catalog.table.selectionModel()
         selection.selectionChanged.connect(self._selection_changed)
         self._ui.catalog.table.doubleClicked.connect(self._activate_video)
@@ -324,6 +328,8 @@ class LibraryWindow(
         quit_action.triggered.connect(self._quit)
         channel_menu = self.menuBar().addMenu("Channel")
         channel_menu.addAction("Track channel…", self._add_channel)
+        self._pin_channel_action = channel_menu.addAction("Pin selected channel", self._toggle_channel_pin)
+        self._pin_channel_action.setShortcut(QtGui.QKeySequence("Alt+P"))
         channel_menu.addAction("Toggle automatic download", self._toggle_channel_auto)
         channel_menu.addAction("Stop tracking", self._remove_channel)
         video_menu = self.menuBar().addMenu("Video")
@@ -462,8 +468,9 @@ class LibraryWindow(
         selected_id = selected_video.meta.identity.video_id if selected_video else None
         self._refresh_channels()
         _, channel_id = self._filter_key
-        records = self._service.db.videos(channel_id=channel_id)
-        self._ui.catalog.model.set_records(records)
+        catalog = self._service.catalog()
+        self._ui.catalog.model.set_records(catalog.records, catalog.issues)
+        self._ui.catalog.proxy.set_channel(channel_id)
         metadata_count = self._service.db.metadata_backlog_count()
         metadata_text = (
             f"Metadata: {metadata_count:,} queued · ≤1/min"
@@ -492,17 +499,19 @@ class LibraryWindow(
             item.setData(QtCore.Qt.ItemDataRole.UserRole, key)
             widget.addItem(item)
         tracked = self._service.db.channels()
-        heading = QtWidgets.QListWidgetItem(f"  TRACKED CHANNELS · {len(tracked):,}")
-        heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
-        heading.setForeground(QtGui.QColor("#778292"))
-        widget.addItem(heading)
-        for channel in tracked:
-            auto = "⚡" if channel.auto_download else "  "
-            error = "  !" if channel.last_error else ""
-            item = QtWidgets.QListWidgetItem(f"{auto}  {channel.title}{error}")
-            item.setData(QtCore.Qt.ItemDataRole.UserRole, ("channel", channel.channel_id))
-            item.setToolTip(channel.last_error or channel.url)
-            widget.addItem(item)
+        self._channels_by_id = {channel.channel_id: channel for channel in tracked}
+        pinned = [channel for channel in tracked if channel.pinned]
+        regular = [channel for channel in tracked if not channel.pinned]
+        sections = (("★  PINNED", pinned), ("CHANNELS", regular))
+        for label, channels in sections:
+            if not channels:
+                continue
+            heading = QtWidgets.QListWidgetItem(f"  {label} · {len(channels):,}")
+            heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+            heading.setForeground(QtGui.QColor("#778292"))
+            widget.addItem(heading)
+            for channel in channels:
+                self._add_channel_item(widget, channel)
         for row in range(widget.count()):
             item = widget.item(row)
             if item.data(QtCore.Qt.ItemDataRole.UserRole) == self._filter_key:
@@ -512,6 +521,28 @@ class LibraryWindow(
             widget.setCurrentRow(0)
             self._filter_key = ("all", None)
         widget.blockSignals(False)
+
+    @staticmethod
+    def _add_channel_item(widget: QtWidgets.QListWidget, channel: types.Channel) -> None:
+        """Render one subscription with compact automation and error signals.
+
+        Example: pinned rows appear beneath the dedicated star shelf.
+        """
+
+        auto = "⚡ " if channel.auto_download else ""
+        error = "  !" if channel.last_error else ""
+        item = QtWidgets.QListWidgetItem(f"{auto}{channel.title}{error}")
+        item.setData(QtCore.Qt.ItemDataRole.UserRole, ("channel", channel.channel_id))
+        tips = [channel.url]
+        if channel.pinned:
+            tips.append("Pinned for quick access")
+            item.setForeground(QtGui.QColor("#f1c75b"))
+        if channel.auto_download:
+            tips.append("Automatic download enabled")
+        if channel.last_error:
+            tips.append(channel.last_error)
+        item.setToolTip("\n".join(tips))
+        widget.addItem(item)
 
     def _add_channel(self) -> None:
         """Show a subscription immediately, then queue its network hydration.
@@ -529,7 +560,11 @@ class LibraryWindow(
             QtWidgets.QMessageBox.warning(self, "Track channel", str(exc))
             return
         self._filter_key = ("channel", channel.channel_id)
-        self.refresh()
+        self._refresh_channels()
+        self._ui.catalog.proxy.set_channel(channel.channel_id)
+        self._ui.catalog.table.clearSelection()
+        self._ui.catalog.detail.set_record(None)
+        self._update_actions()
 
         def initialize(report: Callable[[str], None]) -> types.Channel:
             """Bind the persisted placeholder into its queued network check.
@@ -573,4 +608,5 @@ class LibraryWindow(
             QtWidgets.QMessageBox.information(self, "Automatic download", "Select a tracked channel first.")
             return
         self._service.db.set_channel_auto_download(channel.channel_id, not channel.auto_download)
-        self.refresh()
+        self._refresh_channels()
+        self._update_actions()

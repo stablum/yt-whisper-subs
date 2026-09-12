@@ -14,6 +14,9 @@ from contextlib import closing
 from pathlib import Path
 from unittest import mock
 
+from PySide6 import QtCore
+
+from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_model
@@ -257,6 +260,29 @@ class LibraryDbTests(unittest.TestCase):
             self.assertEqual(len(db.videos()), 2)
             self.assertEqual(len(db.channels()), 1)
 
+    def test_pinned_channels_are_durable_and_listed_first(self) -> None:
+        """Persist user priority and keep its shelf ahead of regular channels.
+
+        Example: pinning Zed places it before alphabetically earlier Alpha.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "catalog.sqlite3"
+            db = library_db.LibraryDb(path)
+            db.initialize()
+            zed = db.add_channel("https://www.youtube.com/@zed/videos", "Zed", False)
+            db.add_channel("https://www.youtube.com/@alpha/videos", "Alpha", False)
+            db.set_channel_pinned(zed.channel_id, True)
+
+            reopened = library_db.LibraryDb(path)
+            reopened.initialize()
+            channels = reopened.channels()
+
+            self.assertEqual([channel.title for channel in channels], ["Zed", "Alpha"])
+            self.assertTrue(channels[0].pinned)
+            reopened.set_channel_pinned(zed.channel_id, False)
+            self.assertEqual([channel.title for channel in reopened.channels()], ["Alpha", "Zed"])
+
     def test_channel_removal_keeps_download(self) -> None:
         """Delete unneeded remote history but retain locally downloaded rows.
 
@@ -403,6 +429,10 @@ class LibraryDbTests(unittest.TestCase):
                 "",
             )
             legacy_schema = legacy_schema.replace(
+                "    last_error TEXT,\n    pinned_at INTEGER\n",
+                "    last_error TEXT\n",
+            )
+            legacy_schema = legacy_schema.replace(
                 """
 CREATE TABLE IF NOT EXISTS playback (
     video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
@@ -423,11 +453,16 @@ CREATE TABLE IF NOT EXISTS playback (
 
             with closing(sqlite3.connect(path)) as conn:
                 columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(videos)")}
+                channel_columns = {
+                    str(row[1])
+                    for row in conn.execute("PRAGMA table_info(channels)")
+                }
                 tables = {
                     str(row[0])
                     for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
                 }
             self.assertIn("metadata_attempted_at", columns)
+            self.assertIn("pinned_at", channel_columns)
             self.assertIn("playback", tables)
 
     def test_playback_progress_and_completion_are_durable_and_monotonic(self) -> None:
@@ -764,6 +799,45 @@ class LibraryModelTests(unittest.TestCase):
         self.assertEqual(searched[library_model.VideoView.ALL], 1)
         self.assertEqual(searched[library_model.VideoView.CONTINUE], 1)
 
+    def test_channel_scope_filters_resident_records_without_model_reset(self) -> None:
+        """Apply sidebar scope to one resident catalog and its facet counts.
+
+        Example: channel 2 appears without replacing source-model records.
+        """
+
+        first = types.VideoRecord(make_meta("aaaaaaaaaaa", "First"), 1, 100, None, None, None)
+        second = types.VideoRecord(make_meta("bbbbbbbbbbb", "Second"), 2, 100, None, None, None)
+        model = library_model.VideoTableModel()
+        model.set_records([first, second], {"aaaaaaaaaaa": None, "bbbbbbbbbbb": None})
+        proxy = library_model.VideoFilterModel()
+        proxy.setSourceModel(model)
+
+        proxy.set_channel(2)
+
+        self.assertEqual(proxy.rowCount(), 1)
+        self.assertEqual(proxy.facet_counts()[library_model.VideoView.ALL], 1)
+        self.assertEqual(model.rowCount(), 2)
+
+    def test_painting_uses_precomputed_health_and_indexed_id_lookups(self) -> None:
+        """Keep scrolling free of SRT parsing and expose constant-time ID lookup.
+
+        Example: repeated Qt data requests reuse the catalog's health result.
+        """
+
+        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "First"), 1, 100, None, None, None)
+        model = library_model.VideoTableModel()
+        model.set_records([record], {"aaaaaaaaaaa": None})
+
+        with mock.patch.object(library_artifacts, "pipeline_issue") as validate:
+            for column in range(model.columnCount()):
+                index = model.index(0, column)
+                model.data(index, QtCore.Qt.ItemDataRole.DisplayRole)
+                model.data(index, library_model.SORT_ROLE)
+
+        validate.assert_not_called()
+        self.assertEqual(model.row_for("aaaaaaaaaaa"), 0)
+        self.assertEqual(model.title_for("aaaaaaaaaaa"), "First")
+
     def test_smart_view_keys_restore_safely(self) -> None:
         """Persist human-independent view keys and reject stale settings safely.
 
@@ -779,6 +853,42 @@ class LibraryModelTests(unittest.TestCase):
             library_model.VideoView.ALL,
         )
 
+
+class ArtifactCacheTests(unittest.TestCase):
+    """Keep cached parsing synchronized with authoritative sidecar files.
+
+    Example: editing an English SRT invalidates only that video's health.
+    """
+
+    def test_pipeline_health_revalidates_when_a_sidecar_changes(self) -> None:
+        """Reuse unchanged validation and detect a replacement by file stamp.
+
+        Example: truncating English subtitles changes healthy to incomplete.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "aaaaaaaaaaa.mkv"
+            video.write_bytes(b"video")
+            cue = "1\n00:00:00,000 --> 00:00:01,000\nHello\n"
+            video.with_suffix(".srt").write_text(cue, encoding="utf-8")
+            english = video.with_name("aaaaaaaaaaa.en.srt")
+            english.write_text(cue, encoding="utf-8")
+            local = types.LocalMedia(video, 100, video.stat().st_size)
+            record = types.VideoRecord(make_meta("aaaaaaaaaaa", "First"), 1, 100, local, None, None)
+            cache = library_artifacts.ArtifactCache(root)
+
+            with mock.patch.object(
+                library_artifacts,
+                "pipeline_issue",
+                wraps=library_artifacts.pipeline_issue,
+            ) as validate:
+                self.assertIsNone(cache.issue(record))
+                self.assertIsNone(cache.issue(record))
+                english.write_text("", encoding="utf-8")
+                self.assertIn("English", cache.issue(record))
+
+            self.assertEqual(validate.call_count, 2)
 
 class LibraryFeedTests(unittest.TestCase):
     """Cover channel normalization and yt-dlp field mapping.

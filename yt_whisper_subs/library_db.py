@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS channels (
     added_at INTEGER NOT NULL,
     checked_at INTEGER,
     baseline_at INTEGER,
-    last_error TEXT
+    last_error TEXT,
+    pinned_at INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS videos (
@@ -120,7 +121,12 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_SCHEMA)
+            channel_rows = conn.execute("PRAGMA table_info(channels)").fetchall()
+            channel_columns = {str(row["name"]) for row in channel_rows}
+            if "pinned_at" not in channel_columns:
+                conn.execute("ALTER TABLE channels ADD COLUMN pinned_at INTEGER")
             columns = {
                 str(row["name"])
                 for row in conn.execute("PRAGMA table_info(videos)").fetchall()
@@ -144,7 +150,6 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
         try:
             yield conn
             conn.commit()
@@ -172,13 +177,14 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
         return self._channel(row)
 
     def channels(self) -> list[types.Channel]:
-        """List subscriptions alphabetically for the GUI sidebar.
+        """List pinned subscriptions first, then alphabetically by shelf.
 
         Example: `for channel in db.channels(): ...`.
         """
 
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM channels ORDER BY title COLLATE NOCASE").fetchall()
+            sql = "SELECT * FROM channels ORDER BY pinned_at IS NULL, pinned_at DESC, title COLLATE NOCASE"
+            rows = conn.execute(sql).fetchall()
         return [self._channel(row) for row in rows]
 
     def channel(self, channel_id: int) -> types.Channel | None:
@@ -202,6 +208,16 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
                 "UPDATE channels SET auto_download=? WHERE id=?",
                 (int(enabled), channel_id),
             )
+
+    def set_channel_pinned(self, channel_id: int, pinned: bool) -> None:
+        """Move one subscription into or out of the priority shelf.
+
+        Example: `db.set_channel_pinned(1, True)` makes it immediately visible.
+        """
+
+        pinned_at = time.time_ns() if pinned else None
+        with self._connect() as conn:
+            conn.execute("UPDATE channels SET pinned_at=? WHERE id=?", (pinned_at, channel_id))
 
     def remove_channel(self, channel_id: int) -> None:
         """Stop tracking a channel while retaining its downloaded videos.
@@ -635,6 +651,7 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
             checked_at=int(row["checked_at"]) if row["checked_at"] is not None else None,
             baseline_at=int(row["baseline_at"]) if row["baseline_at"] is not None else None,
             last_error=str(row["last_error"]) if row["last_error"] else None,
+            pinned_at=int(row["pinned_at"]) if row["pinned_at"] is not None else None,
         )
 
     @staticmethod

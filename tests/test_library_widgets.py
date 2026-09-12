@@ -441,12 +441,88 @@ class ChannelQueueTests(unittest.TestCase):
         library_gui.LibraryWindow._add_channel(window)
 
         window._service.track_channel.assert_called_once_with("@ruis", False)
-        window.refresh.assert_called_once()
+        window._refresh_channels.assert_called_once_with()
+        window.refresh.assert_not_called()
         label, initialize = window._queue_channel_task.call_args.args
         self.assertEqual(label, "Adding @ruis…")
         report = mock.Mock()
         initialize(report)
         window._service.initialize_channel.assert_called_once_with(7, report)
+
+    def test_channel_click_filters_in_memory_without_refreshing_catalog(self) -> None:
+        """Keep sidebar navigation independent from SQLite and model rebuilds.
+
+        Example: selecting channel 7 only changes the resident proxy scope.
+        """
+
+        item = QtWidgets.QListWidgetItem("Channel")
+        item.setData(QtCore.Qt.ItemDataRole.UserRole, ("channel", 7))
+        catalog = SimpleNamespace(
+            proxy=mock.Mock(),
+            table=mock.Mock(),
+            detail=mock.Mock(),
+        )
+        window = SimpleNamespace(
+            _filter_key=("all", None),
+            _ui=SimpleNamespace(catalog=catalog),
+            _refresh_smart_filters=mock.Mock(),
+            _update_actions=mock.Mock(),
+            refresh=mock.Mock(),
+        )
+
+        library_gui.LibraryWindow._channel_filter_changed(window, item, None)
+
+        catalog.proxy.set_channel.assert_called_once_with(7)
+        catalog.table.clearSelection.assert_called_once_with()
+        window.refresh.assert_not_called()
+
+    def test_sidebar_places_pinned_channels_on_a_distinct_top_shelf(self) -> None:
+        """Keep priority subscriptions visible without duplicating their rows.
+
+        Example: Important appears below Pinned and before Regular.
+        """
+
+        QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        pinned = types.Channel(
+            1,
+            "https://youtube.com/@important/videos",
+            None,
+            "Important",
+            False,
+            1,
+            None,
+            None,
+            None,
+            2,
+        )
+        regular = types.Channel(
+            2,
+            "https://youtube.com/@regular/videos",
+            None,
+            "Regular",
+            True,
+            1,
+            None,
+            None,
+            None,
+            None,
+        )
+        channels = QtWidgets.QListWidget()
+        window = SimpleNamespace(
+            _ui=SimpleNamespace(catalog=SimpleNamespace(channels=channels)),
+            _service=SimpleNamespace(db=SimpleNamespace(channels=lambda: [pinned, regular])),
+            _filter_key=("all", None),
+            _channels_by_id={},
+            _add_channel_item=library_gui.LibraryWindow._add_channel_item,
+        )
+
+        library_gui.LibraryWindow._refresh_channels(window)
+
+        labels = [channels.item(row).text() for row in range(channels.count())]
+        self.assertEqual(sum("Important" in label for label in labels), 1)
+        self.assertLess(labels.index("  ★  PINNED · 1"), labels.index("Important"))
+        self.assertLess(labels.index("Important"), labels.index("  CHANNELS · 1"))
+        self.assertIn("⚡ Regular", labels)
 
     def test_channel_lookups_share_the_single_worker_queue(self) -> None:
         """Queue multiple lookups on the same one-thread pool as video jobs.

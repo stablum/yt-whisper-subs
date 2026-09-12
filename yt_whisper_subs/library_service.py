@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
+from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_pipeline
@@ -76,6 +77,23 @@ class LibraryService:
             cookies,
         )
         self._playback = playback.PlaybackControl()
+        self._artifacts = library_artifacts.ArtifactCache(self.out_dir)
+
+    def catalog(self) -> library_artifacts.CatalogState:
+        """Load one catalog snapshot with filesystem-derived state precomputed.
+
+        Example: `service.catalog()` feeds a model without paint-time I/O.
+        """
+
+        return self._artifacts.catalog(self.db.videos())
+
+    def pipeline_issue(self, record: types.VideoRecord) -> str | None:
+        """Resolve cached local subtitle health for actions and filtering.
+
+        Example: `service.pipeline_issue(record)` decides Play versus Repair.
+        """
+
+        return self._artifacts.issue(record)
 
     def reload_clients(self) -> None:
         """Apply changed cookie settings to subsequent network operations.
@@ -331,7 +349,7 @@ class LibraryService:
         Example: `service.chapter_set(video_id)` feeds the inspector pane.
         """
 
-        return chapters.ChapterFiles.for_video(self.out_dir, video_id).load()
+        return self._artifacts.chapter_set(video_id)
 
     def generate_chapters(
         self,

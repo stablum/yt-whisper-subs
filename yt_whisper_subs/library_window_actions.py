@@ -12,7 +12,7 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
-from yt_whisper_subs import library_model
+from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import windows_startup
@@ -47,7 +47,7 @@ class WindowActionsMixin:
 
             self._run_task("Resuming interrupted pipeline…", resume, lambda _: self.refresh())
             return
-        issue = library_model.local_pipeline_issue(record)
+        issue = self._service.pipeline_issue(record)
         if record.downloaded and not issue and not record.download_error:
             self._play_selected()
             return
@@ -74,7 +74,7 @@ class WindowActionsMixin:
         self._ui.catalog.table.selectRow(index.row())
         record = self._record_from_proxy_index(index)
         job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
-        issue = library_model.local_pipeline_issue(record) if record else None
+        issue = self._service.pipeline_issue(record) if record else None
         recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)
         if record and record.downloaded and not issue and not record.download_error and not recoverable:
             self._play_selected()
@@ -183,7 +183,7 @@ class WindowActionsMixin:
         current: QtWidgets.QListWidgetItem | None,
         previous: QtWidgets.QListWidgetItem | None,
     ) -> None:
-        """Reload table records for a sidebar library/channel filter.
+        """Filter the resident table for a sidebar library/channel selection.
 
         Example: Qt passes the new and previous sidebar items.
         """
@@ -191,7 +191,11 @@ class WindowActionsMixin:
         del previous
         if current and (key := current.data(QtCore.Qt.ItemDataRole.UserRole)):
             self._filter_key = tuple(key)
-            self.refresh()
+            _, channel_id = self._filter_key
+            self._ui.catalog.proxy.set_channel(channel_id)
+            self._ui.catalog.table.clearSelection()
+            self._ui.catalog.detail.set_record(None)
+            self._update_actions()
 
     def _selection_changed(self) -> None:
         """Update detail text and action availability for the selected row.
@@ -202,6 +206,9 @@ class WindowActionsMixin:
         record = self._selected_record()
         chapter_set = self._service.chapter_set(record.meta.identity.video_id) if record else None
         self._ui.catalog.detail.set_record(record, chapter_set)
+        if record:
+            video_id = record.meta.identity.video_id
+            self._ui.catalog.model.set_issue(video_id, self._service.pipeline_issue(record))
         self._update_actions()
 
     def _selected_record(self) -> types.VideoRecord | None:
@@ -229,7 +236,10 @@ class WindowActionsMixin:
         """
 
         kind, channel_id = self._filter_key
-        return self._service.db.channel(channel_id) if kind == "channel" and channel_id else None
+        if kind != "channel" or channel_id is None:
+            return None
+        channels = getattr(self, "_channels_by_id", {})
+        return channels.get(channel_id) or self._service.db.channel(channel_id)
 
     def _restore_video_selection(self, video_id: str | None) -> None:
         """Restore a previous video selection after a model reset when possible.
@@ -240,14 +250,13 @@ class WindowActionsMixin:
         if not video_id:
             self._ui.catalog.detail.set_record(None)
             return
-        for source_row in range(self._ui.catalog.model.rowCount()):
-            record = self._ui.catalog.model.record(source_row)
-            if record and record.meta.identity.video_id == video_id:
-                source = self._ui.catalog.model.index(source_row, 0)
-                proxy = self._ui.catalog.proxy.mapFromSource(source)
-                if proxy.isValid():
-                    self._ui.catalog.table.selectRow(proxy.row())
-                return
+        source_row = self._ui.catalog.model.row_for(video_id)
+        if source_row is None:
+            return
+        source = self._ui.catalog.model.index(source_row, 0)
+        proxy = self._ui.catalog.proxy.mapFromSource(source)
+        if proxy.isValid():
+            self._ui.catalog.table.selectRow(proxy.row())
 
     def _update_actions(self) -> None:
         """Keep process, playback, removal, and cancellation controls honest.
@@ -256,7 +265,14 @@ class WindowActionsMixin:
         """
 
         record = self._selected_record()
-        issue = library_model.local_pipeline_issue(record) if record else None
+        model = getattr(self._ui.catalog, "model", None)
+        issue = None
+        if record:
+            issue = (
+                model.issue_for(record.meta.identity.video_id)
+                if model
+                else library_artifacts.pipeline_issue(record)
+            )
         job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
         recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)
         can_process = bool(
@@ -284,3 +300,48 @@ class WindowActionsMixin:
         self._pause_action.setText("Resume current pipeline" if paused else "Pause current pipeline")
         self._pause_action.setEnabled(pipeline_active)
         self._remove_action.setEnabled(bool(record and record.downloaded and not self._busy))
+        pin_action = getattr(self, "_pin_channel_action", None)
+        if pin_action:
+            channel = self._selected_channel()
+            pin_action.setEnabled(channel is not None)
+            pin_action.setText("Unpin selected channel" if channel and channel.pinned else "Pin selected channel")
+
+    def _toggle_channel_pin(self) -> None:
+        """Move the selected subscription into or out of quick access.
+
+        Example: Channel -> Pin selected channel updates the starred shelf.
+        """
+
+        channel = self._selected_channel()
+        if not channel:
+            QtWidgets.QMessageBox.information(self, "Pinned channels", "Select a tracked channel first.")
+            return
+        self._service.db.set_channel_pinned(channel.channel_id, not channel.pinned)
+        self._refresh_channels()
+        self._update_actions()
+
+    def _show_channel_context_menu(self, position: QtCore.QPoint) -> None:
+        """Offer direct pinning and subscription controls beside a channel.
+
+        Example: right-clicking a channel exposes Pin without menu hunting.
+        """
+
+        widget = self._ui.catalog.channels
+        item = widget.itemAt(position)
+        if not item or not item.data(QtCore.Qt.ItemDataRole.UserRole):
+            return
+        widget.setCurrentItem(item)
+        channel = self._selected_channel()
+        if not channel:
+            return
+        menu = QtWidgets.QMenu(widget)
+        pin = menu.addAction("Unpin from quick access" if channel.pinned else "Pin to quick access")
+        pin.triggered.connect(self._toggle_channel_pin)
+        auto = menu.addAction(
+            "Disable automatic download" if channel.auto_download else "Enable automatic download"
+        )
+        auto.triggered.connect(self._toggle_channel_auto)
+        menu.addSeparator()
+        remove = menu.addAction("Stop tracking")
+        remove.triggered.connect(self._remove_channel)
+        menu.exec(widget.mapToGlobal(position))
