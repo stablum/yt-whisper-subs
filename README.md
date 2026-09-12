@@ -63,6 +63,10 @@ The companion library is optimized for a second workflow:
    playback without changing the user's mpv configuration.
 8. Generate bilingual chapters for new downloads, show them in the selected-video
    inspector, and double-click any chapter to open or seek mpv at that moment.
+9. Cancel the active download/transcription/translation pipeline without stopping
+   playback or discarding channel work already waiting in the serial queue.
+10. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
+    one-click Repair action instead of claiming that the pipeline is complete.
 
 ## Important Defaults
 
@@ -118,6 +122,8 @@ These defaults are hard-coded near the top of the script:
 | Library smart view | remembered across launches; search and channel remain independent |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library execution queue | one heavy-work lane; playback launches independently |
+| Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
+| Library yield removal | confirmed exact per-video manifest; individual non-recursive unlinks |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -572,7 +578,7 @@ It contains:
   published, downloaded, duration, size, and view-count columns;
 - a selected-video inspector for description, local path, errors, and a
   scrollable bilingual chapter list with exact jump points;
-- manual Check, Download, Play, and Open on YouTube actions;
+- manual Check, Download/Repair, Cancel, Play, Open on YouTube, and exact-yield removal actions;
 - configurable browser cookies and check interval;
 - an optional timestamped activity trace for live pipeline and subprocess output;
 - a system tray so periodic checks continue when the main window is closed.
@@ -605,7 +611,8 @@ without opening dialogs or combining contradictory dropdowns:
   end-of-file.
 - **Watched** shows videos with confirmed mpv completion.
 - **Issues** isolates videos whose latest download or subtitle processing
-  attempt failed.
+  attempt failed, or whose required Dutch/English SRT files are missing,
+  unreadable, empty, or contain no valid cues.
 
 The number on every chip is calculated from the current channel and search
 scope, but independently of the selected chip. This makes the shelf a small
@@ -772,12 +779,35 @@ translation, bilingual chapter generation, subtitle compaction, archival,
 metadata, logging, reuse, and error
 behavior therefore remain single-sourced.
 
+Double-clicking a remote-only row starts that pipeline immediately; there is no
+extra confirmation dialog after the deliberate double-click. During active
+heavy work the header exposes **Cancel**; **Video → Cancel current operation**
+and **Ctrl+Shift+X** are equivalent. Cancellation terminates the isolated child
+process tree, so yt-dlp, ffmpeg, Whisper, or an in-flight API-stage parent cannot
+be orphaned. It is rendered as an amber **Cancelled** state rather than a red
+operational failure. Work already queued behind it remains queued.
+
+A downloaded media file is not sufficient proof of pipeline completion. Dutch
+and English sidecar/archive pairs must contain parseable SRT cues, and stage
+completion is emitted only after its durable outputs validate. Damaged or
+incomplete rows expose **Repair**, which reuses the media and valid prior yields
+while rerunning only what is missing.
+
+**Video → Remove download and yields…** or **Shift+Delete** first shows a
+confirmation with the exact file manifest. Removal enumerates only immediate
+files in the managed `videos`, `audio`, `metadata`, `subtitles`, `chapters`, and
+`logs` folders whose name has the selected 11-character ID plus its required
+delimiter. It rejects paths outside those folders and unlinks one explicit path
+at a time—never a recursive command or wildcard. A tracked catalog row remains
+Available afterward, so it can be downloaded again; playback history remains
+separate.
+
 ### Shared Playback
 
 Double-clicking a downloaded row or choosing Play invokes
 `playback.play_video` with the same English-first sidecar discovery, colors,
 positions, primary font scale, secondary ASS conversion, and mpv options as the
-CLI. Double-clicking a remote-only row offers to download it first. mpv runs in a
+CLI. Double-clicking a remote-only row starts its download directly. mpv runs in a
 background worker so the Qt window remains responsive while playback is open;
 mpv itself remains a normal visible and switchable Windows application.
 Playback uses a dedicated worker lane, so a downloaded video opens immediately
@@ -788,6 +818,9 @@ the status bar.
 Library-launched playback additionally enables one ephemeral IPC endpoint so
 the Watched bar updates live. Direct CLI playback keeps its established command
 shape and terminal interaction unchanged.
+When only a Dutch SRT exists, that sole track is explicitly enabled as `sid=1`
+and receives the normal primary styling, overriding an mpv subtitles-off
+preference for that launch. Invalid SRT files are not passed to mpv.
 
 When a chapter plan exists, both GUI and CLI playback add its derived
 `--chapters-file` only to that mpv launch. The GUI inspector shows the primary
@@ -1556,12 +1589,12 @@ High-level groups:
 | `yt_whisper_subs.cli` | CLI definition and source disambiguation. |
 | `yt_whisper_subs.opts` | Language, translation-provider, compaction, and soft-period policy helpers. |
 | `yt_whisper_subs.cfg` | Shared defaults and choices. |
-| `yt_whisper_subs.proc` | Subprocess execution, hidden/visible Windows child policy, external command checks, CUDA probing, and `.venv` maintenance. |
+| `yt_whisper_subs.proc` | Subprocess execution, hidden/visible and isolated Windows child policy, process-tree termination, external command checks, CUDA probing, and `.venv` maintenance. |
 | `yt_whisper_subs.runlog` | Timestamped run logging and log-path creation. |
 | `yt_whisper_subs.youtube` | Exact YouTube ID cache lookup, yield migration, and yt-dlp invocation. |
 | `yt_whisper_subs.media` | Local video path validation and ffmpeg audio extraction. |
 | `yt_whisper_subs.whisper_local` | Whisper CLI execution and model-cache cleanup. |
-| `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, cue compaction, and gap extension. |
+| `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, file-yield validation, cue compaction, and gap extension. |
 | `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, response text extraction, JSON cleanup, and shared usage reporting. |
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
 | `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
@@ -1581,8 +1614,11 @@ High-level groups:
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
-| `yt_whisper_subs.library_workers` | Background Qt task signaling for network and pipeline work. |
-| `yt_whisper_subs.library_window_support` | Serialized heavy-work scheduling, independent playback, metadata pacing, system tray, lifecycle, and shutdown mixin. |
+| `yt_whisper_subs.library_window_actions` | Selection, settings, download/repair, and manifest-confirmed removal actions. |
+| `yt_whisper_subs.library_yields` | Exact non-recursive per-video yield inventory and individual-file removal. |
+| `yt_whisper_subs.task_cancel` | Qt-independent cancellation tokens and blocking-work stop-hook scope. |
+| `yt_whisper_subs.library_workers` | Background Qt task signalling with distinct completion, failure, and cancellation outcomes. |
+| `yt_whisper_subs.library_window_support` | Serialized cancellable heavy-work scheduling, independent playback, metadata pacing, system tray, lifecycle, and shutdown mixin. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
@@ -1665,6 +1701,12 @@ Start by preserving these invariants:
     refresh; surface the warning and retry safely.
 31. Keep visible mpv playback independent from the serialized heavy-work lane,
     while retaining live watched progress and pipeline status.
+32. A completed stage must correspond to usable durable yields; missing, empty,
+    corrupt, and cue-less SRT files remain repairable Issues.
+33. Cancel only the active heavy task and its isolated child process tree; do
+    not stop independent playback or discard already queued channel work.
+34. Remove one video's yields only through an exact inspected manifest, one
+    non-recursive unlink at a time, while preserving its tracked catalog row.
 
 When changing the project, useful verification commands are:
 
@@ -1688,7 +1730,9 @@ view classification, live transitions, search-scoped counts, sidecar ingestion;
 native table-header resizing, reordering, persistence, and reset behavior;
 channel additions queued during active video work; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
-retention that preserves local media; and playback dispatch during active work.
+retention that preserves local media; playback dispatch during active work;
+single-Dutch-track mpv selection; invalid-yield repair classification; exact
+single-video removal isolation; and active process-tree cancellation.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

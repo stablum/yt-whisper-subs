@@ -22,6 +22,9 @@ QPushButton:disabled { color: #697381; background: #22262d; }
 QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: white; font-weight: 600; }
 QPushButton#primaryButton:hover { background: #2b83db; }
 QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
+QPushButton#dangerButton { background: #49292d; border-color: #87434b; color: #ffd9dc; font-weight: 600; }
+QPushButton#dangerButton:hover { background: #633238; border-color: #b65661; color: white; }
+QPushButton#dangerButton:disabled { color: #8b676a; background: #2d2427; border-color: #493136; }
 QFrame#filterBar { background: #1e232c; border: 1px solid #303844; border-radius: 9px; }
 QLabel#filterEyebrow { color: #778292; font-size: 8pt; font-weight: 700; padding: 0 5px 0 2px; }
 QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }

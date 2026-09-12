@@ -61,6 +61,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
             progress.Stage.AVAILABLE: "#8fc7ff",
             progress.Stage.READY: "#71d99b",
             progress.Stage.FAILED: "#ff8b8b",
+            progress.Stage.CANCELLED: "#f3bd63",
             progress.Stage.LIVE: "#ff8b8b",
         }
         if not selected and update.stage in state_colors:
@@ -81,7 +82,8 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         painter.drawText(label_rect, QtCore.Qt.AlignmentFlag.AlignLeft | QtCore.Qt.AlignmentFlag.AlignVCenter, label)
 
         overall = progress.overall_fraction(update)
-        show_percent = update.fraction is not None or update.stage in {progress.Stage.READY, progress.Stage.FAILED}
+        terminal = {progress.Stage.READY, progress.Stage.FAILED, progress.Stage.CANCELLED}
+        show_percent = update.fraction is not None or update.stage in terminal
         if show_percent:
             painter.setPen(muted_color)
             percent_rect = QtCore.QRect(rect.right() - 42, rect.top(), 42, 19)
@@ -125,6 +127,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         x = track.left()
         start = 0.0
         failed = update.stage is progress.Stage.FAILED
+        cancelled = update.stage is progress.Stage.CANCELLED
         for idx, spec in enumerate(progress.STAGE_SPECS):
             width = usable_width * spec.weight
             if idx == len(progress.STAGE_SPECS) - 1:
@@ -137,7 +140,12 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
             fill_ratio = min(1.0, max(0.0, (overall - start) / spec.weight))
             if fill_ratio:
                 fill = QtCore.QRectF(segment.left(), segment.top(), segment.width() * fill_ratio, segment.height())
-                color = QtGui.QColor("#ff7675") if failed else QtGui.QColor(spec.color)
+                color_name = spec.color
+                if failed:
+                    color_name = "#ff7675"
+                elif cancelled:
+                    color_name = "#d9a441"
+                color = QtGui.QColor(color_name)
                 painter.setBrush(color)
                 painter.drawRoundedRect(fill, 2.5, 2.5)
             if update.stage is spec.stage:

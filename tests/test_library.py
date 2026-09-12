@@ -21,6 +21,7 @@ from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
+from yt_whisper_subs import task_cancel
 
 
 def make_meta(video_id: str, title: str, published_at: int | None = 100) -> types.VideoMeta:
@@ -177,6 +178,44 @@ class PipelineDownloaderTests(unittest.TestCase):
         self.assertEqual(updates[0].stage, progress.Stage.QUEUED)
         self.assertEqual(updates[-1].stage, progress.Stage.FAILED)
         self.assertIn("HTTP Error 403", updates[-1].label)
+
+    @mock.patch("yt_whisper_subs.library_service.proc.request_process_tree_termination")
+    @mock.patch("yt_whisper_subs.library_service.proc.iter_output_records")
+    @mock.patch("yt_whisper_subs.library_service.subprocess.Popen")
+    def test_cancel_terminates_pipeline_tree_without_failure_state(
+        self,
+        popen: mock.Mock,
+        records: mock.Mock,
+        terminate: mock.Mock,
+    ) -> None:
+        """Stop the active child tree and surface cancellation distinctly.
+
+        Example: cancelling during Whisper does not become a pipeline error.
+        """
+
+        process = popen.return_value
+        process.stdout = io.StringIO()
+        process.poll.return_value = None
+        process.wait.return_value = 1
+        token = task_cancel.CancellationToken()
+
+        def cancel_during_read(_stream: object) -> tuple[object, ...]:
+            """Model the Cancel click after the child process was registered.
+
+            Example: iteration ends after taskkill is requested.
+            """
+
+            token.cancel()
+            return ()
+
+        records.side_effect = cancel_during_read
+        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
+        downloader = library_service.PipelineDownloader(Path("python"), Path("output"))
+
+        with task_cancel.activate(token), self.assertRaises(task_cancel.CancelledError):
+            downloader.download(record, mock.Mock())
+
+        terminate.assert_called_once_with(process)
 
 
 class LibraryDbTests(unittest.TestCase):
@@ -650,6 +689,24 @@ class LibraryModelTests(unittest.TestCase):
         self.assertEqual(partial_view.label, "99%")
         self.assertEqual(completed_view.fraction, 1.0)
         self.assertEqual(completed_view.label, "✓ 100%")
+
+    def test_corrupt_or_missing_subtitles_are_not_pipeline_complete(self) -> None:
+        """Represent real local artifact damage as a visible repairable issue.
+
+        Example: a NUL-only Dutch SRT cannot produce a green completed bar.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "aaaaaaaaaaa.mkv"
+            video.write_bytes(b"video")
+            video.with_suffix(".srt").write_bytes(b"\0" * 100)
+            local = types.LocalMedia(video, 100, video.stat().st_size)
+            record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Broken subtitles"), None, 100, local, None, None)
+
+            update = library_model.record_progress(record)
+
+        self.assertEqual(update.stage, progress.Stage.FAILED)
+        self.assertIn("Dutch subtitles", update.label)
 
     def test_smart_views_compose_search_counts_and_live_progress(self) -> None:
         """Keep smart-view facets useful inside search and live playback changes.

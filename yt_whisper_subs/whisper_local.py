@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from yt_whisper_subs import proc
+from yt_whisper_subs import srt
 
 
 def run_whisper(
@@ -62,8 +63,8 @@ def run_whisper(
         proc.run(whisper_cmd)
 
         generated_srt = tmp_output_dir / f"{audio_path.stem}.srt"
-        if not generated_srt.exists():
-            raise RuntimeError(f"Whisper finished, but no .srt file was found at: {generated_srt}")
+        if not srt.file_has_cues(generated_srt):
+            raise RuntimeError(f"Whisper finished, but produced no usable subtitle cues at: {generated_srt}")
 
         if srt_path.exists():
             srt_path.unlink()

@@ -255,6 +255,7 @@ class WindowRuntimeMixin:
             return
         self._metadata_timer.stop()
         self._busy = True
+        self._active_progress = None
         self._pipeline_status_active = False
         self._reported_stage_key = None
         self.statusBar().showMessage(label)
@@ -272,6 +273,7 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
+            self._active_progress = None
             self.statusBar().showMessage("Ready", 3000)
             self._ui.trace.append_message(f"✓ {label}")
             self._update_actions()
@@ -288,6 +290,7 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
+            self._active_progress = None
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
@@ -304,8 +307,55 @@ class WindowRuntimeMixin:
 
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
+
+        def cancelled() -> None:
+            """Restore idle state without presenting a requested stop as failure.
+
+            Example: stopping Whisper leaves an amber Cancelled row and no dialog.
+            """
+
+            update = self._active_progress
+            self._busy = False
+            self._active_task = None
+            self._pipeline_status_active = False
+            self.refresh()
+            if update:
+                cancelled_update = progress.make(
+                    update.video_id,
+                    progress.Stage.CANCELLED,
+                    progress.overall_fraction(update),
+                )
+                self._ui.catalog.model.set_progress(cancelled_update)
+            self._active_progress = None
+            self.statusBar().showMessage("Operation cancelled", 8_000)
+            self._ui.trace.append_message(f"■ Cancelled · {label}")
+            self._update_actions()
+            self._schedule_metadata_backfill()
+
+        task.signals.cancelled.connect(cancelled)
         self._active_task = task
         self._pool.start(task)
+
+    def _cancel_active_task(self) -> None:
+        """Request cancellation of the active heavy task and its child tools.
+
+        Example: Ctrl+Shift+X stops yt-dlp, ffmpeg, Whisper, or translation.
+        """
+
+        task = self._active_task
+        if not task or not task.cancel():
+            return
+        self.statusBar().showMessage("Cancelling current operation…")
+        self._ui.trace.append_message("■ Cancellation requested")
+        if update := self._active_progress:
+            cancelling = progress.make(
+                update.video_id,
+                update.stage,
+                update.fraction,
+                f"Cancelling · {progress.stage_label(update.stage)}",
+            )
+            self._ui.catalog.model.set_progress(cancelling)
+        self._update_actions()
 
     def _run_playback(
         self,
@@ -407,10 +457,12 @@ class WindowRuntimeMixin:
             return
         if update := progress.parse(message):
             self._pipeline_status_active = True
+            self._active_progress = update
             self._ui.catalog.model.set_progress(update)
             title = self._ui.catalog.model.title_for(update.video_id)
             percent = ""
-            if update.fraction is not None or update.stage in {progress.Stage.READY, progress.Stage.FAILED}:
+            terminal = {progress.Stage.READY, progress.Stage.FAILED, progress.Stage.CANCELLED}
+            if update.fraction is not None or update.stage in terminal:
                 percent = f" · {progress.overall_fraction(update):.0%} overall"
             self.statusBar().showMessage(f"{update.label}{percent} · {title}")
             stage_key = (update.video_id, update.stage)

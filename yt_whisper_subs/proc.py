@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import queue
+import signal
 import shutil
 import subprocess
 import sys
@@ -122,6 +123,42 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         process.kill()
         process.wait()
+
+
+def isolated_process_kwargs(window: ChildWindow = ChildWindow.HIDDEN) -> dict[str, Any]:
+    """Build child options that permit reliable whole-tree cancellation.
+
+    Example: the GUI pipeline starts in its own Windows process group.
+    """
+
+    kwargs = child_process_kwargs(window)
+    if os.name == "nt":
+        kwargs["creationflags"] |= subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+    return kwargs
+
+
+def request_process_tree_termination(process: subprocess.Popen[str]) -> None:
+    """Request immediate termination of one isolated process and descendants.
+
+    Example: cancelling Whisper also stops its ffmpeg or model child processes.
+    """
+
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        subprocess.Popen(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            **child_process_kwargs(),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    except ProcessLookupError:
+        return
 
 
 def _read_stream_chars(stream: TextIO, output_q: queue.Queue[str | None]) -> None:

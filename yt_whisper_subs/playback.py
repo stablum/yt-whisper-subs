@@ -337,7 +337,7 @@ def sidecar_subtitles(video_path: Path) -> list[Path]:
 
     english = video_path.with_name(f"{video_path.stem}.en.srt")
     primary = video_path.with_suffix(".srt")
-    return [path for path in (english, primary) if path.exists()]
+    return [path for path in (english, primary) if srt.file_has_cues(path)]
 
 
 def play_video(
@@ -374,15 +374,15 @@ def play_video(
         for subtitle_path in subtitle_paths:
             cmd.append(f"--sub-file={subtitle_path}")
 
-        if prefs.dual_subs and len(existing_srt_paths) >= 2:
+        if existing_srt_paths:
             cmd += [
                 "--sid=1",
-                "--secondary-sid=2",
                 f"--sub-color={mpv_subtitle_color(prefs.primary.color)}",
                 f"--sub-font-size={prefs.primary.font_size:g}",
                 f"--sub-pos={prefs.primary.position:g}",
-                "--secondary-sub-ass-override=no",
             ]
+        if prefs.dual_subs and len(existing_srt_paths) >= 2:
+            cmd += ["--secondary-sid=2", "--secondary-sub-ass-override=no"]
 
         cmd.append(video_path)
         if monitor:

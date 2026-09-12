@@ -18,6 +18,7 @@ from yt_whisper_subs import opts
 from yt_whisper_subs import playback
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
+from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
 from yt_whisper_subs import whisper_local
 from yt_whisper_subs import youtube
@@ -200,6 +201,8 @@ class PipelineRunner:
 
         progress.emit(progress.Stage.FINALIZING, 0.0, "Finalizing files")
         self._finish(run_yields)
+        if not run_yields.all_ready():
+            raise RuntimeError("pipeline finished without all requested usable subtitle and chapter yields")
         progress.emit(progress.Stage.FINALIZING, 1.0, "Files finalized")
         progress.emit(progress.Stage.READY, 1.0)
         return 0
@@ -396,8 +399,10 @@ class PipelineRunner:
             self._paths,
             self._args,
         )
-        progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
         run_yields.primary.finalize(self._args, is_english=False, label="primary")
+        if not run_yields.primary.ready():
+            raise RuntimeError("speech-to-text finished without usable primary subtitle yields")
+        progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
 
     def _generate_english_subs(self, run_yields: RunYields) -> None:
         """Generate or reuse English subtitles with the selected provider.
@@ -421,7 +426,7 @@ class PipelineRunner:
         Example: `self._generate_openai_english_subs(run_yields)`.
         """
 
-        if not run_yields.primary.sidecar.exists():
+        if not srt.file_has_cues(run_yields.primary.sidecar):
             raise RuntimeError("primary subtitles are required before OpenAI English translation can run.")
 
         print()
@@ -432,13 +437,15 @@ class PipelineRunner:
             run_yields.english.sidecar,
             self._args,
         )
-        progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
         run_yields.english.align_timings_to(
             run_yields.primary.sidecar,
             self._args,
             label="English",
             force=False,
         )
+        if not run_yields.english.ready():
+            raise RuntimeError("translation finished without usable English subtitle yields")
+        progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
 
     def _generate_whisper_english_subs(self, run_yields: RunYields) -> None:
         """Generate English subtitles with Whisper's audio translation task.
@@ -460,8 +467,10 @@ class PipelineRunner:
             language=self._args.language,
             model=opts.english_model(self._args),
         )
-        progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
         run_yields.english.finalize(self._args, is_english=True, label="English")
+        if not run_yields.english.ready():
+            raise RuntimeError("speech translation finished without usable English subtitle yields")
+        progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
 
     def _generate_chapters(self, run_yields: RunYields) -> None:
         """Create a durable bilingual chapter plan from final subtitle cues.

@@ -9,6 +9,7 @@ import argparse
 import json
 import re
 import textwrap
+from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import cfg
@@ -131,6 +132,20 @@ def parse_srt(content: str) -> list[SubtitleCue]:
         )
 
     return cues
+
+
+def file_has_cues(path: Path) -> bool:
+    """Treat only a readable SRT containing parsed text cues as a valid yield.
+
+    Example: `file_has_cues(Path("video.srt"))` rejects empty or NUL files.
+    """
+
+    if not path.is_file():
+        return False
+    try:
+        return bool(parse_srt(path.read_text(encoding="utf-8-sig")))
+    except (OSError, UnicodeError):
+        return False
 
 
 def cue_reading_speed(text: str, start_ms: int, end_ms: int) -> float:

@@ -15,6 +15,7 @@ from PySide6 import QtCore
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import playback_progress as playback
 from yt_whisper_subs import pipeline_progress as progress
+from yt_whisper_subs import srt
 
 
 SORT_ROLE = QtCore.Qt.ItemDataRole.UserRole + 1
@@ -206,7 +207,7 @@ def accepts_view(
     if view is VideoView.AVAILABLE:
         return not record.downloaded
     if view is VideoView.ISSUES:
-        return bool(record.download_error)
+        return bool(record.download_error or local_pipeline_issue(record))
     if not watched:
         return False
     if view is VideoView.WATCHED:
@@ -225,16 +226,38 @@ def record_progress(record: types.VideoRecord) -> progress.Update:
     """
 
     video_id = record.meta.identity.video_id
-    if record.downloaded:
-        return progress.make(video_id, progress.Stage.READY, 1.0)
     if record.download_error:
         return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Failed · {record.download_error}")
+    if issue := local_pipeline_issue(record):
+        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Incomplete · {issue}")
+    if record.downloaded:
+        return progress.make(video_id, progress.Stage.READY, 1.0)
     live_status = record.meta.details.live_status
     if live_status == "is_live":
         return progress.make(video_id, progress.Stage.LIVE)
     if live_status == "is_upcoming":
         return progress.make(video_id, progress.Stage.UPCOMING)
     return progress.make(video_id, progress.Stage.AVAILABLE)
+
+
+def local_pipeline_issue(record: types.VideoRecord) -> str | None:
+    """Describe a missing or corrupt required subtitle beside local media.
+
+    Example: a NUL-only Dutch SRT returns `Dutch subtitles are invalid`.
+    """
+
+    if not record.local:
+        return None
+    video = record.local.path
+    if not video.is_file():
+        return None
+    primary = video.with_suffix(".srt")
+    english = video.with_name(f"{video.stem}.en.srt")
+    if not srt.file_has_cues(primary):
+        return "Dutch subtitles are missing or invalid"
+    if not srt.file_has_cues(english):
+        return "English subtitles are missing or invalid"
+    return None
 
 
 class VideoTableModel(QtCore.QAbstractTableModel):

@@ -56,6 +56,18 @@ class ChildProcessOptionsTests(unittest.TestCase):
             self.assertNotIn("creationflags", kwargs)
             self.assertNotIn("startupinfo", kwargs)
 
+    def test_isolated_process_options_support_tree_cancellation(self) -> None:
+        """Place a GUI pipeline in a process group that can be stopped safely.
+
+        Example: cancelling the parent also terminates Whisper and ffmpeg.
+        """
+
+        kwargs = proc.isolated_process_kwargs()
+        if os.name == "nt":
+            self.assertTrue(kwargs["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP)
+        else:
+            self.assertTrue(kwargs["start_new_session"])
+
     def test_output_records_split_terminal_progress(self) -> None:
         """Expose carriage-return progress as individual live trace messages.
 

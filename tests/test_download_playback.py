@@ -96,9 +96,28 @@ class PlaybackPrefsTests(unittest.TestCase):
             video.write_bytes(b"video")
             primary = video.with_suffix(".srt")
             english = video.with_name("aaaaaaaaaaa.en.srt")
-            primary.write_text("primary", encoding="utf-8")
-            english.write_text("english", encoding="utf-8")
+            primary.write_text("1\n00:00:00,000 --> 00:00:01,000\nHallo\n", encoding="utf-8")
+            english.write_text("1\n00:00:00,000 --> 00:00:01,000\nHello\n", encoding="utf-8")
             self.assertEqual(playback.sidecar_subtitles(video), [english, primary])
+
+    @mock.patch("yt_whisper_subs.playback.proc.run")
+    def test_single_dutch_sidecar_is_explicitly_enabled(self, run: mock.Mock) -> None:
+        """Override an mpv subtitles-off preference for a valid Dutch-only row.
+
+        Example: `foDtc7a6A8o.srt` is selected even without an English sidecar.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            video = Path(tmp) / "foDtc7a6A8o.mkv"
+            primary = video.with_suffix(".srt")
+            video.write_bytes(b"video")
+            primary.write_text("1\n00:00:00,000 --> 00:00:01,000\nHallo\n", encoding="utf-8")
+
+            playback.play_video(video, playback.sidecar_subtitles(video), playback.PlaybackPrefs.defaults())
+
+        cmd = [str(arg) for arg in run.call_args.args[0]]
+        self.assertIn("--sid=1", cmd)
+        self.assertNotIn("--secondary-sid=2", cmd)
 
     @mock.patch("yt_whisper_subs.playback.proc.run")
     def test_mpv_uses_visible_application_policy(self, run: mock.Mock) -> None:

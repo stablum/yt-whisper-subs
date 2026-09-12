@@ -164,6 +164,7 @@ class DetailPanelTests(unittest.TestCase):
             download=mock.Mock(),
             play=mock.Mock(),
             check=mock.Mock(),
+            cancel=mock.Mock(),
         )
         detail = mock.Mock()
         window = SimpleNamespace(
@@ -173,6 +174,9 @@ class DetailPanelTests(unittest.TestCase):
                 header=header,
                 catalog=SimpleNamespace(detail=detail),
             ),
+            _active_task=mock.Mock(cancel_requested=False),
+            _cancel_action=mock.Mock(),
+            _remove_action=mock.Mock(),
         )
 
         library_gui.LibraryWindow._update_actions(window)
@@ -181,6 +185,61 @@ class DetailPanelTests(unittest.TestCase):
         header.download.setEnabled.assert_called_once_with(False)
         header.play.setEnabled.assert_called_once_with(True)
         header.check.setEnabled.assert_called_once_with(False)
+        header.cancel.setVisible.assert_called_once_with(True)
+
+    def test_remote_double_click_starts_without_confirmation(self) -> None:
+        """Treat direct activation as sufficient intent to start processing.
+
+        Example: double-clicking Available calls Download without a modal prompt.
+        """
+
+        index = mock.Mock()
+        index.isValid.return_value = True
+        index.row.return_value = 4
+        record = types.VideoRecord(
+            types.VideoMeta(
+                types.VideoIdentity("aaaaaaaaaaa", "https://youtu.be/aaaaaaaaaaa", "Remote"),
+                types.VideoOrigin("Channel", "UC-example", 1),
+                types.VideoDetails(90, 1, "", None, "not_live"),
+            ),
+            1,
+            1,
+            None,
+            None,
+            None,
+        )
+        window = mock.Mock()
+        window._record_from_proxy_index.return_value = record
+
+        library_gui.LibraryWindow._activate_video(window, index)
+
+        window._ui.catalog.table.selectRow.assert_called_once_with(4)
+        window._download_selected.assert_called_once_with()
+
+    def test_cancel_action_requests_only_the_active_heavy_task(self) -> None:
+        """Leave playback and queued work intact while stopping current compute.
+
+        Example: cancelling Whisper updates its row to Cancelling immediately.
+        """
+
+        task = mock.Mock()
+        task.cancel.return_value = True
+        update = library_window_support.progress.make(
+            "aaaaaaaaaaa",
+            library_window_support.progress.Stage.TRANSCRIBING,
+            0.25,
+        )
+        window = mock.Mock()
+        window._active_task = task
+        window._active_progress = update
+
+        library_window_support.WindowRuntimeMixin._cancel_active_task(window)
+
+        task.cancel.assert_called_once_with()
+        window.statusBar().showMessage.assert_called_once_with("Cancelling current operation…")
+        cancelling = window._ui.catalog.model.set_progress.call_args.args[0]
+        self.assertEqual(cancelling.stage, update.stage)
+        self.assertIn("Cancelling", cancelling.label)
 
     @staticmethod
     def _record(path: Path) -> types.VideoRecord:

@@ -94,7 +94,7 @@ class SubtitlePair(NamedTuple):
         Example: `pair.ready()`.
         """
 
-        return self.sidecar.exists() and self.archive.exists()
+        return srt.file_has_cues(self.sidecar) and srt.file_has_cues(self.archive)
 
     def seed_sidecar_from_archive(self) -> bool:
         """Copy an archive subtitle beside the video when the sidecar is missing.

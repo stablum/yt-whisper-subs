@@ -12,7 +12,6 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
-from yt_whisper_subs import cfg
 from yt_whisper_subs import library_chapter_actions
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
@@ -20,8 +19,10 @@ from yt_whisper_subs import library_service
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_window_support
+from yt_whisper_subs import library_window_actions
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import pipeline_progress as progress
 
 
 _TABLE_LAYOUT_SETTING = "video_table_header_v1"
@@ -38,6 +39,7 @@ class HeaderUi(NamedTuple):
     check: QtWidgets.QPushButton
     download: QtWidgets.QPushButton
     play: QtWidgets.QPushButton
+    cancel: QtWidgets.QPushButton
 
 
 class CatalogUi(NamedTuple):
@@ -68,6 +70,7 @@ class LibraryUi(NamedTuple):
 
 
 class LibraryWindow(
+    library_window_actions.WindowActionsMixin,
     library_chapter_actions.ChapterActionsMixin,
     library_window_support.WindowRuntimeMixin,
     QtWidgets.QMainWindow,
@@ -92,6 +95,7 @@ class LibraryWindow(
         self._metadata_timer.setSingleShot(True)
         self._metadata_timer.timeout.connect(self._metadata_tick)
         self._busy = False
+        self._active_progress: progress.Update | None = None
         self._metadata_active = False
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._active_task: library_workers.BackgroundTask | None = None
@@ -201,12 +205,16 @@ class LibraryWindow(
         check = QtWidgets.QPushButton("↻  Check now")
         download = QtWidgets.QPushButton("↓  Download")
         play = QtWidgets.QPushButton("▶  Play")
+        cancel = QtWidgets.QPushButton("■  Cancel")
+        cancel.setObjectName("dangerButton")
+        cancel.hide()
         play.setObjectName("primaryButton")
         layout.addWidget(search, 1)
         layout.addWidget(check)
         layout.addWidget(download)
+        layout.addWidget(cancel)
         layout.addWidget(play)
-        return HeaderUi(search, check, download, play), layout
+        return HeaderUi(search, check, download, play, cancel), layout
 
     def _build_catalog(self, channels: QtWidgets.QListWidget) -> CatalogUi:
         """Create the model-backed table and selected-video detail panel.
@@ -278,6 +286,7 @@ class LibraryWindow(
         self._ui.catalog.model.dataChanged.connect(self._refresh_smart_filters)
         self._ui.header.check.clicked.connect(self.check_now)
         self._ui.header.download.clicked.connect(self._download_selected)
+        self._ui.header.cancel.clicked.connect(self._cancel_active_task)
         self._ui.header.play.clicked.connect(self._play_selected)
         self._ui.catalog.detail.generate_requested.connect(self._generate_chapters_selected)
         self._ui.catalog.detail.chapter_activated.connect(self._play_chapter)
@@ -309,10 +318,15 @@ class LibraryWindow(
         channel_menu.addAction("Toggle automatic download", self._toggle_channel_auto)
         channel_menu.addAction("Stop tracking", self._remove_channel)
         video_menu = self.menuBar().addMenu("Video")
-        video_menu.addAction("Download selected", self._download_selected)
+        video_menu.addAction("Download or repair selected", self._download_selected)
         video_menu.addAction("Play selected", self._play_selected)
         video_menu.addAction("Generate chapters", self._generate_chapters_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
+        video_menu.addSeparator()
+        self._cancel_action = video_menu.addAction("Cancel current operation", self._cancel_active_task)
+        self._cancel_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
+        self._remove_action = video_menu.addAction("Remove download and yields…", self._remove_selected)
+        self._remove_action.setShortcut(QtGui.QKeySequence("Shift+Delete"))
         view_menu = self.menuBar().addMenu("View")
         search_action = view_menu.addAction("Focus search")
         search_action.setShortcut(QtGui.QKeySequence.StandardKey.Find)
@@ -549,187 +563,3 @@ class LibraryWindow(
             return
         self._service.db.set_channel_auto_download(channel.channel_id, not channel.auto_download)
         self.refresh()
-
-    def _download_selected(self) -> None:
-        """Run the shared subtitle pipeline for the selected remote video.
-
-        Example: the Download button invokes `_download_selected()`.
-        """
-
-        record = self._selected_record()
-        if not record:
-            return
-        if record.downloaded:
-            self._play_selected()
-            return
-        video_id = record.meta.identity.video_id
-
-        def download(report: Callable[[str], None]) -> None:
-            """Bind the selected video ID into a worker-safe call.
-
-            Example: `download(report)` runs off the GUI thread.
-            """
-
-            self._service.download(video_id, report)
-
-        self._run_task("Starting download…", download, lambda _: self.refresh())
-
-    def _activate_video(self, index: QtCore.QModelIndex) -> None:
-        """Play a downloaded double-click or offer download for a remote row.
-
-        Example: table activation invokes `_activate_video(index)`.
-        """
-
-        if not index.isValid():
-            return
-        record = self._record_from_proxy_index(index)
-        if record and record.downloaded:
-            self._play_selected()
-        elif record:
-            answer = QtWidgets.QMessageBox.question(
-                self,
-                "Download video?",
-                f"{record.meta.identity.title} is not downloaded yet. Download it now?",
-            )
-            if answer == QtWidgets.QMessageBox.StandardButton.Yes:
-                self._download_selected()
-
-    def _edit_settings(self) -> None:
-        """Persist scheduling, retention, browser, and tray settings.
-
-        Example: Library → Settings invokes `_edit_settings()`.
-        """
-
-        raw_recent = self._service.db.setting(
-            "channel_recent_limit",
-            str(cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT),
-        )
-        try:
-            recent = int(raw_recent)
-        except ValueError:
-            recent = cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT
-        current = library_widgets.SettingsValues(
-            float(self._service.db.setting("check_hours", str(cfg.DEFAULT_LIBRARY_CHECK_HOURS))),
-            self._service.db.setting("cookies_from_browser", ""),
-            self._service.db.setting(
-                "minimize_to_tray",
-                str(int(cfg.DEFAULT_LIBRARY_MINIMIZE_TO_TRAY)),
-            )
-            in {"1", "True", "true"},
-            recent,
-            self._service.db.setting("channel_published_after", ""),
-        )
-        dialog = library_widgets.SettingsDialog(current, self)
-        if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
-            return
-        values = dialog.values()
-        self._service.db.set_setting("check_hours", values.check_hours)
-        self._service.db.set_setting("cookies_from_browser", values.cookies_from_browser)
-        self._service.db.set_setting("minimize_to_tray", int(values.minimize_to_tray))
-        self._service.db.set_setting("channel_recent_limit", values.channel_recent_limit)
-        self._service.db.set_setting("channel_published_after", values.channel_published_after)
-        self._service.reload_clients()
-        pruned = self._service.apply_retention()
-        if pruned:
-            self._ui.trace.append_message(
-                f"Retention · Removed {pruned:,} dated remote-only video(s)"
-            )
-            self.refresh()
-        self._schedule_next()
-
-    def _open_selected_url(self) -> None:
-        """Open the selected video's canonical YouTube page externally.
-
-        Example: Video → Open on YouTube invokes this method.
-        """
-
-        record = self._selected_record()
-        if record:
-            QtGui.QDesktopServices.openUrl(QtCore.QUrl(record.meta.identity.url))
-
-    def _channel_filter_changed(
-        self,
-        current: QtWidgets.QListWidgetItem | None,
-        previous: QtWidgets.QListWidgetItem | None,
-    ) -> None:
-        """Reload table records for a sidebar library/channel filter.
-
-        Example: Qt passes the new and previous sidebar items.
-        """
-
-        del previous
-        if current and (key := current.data(QtCore.Qt.ItemDataRole.UserRole)):
-            self._filter_key = tuple(key)
-            self.refresh()
-
-    def _selection_changed(self) -> None:
-        """Update detail text and action availability for the selected row.
-
-        Example: table selection changes invoke `_selection_changed()`.
-        """
-
-        record = self._selected_record()
-        chapter_set = None
-        if record:
-            chapter_set = self._service.chapter_set(record.meta.identity.video_id)
-        self._ui.catalog.detail.set_record(record, chapter_set)
-        self._update_actions()
-
-    def _selected_record(self) -> types.VideoRecord | None:
-        """Resolve the current proxy selection back to its catalog record.
-
-        Example: `_selected_record()` powers Download and Play.
-        """
-
-        rows = self._ui.catalog.table.selectionModel().selectedRows()
-        return self._record_from_proxy_index(rows[0]) if rows else None
-
-    def _record_from_proxy_index(self, index: QtCore.QModelIndex) -> types.VideoRecord | None:
-        """Map one proxy row to the typed source-model record.
-
-        Example: `_record_from_proxy_index(table.currentIndex())`.
-        """
-
-        source = self._ui.catalog.proxy.mapToSource(index)
-        return self._ui.catalog.model.record(source.row())
-
-    def _selected_channel(self) -> types.Channel | None:
-        """Return the sidebar channel object or None for library filters.
-
-        Example: `_selected_channel()` gates channel menu actions.
-        """
-
-        kind, channel_id = self._filter_key
-        return self._service.db.channel(channel_id) if kind == "channel" and channel_id else None
-
-    def _restore_video_selection(self, video_id: str | None) -> None:
-        """Restore a previous video selection after a model reset when possible.
-
-        Example: `refresh()` calls `_restore_video_selection(id)`.
-        """
-
-        if not video_id:
-            self._ui.catalog.detail.set_record(None)
-            return
-        for source_row in range(self._ui.catalog.model.rowCount()):
-            record = self._ui.catalog.model.record(source_row)
-            if record and record.meta.identity.video_id == video_id:
-                source = self._ui.catalog.model.index(source_row, 0)
-                proxy = self._ui.catalog.proxy.mapFromSource(source)
-                if proxy.isValid():
-                    self._ui.catalog.table.selectRow(proxy.row())
-                return
-
-    def _update_actions(self) -> None:
-        """Keep Download and Play labels honest for the current selection.
-
-        Example: `_update_actions()` follows table and task state changes.
-        """
-
-        record = self._selected_record()
-        self._ui.catalog.detail.set_busy(self._busy)
-        can_download = bool(record and not self._busy and not record.downloaded)
-        can_play = bool(record and record.downloaded)
-        self._ui.header.download.setEnabled(can_download)
-        self._ui.header.play.setEnabled(can_play)
-        self._ui.header.check.setEnabled(not self._busy)

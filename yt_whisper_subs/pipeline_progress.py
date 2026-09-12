@@ -33,6 +33,7 @@ class Stage(StrEnum):
     FINALIZING = "finalizing"
     READY = "ready"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     LIVE = "live"
     UPCOMING = "upcoming"
 
@@ -99,6 +100,7 @@ def stage_label(stage: Stage) -> str:
         Stage.QUEUED: "Queued",
         Stage.READY: "Ready to play",
         Stage.FAILED: "Failed",
+        Stage.CANCELLED: "Cancelled",
         Stage.LIVE: "Live now",
         Stage.UPCOMING: "Upcoming",
     }
@@ -181,7 +183,7 @@ def overall_fraction(update: Update | None) -> float:
         return 0.0
     if update.stage is Stage.READY:
         return 1.0
-    if update.stage is Stage.FAILED:
+    if update.stage in {Stage.FAILED, Stage.CANCELLED}:
         return update.fraction or 0.0
     if update.stage not in _WORK_SPECS:
         return 0.0

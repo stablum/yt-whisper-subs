@@ -10,6 +10,7 @@ import subprocess
 import time
 from collections import deque
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import datetime
 from datetime import timezone
 from pathlib import Path
@@ -20,10 +21,12 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_yields
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
+from yt_whisper_subs import task_cancel
 from yt_whisper_subs import youtube
 
 
@@ -120,7 +123,7 @@ class PipelineDownloader:
         Example: `_run(record, cmd, "Download", report)` keeps one protocol.
         """
 
-        child_kwargs = proc.child_process_kwargs()
+        child_kwargs = proc.isolated_process_kwargs()
         child_env = dict(child_kwargs["env"])
         child_env[progress.ENV_VIDEO_ID] = record.meta.identity.video_id
         child_kwargs["env"] = child_env
@@ -137,17 +140,24 @@ class PipelineDownloader:
         )
         assert process.stdout is not None
         output_tail: deque[str] = deque(maxlen=30)
-        for message in proc.iter_output_records(process.stdout):
-            if update := progress.parse(message):
-                current = update
+        cancel = task_cancel.current()
+        stop = lambda: proc.request_process_tree_termination(process)
+        context = cancel.stoppable(stop) if cancel else nullcontext()
+        with context:
+            for message in proc.iter_output_records(process.stdout):
+                if update := progress.parse(message):
+                    current = update
+                    report(message)
+                    continue
+                if update := progress.derive_tool_update(message, current):
+                    current = update
+                    report(progress.encode(update))
+                output_tail.append(message)
                 report(message)
-                continue
-            if update := progress.derive_tool_update(message, current):
-                current = update
-                report(progress.encode(update))
-            output_tail.append(message)
-            report(message)
-        if process.wait() != 0:
+            returncode = process.wait()
+            if cancel:
+                cancel.checkpoint()
+        if returncode != 0:
             error_lines = [line for line in output_tail if line.casefold().startswith("error:")]
             detail = (
                 error_lines[-1].removeprefix("error: ")
@@ -257,6 +267,8 @@ class LibraryService:
         report(f"Reading queued metadata · {video_id}")
         try:
             info = self._feed.video_info(f"https://www.youtube.com/watch?v={video_id}")
+        except task_cancel.CancelledError:
+            raise
         except Exception as exc:
             hours = cfg.DEFAULT_LIBRARY_METADATA_RETRY_HOURS
             report(f"Metadata deferred for {hours:g} hours · {video_id} · {exc}")
@@ -308,6 +320,8 @@ class LibraryService:
         report(f"Checking {channel.url}")
         try:
             self._check_channel(channel, report)
+        except task_cancel.CancelledError:
+            raise
         except Exception as exc:
             self.db.set_channel_error(channel.channel_id, str(exc))
             raise
@@ -328,6 +342,8 @@ class LibraryService:
             report(f"Checking channel {idx}/{len(channels)} · {channel.title}")
             try:
                 auto_ids.extend(self._check_channel(channel, report))
+            except task_cancel.CancelledError:
+                raise
             except Exception as exc:
                 self.db.set_channel_error(channel.channel_id, str(exc))
                 report(f"Could not check {channel.title}: {exc}")
@@ -339,6 +355,8 @@ class LibraryService:
             report(f"Auto-download {idx}/{len(auto_ids)} · {record.meta.identity.title}")
             try:
                 self.download(video_id, report)
+            except task_cancel.CancelledError:
+                raise
             except Exception as exc:
                 report(f"Auto-download failed: {exc}")
 
@@ -354,17 +372,45 @@ class LibraryService:
         record = self.db.video(video_id)
         if not record:
             raise RuntimeError(f"unknown video: {video_id}")
-        if record.downloaded:
-            return
-        if self._is_live(record):
+        if self._is_live(record) and not record.downloaded:
             raise RuntimeError("live and upcoming videos cannot be downloaded from the library yet")
         self.db.set_download_error(video_id, None)
         try:
             self._downloader.download(record, report)
             self.scan_local(report)
+        except task_cancel.CancelledError:
+            self.scan_local()
+            raise
         except Exception as exc:
             self.db.set_download_error(video_id, str(exc))
             raise
+
+    def video_yields(self, video_id: str) -> library_yields.VideoYields:
+        """Build the exact deletion manifest for one known catalog video.
+
+        Example: the GUI previews `service.video_yields(id).paths`.
+        """
+
+        if not self.db.video(video_id):
+            raise RuntimeError(f"unknown video: {video_id}")
+        return library_yields.VideoYields.inspect(self.out_dir, video_id)
+
+    def remove_yields(
+        self,
+        manifest: library_yields.VideoYields,
+        report: ReportFn = _ignore_report,
+    ) -> int:
+        """Remove one pre-inspected manifest and reconcile its catalog state.
+
+        Example: the exact paths confirmed in the GUI are the paths removed.
+        """
+
+        if manifest.root != self.out_dir or not self.db.video(manifest.video_id):
+            raise RuntimeError("refusing a yield manifest outside this library")
+        removed = manifest.remove(report)
+        self.scan_local(report)
+        self.db.set_download_error(manifest.video_id, None)
+        return removed
 
     def chapter_set(self, video_id: str) -> chapters.ChapterSet | None:
         """Load the selected video's durable chapter plan when available.
