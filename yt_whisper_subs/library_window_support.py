@@ -275,12 +275,12 @@ class WindowRuntimeMixin:
             self._pipeline_status_active = False
             self._active_progress = None
             self._paused_progress = None
+            self._release_video_slot()
             self.statusBar().showMessage("Ready", 3000)
             self._ui.trace.append_message(f"✓ {label}")
-            self._update_actions()
             if finished:
                 finished(result)
-            self._schedule_metadata_backfill()
+            self._continue_video_queue()
 
         def failed(message: str, trace: str) -> None:
             """Show a concise error with optional diagnostic details.
@@ -293,6 +293,7 @@ class WindowRuntimeMixin:
             self._pipeline_status_active = False
             self._active_progress = None
             self._paused_progress = None
+            self._release_video_slot()
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
@@ -303,9 +304,9 @@ class WindowRuntimeMixin:
                 parent=self,
             )
             box.setDetailedText(trace)
-            box.exec()
+            box.open()
             self.statusBar().showMessage(f"Error: {message}", 10000)
-            self._schedule_metadata_backfill()
+            self._continue_video_queue()
 
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
@@ -320,6 +321,7 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
+            self._release_video_slot()
             self.refresh()
             if update:
                 cancelled_update = progress.make(
@@ -332,8 +334,7 @@ class WindowRuntimeMixin:
             self._paused_progress = None
             self.statusBar().showMessage("Operation cancelled", 8_000)
             self._ui.trace.append_message(f"■ Cancelled · {label}")
-            self._update_actions()
-            self._schedule_metadata_backfill()
+            self._continue_video_queue()
 
         task.signals.cancelled.connect(cancelled)
         self._active_task = task
@@ -528,6 +529,7 @@ class WindowRuntimeMixin:
             self._active_progress = update
             self._ui.catalog.model.set_progress(update)
             if first_pipeline_update:
+                self._update_video_queue()
                 self._update_actions()
             title = self._ui.catalog.model.title_for(update.video_id)
             percent = ""

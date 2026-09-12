@@ -216,9 +216,9 @@ class DetailPanel(QtWidgets.QFrame):
         self._render_chapters(chapter_set)
 
     def set_busy(self, busy: bool) -> None:
-        """Keep contextual generation disabled while foreground work runs.
+        """Keep generation disabled while this selected video has pending work.
 
-        Example: `detail.set_busy(True)` follows task dispatch.
+        Example: `detail.set_busy(True)` follows this video's queue admission.
         """
 
         self._busy = busy

@@ -37,7 +37,12 @@ class ChapterActionsMixin:
 
             return self._service.generate_chapters(video_id, report)
 
-        self._run_task("Creating bilingual chapters…", generate, lambda _: self.refresh())
+        self._queue_video_task(
+            video_id,
+            "Creating bilingual chapters…",
+            generate,
+            lambda _: self.refresh(),
+        )
 
     def _play_selected(self) -> None:
         """Open the selected download through chapter-aware shared playback.

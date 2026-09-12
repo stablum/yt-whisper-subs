@@ -9,6 +9,7 @@ import os
 import tempfile
 import threading
 import unittest
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -25,6 +26,7 @@ from yt_whisper_subs import library_chapter_actions  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
+from yt_whisper_subs import library_video_queue  # noqa: E402
 from yt_whisper_subs import library_window_support  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
 from yt_whisper_subs import library_workers  # noqa: E402
@@ -195,10 +197,10 @@ class DetailPanelTests(unittest.TestCase):
             start_seconds=None,
         )
 
-    def test_play_button_remains_enabled_during_processing(self) -> None:
-        """Separate play availability from the heavy-operation busy flag.
+    def test_play_and_other_video_work_remain_enabled_during_processing(self) -> None:
+        """Separate playback and queue admission from the active worker flag.
 
-        Example: Download and Check stay disabled while Play remains enabled.
+        Example: another repair can queue while Play remains available.
         """
 
         record = self._record(Path(__file__))
@@ -228,8 +230,8 @@ class DetailPanelTests(unittest.TestCase):
 
         library_gui.LibraryWindow._update_actions(window)
 
-        detail.set_busy.assert_called_once_with(True)
-        header.download.setEnabled.assert_called_once_with(False)
+        detail.set_busy.assert_called_once_with(False)
+        header.download.setEnabled.assert_called_once_with(True)
         header.play.setEnabled.assert_called_once_with(True)
         header.check.setEnabled.assert_called_once_with(False)
         header.pause.setVisible.assert_called_once_with(True)
@@ -602,6 +604,177 @@ class ChannelQueueTests(unittest.TestCase):
 
         self.assertTrue(pool.waitForDone(5_000))
         self.assertEqual(order, ["first", "second"])
+
+
+class VideoQueueTests(unittest.TestCase):
+    """Verify user video requests enter one visible deterministic FIFO.
+
+    Example: three Download clicks remain ordered behind active Whisper.
+    """
+
+    def test_busy_lane_accepts_unique_videos_and_labels_positions(self) -> None:
+        """Queue multiple IDs immediately and suppress an accidental duplicate.
+
+        Example: the first waiting row says next and the second says number two.
+        """
+
+        model = mock.Mock()
+        model.title_for.side_effect = lambda video_id: f"Title {video_id}"
+        window = SimpleNamespace(
+            _active_video_id="aaaaaaaaaaa",
+            _active_progress=None,
+            _busy=True,
+            _video_queue={},
+            _ui=SimpleNamespace(
+                catalog=SimpleNamespace(model=model),
+                queue_status=mock.Mock(),
+                trace=mock.Mock(),
+            ),
+            statusBar=mock.Mock(),
+            _update_actions=mock.Mock(),
+            _start_next_video=mock.Mock(),
+        )
+        window._is_video_pending = partial(
+            library_video_queue.VideoQueueMixin._is_video_pending,
+            window,
+        )
+        window._update_video_queue = partial(
+            library_video_queue.VideoQueueMixin._update_video_queue,
+            window,
+        )
+
+        first = library_video_queue.VideoQueueMixin._queue_video_task(
+            window,
+            "bbbbbbbbbbb",
+            "Download B",
+            mock.Mock(),
+        )
+        second = library_video_queue.VideoQueueMixin._queue_video_task(
+            window,
+            "ccccccccccc",
+            "Download C",
+            mock.Mock(),
+        )
+        duplicate = library_video_queue.VideoQueueMixin._queue_video_task(
+            window,
+            "bbbbbbbbbbb",
+            "Duplicate B",
+            mock.Mock(),
+        )
+
+        self.assertTrue(first)
+        self.assertTrue(second)
+        self.assertFalse(duplicate)
+        self.assertEqual(list(window._video_queue), ["bbbbbbbbbbb", "ccccccccccc"])
+        labels = [call.args[0].label for call in model.set_progress.call_args_list[-2:]]
+        self.assertEqual(labels, ["Queued · next", "Queued · #2"])
+        window._ui.queue_status.setText.assert_called_with(
+            "Pipeline queue: 1 active · 2 waiting"
+        )
+        window._start_next_video.assert_not_called()
+
+    def test_oldest_waiting_video_dispatches_first(self) -> None:
+        """Pop the insertion-ordered mapping without sorting or scanning rows.
+
+        Example: B starts while C remains the next queued video.
+        """
+
+        first = library_video_queue.VideoWork("bbbbbbbbbbb", "Download B", mock.Mock(), None)
+        second = library_video_queue.VideoWork("ccccccccccc", "Download C", mock.Mock(), None)
+        window = SimpleNamespace(
+            _busy=False,
+            _video_queue={first.video_id: first, second.video_id: second},
+            _active_video_id=None,
+            _update_video_queue=mock.Mock(),
+            _run_task=mock.Mock(),
+        )
+
+        library_video_queue.VideoQueueMixin._start_next_video(window)
+
+        self.assertEqual(window._active_video_id, "bbbbbbbbbbb")
+        self.assertEqual(list(window._video_queue), ["ccccccccccc"])
+        window._run_task.assert_called_once_with("Download B", first.fn, None)
+
+    def test_download_action_queues_while_another_pipeline_is_busy(self) -> None:
+        """Route a second selected remote video through queue admission.
+
+        Example: Download remains actionable during the first transcription.
+        """
+
+        record = types.VideoRecord(
+            types.VideoMeta(
+                types.VideoIdentity("bbbbbbbbbbb", "https://youtu.be/bbbbbbbbbbb", "Second"),
+                types.VideoOrigin("Channel", "UC-example", 1),
+                types.VideoDetails(90, 1, "", None, "not_live"),
+            ),
+            1,
+            1,
+            None,
+            None,
+            None,
+        )
+        window = mock.Mock()
+        window._busy = True
+        window._selected_record.return_value = record
+        window._service.db.pipeline_job.return_value = None
+        window._service.pipeline_issue.return_value = None
+
+        library_gui.LibraryWindow._download_selected(window)
+
+        video_id, label, download, _finished = window._queue_video_task.call_args.args
+        self.assertEqual(video_id, "bbbbbbbbbbb")
+        self.assertEqual(label, "Starting download…")
+        report = mock.Mock()
+        download(report)
+        window._service.download.assert_called_once_with("bbbbbbbbbbb", report)
+        window._run_task.assert_not_called()
+
+    @mock.patch("yt_whisper_subs.library_window_support.library_workers.BackgroundTask")
+    def test_finished_worker_releases_and_advances_video_queue(self, task_cls: mock.Mock) -> None:
+        """Advance the waiting FIFO when the active worker emits completion.
+
+        Example: finishing video A immediately hands the lane to video B.
+        """
+
+        signals = SimpleNamespace(
+            progress=mock.Mock(),
+            finished=mock.Mock(),
+            failed=mock.Mock(),
+            cancelled=mock.Mock(),
+        )
+        task = task_cls.return_value
+        task.signals = signals
+        finished = mock.Mock()
+        window = SimpleNamespace(
+            _busy=False,
+            _metadata_timer=mock.Mock(),
+            _active_progress=None,
+            _paused_progress=None,
+            _pipeline_status_active=False,
+            _reported_stage_key=None,
+            _active_task=None,
+            _pool=mock.Mock(),
+            _ui=SimpleNamespace(trace=mock.Mock()),
+            statusBar=mock.Mock(),
+            _report_progress=mock.Mock(),
+            _update_actions=mock.Mock(),
+            _release_video_slot=mock.Mock(),
+            _continue_video_queue=mock.Mock(),
+        )
+
+        library_window_support.WindowRuntimeMixin._run_task(
+            window,
+            "Download A",
+            mock.Mock(),
+            finished,
+        )
+        done = signals.finished.connect.call_args.args[0]
+        done("result")
+
+        finished.assert_called_once_with("result")
+        window._release_video_slot.assert_called_once_with()
+        window._continue_video_queue.assert_called_once_with()
+        self.assertFalse(window._busy)
 
 
 class PlaybackLaneTests(unittest.TestCase):

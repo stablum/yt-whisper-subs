@@ -62,15 +62,17 @@ The companion library is optimized for a second workflow:
    `mpv` view used by the CLI.
 8. Track furthest watched position and confirmed completion for library-launched
    playback without changing the user's mpv configuration.
-9. Generate bilingual chapters for new downloads, show them in the selected-video
+9. Queue multiple selected videos for serial download, repair, resume, or chapter
+   generation without waiting for the current pipeline to finish.
+10. Generate bilingual chapters for new downloads, show them in the selected-video
    inspector, and double-click any chapter to open or seek mpv at that moment.
-10. Cancel the active download/transcription/translation pipeline without stopping
+11. Cancel the active download/transcription/translation pipeline without stopping
    playback or discarding channel work already waiting in the serial queue.
-11. Pause and resume the active pipeline process tree without discarding its
+12. Pause and resume the active pipeline process tree without discarding its
     in-memory model state.
-12. Recover a pipeline left by a system crash from durable stage checkpoints and
+13. Recover a pipeline left by a system crash from durable stage checkpoints and
     reuse every complete or partial yield when the user clicks Resume.
-13. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
+14. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
     one-click Repair action instead of claiming that the pipeline is complete.
 
 ## Important Defaults
@@ -128,7 +130,7 @@ These defaults are hard-coded near the top of the script:
 | Library smart view | remembered across launches; search and channel remain independent |
 | Channel quick access | persistent starred Pinned shelf; right-click or `Alt+P` |
 | Library column layout | resizable, reorderable, and remembered across launches |
-| Library execution queue | one heavy-work lane; playback launches independently |
+| Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
 | Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
 | Library crash recovery | durable stage/overall-progress checkpoint; one-click Resume |
@@ -716,6 +718,17 @@ by noisy subprocess lines. Those lines still flow, timestamped, into the
 optional activity trace. This gives the normal view a calm answer to “what is
 it doing now?” and the trace a precise answer to “what exactly happened?”.
 
+Download, Repair, Resume, and manual chapter-generation requests are admitted
+while another library operation is active. Waiting rows say **Queued · next**,
+**Queued · #2**, and so on; the status-bar footer shows the active and waiting
+counts. Duplicate requests for the same video are ignored. The FIFO advances
+after success, failure, or cancellation, while the single worker still prevents
+yt-dlp, Whisper, ffmpeg, and OpenAI stages from competing with one another.
+Select another row and click its process action, or simply double-click another
+remote video, to add it. The queue is intentionally session-scoped; the one
+pipeline that was actually active at an unclean exit retains the existing
+durable crash-recovery checkpoint.
+
 The GUI child process opts into these structured events with a private
 environment variable. A direct `yt_whisper_subs.py` run does not enable that
 protocol, so its established command-line interaction and output remain
@@ -740,6 +753,8 @@ The resumed operation uses the normal idempotent pipeline: yt-dlp continues its
 reuse its chunk checkpoint, and only unfinished work reruns. Whisper itself does
 not expose a serializable in-memory CUDA checkpoint, so a crash during that one
 stage restarts speech-to-text while preserving all earlier stages.
+Cancel affects only the active item. Every later video retains its FIFO position
+and the next entry starts automatically after cancellation completes.
 
 ### Watched Progress And Completion
 
@@ -851,8 +866,9 @@ metadata, logging, reuse, and error
 behavior therefore remain single-sourced.
 
 Double-clicking a remote-only row starts that pipeline immediately; there is no
-extra confirmation dialog after the deliberate double-click. During active
-heavy work the header exposes **Cancel**; **Video → Cancel current operation**
+extra confirmation dialog after the deliberate double-click. Repeating this on
+other rows queues them immediately instead of rejecting the action. During
+active heavy work the header exposes **Cancel**; **Video → Cancel current operation**
 and **Ctrl+Shift+X** are equivalent. Cancellation terminates the isolated child
 process tree, so yt-dlp, ffmpeg, Whisper, or an in-flight API-stage parent cannot
 be orphaned. It is rendered as an amber **Cancelled** state rather than a red
@@ -1692,6 +1708,7 @@ High-level groups:
 | `yt_whisper_subs.library_yields` | Exact non-recursive per-video yield inventory and individual-file removal. |
 | `yt_whisper_subs.task_cancel` | Qt-independent task controls for cooperative pause/resume, cancellation, and active process hooks. |
 | `yt_whisper_subs.library_workers` | Background Qt task signalling with pause/resume plus distinct completion, failure, and cancellation outcomes. |
+| `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
 | `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
 | `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |

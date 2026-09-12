@@ -19,6 +19,7 @@ from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_video_queue
 from yt_whisper_subs import library_window_support
 from yt_whisper_subs import library_window_actions
 from yt_whisper_subs import library_widgets
@@ -68,6 +69,7 @@ class LibraryUi(NamedTuple):
     header: HeaderUi
     catalog: CatalogUi
     metadata_status: QtWidgets.QLabel
+    queue_status: QtWidgets.QLabel
     next_check: QtWidgets.QLabel
     trace: library_widgets.ActivityTrace
 
@@ -75,6 +77,7 @@ class LibraryUi(NamedTuple):
 class LibraryWindow(
     library_window_actions.WindowActionsMixin,
     library_chapter_actions.ChapterActionsMixin,
+    library_video_queue.VideoQueueMixin,
     library_window_support.WindowRuntimeMixin,
     QtWidgets.QMainWindow,
 ):
@@ -103,6 +106,8 @@ class LibraryWindow(
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._channels_by_id: dict[int, types.Channel] = {}
         self._active_task: library_workers.BackgroundTask | None = None
+        self._active_video_id: str | None = None
+        self._video_queue: dict[str, library_video_queue.VideoWork] = {}
         self._paused_progress: progress.Update | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
@@ -164,11 +169,13 @@ class LibraryWindow(
         trace.visibilityChanged.connect(self._store_trace_visibility)
 
         metadata_status = QtWidgets.QLabel()
+        queue_status = QtWidgets.QLabel()
         next_check = QtWidgets.QLabel()
+        self.statusBar().addPermanentWidget(queue_status)
         self.statusBar().addPermanentWidget(metadata_status)
         self.statusBar().addPermanentWidget(next_check)
         self.statusBar().showMessage("Ready")
-        return LibraryUi(header, catalog, metadata_status, next_check, trace)
+        return LibraryUi(header, catalog, metadata_status, queue_status, next_check, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
         """Create the library filters and channel-subscription list.
@@ -210,6 +217,7 @@ class LibraryWindow(
         search.setMinimumWidth(360)
         check = QtWidgets.QPushButton("↻  Check now")
         download = QtWidgets.QPushButton("↓  Download")
+        download.setToolTip("Download, repair, or queue the selected video")
         play = QtWidgets.QPushButton("▶  Play")
         pause = QtWidgets.QPushButton("Ⅱ  Pause")
         pause.hide()

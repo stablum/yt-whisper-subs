@@ -45,7 +45,12 @@ class WindowActionsMixin:
 
                 self._service.resume_pipeline_job(job, report)
 
-            self._run_task("Resuming interrupted pipeline…", resume, lambda _: self.refresh())
+            self._queue_video_task(
+                video_id,
+                "Resuming interrupted pipeline…",
+                resume,
+                lambda _: self.refresh(),
+            )
             return
         issue = self._service.pipeline_issue(record)
         if record.downloaded and not issue and not record.download_error:
@@ -61,7 +66,7 @@ class WindowActionsMixin:
             self._service.download(video_id, report)
 
         label = "Repairing pipeline…" if record.downloaded else "Starting download…"
-        self._run_task(label, download, lambda _: self.refresh())
+        self._queue_video_task(video_id, label, download, lambda _: self.refresh())
 
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
         """Play a complete row or immediately process a remote/incomplete row.
@@ -266,6 +271,8 @@ class WindowActionsMixin:
 
         record = self._selected_record()
         model = getattr(self._ui.catalog, "model", None)
+        pending_fn = getattr(self, "_is_video_pending", lambda _video_id: False)
+        active_fn = getattr(self, "_is_video_active", lambda _video_id: False)
         issue = None
         if record:
             issue = (
@@ -275,15 +282,23 @@ class WindowActionsMixin:
             )
         job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
         recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)
+        video_id = record.meta.identity.video_id if record else ""
+        pending = bool(record and pending_fn(video_id))
+        active = bool(record and active_fn(video_id))
         can_process = bool(
             record
-            and not self._busy
+            and not pending
             and (recoverable or not record.downloaded or issue or record.download_error)
         )
         can_play = bool(record and record.downloaded)
-        self._ui.catalog.detail.set_busy(self._busy)
+        self._ui.catalog.detail.set_busy(pending)
         needs_repair = bool(record and record.downloaded and (issue or record.download_error))
-        process_text = "▶  Resume" if recoverable else ("↻  Repair" if needs_repair else "↓  Download")
+        if active:
+            process_text = "●  Processing"
+        elif pending:
+            process_text = "○  Queued"
+        else:
+            process_text = "▶  Resume" if recoverable else ("↻  Repair" if needs_repair else "↓  Download")
         self._ui.header.download.setText(process_text)
         self._ui.header.download.setEnabled(can_process)
         self._ui.header.play.setEnabled(can_play)
