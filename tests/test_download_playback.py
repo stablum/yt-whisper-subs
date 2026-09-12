@@ -217,6 +217,54 @@ class MpvCommandTests(unittest.TestCase):
         self.assertFalse(control.seek("aaaaaaaaaaa", 12))
         monitor.seek.assert_called_once_with(12)
 
+    def test_quit_closes_every_library_owned_player(self) -> None:
+        """Send Quit to all active launch-scoped monitors before app shutdown.
+
+        Example: two open mpv windows cannot strand playback worker threads.
+        """
+
+        control = playback.PlaybackControl()
+        first = mock.Mock()
+        second = mock.Mock()
+        first.quit.return_value = True
+        second.quit.return_value = True
+        control.activate("aaaaaaaaaaa", first)
+        control.activate("bbbbbbbbbbb", second)
+
+        self.assertTrue(control.quit())
+        first.quit.assert_called_once_with()
+        second.quit.assert_called_once_with()
+
+    def test_monitor_quit_uses_ephemeral_ipc(self) -> None:
+        """Queue a player-only Quit command without reading mpv configuration.
+
+        Example: shutdown can close a player whose pipe is still connecting.
+        """
+
+        monitor = mpv_ipc.MpvMonitor(progress.Observer("aaaaaaaaaaa", mock.Mock()))
+        self.assertTrue(monitor.quit())
+        stream = io.BytesIO()
+
+        monitor._initialize_stream(stream)
+
+        messages = [json.loads(line) for line in stream.getvalue().splitlines()]
+        self.assertEqual(messages[-1], {"command": ["quit"]})
+
+    def test_player_started_during_shutdown_is_closed_immediately(self) -> None:
+        """Seal the controller so a racing playback launch cannot strand exit.
+
+        Example: an already-dispatched worker activates after Quit was clicked.
+        """
+
+        control = playback.PlaybackControl()
+        control.quit()
+        monitor = mock.Mock()
+
+        control.activate("aaaaaaaaaaa", monitor)
+
+        monitor.quit.assert_called_once_with()
+        self.assertFalse(control.seek("aaaaaaaaaaa", 12))
+
 
 class MediaDurationTests(unittest.TestCase):
     """Keep chapter density tied to the actual video container duration.

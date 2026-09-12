@@ -36,11 +36,12 @@ class WindowRuntimeMixin:
         self.setWindowIcon(icon)
         tray = QtWidgets.QSystemTrayIcon(icon, self)
         tray.setToolTip("yt-whisper-subs YouTube Library")
-        menu = QtWidgets.QMenu()
+        menu = QtWidgets.QMenu(self)
         menu.addAction("Show library", self._show_window)
         menu.addAction("Check now", self.check_now)
         menu.addSeparator()
         menu.addAction("Quit", self._quit)
+        self._tray_menu = menu
         tray.setContextMenu(menu)
         tray.activated.connect(self._tray_activated)
         if QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
@@ -574,8 +575,29 @@ class WindowRuntimeMixin:
         Example: Library → Quit invokes `_quit()`.
         """
 
+        if self._quitting:
+            return
         self._quitting = True
+        self._timer.stop()
+        self._metadata_timer.stop()
+        self._tray.hide()
+        self._stop_workers()
         QtWidgets.QApplication.quit()
+
+    def _stop_workers(self) -> None:
+        """Cancel owned work and close mpv so Qt pools cannot delay process exit.
+
+        Example: the tray Quit action invokes `_stop_workers()` before event-loop exit.
+        """
+
+        tasks = [self._active_task, self._metadata_task]
+        tasks.extend(self._channel_tasks.values())
+        for task in tasks:
+            if task:
+                task.cancel()
+        self._pool.clear()
+        self._playback_pool.clear()
+        self._service.stop_playback()
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         """Hide to the tray when configured so four-hour checks continue.
@@ -599,5 +621,4 @@ class WindowRuntimeMixin:
             return
         event.accept()
         if not self._quitting:
-            self._quitting = True
-            QtCore.QTimer.singleShot(0, QtWidgets.QApplication.quit)
+            QtCore.QTimer.singleShot(0, self._quit)

@@ -942,5 +942,92 @@ class PlaybackLaneTests(unittest.TestCase):
         self.assertTrue(playback_pool.waitForDone(5_000))
 
 
+class TrayLifetimeTests(unittest.TestCase):
+    """Keep tray actions alive and make explicit shutdown release owned work.
+
+    Example: `TrayLifetimeTests("test_tray_menu_is_owned_by_window")`.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Create the shared offscreen Qt application for tray widget tests.
+
+        Example: a QMenu requires one QApplication instance.
+        """
+
+        cls._app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+    def test_tray_menu_is_owned_by_window(self) -> None:
+        """Retain the context menu after `_build_tray` returns.
+
+        Example: right-click still exposes Quit after Python garbage collection.
+        """
+
+        class Window(library_window_support.WindowRuntimeMixin, QtWidgets.QMainWindow):
+            """Supply the runtime mixin with a minimal native window.
+
+            Example: `Window()._build_tray()` exercises real Qt ownership.
+            """
+
+            def check_now(self) -> None:
+                """Stand in for the full library check action.
+
+                Example: the tray action can connect without a service.
+                """
+
+        window = Window()
+        tray = window._build_tray()
+
+        self.assertIs(window._tray_menu.parent(), window)
+        self.assertIs(tray.contextMenu(), window._tray_menu)
+        self.assertIn("Quit", [action.text() for action in window._tray_menu.actions()])
+
+    @mock.patch.object(QtWidgets.QApplication, "quit")
+    def test_explicit_quit_hides_tray_and_stops_workers(self, quit_app: mock.Mock) -> None:
+        """Perform shutdown cleanup before asking the Qt event loop to exit.
+
+        Example: active mpv and pipeline workers cannot leave a dead tray icon.
+        """
+
+        window = SimpleNamespace(
+            _quitting=False,
+            _timer=mock.Mock(),
+            _metadata_timer=mock.Mock(),
+            _tray=mock.Mock(),
+            _stop_workers=mock.Mock(),
+        )
+
+        library_window_support.WindowRuntimeMixin._quit(window)
+
+        self.assertTrue(window._quitting)
+        window._tray.hide.assert_called_once_with()
+        window._stop_workers.assert_called_once_with()
+        quit_app.assert_called_once_with()
+
+    def test_worker_shutdown_cancels_tasks_and_closes_playback(self) -> None:
+        """Cancel active work, discard pending work, and close every owned mpv.
+
+        Example: explicit Quit does not wait indefinitely for a thread pool.
+        """
+
+        tasks = [mock.Mock(), mock.Mock(), mock.Mock()]
+        window = SimpleNamespace(
+            _active_task=tasks[0],
+            _metadata_task=tasks[1],
+            _channel_tasks={1: tasks[2]},
+            _pool=mock.Mock(),
+            _playback_pool=mock.Mock(),
+            _service=mock.Mock(),
+        )
+
+        library_window_support.WindowRuntimeMixin._stop_workers(window)
+
+        for task in tasks:
+            task.cancel.assert_called_once_with()
+        window._pool.clear.assert_called_once_with()
+        window._playback_pool.clear.assert_called_once_with()
+        window._service.stop_playback.assert_called_once_with()
+
+
 if __name__ == "__main__":
     unittest.main()

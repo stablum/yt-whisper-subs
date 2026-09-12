@@ -435,6 +435,14 @@ class LibraryService:
 
         return self._playback.seek(video_id, seconds)
 
+    def stop_playback(self) -> bool:
+        """Close only the mpv session launched and tracked by this library.
+
+        Example: app shutdown calls `service.stop_playback()` before Qt exits.
+        """
+
+        return self._playback.quit()
+
     def _check_channel(self, channel: types.Channel, report: ReportFn) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.
 

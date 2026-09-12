@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
 
 
@@ -75,6 +76,26 @@ class SubtitlePairTests(unittest.TestCase):
             self.assertEqual(sidecar_path.read_text(encoding="utf-8"), archive_path.read_text(encoding="utf-8"))
             self.assertIn("Hallo allemaal", sidecar_path.read_text(encoding="utf-8"))
 
+    def test_new_transcript_replaces_archive_and_stale_backups(self) -> None:
+        """Make the new sidecar the sole source before final transforms run.
+
+        Example: a repaired transcript cannot retain its hallucinated archive.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            pair = subtitle_files.SubtitlePair(root / "video.srt", root / "archive.srt")
+            pair.sidecar.write_text("new", encoding="utf-8")
+            pair.archive.write_text("stale", encoding="utf-8")
+            backups = [subtitle_files.uncompacted_backup_path(path) for path in pair]
+            for path in backups:
+                path.write_text("stale", encoding="utf-8")
+
+            pair.accept_sidecar_replacement()
+
+            self.assertFalse(any(path.exists() for path in backups))
+            self.assertEqual(pair.archive.read_text(encoding="utf-8"), "new")
+
     def _args(self, *, compact_subs: str) -> argparse.Namespace:
         """Build the option namespace used by subtitle pair transforms.
 
@@ -101,6 +122,61 @@ class SubtitlePairTests(unittest.TestCase):
         """
 
         return f"1\n00:00:00,000 --> 00:00:01,000\n{text}\n"
+
+
+class SubtitleQualityTests(unittest.TestCase):
+    """Reject long speech-recognition loops without flagging ordinary repetition.
+
+    Example: `SubtitleQualityTests("test_repeated_long_phrase_is_invalid")`.
+    """
+
+    def test_repeated_long_phrase_is_invalid(self) -> None:
+        """Detect the exact 30-second repetition pattern from the reported video.
+
+        Example: repeated station-ident cues become a repairable pipeline issue.
+        """
+
+        cues = [
+            srt.SubtitleCue(idx * 30_000, (idx + 1) * 30_000, "TV Gelderland 2021")
+            for idx in range(3)
+        ]
+
+        self.assertEqual(srt.repeated_phrase_loop(cues), "TV Gelderland 2021")
+
+    def test_short_or_nonconsecutive_repetition_is_usable(self) -> None:
+        """Allow normal repeated words unless they form one long consecutive loop.
+
+        Example: several brief music labels do not condemn a complete transcript.
+        """
+
+        cues = [
+            srt.SubtitleCue(0, 3_000, "Music"),
+            srt.SubtitleCue(33_000, 36_000, "Music"),
+            srt.SubtitleCue(66_000, 69_000, "Music"),
+            srt.SubtitleCue(69_000, 72_000, "Speech"),
+            srt.SubtitleCue(12_000, 42_000, "Music"),
+            srt.SubtitleCue(42_000, 72_000, "Speech"),
+            srt.SubtitleCue(72_000, 102_000, "Music"),
+        ]
+
+        self.assertIsNone(srt.repeated_phrase_loop(cues))
+
+    def test_file_issue_explains_loop(self) -> None:
+        """Return a user-facing reason rather than a generic invalid status.
+
+        Example: the GUI can explain why Repair replaced Complete.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "video.srt"
+            content = "\n\n".join(
+                f"{idx + 1}\n00:0{idx}:00,000 --> 00:0{idx + 1}:00,000\nStation ident"
+                for idx in range(3)
+            )
+            path.write_text(content, encoding="utf-8")
+
+            self.assertIn("repeated speech-recognition loop", srt.file_issue(path) or "")
+            self.assertFalse(srt.file_is_usable(path))
 
 
 if __name__ == "__main__":

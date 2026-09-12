@@ -47,6 +47,8 @@ LOWERCASE_AFTER_SOFT_PERIOD_WORDS = FALSE_PERIOD_START_WORDS | frozenset(
     her his she
     """.split()
 )
+MIN_LOOP_CUES = 3
+MIN_LOOP_DURATION_MS = 60_000
 
 
 class SubtitleCue(NamedTuple):
@@ -134,18 +136,56 @@ def parse_srt(content: str) -> list[SubtitleCue]:
     return cues
 
 
-def file_has_cues(path: Path) -> bool:
-    """Treat only a readable SRT containing parsed text cues as a valid yield.
+def repeated_phrase_loop(cues: list[SubtitleCue]) -> str | None:
+    """Find Whisper's long consecutive same-phrase hallucination pattern.
 
-    Example: `file_has_cues(Path("video.srt"))` rejects empty or NUL files.
+    Example: three identical 30-second cues return their repeated phrase.
+    """
+
+    phrase = ""
+    run_count = 0
+    run_duration_ms = 0
+    for cue in cues:
+        normalized = re.sub(r"\W+", " ", cue.text.casefold(), flags=re.UNICODE).strip()
+        cue_duration_ms = max(0, cue.end_ms - cue.start_ms)
+        if normalized and normalized == phrase:
+            run_count += 1
+            run_duration_ms += cue_duration_ms
+        else:
+            phrase = normalized
+            run_count = 1
+            run_duration_ms = cue_duration_ms
+        if run_count >= MIN_LOOP_CUES and run_duration_ms >= MIN_LOOP_DURATION_MS:
+            return cue.text
+    return None
+
+
+def file_issue(path: Path) -> str | None:
+    """Describe why an SRT cannot be trusted as a finished subtitle yield.
+
+    Example: `file_issue(Path("video.srt"))` reports missing or looped cues.
     """
 
     if not path.is_file():
-        return False
+        return "are missing"
     try:
-        return bool(parse_srt(path.read_text(encoding="utf-8-sig")))
+        cues = parse_srt(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeError):
-        return False
+        return "cannot be read"
+    if not cues:
+        return "contain no readable cues"
+    if phrase := repeated_phrase_loop(cues):
+        return f'contain a repeated speech-recognition loop ("{phrase}")'
+    return None
+
+
+def file_is_usable(path: Path) -> bool:
+    """Accept only readable, non-looping SRT cues as a completed yield.
+
+    Example: `file_is_usable(Path("video.srt"))` rejects Whisper loops.
+    """
+
+    return file_issue(path) is None
 
 
 def cue_reading_speed(text: str, start_ms: int, end_ms: int) -> float:

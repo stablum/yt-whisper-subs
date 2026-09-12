@@ -74,10 +74,10 @@ def pipeline_issue(record: types.VideoRecord) -> str | None:
         return None
     primary = video.with_suffix(".srt")
     english = video.with_name(f"{video.stem}.en.srt")
-    if not srt.file_has_cues(primary):
-        return "Dutch subtitles are missing or invalid"
-    if not srt.file_has_cues(english):
-        return "English subtitles are missing or invalid"
+    if issue := srt.file_issue(primary):
+        return f"Dutch subtitles {issue}"
+    if issue := srt.file_issue(english):
+        return f"English subtitles {issue}"
     return None
 
 

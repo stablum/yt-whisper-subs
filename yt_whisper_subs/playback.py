@@ -89,15 +89,15 @@ class PlaybackPrefs(NamedTuple):
 
 
 class PlaybackControl:
-    """Expose safe commands for the one library-owned active mpv session.
+    """Expose safe commands for every library-owned active mpv session.
 
     Example: `control.seek(video_id, 90)` targets only the matching video.
     """
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._video_id: str | None = None
-        self._monitor: mpv_ipc.MpvMonitor | None = None
+        self._sessions: dict[mpv_ipc.MpvMonitor, str] = {}
+        self._closing = False
 
     def activate(self, video_id: str, monitor: mpv_ipc.MpvMonitor) -> None:
         """Publish a monitor just before its matching mpv process starts.
@@ -106,8 +106,11 @@ class PlaybackControl:
         """
 
         with self._lock:
-            self._video_id = video_id
-            self._monitor = monitor
+            closing = self._closing
+            if not closing:
+                self._sessions[monitor] = video_id
+        if closing:
+            monitor.quit()
 
     def deactivate(self, monitor: mpv_ipc.MpvMonitor) -> None:
         """Clear the session only when the same monitor is still active.
@@ -116,9 +119,7 @@ class PlaybackControl:
         """
 
         with self._lock:
-            if self._monitor is monitor:
-                self._video_id = None
-                self._monitor = None
+            self._sessions.pop(monitor, None)
 
     def seek(self, video_id: str, seconds: float) -> bool:
         """Seek only a matching active video without launching another player.
@@ -127,8 +128,23 @@ class PlaybackControl:
         """
 
         with self._lock:
-            monitor = self._monitor if self._video_id == video_id else None
+            monitor = next(
+                (item for item, active_id in reversed(self._sessions.items()) if active_id == video_id),
+                None,
+            )
         return monitor.seek(seconds) if monitor else False
+
+    def quit(self) -> bool:
+        """Close the active library-owned player without touching other mpv windows.
+
+        Example: `control.quit()` releases its playback worker during app shutdown.
+        """
+
+        with self._lock:
+            self._closing = True
+            monitors = tuple(self._sessions)
+        results = [monitor.quit() for monitor in monitors]
+        return any(results)
 
 
 class PlaybackSession(NamedTuple):
@@ -337,7 +353,7 @@ def sidecar_subtitles(video_path: Path) -> list[Path]:
 
     english = video_path.with_name(f"{video_path.stem}.en.srt")
     primary = video_path.with_suffix(".srt")
-    return [path for path in (english, primary) if srt.file_has_cues(path)]
+    return [path for path in (english, primary) if srt.file_is_usable(path)]
 
 
 def play_video(

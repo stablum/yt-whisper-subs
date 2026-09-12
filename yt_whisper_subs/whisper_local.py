@@ -52,6 +52,12 @@ def run_whisper(
         args.device,
         "--fp16",
         "True" if args.device == "cuda" else "False",
+        "--condition_on_previous_text",
+        "False",
+        "--word_timestamps",
+        "True",
+        "--hallucination_silence_threshold",
+        "2",
     ]
 
     if language and language != "auto":
@@ -63,8 +69,8 @@ def run_whisper(
         proc.run(whisper_cmd)
 
         generated_srt = tmp_output_dir / f"{audio_path.stem}.srt"
-        if not srt.file_has_cues(generated_srt):
-            raise RuntimeError(f"Whisper finished, but produced no usable subtitle cues at: {generated_srt}")
+        if issue := srt.file_issue(generated_srt):
+            raise RuntimeError(f"Whisper finished, but its subtitles {issue}: {generated_srt}")
 
         if srt_path.exists():
             srt_path.unlink()

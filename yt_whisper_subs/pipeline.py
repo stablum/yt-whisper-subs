@@ -195,9 +195,10 @@ class PipelineRunner:
             print("Subtitle file already exists. Use --force to regenerate.")
 
         if run_yields.make_english:
-            self._generate_english_subs(run_yields)
+            self._generate_english_subs(run_yields, regenerate=need_primary_generation)
         if run_yields.make_chapters:
-            self._generate_chapters(run_yields)
+            subtitles_changed = need_primary_generation or need_english_generation
+            self._generate_chapters(run_yields, regenerate=subtitles_changed)
 
         progress.emit(progress.Stage.FINALIZING, 0.0, "Finalizing files")
         self._finish(run_yields)
@@ -399,18 +400,24 @@ class PipelineRunner:
             self._paths,
             self._args,
         )
+        run_yields.primary.accept_sidecar_replacement()
         run_yields.primary.finalize(self._args, is_english=False, label="primary")
         if not run_yields.primary.ready():
             raise RuntimeError("speech-to-text finished without usable primary subtitle yields")
         progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
 
-    def _generate_english_subs(self, run_yields: RunYields) -> None:
+    def _generate_english_subs(self, run_yields: RunYields, *, regenerate: bool = False) -> None:
         """Generate or reuse English subtitles with the selected provider.
 
-        Example: `self._generate_english_subs(run_yields)`.
+        Example: `self._generate_english_subs(run_yields, regenerate=True)` follows new Dutch cues.
         """
 
-        if run_yields.english.ready() and not self._args.force and not self._force_english(run_yields):
+        if (
+            run_yields.english.ready()
+            and not regenerate
+            and not self._args.force
+            and not self._force_english(run_yields)
+        ):
             print()
             print("English subtitle file already exists. Use --force-english or --force to regenerate.")
             return
@@ -426,7 +433,7 @@ class PipelineRunner:
         Example: `self._generate_openai_english_subs(run_yields)`.
         """
 
-        if not srt.file_has_cues(run_yields.primary.sidecar):
+        if not srt.file_is_usable(run_yields.primary.sidecar):
             raise RuntimeError("primary subtitles are required before OpenAI English translation can run.")
 
         print()
@@ -437,6 +444,7 @@ class PipelineRunner:
             run_yields.english.sidecar,
             self._args,
         )
+        run_yields.english.accept_sidecar_replacement()
         run_yields.english.align_timings_to(
             run_yields.primary.sidecar,
             self._args,
@@ -467,18 +475,24 @@ class PipelineRunner:
             language=self._args.language,
             model=opts.english_model(self._args),
         )
+        run_yields.english.accept_sidecar_replacement()
         run_yields.english.finalize(self._args, is_english=True, label="English")
         if not run_yields.english.ready():
             raise RuntimeError("speech translation finished without usable English subtitle yields")
         progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
 
-    def _generate_chapters(self, run_yields: RunYields) -> None:
+    def _generate_chapters(self, run_yields: RunYields, *, regenerate: bool = False) -> None:
         """Create a durable bilingual chapter plan from final subtitle cues.
 
-        Example: `self._generate_chapters(run_yields)` follows translation.
+        Example: `self._generate_chapters(run_yields, regenerate=True)` follows new subtitles.
         """
 
-        if run_yields.chapters.ready() and not self._args.force and not self._force_chapters(run_yields):
+        if (
+            run_yields.chapters.ready()
+            and not regenerate
+            and not self._args.force
+            and not self._force_chapters(run_yields)
+        ):
             print()
             print("Chapter plan already exists. Use --force-chapters or --force to regenerate.")
             return

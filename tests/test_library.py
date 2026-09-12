@@ -890,6 +890,29 @@ class ArtifactCacheTests(unittest.TestCase):
 
             self.assertEqual(validate.call_count, 2)
 
+    def test_pipeline_health_names_repeated_whisper_loop(self) -> None:
+        """Expose hallucinated Dutch cues as a specific repairable issue.
+
+        Example: the affected row no longer presents its pipeline as complete.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video = root / "rZwDlb7DhHw.mkv"
+            video.write_bytes(b"video")
+            loop = "\n\n".join(
+                f"{idx + 1}\n00:0{idx}:00,000 --> 00:0{idx + 1}:00,000\nTV Gelderland 2021"
+                for idx in range(3)
+            )
+            video.with_suffix(".srt").write_text(loop, encoding="utf-8")
+            video.with_name("rZwDlb7DhHw.en.srt").write_text(loop, encoding="utf-8")
+            local = types.LocalMedia(video, 100, video.stat().st_size)
+            record = types.VideoRecord(make_meta("rZwDlb7DhHw", "Affected"), 1, 100, local, None, None)
+
+            issue = library_artifacts.pipeline_issue(record)
+
+            self.assertIn("Dutch subtitles contain a repeated speech-recognition loop", issue or "")
+
 class LibraryFeedTests(unittest.TestCase):
     """Cover channel normalization and yt-dlp field mapping.
 

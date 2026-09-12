@@ -72,8 +72,9 @@ The companion library is optimized for a second workflow:
     in-memory model state.
 13. Recover a pipeline left by a system crash from durable stage checkpoints and
     reuse every complete or partial yield when the user clicks Resume.
-14. Detect missing or corrupt subtitle yields, show them as Issues, and offer a
-    one-click Repair action instead of claiming that the pipeline is complete.
+14. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
+    the exact reason as an Issue, and offer one-click Repair instead of claiming
+    that the pipeline is complete.
 
 ## Important Defaults
 
@@ -85,6 +86,7 @@ These defaults are hard-coded near the top of the script:
 | Managed virtual environment | `.venv` beside the script |
 | Whisper language | `nl` |
 | Primary Whisper model | `turbo` |
+| Whisper anti-loop decoding | previous-text conditioning off; word timestamps and hallucination silence skipping on |
 | English translation provider | `openai` |
 | OpenAI translation model | `gpt-5-mini` |
 | OpenAI reasoning effort | `low` |
@@ -121,7 +123,7 @@ These defaults are hard-coded near the top of the script:
 | Library metadata hydration pace | at most `1` video lookup per minute |
 | Failed metadata lookup cooldown | `24` hours |
 | Metadata queue pause after failure | `15` minutes |
-| Library close behavior | keep running in the system tray |
+| Library close behavior | keep running in the system tray; explicit Quit closes owned mpv/workers |
 | Start with Windows | disabled; optional per-user quiet tray launch |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
@@ -178,8 +180,10 @@ When this launcher is started from PowerShell, WezTerm, or another terminal, the
 outer process remains attached until the managed GUI exits. Pressing **Ctrl+C**
 now terminates that managed `pythonw.exe` process and immediately restores the
 prompt with the conventional interrupted exit code `130`. Closing the window
-can still hide it in the tray by design; use **Library → Quit** for a normal
-zero-code exit.
+can still hide it in the tray by design; use **Library → Quit** or the tray
+icon's persistent **Quit** action for a normal zero-code exit. Explicit shutdown
+hides the icon immediately, cancels owned background work, and asks every
+library-launched mpv session to close so worker threads cannot strand the process.
 
 Choose **Library → Settings**, enable **Start quietly in the system tray when I
 sign in**, and click Save to start the library with the current Windows user.
@@ -882,10 +886,13 @@ be orphaned. It is rendered as an amber **Cancelled** state rather than a red
 operational failure. Work already queued behind it remains queued.
 
 A downloaded media file is not sufficient proof of pipeline completion. Dutch
-and English sidecar/archive pairs must contain parseable SRT cues, and stage
-completion is emitted only after its durable outputs validate. Damaged or
-incomplete rows expose **Repair**, which reuses the media and valid prior yields
-while rerunning only what is missing.
+and English sidecar/archive pairs must contain parseable SRT cues without a long
+consecutive same-phrase loop, and stage completion is emitted only after its
+durable outputs validate. Damaged, hallucinated, or incomplete rows expose
+**Repair**, which reuses the media and valid prior yields while rerunning only
+what is missing. Replacing primary subtitles also regenerates dependent English
+subtitles and chapters, so downstream files cannot remain based on rejected
+speech recognition.
 
 **Video → Remove download and yields…** or **Shift+Delete** first shows a
 confirmation with the exact file manifest. Removal enumerates only immediate
@@ -909,6 +916,8 @@ while another video is downloading, running Whisper, translating, or generating
 chapters. Those expensive operations remain serialized one at a time. Playback
 progress updates its table row without replacing the active pipeline stage in
 the status bar.
+Explicit application shutdown sends launch-scoped IPC Quit commands to every
+library-owned mpv window before Qt exits; unrelated mpv processes are untouched.
 Library-launched playback additionally enables one ephemeral IPC endpoint so
 the Watched bar updates live. Direct CLI playback keeps its established command
 shape and terminal interaction unchanged.
@@ -959,6 +968,9 @@ whisper.exe <audio>
   --device <cuda|cpu>
   --fp16 True|False
   --language <language>
+  --condition_on_previous_text False
+  --word_timestamps True
+  --hallucination_silence_threshold 2
   --output_dir <temporary subtitle directory>
 ```
 
@@ -967,6 +979,15 @@ The default task is `transcribe`, default language is `nl`, and default model is
 
 If the language is not `auto`, the script passes it explicitly to Whisper. This
 is faster and more deterministic for the intended Dutch workflow.
+
+Previous-text conditioning is disabled because this makes Whisper less prone to
+getting stuck in a repeated failure loop. Word timestamps enable its
+hallucination-silence skipping, which removes suspect segments around silence
+instead of manufacturing long station-ident or credit phrases. After Whisper
+exits, the shared SRT validator also rejects any remaining run of three or more
+identical consecutive cues displayed for at least one minute before the new file
+can replace a durable sidecar. The same validator drives pipeline reuse, the GUI
+Issues view, Repair, and mpv sidecar selection.
 
 Python subprocesses inherit `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` from the
 wrapper. This keeps Whisper's live transcript output from failing on Windows
@@ -1302,9 +1323,12 @@ youtube_id.uncompact.srt
 ```
 
 Backups are created only if the compacted output differs and no backup already
-exists. If a final compacted subtitle is missing but the `.uncompact.srt` backup
-exists, the script can rebuild the final file from the backup according to the
-current compaction settings.
+exists. After successful replacement speech recognition, its sidecar becomes
+authoritative: the old archive and stale transform backups are replaced before
+the new transcript is finalized. If a final
+compacted subtitle is later missing but the new `.uncompact.srt` backup exists,
+the script can rebuild the final file from that backup according to the current
+compaction settings.
 
 This backup design was chosen because compaction is heuristic. It should be
 reversible enough that future tuning does not require rerunning Whisper.
@@ -2092,9 +2116,10 @@ This repository is licensed under the GNU General Public License version 3. See
 - Chapter generation is a separate whole-transcript OpenAI request and can add
   cost for long videos; input is compressed to at most 240 timed windows.
 - `--language auto` does not trigger automatic English-for-Dutch translation.
-- Existing `.en.srt` files are treated as ready regardless of whether they were
-  produced by Whisper or OpenAI. Use `--force-english` or `--force` to
-  regenerate them.
+- Existing `.en.srt` files are reusable regardless of whether they were produced
+  by Whisper or OpenAI, provided they parse and do not contain a detected long
+  repeated phrase loop. Use `--force-english` or `--force` for other semantic
+  translation problems.
 - The YouTube `.info.json` sidecar does not yet record subtitle-generation
   provenance such as Whisper/OpenAI models, prompt version, or compaction
   settings.

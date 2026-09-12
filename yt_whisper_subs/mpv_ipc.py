@@ -197,6 +197,14 @@ class MpvMonitor:
         command = {"command": ["seek", max(0.0, float(seconds)), "absolute+exact"]}
         return self._send(command)
 
+    def quit(self) -> bool:
+        """Ask only this launch-owned mpv process to exit through its IPC pipe.
+
+        Example: `monitor.quit()` lets the GUI shut down without waiting on mpv.
+        """
+
+        return self._send({"command": ["quit"]})
+
     def _send(self, command: dict[str, object]) -> bool:
         """Write one JSON command safely or retain it until connection startup.
 

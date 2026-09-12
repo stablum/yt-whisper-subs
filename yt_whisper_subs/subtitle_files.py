@@ -94,7 +94,7 @@ class SubtitlePair(NamedTuple):
         Example: `pair.ready()`.
         """
 
-        return srt.file_has_cues(self.sidecar) and srt.file_has_cues(self.archive)
+        return srt.file_is_usable(self.sidecar) and srt.file_is_usable(self.archive)
 
     def seed_sidecar_from_archive(self) -> bool:
         """Copy an archive subtitle beside the video when the sidecar is missing.
@@ -120,6 +120,16 @@ class SubtitlePair(NamedTuple):
 
         self.archive.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(self.sidecar, self.archive)
+
+    def accept_sidecar_replacement(self) -> None:
+        """Make a new sidecar authoritative before applying final transforms.
+
+        Example: `pair.accept_sidecar_replacement()` precedes finalizing repaired cues.
+        """
+
+        for path in self:
+            uncompacted_backup_path(path).unlink(missing_ok=True)
+        self.sync_archive()
 
     def hydrate(
         self,
