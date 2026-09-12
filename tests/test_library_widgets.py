@@ -85,6 +85,33 @@ class DetailPanelTests(unittest.TestCase):
             panel.set_busy(True)
             self.assertFalse(generate.isEnabled())
 
+    def test_long_description_scrolls_without_changing_panel_size_hint(self) -> None:
+        """Keep description content out of the inspector's layout calculation.
+
+        Example: a transcript-sized description scrolls inside a fixed pane.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "aaaaaaaaaaa.mkv"
+            path.write_bytes(b"video")
+            record = self._record(path)
+            panel = library_widgets.DetailPanel()
+            panel.set_record(record)
+            baseline = panel.sizeHint().height()
+            long_details = record.meta.details._replace(
+                description="A very long description.\n" * 2_000,
+            )
+            panel.set_record(record._replace(meta=record.meta._replace(details=long_details)))
+            description = panel.findChild(QtWidgets.QTextEdit, "detailDescription")
+
+            self.assertIsNotNone(description)
+            self.assertTrue(description.isReadOnly())
+            self.assertEqual(
+                description.sizeAdjustPolicy(),
+                QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored,
+            )
+            self.assertEqual(panel.sizeHint().height(), baseline)
+
     def test_settings_round_trip_recent_history_and_date_cutoff(self) -> None:
         """Expose bounded history and an optional calendar cutoff natively.
 
@@ -330,10 +357,10 @@ class DetailPanelTests(unittest.TestCase):
         return types.VideoRecord(types.VideoMeta(ident, origin, details), 1, 1, local, None, None)
 
 
-class HeaderLayoutTests(unittest.TestCase):
-    """Verify interactive video columns and durable native header state.
+class CatalogLayoutTests(unittest.TestCase):
+    """Verify interactive columns, inspector sizing, and durable Qt state.
 
-    Example: `HeaderLayoutTests("test_width_and_order_round_trip")`.
+    Example: `CatalogLayoutTests("test_width_and_order_round_trip")`.
     """
 
     @classmethod
@@ -393,6 +420,46 @@ class HeaderLayoutTests(unittest.TestCase):
         self.assertEqual(header.visualIndex(library_model.TITLE_COLUMN), library_model.TITLE_COLUMN)
         self.assertEqual(table.columnWidth(library_model.TITLE_COLUMN), 420)
 
+    def test_catalog_places_table_and_inspector_in_vertical_splitter(self) -> None:
+        """Build the actual adjustable boundary instead of a content-sized stack.
+
+        Example: dragging the native handle reallocates table and detail height.
+        """
+
+        window = SimpleNamespace(
+            _apply_default_table_layout=library_gui.LibraryWindow._apply_default_table_layout,
+            _apply_default_catalog_layout=library_gui.LibraryWindow._apply_default_catalog_layout,
+        )
+
+        catalog = library_gui.LibraryWindow._build_catalog(window, QtWidgets.QListWidget())
+
+        self.assertEqual(catalog.splitter.orientation(), QtCore.Qt.Orientation.Vertical)
+        self.assertIs(catalog.splitter.widget(0), catalog.table)
+        self.assertIs(catalog.splitter.widget(1), catalog.detail)
+        self.assertFalse(catalog.splitter.childrenCollapsible())
+
+    def test_inspector_split_round_trip(self) -> None:
+        """Restore the manually selected inspector height in a fresh splitter.
+
+        Example: a 190-pixel inspector remains 190 pixels after restart.
+        """
+
+        source = self._splitter()
+        source.setSizes([410, 190])
+        source_db = mock.Mock()
+        source_window = self._window(self._table()[0], source_db, source)
+
+        library_gui.LibraryWindow._store_catalog_layout(source_window)
+
+        key, encoded = source_db.set_setting.call_args.args
+        self.assertEqual(key, "video_catalog_splitter_v1")
+        target = self._splitter()
+        target_db = mock.Mock()
+        target_db.setting.return_value = encoded
+        target_window = self._window(self._table()[0], target_db, target)
+        library_gui.LibraryWindow._restore_catalog_layout(target_window)
+        self.assertEqual(target.sizes(), source.sizes())
+
     @staticmethod
     def _table() -> tuple[QtWidgets.QTableView, library_model.VideoTableModel]:
         """Create one table using the production default-layout policy.
@@ -407,13 +474,31 @@ class HeaderLayoutTests(unittest.TestCase):
         return table, model
 
     @staticmethod
-    def _window(table: QtWidgets.QTableView, db: mock.Mock) -> SimpleNamespace:
+    def _splitter() -> QtWidgets.QSplitter:
+        """Create a production-shaped vertical catalog splitter for state tests.
+
+        Example: `_splitter().sizes()` contains table and inspector heights.
+        """
+
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        splitter.resize(800, 600)
+        splitter.addWidget(QtWidgets.QWidget())
+        splitter.addWidget(QtWidgets.QWidget())
+        splitter.setChildrenCollapsible(False)
+        return splitter
+
+    @staticmethod
+    def _window(
+        table: QtWidgets.QTableView,
+        db: mock.Mock,
+        splitter: QtWidgets.QSplitter | None = None,
+    ) -> SimpleNamespace:
         """Build the small window-shaped collaborator used by persistence methods.
 
         Example: `_window(table, db)` avoids booting background library work.
         """
 
-        catalog = SimpleNamespace(table=table)
+        catalog = SimpleNamespace(table=table, splitter=splitter)
         return SimpleNamespace(
             _ui=SimpleNamespace(catalog=catalog),
             _service=SimpleNamespace(db=db),

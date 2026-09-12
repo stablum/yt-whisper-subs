@@ -47,7 +47,25 @@ QFrame#detailPanel { background: #20252e; border: 1px solid #2d3440; border-radi
 QFrame#chapterPanel { background: #1b2028; border-left: 1px solid #303844; }
 QLabel#detailTitle, QLabel#dialogHeading { font-size: 14pt; font-weight: 700; color: white; }
 QLabel#detailFacts { color: #8fc7ff; }
-QLabel#detailDescription { color: #b4bdc9; }
+QTextEdit#detailDescription {
+  background: transparent; color: #b4bdc9; border: 0; padding: 0;
+  selection-background-color: #294467;
+}
+QTextEdit#detailDescription QScrollBar:vertical {
+  background: #1b2028; width: 9px; margin: 0;
+}
+QTextEdit#detailDescription QScrollBar::handle:vertical {
+  background: #485567; border-radius: 4px; min-height: 28px;
+}
+QTextEdit#detailDescription QScrollBar::handle:vertical:hover { background: #5e7188; }
+QTextEdit#detailDescription QScrollBar::add-line:vertical,
+QTextEdit#detailDescription QScrollBar::sub-line:vertical { height: 0; }
+QTextEdit#detailDescription QScrollBar::add-page:vertical,
+QTextEdit#detailDescription QScrollBar::sub-page:vertical { background: transparent; }
+QSplitter#catalogSplitter::handle {
+  background: #171a21; border-top: 1px solid #303844; border-bottom: 1px solid #303844;
+}
+QSplitter#catalogSplitter::handle:hover { background: #26364d; border-color: #4ea1f3; }
 QLabel#chapterHeading { color: #f2f5f9; font-size: 10pt; font-weight: 700; }
 QLabel#chapterHint { color: #8f9aaa; }
 QPushButton#chapterGenerate { color: #f5bde0; background: transparent; border: 0; padding: 4px 7px; }

@@ -130,6 +130,7 @@ These defaults are hard-coded near the top of the script:
 | Library smart view | remembered across launches; search and channel remain independent |
 | Channel quick access | persistent starred Pinned shelf; right-click or `Alt+P` |
 | Library column layout | resizable, reorderable, and remembered across launches |
+| Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
 | Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
@@ -595,8 +596,8 @@ It contains:
 - instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable, resizable, and reorderable pipeline, watched, title, channel,
   published, downloaded, duration, size, and view-count columns;
-- a selected-video inspector for description, local path, errors, and a
-  scrollable bilingual chapter list with exact jump points;
+- a selected-video inspector with a scrollable description, local path, errors,
+  and a scrollable bilingual chapter list with exact jump points;
 - manual Check, Download/Repair/Resume, Pause, Cancel, Play, Open on YouTube,
   and exact-yield removal actions;
 - configurable browser cookies, check interval, and current-user Windows login start;
@@ -692,6 +693,12 @@ header state is saved in the library database shortly after each change and
 again when the app exits, then restored on the next launch. Choose **View →
 Reset column layout** to return to the shipped order and readable default
 widths. Sorting remains available by clicking any header.
+
+The divider between the video table and selected-video inspector can also be
+dragged vertically. Its position is saved in the same SQLite settings source
+and restored on the next launch. Long descriptions scroll inside the inspector
+instead of changing its height. Choose **View → Reset video inspector size** to
+restore the shipped proportion.
 
 ### Pipeline Progress And Diagnostics
 
@@ -1702,7 +1709,8 @@ High-level groups:
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
-| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, bilingual chapter inspector, selected-video details, and activity trace. |
+| `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
+| `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, scroll-bounded bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
 | `yt_whisper_subs.library_window_actions` | Selection, settings, download/repair, and manifest-confirmed removal actions. |
 | `yt_whisper_subs.library_yields` | Exact non-recursive per-video yield inventory and individual-file removal. |
@@ -1711,7 +1719,7 @@ High-level groups:
 | `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
 | `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
-| `yt_whisper_subs.library_gui` | Main native window layout, persistent table-header state, and user interaction. |
+| `yt_whisper_subs.library_gui` | Main native window construction, widget wiring, and user interaction. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 | `yt_whisper_subs.windows_startup` | Exact per-user HKCU Run registration and safely quoted quiet-tray launch command. |
 
@@ -1783,8 +1791,8 @@ Start by preserving these invariants:
     hour-long video receives at least 15 chapters.
 26. Route chapter jumps only to a matching active library player; otherwise use
     the existing launch-at-time path, without persistent mpv configuration.
-27. Keep table layout state in the existing settings store, with model-provided
-    default widths and a visible reset action.
+27. Keep table-column and inspector-split state in the existing settings store,
+    with shipped defaults and visible reset actions.
 28. Bound each channel section, expand only to recover known overlap, prune only
     complete snapshots, and never remove a downloaded video through retention.
 29. Ignore Shorts in subscriptions and treat an absent Streams tab as a valid
@@ -1820,6 +1828,7 @@ playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
 native table-header resizing, reordering, persistence, and reset behavior;
+resizable inspector geometry, long-description containment, and split persistence;
 channel additions queued during active video work; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
 retention that preserves local media; playback dispatch during active work;

@@ -14,6 +14,7 @@ from PySide6 import QtWidgets
 
 import yt_whisper_subs
 from yt_whisper_subs import library_chapter_actions
+from yt_whisper_subs import library_layout
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
@@ -27,8 +28,6 @@ from yt_whisper_subs import library_workers
 from yt_whisper_subs import pipeline_progress as progress
 
 
-_TABLE_LAYOUT_SETTING = "video_table_header_v1"
-_TABLE_LAYOUT_SAVE_DELAY_MS = 250
 WINDOW_TITLE = f"YouTube Library · yt-whisper-subs v{yt_whisper_subs.__version__}"
 
 
@@ -57,6 +56,7 @@ class CatalogUi(NamedTuple):
     model: library_model.VideoTableModel
     proxy: library_model.VideoFilterModel
     filters: library_widgets.SmartFilterBar
+    splitter: QtWidgets.QSplitter
     detail: library_widgets.DetailPanel
 
 
@@ -77,6 +77,7 @@ class LibraryUi(NamedTuple):
 class LibraryWindow(
     library_window_actions.WindowActionsMixin,
     library_chapter_actions.ChapterActionsMixin,
+    library_layout.LayoutMixin,
     library_video_queue.VideoQueueMixin,
     library_window_support.WindowRuntimeMixin,
     QtWidgets.QMainWindow,
@@ -114,10 +115,11 @@ class LibraryWindow(
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
         self._ui = self._build_ui()
-        self._table_layout_timer = QtCore.QTimer(self)
-        self._table_layout_timer.setSingleShot(True)
-        self._table_layout_timer.timeout.connect(self._store_table_layout)
+        self._layout_timer = QtCore.QTimer(self)
+        self._layout_timer.setSingleShot(True)
+        self._layout_timer.timeout.connect(self._store_ui_layout)
         self._restore_table_layout()
+        self._restore_catalog_layout()
         saved_view = library_model.VideoView.from_key(
             self._service.db.setting("video_view", library_model.VideoView.ALL.key)
         )
@@ -157,8 +159,7 @@ class LibraryWindow(
         catalog = self._build_catalog(channels)
         content_layout.addLayout(header_layout)
         content_layout.addWidget(catalog.filters)
-        content_layout.addWidget(catalog.table, 1)
-        content_layout.addWidget(catalog.detail)
+        content_layout.addWidget(catalog.splitter, 1)
         root.addWidget(content, 1)
         self.setCentralWidget(central)
 
@@ -264,32 +265,15 @@ class LibraryWindow(
         table.setHorizontalScrollMode(QtWidgets.QAbstractItemView.ScrollMode.ScrollPerPixel)
         self._apply_default_table_layout(table, model)
         filters = library_widgets.SmartFilterBar()
-        return CatalogUi(channels, table, model, proxy, filters, library_widgets.DetailPanel())
-
-    @staticmethod
-    def _apply_default_table_layout(
-        table: QtWidgets.QTableView,
-        model: library_model.VideoTableModel,
-    ) -> None:
-        """Enable interactive columns and apply the model's readable defaults.
-
-        Example: View → Reset column layout invokes this for the video table.
-        """
-
-        header = table.horizontalHeader()
-        header.setStretchLastSection(False)
-        header.setSectionsMovable(True)
-        header.setFirstSectionMovable(True)
-        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Interactive)
-        for visual_idx, column in enumerate(range(model.columnCount())):
-            header.moveSection(header.visualIndex(column), visual_idx)
-            size = model.headerData(
-                column,
-                QtCore.Qt.Orientation.Horizontal,
-                QtCore.Qt.ItemDataRole.SizeHintRole,
-            )
-            if isinstance(size, QtCore.QSize):
-                table.setColumnWidth(column, size.width())
+        detail = library_widgets.DetailPanel()
+        splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
+        splitter.setObjectName("catalogSplitter")
+        splitter.setChildrenCollapsible(False)
+        splitter.setHandleWidth(9)
+        splitter.addWidget(table)
+        splitter.addWidget(detail)
+        self._apply_default_catalog_layout(splitter)
+        return CatalogUi(channels, table, model, proxy, filters, splitter, detail)
 
     def _connect_actions(self) -> None:
         """Wire model selections and controls after all widgets exist.
@@ -316,11 +300,12 @@ class LibraryWindow(
         selection.selectionChanged.connect(self._selection_changed)
         self._ui.catalog.table.doubleClicked.connect(self._activate_video)
         header = self._ui.catalog.table.horizontalHeader()
-        header.sectionMoved.connect(self._schedule_table_layout_store)
-        header.sectionResized.connect(self._schedule_table_layout_store)
+        header.sectionMoved.connect(self._schedule_layout_store)
+        header.sectionResized.connect(self._schedule_layout_store)
+        self._ui.catalog.splitter.splitterMoved.connect(self._schedule_layout_store)
         app = QtWidgets.QApplication.instance()
         if app:
-            app.aboutToQuit.connect(self._store_table_layout)
+            app.aboutToQuit.connect(self._store_ui_layout)
 
     def _build_menus(self) -> None:
         """Expose less-frequent channel, settings, and quit actions natively.
@@ -361,6 +346,7 @@ class LibraryWindow(
         clear_filters.triggered.connect(self._clear_filters)
         view_menu.addSeparator()
         view_menu.addAction("Reset column layout", self._reset_table_layout)
+        view_menu.addAction("Reset video inspector size", self._reset_catalog_layout)
         view_menu.addSeparator()
         trace_action = self._ui.trace.toggleViewAction()
         trace_action.setText("Activity trace")
@@ -374,50 +360,6 @@ class LibraryWindow(
         """
 
         self._service.db.set_setting("trace_visible", int(visible))
-
-    def _restore_table_layout(self) -> None:
-        """Restore Qt's versioned header state after applying safe defaults.
-
-        Example: reopening the library restores column widths and positions.
-        """
-
-        encoded = self._service.db.setting(_TABLE_LAYOUT_SETTING, "")
-        if not encoded:
-            return
-        try:
-            state = QtCore.QByteArray.fromBase64(encoded.encode("ascii"))
-        except UnicodeEncodeError:
-            return
-        self._ui.catalog.table.horizontalHeader().restoreState(state)
-
-    def _schedule_table_layout_store(self, *_change: int) -> None:
-        """Debounce repeated drag updates into one small settings write.
-
-        Example: resizing a column restarts the 250 ms save timer.
-        """
-
-        self._table_layout_timer.start(_TABLE_LAYOUT_SAVE_DELAY_MS)
-
-    def _store_table_layout(self) -> None:
-        """Persist the native header state containing widths and visual order.
-
-        Example: application shutdown flushes the latest table arrangement.
-        """
-
-        header = self._ui.catalog.table.horizontalHeader()
-        encoded = bytes(header.saveState().toBase64()).decode("ascii")
-        self._service.db.set_setting(_TABLE_LAYOUT_SETTING, encoded)
-
-    def _reset_table_layout(self) -> None:
-        """Return every video column to its shipped order and width.
-
-        Example: View → Reset column layout repairs an awkward arrangement.
-        """
-
-        catalog = self._ui.catalog
-        self._apply_default_table_layout(catalog.table, catalog.model)
-        self._table_layout_timer.stop()
-        self._store_table_layout()
 
     @QtCore.Slot(int)
     def _video_view_changed(self, view_id: int) -> None:

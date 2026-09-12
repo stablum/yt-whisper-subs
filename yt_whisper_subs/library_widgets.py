@@ -127,7 +127,7 @@ class DetailPanel(QtWidgets.QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("detailPanel")
-        self.setMinimumHeight(235)
+        self.setMinimumHeight(170)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -141,12 +141,25 @@ class DetailPanel(QtWidgets.QFrame):
         self._facts = QtWidgets.QLabel("")
         self._facts.setObjectName("detailFacts")
         self._facts.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
-        self._description = QtWidgets.QLabel("")
-        self._description.setWordWrap(True)
-        self._description.setObjectName("detailDescription")
-        self._description.setAlignment(
-            QtCore.Qt.AlignmentFlag.AlignTop | QtCore.Qt.AlignmentFlag.AlignLeft
+        self._description = QtWidgets.QTextEdit()
+        self._description.setReadOnly(True)
+        self._description.setAcceptRichText(False)
+        self._description.setLineWrapMode(QtWidgets.QTextEdit.LineWrapMode.WidgetWidth)
+        self._description.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._description.setSizeAdjustPolicy(
+            QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored
         )
+        self._description.setHorizontalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._description.setVerticalScrollBarPolicy(
+            QtCore.Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        self._description.setSizePolicy(
+            QtWidgets.QSizePolicy.Policy.Expanding,
+            QtWidgets.QSizePolicy.Policy.Ignored,
+        )
+        self._description.setObjectName("detailDescription")
         info_layout.addWidget(self._title)
         info_layout.addWidget(self._facts)
         info_layout.addWidget(self._description, 1)
@@ -212,7 +225,7 @@ class DetailPanel(QtWidgets.QFrame):
         if record.download_error:
             facts.append(f"Last error: {record.download_error}")
         self._facts.setText("  ·  ".join(facts))
-        self._description.setText(meta.details.description.strip().replace("\n", " ") or meta.identity.url)
+        self._description.setPlainText(meta.details.description.strip() or meta.identity.url)
         self._render_chapters(chapter_set)
 
     def set_busy(self, busy: bool) -> None:
