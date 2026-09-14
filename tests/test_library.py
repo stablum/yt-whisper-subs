@@ -416,6 +416,28 @@ class LibraryDbTests(unittest.TestCase):
             self.assertEqual(db.metadata_backfill_ids(1, retry_before=1_000), [attempted_id])
             self.assertEqual(db.metadata_backlog_count(), 2)
 
+    def test_cached_metadata_updates_known_rows_without_resurrecting_pruned_rows(self) -> None:
+        """Apply sidecars to admitted rows without rebuilding removed history.
+
+        Example: startup clears known queue work but leaves a pruned row absent.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            channel = db.add_channel("https://www.youtube.com/@example/videos", "@example", False)
+            known = make_meta("aaaaaaaaaaa", "Flat listing", None)
+            snapshot = types.ChannelSnapshot(channel.url, "UC-example", "Example", [known], True)
+            db.store_snapshot(channel.channel_id, snapshot)
+
+            cached = make_meta("aaaaaaaaaaa", "Cached title", 200)
+            removed = make_meta("bbbbbbbbbbb", "Removed title", 100)
+            self.assertEqual(db.refresh_known_metadata([cached, removed]), 1)
+
+            self.assertEqual(db.metadata_backlog_count(), 0)
+            self.assertEqual(db.video("aaaaaaaaaaa").meta.identity.title, "Cached title")
+            self.assertIsNone(db.video("bbbbbbbbbbb"))
+
     def test_initialize_migrates_an_existing_catalog(self) -> None:
         """Add queue and playback state without discarding an existing catalog.
 
@@ -596,6 +618,40 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertTrue(result.completed)
             self.assertEqual(result.remaining, 1)
             self.assertEqual(service.db.metadata_backlog_count(), 1)
+
+    def test_expired_metadata_is_persisted_and_not_requeued(self) -> None:
+        """Remember an old undated listing after its first full metadata lookup.
+
+        Example: each later channel check keeps a pre-cutoff video out of the queue.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            undated = make_meta(video_id, "Flat listing", None)
+            feed = FakeFeed([undated])
+            service = library_service.LibraryService(
+                out_dir,
+                {"python": Path("python")},
+                feed=feed,
+                downloader=FakeDownloader(out_dir),
+            )
+            service.db.set_setting("channel_published_after", "2026-08-01")
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+            self.assertEqual(service.db.metadata_backlog_count(), 1)
+
+            feed.videos = [make_meta(video_id, "Resolved old video", 100)]
+            result = service.backfill_metadata()
+            sidecar = out_dir / "metadata" / f"{video_id}.info.json"
+            self.assertTrue(result.completed)
+            self.assertTrue(sidecar.is_file())
+            self.assertIsNone(service.db.video(video_id))
+
+            feed.videos = [undated]
+            self.assertEqual(service.check_all(), 0)
+            self.assertIsNone(service.db.video(video_id))
+            self.assertEqual(service.db.metadata_backlog_count(), 0)
 
     def test_failed_metadata_lookup_is_deferred_without_pipeline_error(self) -> None:
         """Cooldown an unavailable lookup without marking the download failed.

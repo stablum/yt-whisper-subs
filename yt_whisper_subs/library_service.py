@@ -119,9 +119,21 @@ class LibraryService:
         Example: `service.scan_local()` makes old downloads visible immediately.
         """
 
+        sidecars = self._metadata_sidecars()
+        return self._scan_local(sidecars, report)
+
+    def _scan_local(
+        self,
+        sidecars: dict[str, types.VideoMeta],
+        report: ReportFn,
+    ) -> int:
+        """Reconcile media while applying one already-loaded metadata cache.
+
+        Example: channel checks reuse `sidecars` instead of parsing them twice.
+        """
+
         self.video_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
-        sidecars = self._metadata_sidecars()
         scanned: list[types.ScannedMedia] = []
         media_paths = sorted(
             path
@@ -139,6 +151,8 @@ class LibraryService:
             local = types.LocalMedia(path.resolve(), downloaded_at, stat.st_size)
             scanned.append(types.ScannedMedia(meta, local, metadata_complete))
         self.db.reconcile_media(scanned)
+        self.db.refresh_known_metadata(sidecars.values())
+        self.db.prune_remote_before(self._channel_policy().published_after)
         report(f"Indexed {len(scanned)} downloaded video(s)")
         return len(scanned)
 
@@ -167,6 +181,8 @@ class LibraryService:
             report(f"Metadata deferred for {hours:g} hours · {video_id} · {exc}")
             return MetadataBackfillResult(True, False, remaining)
 
+        # The sidecar is the durable authority that prevents a pruned row from re-queuing.
+        self._write_metadata(info)
         self.db.upsert_video(info.meta)
         policy = self._channel_policy()
         record = self.db.video(video_id)
@@ -182,7 +198,6 @@ class LibraryService:
             remaining = self.db.metadata_backlog_count()
             report(f"Metadata expired by retention · {video_id} · {removed:,} removed")
             return MetadataBackfillResult(True, True, remaining)
-        self._write_metadata(info)
         remaining = self.db.metadata_backlog_count()
         report(f"Metadata saved · {info.meta.identity.title} · {remaining:,} queued")
         return MetadataBackfillResult(True, True, remaining)
@@ -212,7 +227,7 @@ class LibraryService:
             raise RuntimeError("tracked channel no longer exists")
         report(f"Checking {channel.url}")
         try:
-            self._check_channel(channel, report)
+            self._check_channel(channel, report, self._metadata_sidecars())
         except task_cancel.CancelledError:
             raise
         except Exception as exc:
@@ -228,13 +243,14 @@ class LibraryService:
         Example: `service.check_all(report)` is called by the four-hour timer.
         """
 
-        self.scan_local(report)
+        sidecars = self._metadata_sidecars()
+        self._scan_local(sidecars, report)
         auto_ids: list[str] = []
         channels = self.db.channels()
         for idx, channel in enumerate(channels, start=1):
             report(f"Checking channel {idx}/{len(channels)} · {channel.title}")
             try:
-                auto_ids.extend(self._check_channel(channel, report))
+                auto_ids.extend(self._check_channel(channel, report, sidecars))
             except task_cancel.CancelledError:
                 raise
             except Exception as exc:
@@ -443,16 +459,24 @@ class LibraryService:
 
         return self._playback.quit()
 
-    def _check_channel(self, channel: types.Channel, report: ReportFn) -> list[str]:
+    def _check_channel(
+        self,
+        channel: types.Channel,
+        report: ReportFn,
+        sidecars: dict[str, types.VideoMeta],
+    ) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.
 
-        Example: `_check_channel(channel, report)` returns new IDs after baseline.
+        Example: `_check_channel(channel, report, sidecars)` returns new IDs after baseline.
         """
 
         initial_check = channel.baseline_at is None
         known_ids = self.db.channel_video_ids(channel.channel_id)
-        snapshot = self._feed.channel(channel.url, self._channel_policy(), known_ids)
+        policy = self._channel_policy()
+        snapshot = self._feed.channel(channel.url, policy, known_ids)
+        snapshot = self._apply_sidecars(snapshot, sidecars, policy.published_after)
         result = self.db.store_snapshot(channel.channel_id, snapshot)
+        new_ids = [video_id for video_id in result.new_ids if video_id not in sidecars]
         if not snapshot.complete:
             warning = "Partial refresh: Streams could not be checked; history preserved"
             self.db.set_channel_error(channel.channel_id, warning)
@@ -461,11 +485,35 @@ class LibraryService:
         pruned = f", {result.pruned} old remote {entry_word} removed"
         report(
             f"{snapshot.title}: {len(snapshot.videos)} retained, "
-            f"{len(result.new_ids)} new{pruned if result.pruned else ''}"
+            f"{len(new_ids)} new{pruned if result.pruned else ''}"
         )
         if initial_check or not channel.auto_download:
             return []
-        return result.new_ids
+        return new_ids
+
+    @staticmethod
+    def _apply_sidecars(
+        snapshot: types.ChannelSnapshot,
+        sidecars: dict[str, types.VideoMeta],
+        published_after: int | None,
+    ) -> types.ChannelSnapshot:
+        """Use durable metadata before deciding if flat channel rows are retained.
+
+        Example: an undated old row stays excluded after its first full lookup.
+        """
+
+        videos = [
+            sidecars.get(meta.identity.video_id, meta)
+            for meta in snapshot.videos
+        ]
+        if published_after is not None:
+            videos = [
+                meta
+                for meta in videos
+                if meta.origin.published_at is None
+                or meta.origin.published_at >= published_after
+            ]
+        return snapshot._replace(videos=videos)
 
     def _channel_policy(self) -> library_feed.ChannelScanPolicy:
         """Build bounded discovery policy from validated persisted settings.

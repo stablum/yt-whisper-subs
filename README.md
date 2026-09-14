@@ -123,6 +123,7 @@ These defaults are hard-coded near the top of the script:
 | Library metadata hydration pace | at most `1` video lookup per minute |
 | Failed metadata lookup cooldown | `24` hours |
 | Metadata queue pause after failure | `15` minutes |
+| Retention metadata memory | durable info sidecars prevent old videos from re-queuing |
 | Library close behavior | keep running in the system tray; explicit Quit closes owned mpv/workers |
 | Start with Windows | disabled; optional per-user quiet tray launch |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
@@ -805,6 +806,13 @@ always run before retries, so one unavailable video cannot block the backlog.
 This avoids request bursts while steadily restoring missing publication times.
 The status-bar footer shows the remaining queue; the activity trace records
 each saved, deferred, and queue-paused lookup.
+
+Full metadata is written to its durable sidecar before an entry is removed by
+the publication-date cutoff. Later channel checks consult those sidecars before
+admitting flat, undated YouTube rows, so an old video is resolved once and does
+not return to the metadata queue every four hours. Startup reconciliation also
+applies existing sidecars to catalog rows and removes entries they prove are
+outside the configured retention window without another network request.
 
 Filesystem creation time is used as the best available historical download
 time. It is distinct from YouTube publication time and is shown in a separate

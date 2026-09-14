@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import NamedTuple
 
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_job_db
+from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import playback_progress as playback
 
 
@@ -104,7 +106,7 @@ class SnapshotResult(NamedTuple):
     pruned: int
 
 
-class LibraryDb(library_job_db.PipelineJobDbMixin):
+class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobDbMixin):
     """Own catalog SQL while opening one SQLite connection per worker thread.
 
     Example: `db.videos(channel_id=1)` lists one subscription's catalog.
@@ -365,6 +367,29 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
                 )
                 self._upsert_local(conn, scanned.meta.identity.video_id, scanned.local)
 
+    def refresh_known_metadata(self, metas: Iterable[types.VideoMeta]) -> int:
+        """Apply durable sidecars only to rows already admitted to the catalog.
+
+        Example: `db.refresh_known_metadata(sidecars.values())` clears stale queue work.
+        """
+
+        checked_at = int(time.time())
+        updated = 0
+        with self._connect() as conn:
+            known_ids = {str(row[0]) for row in conn.execute("SELECT video_id FROM videos")}
+            for meta in metas:
+                if meta.identity.video_id not in known_ids:
+                    continue
+                self._upsert_video(
+                    conn,
+                    meta,
+                    None,
+                    checked_at,
+                    metadata_checked_at=checked_at,
+                )
+                updated += 1
+        return updated
+
     def set_download_error(self, video_id: str, message: str | None) -> None:
         """Record the last pipeline failure for a visible catalog status.
 
@@ -444,59 +469,6 @@ class LibraryDb(library_job_db.PipelineJobDbMixin):
                     now,
                 ),
             )
-
-    def metadata_backfill_ids(self, limit: int, retry_before: int) -> list[str]:
-        """Select a fair, cooldown-aware metadata work queue slice.
-
-        Example: `db.metadata_backfill_ids(1, retry_before)` returns one ID.
-        """
-
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT v.video_id
-                FROM videos v LEFT JOIN media m USING(video_id)
-                WHERE v.metadata_checked_at IS NULL
-                  AND (
-                      v.metadata_attempted_at IS NULL
-                      OR v.metadata_attempted_at <= ?
-                  )
-                ORDER BY
-                    v.metadata_attempted_at IS NOT NULL,
-                    m.video_id IS NOT NULL DESC,
-                    COALESCE(v.metadata_attempted_at, 0),
-                    v.discovered_at DESC
-                LIMIT ?
-                """,
-                (retry_before, limit),
-            ).fetchall()
-        return [str(row[0]) for row in rows]
-
-    def mark_metadata_attempt(self, video_id: str, attempted_at: int | None = None) -> None:
-        """Move one lookup to the queue tail and start its retry cooldown.
-
-        Example: `db.mark_metadata_attempt(video_id)` precedes network access.
-        """
-
-        timestamp = attempted_at if attempted_at is not None else int(time.time())
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE videos SET metadata_attempted_at=? WHERE video_id=?",
-                (timestamp, video_id),
-            )
-
-    def metadata_backlog_count(self) -> int:
-        """Count records still awaiting a definitive metadata lookup.
-
-        Example: `db.metadata_backlog_count()` feeds the GUI queue indicator.
-        """
-
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE metadata_checked_at IS NULL"
-            ).fetchone()
-        assert row is not None
-        return int(row[0])
 
     def setting(self, key: str, default: str) -> str:
         """Read a persisted application setting with a supplied default.
