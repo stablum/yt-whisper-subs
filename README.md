@@ -130,7 +130,7 @@ These defaults are hard-coded near the top of the script:
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library 100% watched rule | confirmed mpv end-of-file event only |
-| Library smart view | remembered across launches; search and channel remain independent |
+| Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | persistent starred Pinned shelf; right-click or `Alt+P` |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
@@ -595,8 +595,8 @@ downloads.
 The desktop library is a native PySide6/Qt application with a dark Windows UI.
 It contains:
 
-- counted smart views for All, On device, Available, Unwatched, Continue,
-  Watched, and Issues;
+- counted smart views for All, On device, Available, Pipeline, Unwatched,
+  Continue, Watched, and Issues;
 - a counted, starred **Pinned** shelf above the regular channel list;
 - instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable, resizable, and reorderable pipeline, watched, title, channel,
@@ -633,7 +633,9 @@ IDs have an O(1) row index for pipeline/playback updates and selection restore;
 facet counts classify each matching row once instead of evaluating every view
 strategy repeatedly. Cell painting formats only the requested field and never
 opens or parses a file. Pipeline progress updates do not recalculate watched
-facets, while playback updates do so only when their classification can change.
+facets. The Pipeline facet refreshes only when a row enters or leaves active
+work, while percentage updates remain local to that row. Playback updates
+refresh watched facets only when their classification can change.
 
 SQLite, media, SRT, and chapter files remain the sources of truth. The only
 cross-refresh cache contains derived SRT validity and parsed chapter data. Every
@@ -666,6 +668,9 @@ without opening dialogs or combining contradictory dropdowns:
 - **All** shows the complete current library or selected channel.
 - **On device** shows every downloaded, playable video.
 - **Available** shows tracked videos that have not been downloaded.
+- **Pipeline** shows videos waiting in the FIFO or currently moving through an
+  active processing stage. Completed, failed, cancelled, paused, and
+  restart-interrupted rows are excluded because they are not presently running.
 - **Unwatched** shows downloaded videos with no observed playback position.
 - **Continue** shows videos that were started but have not reached confirmed
   end-of-file.
@@ -740,6 +745,11 @@ Select another row and click its process action, or simply double-click another
 remote video, to add it. The queue is intentionally session-scoped; the one
 pipeline that was actually active at an unclean exit retains the existing
 durable crash-recovery checkpoint.
+
+The counted **Pipeline** smart-view chip filters the table to the active video
+and every waiting FIFO entry. Its count follows the current search and selected
+channel, enters immediately when work is queued, and disappears when that work
+finishes, fails, is cancelled, or is paused.
 
 The GUI child process opts into these structured events with a private
 environment variable. A direct `yt_whisper_subs.py` run does not enable that

@@ -20,6 +20,7 @@ from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_views as views
 from yt_whisper_subs import library_video_queue
 from yt_whisper_subs import library_window_support
 from yt_whisper_subs import library_window_actions
@@ -120,8 +121,8 @@ class LibraryWindow(
         self._layout_timer.timeout.connect(self._store_ui_layout)
         self._restore_table_layout()
         self._restore_catalog_layout()
-        saved_view = library_model.VideoView.from_key(
-            self._service.db.setting("video_view", library_model.VideoView.ALL.key)
+        saved_view = views.VideoView.from_key(
+            self._service.db.setting("video_view", views.VideoView.ALL.key)
         )
         self._ui.catalog.proxy.set_view(saved_view)
         self._ui.catalog.filters.set_view(saved_view)
@@ -368,7 +369,7 @@ class LibraryWindow(
         Example: clicking Continue filters to started, unfinished videos.
         """
 
-        view = library_model.VideoView(view_id)
+        view = views.VideoView(view_id)
         self._ui.catalog.proxy.set_view(view)
         self._ui.catalog.filters.set_view(view)
         self._service.db.set_setting("video_view", view.key)
@@ -395,7 +396,7 @@ class LibraryWindow(
         """
 
         self._ui.header.search.clear()
-        self._video_view_changed(int(library_model.VideoView.ALL))
+        self._video_view_changed(int(views.VideoView.ALL))
         self._refresh_smart_filters()
 
     @QtCore.Slot()

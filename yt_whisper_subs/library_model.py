@@ -6,7 +6,6 @@ Example: `VideoTableModel().set_records(db.videos())`.
 from __future__ import annotations
 
 from datetime import datetime
-import enum
 from typing import Any
 from typing import NamedTuple
 
@@ -14,6 +13,7 @@ from PySide6 import QtCore
 
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_views as views
 from yt_whisper_subs import playback_progress as playback
 from yt_whisper_subs import pipeline_progress as progress
 
@@ -43,64 +43,6 @@ class WatchedProgress(NamedTuple):
     tooltip: str
     completed: bool
     started: bool
-
-
-class VideoView(enum.IntEnum):
-    """Name each mutually exclusive task-oriented catalog view.
-
-    Example: `VideoView.CONTINUE` selects videos started but not completed.
-    """
-
-    ALL = 0
-    ON_DEVICE = 1
-    AVAILABLE = 2
-    UNWATCHED = 3
-    CONTINUE = 4
-    WATCHED = 5
-    ISSUES = 6
-
-    @property
-    def key(self) -> str:
-        """Return the stable lowercase value persisted in library settings.
-
-        Example: `VideoView.ON_DEVICE.key` is `"on_device"`.
-        """
-
-        return self.name.lower()
-
-    @classmethod
-    def from_key(cls, key: str) -> VideoView:
-        """Restore a persisted key, falling back safely to the full catalog.
-
-        Example: `VideoView.from_key("watched")` restores that smart view.
-        """
-
-        try:
-            return cls[key.upper()]
-        except KeyError:
-            return cls.ALL
-
-
-class VideoViewSpec(NamedTuple):
-    """Keep each smart view's wording and explanation beside its identity.
-
-    Example: filter chips are generated directly from `VIDEO_VIEWS`.
-    """
-
-    view: VideoView
-    label: str
-    tooltip: str
-
-
-VIDEO_VIEWS = (
-    VideoViewSpec(VideoView.ALL, "All", "Every video in the current library or channel"),
-    VideoViewSpec(VideoView.ON_DEVICE, "On device", "Downloaded videos ready to play"),
-    VideoViewSpec(VideoView.AVAILABLE, "Available", "Tracked videos not downloaded yet"),
-    VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Downloaded videos not started yet"),
-    VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos that have not reached the end"),
-    VideoViewSpec(VideoView.WATCHED, "Watched", "Videos confirmed complete by mpv"),
-    VideoViewSpec(VideoView.ISSUES, "Issues", "Videos whose latest download or processing attempt failed"),
-)
 
 
 def format_timestamp(value: int | None) -> str:
@@ -194,30 +136,33 @@ def watched_progress(
 def accepts_view(
     record: types.VideoRecord,
     watched: WatchedProgress | None,
-    view: VideoView,
+    view: views.VideoView,
     issue: str | None | object = _UNCHECKED,
+    pipeline: progress.Update | None = None,
 ) -> bool:
     """Apply one smart-view strategy without coupling it to Qt widgets.
 
-    Example: `accepts_view(record, watched, VideoView.CONTINUE)` detects partial viewing.
+    Example: `accepts_view(record, watched, views.VideoView.CONTINUE)` detects partial viewing.
     """
 
-    if view is VideoView.ALL:
+    if view is views.VideoView.ALL:
         return True
-    if view is VideoView.ON_DEVICE:
+    if view is views.VideoView.ON_DEVICE:
         return record.downloaded
-    if view is VideoView.AVAILABLE:
+    if view is views.VideoView.AVAILABLE:
         return not record.downloaded
-    if view is VideoView.ISSUES:
+    if view is views.VideoView.PIPELINE:
+        return progress.active(pipeline)
+    if view is views.VideoView.ISSUES:
         resolved = library_artifacts.pipeline_issue(record) if issue is _UNCHECKED else issue
         return bool(record.download_error or resolved)
     if not watched:
         return False
-    if view is VideoView.WATCHED:
+    if view is views.VideoView.WATCHED:
         return watched.completed
-    if view is VideoView.CONTINUE:
+    if view is views.VideoView.CONTINUE:
         return watched.started and not watched.completed
-    if view is VideoView.UNWATCHED:
+    if view is views.VideoView.UNWATCHED:
         return not watched.started
     return True
 
@@ -342,12 +287,15 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         Example: `model.set_progress(update)` advances one video's bar.
         """
 
+        was_active = progress.active(self._progress.get(update.video_id))
         self._progress[update.video_id] = update
         row = self._row_by_id.get(update.video_id)
         if row is not None:
             cell = self.index(row, PIPELINE_COLUMN)
             roles = [QtCore.Qt.ItemDataRole.DisplayRole, PROGRESS_ROLE, SORT_ROLE]
             self.dataChanged.emit(cell, cell, roles)
+            if was_active != progress.active(update):
+                self.facets_changed.emit()
 
     def set_watched_progress(self, update: playback.Update) -> None:
         """Store one live mpv observation and repaint its graphical cell.
@@ -561,7 +509,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
 class VideoFilterModel(QtCore.QSortFilterProxyModel):
     """Compose search and one task-oriented smart view with stable sorting.
 
-    Example: `proxy.set_view(VideoView.CONTINUE)` shows partial viewing.
+    Example: `proxy.set_view(views.VideoView.CONTINUE)` shows partial viewing.
     """
 
     criteria_changed = QtCore.Signal()
@@ -569,7 +517,7 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
     def __init__(self) -> None:
         super().__init__()
         self._search = ""
-        self._view = VideoView.ALL
+        self._view = views.VideoView.ALL
         self._channel_id: int | None = None
         self.setSortRole(SORT_ROLE)
         self.setDynamicSortFilter(True)
@@ -589,18 +537,18 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         self.criteria_changed.emit()
 
     @property
-    def view(self) -> VideoView:
+    def view(self) -> views.VideoView:
         """Expose the active smart view for persistence and filter-bar state.
 
-        Example: `proxy.view is VideoView.ALL` identifies an unfiltered catalog.
+        Example: `proxy.view is views.VideoView.ALL` identifies an unfiltered catalog.
         """
 
         return self._view
 
-    def set_view(self, view: VideoView) -> None:
+    def set_view(self, view: views.VideoView) -> None:
         """Replace the active smart view while retaining search and sorting.
 
-        Example: `proxy.set_view(VideoView.AVAILABLE)` shows remote-only rows.
+        Example: `proxy.set_view(views.VideoView.AVAILABLE)` shows remote-only rows.
         """
 
         if view is self._view:
@@ -623,13 +571,13 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
         self.criteria_changed.emit()
 
-    def facet_counts(self) -> dict[VideoView, int]:
+    def facet_counts(self) -> dict[views.VideoView, int]:
         """Count every smart view within the current channel and search scope.
 
-        Example: the filter bar uses `facet_counts()[VideoView.CONTINUE]`.
+        Example: the filter bar uses `facet_counts()[views.VideoView.CONTINUE]`.
         """
 
-        counts = {spec.view: 0 for spec in VIDEO_VIEWS}
+        counts = {spec.view: 0 for spec in views.VIDEO_VIEWS}
         model = self.sourceModel()
         if not isinstance(model, VideoTableModel):
             return counts
@@ -639,16 +587,18 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
                 continue
             watched = model.watched_at(row)
             issue = model.issue_at(row)
-            counts[VideoView.ALL] += 1
-            counts[VideoView.ON_DEVICE if record.downloaded else VideoView.AVAILABLE] += 1
-            counts[VideoView.ISSUES] += int(bool(record.download_error or issue))
+            counts[views.VideoView.ALL] += 1
+            availability = views.VideoView.ON_DEVICE if record.downloaded else views.VideoView.AVAILABLE
+            counts[availability] += 1
+            counts[views.VideoView.PIPELINE] += int(progress.active(model.progress_at(row)))
+            counts[views.VideoView.ISSUES] += int(bool(record.download_error or issue))
             if watched:
                 if watched.completed:
-                    counts[VideoView.WATCHED] += 1
+                    counts[views.VideoView.WATCHED] += 1
                 elif watched.started:
-                    counts[VideoView.CONTINUE] += 1
+                    counts[views.VideoView.CONTINUE] += 1
                 else:
-                    counts[VideoView.UNWATCHED] += 1
+                    counts[views.VideoView.UNWATCHED] += 1
         return counts
 
     def filterAcceptsRow(self, source_row: int, source_parent: QtCore.QModelIndex) -> bool:
@@ -665,11 +615,12 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
             return False
         if not self._matches_scope(record) or not self._matches_search(record):
             return False
-        if self._view is VideoView.ALL:
+        if self._view is views.VideoView.ALL:
             return True
         watched = model.watched_at(source_row)
         issue = model.issue_at(source_row)
-        return accepts_view(record, watched, self._view, issue)
+        pipeline = model.progress_at(source_row)
+        return accepts_view(record, watched, self._view, issue, pipeline)
 
     def _matches_scope(self, record: types.VideoRecord) -> bool:
         """Apply the selected sidebar channel against the in-memory record.

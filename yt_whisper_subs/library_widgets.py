@@ -16,6 +16,7 @@ from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_views as views
 from yt_whisper_subs import openai_chapters
 from yt_whisper_subs import windows_startup
 
@@ -55,8 +56,8 @@ class SmartFilterBar(QtWidgets.QFrame):
 
         self._group = QtWidgets.QButtonGroup(self)
         self._group.setExclusive(True)
-        self._buttons: dict[library_model.VideoView, QtWidgets.QPushButton] = {}
-        for spec in library_model.VIDEO_VIEWS:
+        self._buttons: dict[views.VideoView, QtWidgets.QPushButton] = {}
+        for spec in views.VIDEO_VIEWS:
             button = QtWidgets.QPushButton(spec.label)
             button.setObjectName("filterChip")
             button.setCheckable(True)
@@ -65,7 +66,7 @@ class SmartFilterBar(QtWidgets.QFrame):
             self._group.addButton(button, int(spec.view))
             self._buttons[spec.view] = button
             layout.addWidget(button)
-        self._buttons[library_model.VideoView.ALL].setChecked(True)
+        self._buttons[views.VideoView.ALL].setChecked(True)
         self._group.idClicked.connect(self.view_changed.emit)
 
         layout.addStretch(1)
@@ -79,17 +80,17 @@ class SmartFilterBar(QtWidgets.QFrame):
         layout.addWidget(self._result)
         layout.addWidget(self._clear)
 
-    def set_view(self, view: library_model.VideoView) -> None:
+    def set_view(self, view: views.VideoView) -> None:
         """Synchronize checked chip state without synthesizing a user click.
 
-        Example: startup restores a persisted `VideoView.CONTINUE` selection.
+        Example: startup restores a persisted `views.VideoView.CONTINUE` selection.
         """
 
         self._buttons[view].setChecked(True)
 
     def set_counts(
         self,
-        counts: dict[library_model.VideoView, int],
+        counts: dict[views.VideoView, int],
         visible: int,
         search_active: bool,
     ) -> None:
@@ -98,21 +99,21 @@ class SmartFilterBar(QtWidgets.QFrame):
         Example: zero-result inactive views become quiet and non-clickable.
         """
 
-        active = library_model.VideoView(self._group.checkedId())
-        labels = {spec.view: spec.label for spec in library_model.VIDEO_VIEWS}
+        active = views.VideoView(self._group.checkedId())
+        labels = {spec.view: spec.label for spec in views.VIDEO_VIEWS}
         for view, button in self._buttons.items():
             count = counts.get(view, 0)
             button.setText(f"{labels[view]}  {count:,}")
-            button.setEnabled(bool(count) or view in {active, library_model.VideoView.ALL})
+            button.setEnabled(bool(count) or view in {active, views.VideoView.ALL})
 
-        available = counts.get(library_model.VideoView.ALL, 0)
+        available = counts.get(views.VideoView.ALL, 0)
         noun = "match" if search_active else "video"
         if visible == available:
             text = f"{visible:,} {noun}{'' if visible == 1 else 's'}"
         else:
             text = f"{visible:,} of {available:,} {noun}{'' if available == 1 else 's'}"
         self._result.setText(text)
-        self._clear.setVisible(search_active or active is not library_model.VideoView.ALL)
+        self._clear.setVisible(search_active or active is not views.VideoView.ALL)
 
 
 class DetailPanel(QtWidgets.QFrame):

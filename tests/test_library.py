@@ -23,6 +23,7 @@ from yt_whisper_subs import library_model
 from yt_whisper_subs import library_pipeline
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
+from yt_whisper_subs import library_views as views
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import task_cancel
@@ -834,26 +835,38 @@ class LibraryModelTests(unittest.TestCase):
         proxy.setSourceModel(model)
 
         counts = proxy.facet_counts()
-        self.assertEqual(counts[library_model.VideoView.ALL], 5)
-        self.assertEqual(counts[library_model.VideoView.ON_DEVICE], 3)
-        self.assertEqual(counts[library_model.VideoView.AVAILABLE], 2)
-        self.assertEqual(counts[library_model.VideoView.UNWATCHED], 1)
-        self.assertEqual(counts[library_model.VideoView.CONTINUE], 1)
-        self.assertEqual(counts[library_model.VideoView.WATCHED], 1)
-        self.assertEqual(counts[library_model.VideoView.ISSUES], 1)
+        self.assertEqual(counts[views.VideoView.ALL], 5)
+        self.assertEqual(counts[views.VideoView.ON_DEVICE], 3)
+        self.assertEqual(counts[views.VideoView.AVAILABLE], 2)
+        self.assertEqual(counts[views.VideoView.UNWATCHED], 1)
+        self.assertEqual(counts[views.VideoView.CONTINUE], 1)
+        self.assertEqual(counts[views.VideoView.WATCHED], 1)
+        self.assertEqual(counts[views.VideoView.ISSUES], 1)
+        self.assertEqual(counts[views.VideoView.PIPELINE], 0)
 
-        proxy.set_view(library_model.VideoView.UNWATCHED)
+        proxy.set_view(views.VideoView.PIPELINE)
+        self.assertEqual(proxy.rowCount(), 0)
+        model.set_progress(progress.make("aaaaaaaaaaa", progress.Stage.QUEUED))
+        model.set_progress(progress.make("bbbbbbbbbbb", progress.Stage.DOWNLOADING, 0.25))
+        self.assertEqual(proxy.rowCount(), 2)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.PIPELINE], 2)
+        model.set_progress(progress.make("aaaaaaaaaaa", progress.Stage.READY, 1.0))
+        model.set_progress(progress.make("bbbbbbbbbbb", progress.Stage.PAUSED, 0.25))
+        self.assertEqual(proxy.rowCount(), 0)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.PIPELINE], 0)
+
+        proxy.set_view(views.VideoView.UNWATCHED)
         self.assertEqual(proxy.rowCount(), 1)
         model.set_watched_progress(playback_progress.make("bbbbbbbbbbb", 10, 100))
         self.assertEqual(proxy.rowCount(), 0)
-        self.assertEqual(proxy.facet_counts()[library_model.VideoView.CONTINUE], 2)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.CONTINUE], 2)
 
-        proxy.set_view(library_model.VideoView.CONTINUE)
+        proxy.set_view(views.VideoView.CONTINUE)
         proxy.set_search("partial")
         self.assertEqual(proxy.rowCount(), 1)
         searched = proxy.facet_counts()
-        self.assertEqual(searched[library_model.VideoView.ALL], 1)
-        self.assertEqual(searched[library_model.VideoView.CONTINUE], 1)
+        self.assertEqual(searched[views.VideoView.ALL], 1)
+        self.assertEqual(searched[views.VideoView.CONTINUE], 1)
 
     def test_channel_scope_filters_resident_records_without_model_reset(self) -> None:
         """Apply sidebar scope to one resident catalog and its facet counts.
@@ -871,7 +884,7 @@ class LibraryModelTests(unittest.TestCase):
         proxy.set_channel(2)
 
         self.assertEqual(proxy.rowCount(), 1)
-        self.assertEqual(proxy.facet_counts()[library_model.VideoView.ALL], 1)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.ALL], 1)
         self.assertEqual(model.rowCount(), 2)
 
     def test_painting_uses_precomputed_health_and_indexed_id_lookups(self) -> None:
@@ -901,12 +914,16 @@ class LibraryModelTests(unittest.TestCase):
         """
 
         self.assertEqual(
-            library_model.VideoView.from_key("on_device"),
-            library_model.VideoView.ON_DEVICE,
+            views.VideoView.from_key("on_device"),
+            views.VideoView.ON_DEVICE,
         )
         self.assertEqual(
-            library_model.VideoView.from_key("removed-view"),
-            library_model.VideoView.ALL,
+            views.VideoView.from_key("pipeline"),
+            views.VideoView.PIPELINE,
+        )
+        self.assertEqual(
+            views.VideoView.from_key("removed-view"),
+            views.VideoView.ALL,
         )
 
 
