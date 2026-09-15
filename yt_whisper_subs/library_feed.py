@@ -36,6 +36,16 @@ class ChannelScanPolicy(NamedTuple):
     published_after: int | None
 
 
+class _AtomVideoMeta(NamedTuple):
+    """Hold metadata available from the channel's existing Atom response.
+
+    Example: `_AtomVideoMeta(timestamp, "Details")` enriches a flat entry.
+    """
+
+    published_at: int | None
+    description: str
+
+
 def normalize_channel_url(value: str) -> str:
     """Normalize common handles and channel URLs to their videos tab.
 
@@ -188,10 +198,10 @@ def video_meta(info: dict[str, Any], parent: dict[str, Any] | None = None) -> ty
     )
 
 
-def _rss_timestamp(text: str) -> int | None:
+def _atom_timestamp(text: str) -> int | None:
     """Parse an Atom publication timestamp into Unix seconds.
 
-    Example: `_rss_timestamp("2026-08-18T12:30:00+00:00")`.
+    Example: `_atom_timestamp("2026-08-18T12:30:00+00:00")`.
     """
 
     try:
@@ -258,9 +268,9 @@ class YtDlpFeed:
         youtube_id = info.get("channel_id") or info.get("uploader_id")
         youtube_id = str(youtube_id) if youtube_id else None
         if youtube_id:
-            rss_dates = self._rss_dates(youtube_id)
+            atom_meta = self._atom_metadata(youtube_id)
             videos = [
-                self._with_published_at(meta, rss_dates.get(meta.identity.video_id))
+                self._with_atom_metadata(meta, atom_meta.get(meta.identity.video_id))
                 for meta in videos
             ]
         if policy.published_after is not None:
@@ -380,10 +390,10 @@ class YtDlpFeed:
         return parsed
 
     @staticmethod
-    def _rss_dates(channel_id: str) -> dict[str, int]:
-        """Fetch exact publication times for YouTube's newest channel entries.
+    def _atom_metadata(channel_id: str) -> dict[str, _AtomVideoMeta]:
+        """Fetch dates and descriptions in one request for newest channel entries.
 
-        Example: `_rss_dates("UC...")` enriches the latest flat results.
+        Example: `_atom_metadata("UC...")` enriches the latest flat results.
         """
 
         url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
@@ -396,24 +406,42 @@ class YtDlpFeed:
             return {}
         ns = {
             "atom": "http://www.w3.org/2005/Atom",
+            "media": "http://search.yahoo.com/mrss/",
             "yt": "http://www.youtube.com/xml/schemas/2015",
         }
-        dates: dict[str, int] = {}
+        metadata: dict[str, _AtomVideoMeta] = {}
         for entry in root.findall("atom:entry", ns):
             video_id = entry.findtext("yt:videoId", default="", namespaces=ns)
             published = entry.findtext("atom:published", default="", namespaces=ns)
-            if video_id and (timestamp := _rss_timestamp(published)) is not None:
-                dates[video_id] = timestamp
-        return dates
+            description = entry.findtext(
+                "media:group/media:description",
+                default="",
+                namespaces=ns,
+            )
+            published_at = _atom_timestamp(published)
+            description = (description or "").strip()
+            if video_id and (published_at is not None or description):
+                metadata[video_id] = _AtomVideoMeta(published_at, description)
+        return metadata
 
     @staticmethod
-    def _with_published_at(meta: types.VideoMeta, published_at: int | None) -> types.VideoMeta:
-        """Replace only missing flat-playlist publication data from RSS.
+    def _with_atom_metadata(
+        meta: types.VideoMeta,
+        atom: _AtomVideoMeta | None,
+    ) -> types.VideoMeta:
+        """Fill missing flat-playlist fields without replacing richer values.
 
-        Example: `_with_published_at(meta, timestamp)` keeps all other fields.
+        Example: `_with_atom_metadata(meta, atom)` preserves yt-dlp details.
         """
 
-        if meta.origin.published_at is not None or published_at is None:
+        if atom is None:
             return meta
+        published_at = meta.origin.published_at
+        if published_at is None:
+            published_at = atom.published_at
+        description = meta.details.description
+        if not description.strip():
+            description = atom.description
         origin = meta.origin._replace(published_at=published_at)
-        return meta._replace(origin=origin)
+        details = meta.details._replace(description=description)
+        return meta._replace(origin=origin, details=details)

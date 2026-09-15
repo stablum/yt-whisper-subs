@@ -120,6 +120,7 @@ These defaults are hard-coded near the top of the script:
 | Recent channel history | `50` entries per Videos/Streams section; Shorts ignored |
 | Adaptive channel scan ceiling | `500` entries per section when bridging an offline gap |
 | Earliest publication date | optional; disabled until configured |
+| Channel feed enrichment | publication date and description from one Atom request |
 | Library metadata hydration pace | at most `1` video lookup per minute |
 | Failed metadata lookup cooldown | `24` hours |
 | Metadata queue pause after failure | `15` minutes |
@@ -817,6 +818,11 @@ This avoids request bursts while steadily restoring missing publication times.
 The status-bar footer shows the remaining queue; the activity trace records
 each saved, deferred, and queue-paused lookup.
 
+A missing description alone does not place a historical row in this queue.
+Doing so would turn every dated legacy row into a separate YouTube request.
+Recent descriptions instead arrive through the channel's existing Atom request,
+while downloaded-video sidecars continue to provide complete durable metadata.
+
 Full metadata is written to its durable sidecar before an entry is removed by
 the publication-date cutoff. Later channel checks consult those sidecars before
 admitting flat, undated YouTube rows, so an old video is resolved once and does
@@ -836,8 +842,10 @@ playlist mode and deduplicates them by video ID. A normal check requests only
 the newest 50 entries from each section. If that slice contains no already-known
 ID, the request expands geometrically up to 500 entries so a long offline gap is
 less likely to hide uploads. YouTube's Atom feed supplies exact publication
-timestamps for the latest entries. Remaining rows without a flat timestamp are
-progressively hydrated with full per-video metadata.
+timestamps and descriptions for its latest entries in the same request. These
+values fill only fields omitted by the flat listing, preserving richer yt-dlp
+values when present. Remaining rows without a flat timestamp are progressively
+hydrated with full per-video metadata.
 
 Shorts are deliberately excluded from subscriptions. A channel without a
 Streams tab is treated as having an empty Streams section, not as a failed

@@ -417,6 +417,31 @@ class LibraryDbTests(unittest.TestCase):
             self.assertEqual(db.metadata_backfill_ids(1, retry_before=1_000), [attempted_id])
             self.assertEqual(db.metadata_backlog_count(), 2)
 
+    def test_missing_description_does_not_enter_full_metadata_queue(self) -> None:
+        """Keep dated rows out of the expensive per-video lookup queue.
+
+        Example: Atom can supply a date even when its description is empty.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            url = "https://www.youtube.com/@example/videos"
+            channel = db.add_channel(url, "@example", False)
+            dated = make_meta("aaaaaaaaaaa", "Dated", 100)
+            dated = dated._replace(details=dated.details._replace(description=""))
+            snapshot = types.ChannelSnapshot(
+                channel.url,
+                "UC-example",
+                "Example",
+                [dated],
+                True,
+            )
+
+            db.store_snapshot(channel.channel_id, snapshot)
+
+            self.assertEqual(db.metadata_backlog_count(), 0)
+
     def test_cached_metadata_updates_known_rows_without_resurrecting_pruned_rows(self) -> None:
         """Apply sidecars to admitted rows without rebuilding removed history.
 
@@ -1038,15 +1063,80 @@ class LibraryFeedTests(unittest.TestCase):
         self.assertEqual(meta.origin, types.VideoOrigin("A channel", "UC123", 123))
         self.assertEqual(meta.details.duration, 90.5)
         self.assertEqual(meta.details.view_count, 42)
+        self.assertEqual(meta.details.description, "Useful details")
 
-    def test_rss_timestamp_parser(self) -> None:
+    def test_atom_timestamp_parser(self) -> None:
         """Parse the exact RFC 3339 timestamps returned by channel feeds.
 
         Example: recent flat channel entries use this publication time.
         """
 
-        value = library_feed._rss_timestamp("2026-08-18T12:30:00+00:00")
+        value = library_feed._atom_timestamp("2026-08-18T12:30:00+00:00")
         self.assertEqual(value, 1787056200)
+
+    def test_atom_metadata_reads_description_with_publication_date(self) -> None:
+        """Reuse one channel-feed response for both lightweight metadata fields.
+
+        Example: a recent flat entry gains its date and description together.
+        """
+
+        xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom"
+              xmlns:media="http://search.yahoo.com/mrss/"
+              xmlns:yt="http://www.youtube.com/xml/schemas/2015">
+          <entry>
+            <yt:videoId>aaaaaaaaaaa</yt:videoId>
+            <published>2026-08-18T12:30:00+00:00</published>
+            <media:group><media:description> Useful details </media:description></media:group>
+          </entry>
+        </feed>"""
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = xml
+        with mock.patch.object(library_feed, "urlopen", return_value=response):
+            metadata = library_feed.YtDlpFeed._atom_metadata("UC123")
+
+        self.assertEqual(
+            metadata["aaaaaaaaaaa"],
+            library_feed._AtomVideoMeta(1787056200, "Useful details"),
+        )
+
+    def test_atom_metadata_only_fills_missing_flat_fields(self) -> None:
+        """Prefer richer yt-dlp values while using Atom as a cheap fallback.
+
+        Example: an existing description is not replaced by the feed summary.
+        """
+
+        info = {
+            "channel": "Example",
+            "channel_id": "UC123",
+            "entries": [
+                {"id": "aaaaaaaaaaa", "title": "Missing"},
+                {
+                    "id": "bbbbbbbbbbb",
+                    "title": "Existing",
+                    "timestamp": 200,
+                    "description": "Richer description",
+                },
+            ],
+        }
+        atom_meta = {
+            "aaaaaaaaaaa": library_feed._AtomVideoMeta(100, "Feed description"),
+            "bbbbbbbbbbb": library_feed._AtomVideoMeta(300, "Replacement"),
+        }
+        feed = library_feed.YtDlpFeed(Path("python"))
+        policy = library_feed.ChannelScanPolicy(50, 500, None)
+        with (
+            mock.patch.object(feed, "_channel_tab", return_value=info),
+            mock.patch.object(feed, "_atom_metadata", return_value=atom_meta) as atom,
+        ):
+            snapshot = feed.channel("@example", policy)
+
+        by_id = {meta.identity.video_id: meta for meta in snapshot.videos}
+        self.assertEqual(by_id["aaaaaaaaaaa"].origin.published_at, 100)
+        self.assertEqual(by_id["aaaaaaaaaaa"].details.description, "Feed description")
+        self.assertEqual(by_id["bbbbbbbbbbb"].origin.published_at, 200)
+        self.assertEqual(by_id["bbbbbbbbbbb"].details.description, "Richer description")
+        atom.assert_called_once_with("UC123")
 
     def test_recent_tab_expands_only_until_known_overlap(self) -> None:
         """Bound ordinary checks but bridge a gap larger than the normal slice.
@@ -1127,7 +1217,7 @@ class LibraryFeedTests(unittest.TestCase):
         policy = library_feed.ChannelScanPolicy(50, 500, 200)
         with (
             mock.patch.object(feed, "_channel_tab", return_value=info),
-            mock.patch.object(feed, "_rss_dates", return_value={}),
+            mock.patch.object(feed, "_atom_metadata", return_value={}),
         ):
             snapshot = feed.channel("@example", policy)
 
