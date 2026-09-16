@@ -62,7 +62,9 @@ class ChildProcessOptionsTests(unittest.TestCase):
         Example: cancelling the parent also terminates Whisper and ffmpeg.
         """
 
-        kwargs = proc.isolated_process_kwargs()
+        work_dir = Path("safe-work-dir")
+        kwargs = proc.isolated_process_kwargs(cwd=work_dir)
+        self.assertEqual(kwargs["cwd"], work_dir)
         if os.name == "nt":
             self.assertTrue(kwargs["creationflags"] & subprocess.CREATE_NEW_PROCESS_GROUP)
         else:

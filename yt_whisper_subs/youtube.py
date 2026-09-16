@@ -234,6 +234,7 @@ def download_command(
     """
 
     template = video_dir / "%(id)s.%(ext)s"
+    scratch_dir = cfg.output_scratch_dir(video_dir.parent)
     cmd: list[str | os.PathLike[str]] = [
         paths["python"],
         "-m",
@@ -245,6 +246,8 @@ def download_command(
         "--progress",
         "--progress-delta",
         f"{args.download_progress_delta:g}",
+        "--paths",
+        f"temp:{scratch_dir}",
         "-f",
         args.video_format,
         "--merge-output-format",
@@ -280,6 +283,7 @@ def download_video(
 
     video_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
+    cfg.output_scratch_dir(video_dir.parent).mkdir(parents=True, exist_ok=True)
     cmd = download_command(url, video_dir, metadata_dir, paths, args)
     result = proc.run(cmd, capture_stdout=True, stream_stdout=True, check=False)
     lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]

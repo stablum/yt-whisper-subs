@@ -19,6 +19,7 @@ MODEL_CHOICES = (
     "turbo",
 )
 DEFAULT_OUTPUT_DIR = Path.home() / "Videos" / "yt-whisper-subs"
+OUTPUT_SCRATCH_DIR_NAME = ".tmp"
 DEFAULT_OPENAI_ENV_FILE = PROJECT_DIR / ".env"
 DEFAULT_OPENAI_TRANSLATION_MODEL = "gpt-5-mini"
 DEFAULT_OPENAI_TRANSLATION_REASONING = "low"
@@ -63,3 +64,12 @@ YT_DLP_PYTHON_PACKAGE = "yt-dlp[default]"
 YT_DLP_JS_RUNTIMES = ("deno", "node")
 LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil")
 LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials", "psutil")
+
+
+def output_scratch_dir(out_dir: Path) -> Path:
+    """Locate transient tool files under the configured output root.
+
+    Example: `output_scratch_dir(Path("D:/Videos"))` returns `D:/Videos/.tmp`.
+    """
+
+    return out_dir / OUTPUT_SCRATCH_DIR_NAME

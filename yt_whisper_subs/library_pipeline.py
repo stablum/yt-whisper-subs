@@ -95,7 +95,9 @@ class PipelineDownloader:
         Example: `_run(record, cmd, "Download", report)` keeps one protocol.
         """
 
-        child_kwargs = proc.isolated_process_kwargs()
+        work_dir = cfg.output_scratch_dir(self._out_dir)
+        work_dir.mkdir(parents=True, exist_ok=True)
+        child_kwargs = proc.isolated_process_kwargs(cwd=work_dir)
         child_env = dict(child_kwargs["env"])
         child_env[progress.ENV_VIDEO_ID] = record.meta.identity.video_id
         child_kwargs["env"] = child_env

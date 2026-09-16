@@ -16,6 +16,7 @@ from unittest import mock
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
@@ -169,16 +170,21 @@ class PipelineDownloaderTests(unittest.TestCase):
         )
         process.wait.return_value = 1
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
-        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            downloader = library_pipeline.PipelineDownloader(Path("python"), out_dir)
+            reports: list[str] = []
 
-        reports: list[str] = []
-        with self.assertRaisesRegex(RuntimeError, "HTTP Error 403"):
-            downloader.download(record, reports.append)
+            with self.assertRaisesRegex(RuntimeError, "HTTP Error 403"):
+                downloader.download(record, reports.append)
 
-        child_env = popen.call_args.kwargs["env"]
+            child = popen.call_args.kwargs
+            self.assertEqual(child["cwd"], cfg.output_scratch_dir(out_dir))
+            self.assertTrue(child["cwd"].is_dir())
+
         cmd = [str(part) for part in popen.call_args.args[0]]
         self.assertIn("--chapters", cmd)
-        self.assertEqual(child_env[progress.ENV_VIDEO_ID], "aaaaaaaaaaa")
+        self.assertEqual(child["env"][progress.ENV_VIDEO_ID], "aaaaaaaaaaa")
         updates = [update for message in reports if (update := progress.parse(message))]
         self.assertEqual(updates[0].stage, progress.Stage.QUEUED)
         self.assertEqual(updates[-1].stage, progress.Stage.FAILED)
@@ -215,10 +221,10 @@ class PipelineDownloaderTests(unittest.TestCase):
 
         records.side_effect = cancel_during_read
         record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Example"), None, 0, None, None, None)
-        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
-
-        with task_cancel.activate(token), self.assertRaises(task_cancel.CancelledError):
-            downloader.download(record, mock.Mock())
+        with tempfile.TemporaryDirectory() as tmp:
+            downloader = library_pipeline.PipelineDownloader(Path("python"), Path(tmp))
+            with task_cancel.activate(token), self.assertRaises(task_cancel.CancelledError):
+                downloader.download(record, mock.Mock())
 
         terminate.assert_called_once_with(process)
 

@@ -55,6 +55,8 @@ class DownloadCommandTests(unittest.TestCase):
         self.assertIn("--embed-metadata", text)
         self.assertIn("--embed-info-json", text)
         self.assertIn(str(Path("infojson:metadata") / "%(id)s.%(ext)s"), text)
+        temp_idx = text.index("--paths")
+        self.assertEqual(text[temp_idx + 1], f"temp:{cfg.output_scratch_dir(Path('.'))}")
         runtime_idx = text.index("--js-runtimes")
         self.assertEqual(text[runtime_idx + 1], "node")
 

@@ -83,6 +83,7 @@ These defaults are hard-coded near the top of the script:
 | Area | Default |
 | --- | --- |
 | Output root | `~/Videos/yt-whisper-subs` |
+| Pipeline scratch directory | `.tmp` under the configured output root |
 | Managed virtual environment | `.venv` beside the script |
 | Whisper language | `nl` |
 | Primary Whisper model | `turbo` |
@@ -285,6 +286,7 @@ Inside it:
 
 ```text
 yt-whisper-subs\
+  .tmp\
   videos\
     youtube_id.mkv
     youtube_id.srt
@@ -306,6 +308,12 @@ yt-whisper-subs\
   library\
     catalog.sqlite3
 ```
+
+The application-owned `.tmp` directory is the explicit working directory for
+GUI-launched pipelines and the explicit yt-dlp temporary path. This prevents a
+Windows shortcut, startup entry, or shell launch from redirecting scratch files
+into an inherited directory such as `C:\Windows\System32`. Its contents are
+transient and are never treated as durable video yields.
 
 The exact `.uncompact.*` files appear only when compaction changed an existing
 subtitle file and a backup did not already exist.

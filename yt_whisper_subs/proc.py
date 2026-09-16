@@ -87,16 +87,22 @@ def configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def child_process_kwargs(window: ChildWindow = ChildWindow.HIDDEN) -> dict[str, Any]:
+def child_process_kwargs(
+    window: ChildWindow = ChildWindow.HIDDEN,
+    *,
+    cwd: Path | None = None,
+) -> dict[str, Any]:
     """Build shared UTF-8 options with an explicit Windows visibility policy.
 
-    Example: `child_process_kwargs(ChildWindow.VISIBLE)` keeps mpv visible.
+    Example: `child_process_kwargs(cwd=work_dir)` prevents inherited paths.
     """
 
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     kwargs: dict[str, Any] = {"env": env}
+    if cwd is not None:
+        kwargs["cwd"] = cwd
     if os.name == "nt":
         # CREATE_NO_WINDOW suppresses a console without suppressing a GUI window.
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -125,13 +131,17 @@ def _terminate_process(process: subprocess.Popen[str]) -> None:
         process.wait()
 
 
-def isolated_process_kwargs(window: ChildWindow = ChildWindow.HIDDEN) -> dict[str, Any]:
+def isolated_process_kwargs(
+    window: ChildWindow = ChildWindow.HIDDEN,
+    *,
+    cwd: Path | None = None,
+) -> dict[str, Any]:
     """Build child options that permit reliable whole-tree cancellation.
 
-    Example: the GUI pipeline starts in its own Windows process group.
+    Example: `isolated_process_kwargs(cwd=work_dir)` also fixes its location.
     """
 
-    kwargs = child_process_kwargs(window)
+    kwargs = child_process_kwargs(window, cwd=cwd)
     if os.name == "nt":
         kwargs["creationflags"] |= subprocess.CREATE_NEW_PROCESS_GROUP
     else:
