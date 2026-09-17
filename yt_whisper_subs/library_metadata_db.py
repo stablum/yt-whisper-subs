@@ -6,6 +6,27 @@ Example: `LibraryDb` composes `MetadataDbMixin` beside catalog methods.
 from __future__ import annotations
 
 import time
+from typing import NamedTuple
+
+
+class MetadataQueueState(NamedTuple):
+    """Summarize ready and deferred metadata work from one database snapshot.
+
+    Example: `state.retry_at` schedules the next cooled-down lookup exactly.
+    """
+
+    pending: int
+    ready: int
+    retry_at: int | None
+
+    @property
+    def deferred(self) -> int:
+        """Count pending rows still inside their failed-lookup cooldown.
+
+        Example: one pending row with no ready work yields `deferred == 1`.
+        """
+
+        return self.pending - self.ready
 
 
 class MetadataDbMixin:
@@ -54,15 +75,52 @@ class MetadataDbMixin:
                 (timestamp, video_id),
             )
 
-    def metadata_backlog_count(self) -> int:
-        """Count records still awaiting a definitive metadata lookup.
+    def metadata_queue_state(
+        self,
+        retry_seconds: int,
+        now: int | None = None,
+    ) -> MetadataQueueState:
+        """Describe ready work and the earliest deferred retry in one query.
 
-        Example: `db.metadata_backlog_count()` feeds the GUI queue indicator.
+        Example: `db.metadata_queue_state(86_400)` distinguishes queued work.
+        """
+
+        current = now if now is not None else int(time.time())
+        retry_before = current - retry_seconds
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS pending,
+                    COALESCE(SUM(
+                        metadata_attempted_at IS NULL OR metadata_attempted_at <= ?
+                    ), 0) AS ready,
+                    MIN(CASE
+                        WHEN metadata_attempted_at > ?
+                        THEN metadata_attempted_at + ?
+                    END) AS retry_at
+                FROM videos
+                WHERE metadata_checked_at IS NULL
+                """,
+                (retry_before, retry_before, retry_seconds),
+            ).fetchone()
+        assert row is not None
+        retry_at = int(row["retry_at"]) if row["retry_at"] is not None else None
+        return MetadataQueueState(int(row["pending"]), int(row["ready"]), retry_at)
+
+    def reset_metadata_attempts(self) -> int:
+        """Release unresolved lookups after the user supplies new credentials.
+
+        Example: selecting Firefox cookies makes deferred age-gated rows ready.
         """
 
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE metadata_checked_at IS NULL"
-            ).fetchone()
-        assert row is not None
-        return int(row[0])
+            cursor = conn.execute(
+                """
+                UPDATE videos
+                SET metadata_attempted_at=NULL
+                WHERE metadata_checked_at IS NULL
+                  AND metadata_attempted_at IS NOT NULL
+                """
+            )
+        return cursor.rowcount

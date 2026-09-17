@@ -18,6 +18,7 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
+from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_pipeline
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_yields
@@ -113,6 +114,15 @@ class LibraryService:
 
         return self.db.setting("cookies_from_browser", "").strip() or None
 
+    def metadata_queue_state(self) -> library_metadata_db.MetadataQueueState:
+        """Expose cooldown-aware queue state without leaking retry policy.
+
+        Example: the GUI uses `state.retry_at` for its footer and timer.
+        """
+
+        retry_seconds = round(cfg.DEFAULT_LIBRARY_METADATA_RETRY_HOURS * 3600)
+        return self.db.metadata_queue_state(retry_seconds)
+
     def scan_local(self, report: ReportFn = _ignore_report) -> int:
         """Reconcile downloaded media and ingest every available info sidecar.
 
@@ -165,7 +175,7 @@ class LibraryService:
         retry_seconds = round(cfg.DEFAULT_LIBRARY_METADATA_RETRY_HOURS * 3600)
         retry_before = int(time.time()) - retry_seconds
         video_ids = self.db.metadata_backfill_ids(1, retry_before)
-        remaining = self.db.metadata_backlog_count()
+        remaining = self.metadata_queue_state().pending
         if not video_ids:
             return MetadataBackfillResult(False, False, remaining)
 
@@ -195,10 +205,10 @@ class LibraryService:
         )
         if expired:
             removed = self.db.prune_remote_before(policy.published_after)
-            remaining = self.db.metadata_backlog_count()
+            remaining = self.metadata_queue_state().pending
             report(f"Metadata expired by retention · {video_id} · {removed:,} removed")
             return MetadataBackfillResult(True, True, remaining)
-        remaining = self.db.metadata_backlog_count()
+        remaining = self.metadata_queue_state().pending
         report(f"Metadata saved · {info.meta.identity.title} · {remaining:,} queued")
         return MetadataBackfillResult(True, True, remaining)
 

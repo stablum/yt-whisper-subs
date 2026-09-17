@@ -124,7 +124,7 @@ These defaults are hard-coded near the top of the script:
 | Channel feed enrichment | publication date and description from one Atom request |
 | Library metadata hydration pace | at most `1` video lookup per minute |
 | Failed metadata lookup cooldown | `24` hours |
-| Metadata queue pause after failure | `15` minutes |
+| Metadata queue pause before other ready work after failure | `15` minutes |
 | Retention metadata memory | durable info sidecars prevent old videos from re-queuing |
 | Library close behavior | keep running in the system tray; explicit Quit closes owned mpv/workers |
 | Start with Windows | disabled; optional per-user quiet tray launch |
@@ -819,12 +819,15 @@ without sidecars appear immediately with their best offline title and download
 time, then receive full remote metadata through a separate paced queue. The app
 attempts at most one video lookup per minute, pauses the queue while a channel
 check or subtitle-pipeline task is active, and waits 24 hours before retrying a
-failed lookup. Any failure also pauses the entire queue for 15 minutes, which
-keeps a broad YouTube refusal from cascading across the backlog. Untouched rows
-always run before retries, so one unavailable video cannot block the backlog.
-This avoids request bursts while steadily restoring missing publication times.
-The status-bar footer shows the remaining queue; the activity trace records
-each saved, deferred, and queue-paused lookup.
+failed lookup. Any failure also pauses other ready work for 15 minutes, which
+keeps a broad YouTube refusal from cascading across the backlog. When every
+item is cooling down, the timer sleeps until the exact earliest retry instead
+of polling every 15 minutes. Untouched rows always run before retries, so one
+unavailable video cannot block the backlog. This avoids request bursts while
+steadily restoring missing publication times. The status-bar footer reports
+ready items as **queued**, cooling-down items as **deferred**, and shows the
+earliest retry time when no work is currently eligible. The activity trace
+records each saved, deferred, and queue-paused lookup.
 
 A missing description alone does not place a historical row in this queue.
 Doing so would turn every dated legacy row into a separate YouTube request.
@@ -893,7 +896,9 @@ runs only while the application process is open.
 
 Browser cookies can be configured in the same dialog using values such as
 `firefox`, `chrome`, or `edge`. They are forwarded to both channel discovery and
-the existing download pipeline.
+the existing download pipeline. Supplying or changing a non-empty browser-cookie
+source immediately releases deferred metadata lookups, so an age-gated video
+does not remain in its old 24-hour cooldown after credentials become available.
 
 ### Safe Automatic Downloads
 

@@ -24,6 +24,7 @@ from PySide6 import QtWidgets  # noqa: E402
 from yt_whisper_subs import chapters  # noqa: E402
 from yt_whisper_subs import library_chapter_actions  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
+from yt_whisper_subs import library_metadata_db  # noqa: E402
 from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_video_queue  # noqa: E402
@@ -131,6 +132,32 @@ class DetailPanelTests(unittest.TestCase):
 
         self.assertTrue(library_gui.WINDOW_TITLE.endswith(f"v{yt_whisper_subs.__version__}"))
 
+    def test_metadata_footer_distinguishes_deferred_work(self) -> None:
+        """Never describe a cooled-down lookup as actively queued.
+
+        Example: a sole failed lookup shows its next retry instead of `≤1/min`.
+        """
+
+        state = library_metadata_db.MetadataQueueState(1, 0, 2_000_000_000)
+
+        text = library_gui._metadata_status_text(state)
+
+        self.assertIn("Metadata: 1 deferred · retry", text)
+        self.assertNotIn("queued", text)
+
+    def test_metadata_footer_reports_ready_and_deferred_counts(self) -> None:
+        """Expose mixed queue state without merging cooldown rows into ready work.
+
+        Example: two ready and one deferred item keep both counts visible.
+        """
+
+        state = library_metadata_db.MetadataQueueState(3, 2, 2_000_000_000)
+
+        self.assertEqual(
+            library_gui._metadata_status_text(state),
+            "Metadata: 2 queued · 1 deferred · ≤1/min",
+        )
+
     @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.set_enabled")
     @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.is_enabled")
     @mock.patch("yt_whisper_subs.library_window_actions.library_widgets.SettingsDialog")
@@ -162,6 +189,54 @@ class DetailPanelTests(unittest.TestCase):
         is_enabled.assert_called_once_with(root)
         set_enabled.assert_called_once_with(True, root)
         db.set_setting.assert_any_call("check_hours", 4)
+
+    @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.set_enabled")
+    @mock.patch("yt_whisper_subs.library_window_actions.windows_startup.is_enabled")
+    @mock.patch("yt_whisper_subs.library_window_actions.library_widgets.SettingsDialog")
+    def test_new_browser_cookies_release_deferred_metadata(
+        self,
+        dialog_cls: mock.Mock,
+        is_enabled: mock.Mock,
+        set_enabled: mock.Mock,
+    ) -> None:
+        """Retry cooled-down age-gated rows when usable credentials are supplied.
+
+        Example: changing the cookie source from empty to Firefox retries now.
+        """
+
+        is_enabled.return_value = False
+        values = library_widgets.SettingsValues(4, "firefox", True, False, 50, "")
+        dialog_cls.return_value.exec.return_value = QtWidgets.QDialog.DialogCode.Accepted
+        dialog_cls.return_value.values.return_value = values
+        db = mock.Mock()
+        db.setting.side_effect = lambda _key, default: default
+        db.reset_metadata_attempts.return_value = 1
+        window = mock.Mock()
+        window._service.out_dir = Path("D:/Videos")
+        window._service.db = db
+        window._service.apply_retention.return_value = 0
+
+        library_gui.LibraryWindow._edit_settings(window)
+
+        db.reset_metadata_attempts.assert_called_once_with()
+        window._schedule_metadata_backfill.assert_called_once_with(immediate=True)
+        window._ui.trace.append_message.assert_called_once()
+
+    def test_metadata_scheduler_sleeps_until_deferred_retry(self) -> None:
+        """Avoid 15-minute wakeups while every pending lookup is cooling down.
+
+        Example: a retry due in two hours arms one two-hour timer.
+        """
+
+        window = mock.Mock()
+        window._service.metadata_queue_state.return_value = (
+            library_metadata_db.MetadataQueueState(1, 0, 8_200)
+        )
+
+        with mock.patch("yt_whisper_subs.library_window_support.time.time", return_value=1_000):
+            library_window_support.WindowRuntimeMixin._schedule_metadata_backfill(window)
+
+        window._metadata_timer.start.assert_called_once_with(7_200_000)
 
     def test_chapter_action_seeks_matching_active_player(self) -> None:
         """Prefer the running mpv process without entering the busy task lane.

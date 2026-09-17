@@ -152,6 +152,9 @@ class WindowActionsMixin:
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
             return
         values = dialog.values()
+        cookies_changed = bool(values.cookies_from_browser.strip()) and (
+            values.cookies_from_browser.strip() != current.cookies_from_browser.strip()
+        )
         try:
             windows_startup.set_enabled(values.start_with_windows, self._service.out_dir)
         except (OSError, RuntimeError) as exc:
@@ -167,6 +170,13 @@ class WindowActionsMixin:
         self._service.db.set_setting("channel_recent_limit", values.channel_recent_limit)
         self._service.db.set_setting("channel_published_after", values.channel_published_after)
         self._service.reload_clients()
+        if cookies_changed:
+            released = self._service.db.reset_metadata_attempts()
+            if released:
+                self._ui.trace.append_message(
+                    f"Metadata · Retrying {released:,} deferred item(s) with updated browser cookies"
+                )
+                self._schedule_metadata_backfill(immediate=True)
         pruned = self._service.apply_retention()
         if pruned:
             self._ui.trace.append_message(f"Retention · Removed {pruned:,} dated remote-only video(s)")

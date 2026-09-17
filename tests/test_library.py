@@ -421,7 +421,12 @@ class LibraryDbTests(unittest.TestCase):
 
             self.assertEqual(db.metadata_backfill_ids(1, retry_before=999), [])
             self.assertEqual(db.metadata_backfill_ids(1, retry_before=1_000), [attempted_id])
-            self.assertEqual(db.metadata_backlog_count(), 2)
+            state = db.metadata_queue_state(100, now=1_050)
+            self.assertEqual(state.pending, 2)
+            self.assertEqual(state.ready, 0)
+            self.assertEqual(state.retry_at, 1_100)
+            self.assertEqual(db.reset_metadata_attempts(), 2)
+            self.assertEqual(db.metadata_queue_state(100, now=1_050).ready, 2)
 
     def test_missing_description_does_not_enter_full_metadata_queue(self) -> None:
         """Keep dated rows out of the expensive per-video lookup queue.
@@ -446,7 +451,7 @@ class LibraryDbTests(unittest.TestCase):
 
             db.store_snapshot(channel.channel_id, snapshot)
 
-            self.assertEqual(db.metadata_backlog_count(), 0)
+            self.assertEqual(db.metadata_queue_state(86_400).pending, 0)
 
     def test_cached_metadata_updates_known_rows_without_resurrecting_pruned_rows(self) -> None:
         """Apply sidecars to admitted rows without rebuilding removed history.
@@ -466,7 +471,7 @@ class LibraryDbTests(unittest.TestCase):
             removed = make_meta("bbbbbbbbbbb", "Removed title", 100)
             self.assertEqual(db.refresh_known_metadata([cached, removed]), 1)
 
-            self.assertEqual(db.metadata_backlog_count(), 0)
+            self.assertEqual(db.metadata_queue_state(86_400).pending, 0)
             self.assertEqual(db.video("aaaaaaaaaaa").meta.identity.title, "Cached title")
             self.assertIsNone(db.video("bbbbbbbbbbb"))
 
@@ -618,7 +623,7 @@ class LibraryServiceTests(unittest.TestCase):
             record = service.db.video(video_id)
             self.assertEqual(record.meta.identity.title, "Preserved title")
             self.assertEqual(record.meta.origin.channel, "Preserved channel")
-            self.assertEqual(service.db.metadata_backlog_count(), 0)
+            self.assertEqual(service.metadata_queue_state().pending, 0)
 
     def test_metadata_backfill_attempts_only_one_video(self) -> None:
         """Hydrate one missing date per call and leave the rest queued.
@@ -649,7 +654,7 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertTrue(result.attempted)
             self.assertTrue(result.completed)
             self.assertEqual(result.remaining, 1)
-            self.assertEqual(service.db.metadata_backlog_count(), 1)
+            self.assertEqual(service.metadata_queue_state().pending, 1)
 
     def test_expired_metadata_is_persisted_and_not_requeued(self) -> None:
         """Remember an old undated listing after its first full metadata lookup.
@@ -671,7 +676,7 @@ class LibraryServiceTests(unittest.TestCase):
             service.db.set_setting("channel_published_after", "2026-08-01")
             channel = service.track_channel("@example", False)
             service.initialize_channel(channel.channel_id)
-            self.assertEqual(service.db.metadata_backlog_count(), 1)
+            self.assertEqual(service.metadata_queue_state().pending, 1)
 
             feed.videos = [make_meta(video_id, "Resolved old video", 100)]
             result = service.backfill_metadata()
@@ -683,7 +688,7 @@ class LibraryServiceTests(unittest.TestCase):
             feed.videos = [undated]
             self.assertEqual(service.check_all(), 0)
             self.assertIsNone(service.db.video(video_id))
-            self.assertEqual(service.db.metadata_backlog_count(), 0)
+            self.assertEqual(service.metadata_queue_state().pending, 0)
 
     def test_failed_metadata_lookup_is_deferred_without_pipeline_error(self) -> None:
         """Cooldown an unavailable lookup without marking the download failed.

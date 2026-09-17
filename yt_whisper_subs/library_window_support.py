@@ -96,16 +96,29 @@ class WindowRuntimeMixin:
         when = datetime.fromtimestamp(now + delay).astimezone().strftime("%a %H:%M")
         self._ui.next_check.setText(f"Next check: {when}")
 
-    def _schedule_metadata_backfill(self, *, idle: bool = False) -> None:
-        """Pace metadata work independently from bursty channel checks.
+    def _schedule_metadata_backfill(
+        self,
+        *,
+        idle: bool = False,
+        immediate: bool = False,
+    ) -> None:
+        """Pace ready work or sleep until the exact next retry timestamp.
 
-        Example: task completion schedules one lookup for a later timer tick.
+        Example: a sole deferred item sleeps until its 24-hour cooldown ends.
         """
 
-        has_work = self._service.db.metadata_backlog_count() > 0
-        seconds = cfg.DEFAULT_LIBRARY_METADATA_PACE_SECONDS
-        if idle or not has_work:
-            seconds = cfg.DEFAULT_LIBRARY_METADATA_IDLE_SECONDS
+        state = self._service.metadata_queue_state()
+        if state.ready:
+            seconds = cfg.DEFAULT_LIBRARY_METADATA_PACE_SECONDS
+            if idle:
+                seconds = cfg.DEFAULT_LIBRARY_METADATA_IDLE_SECONDS
+            elif immediate:
+                seconds = 1
+        elif state.retry_at is not None:
+            seconds = max(1, state.retry_at - int(time.time()))
+        else:
+            self._metadata_timer.stop()
+            return
         self._metadata_timer.start(seconds * 1000)
 
     def _metadata_tick(self) -> None:

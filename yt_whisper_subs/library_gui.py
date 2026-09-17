@@ -6,6 +6,7 @@ Example: `LibraryWindow(service).show()` starts the desktop companion.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 from typing import NamedTuple
 
 from PySide6 import QtCore
@@ -15,6 +16,7 @@ from PySide6 import QtWidgets
 import yt_whisper_subs
 from yt_whisper_subs import library_chapter_actions
 from yt_whisper_subs import library_layout
+from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_service
@@ -30,6 +32,22 @@ from yt_whisper_subs import pipeline_progress as progress
 
 
 WINDOW_TITLE = f"YouTube Library · yt-whisper-subs v{yt_whisper_subs.__version__}"
+
+
+def _metadata_status_text(state: library_metadata_db.MetadataQueueState) -> str:
+    """Render ready and cooled-down metadata as distinct footer states.
+
+    Example: a failed sole lookup reads `1 deferred`, never `1 queued`.
+    """
+
+    if not state.pending:
+        return "Metadata: complete"
+    if state.ready:
+        deferred = f" · {state.deferred:,} deferred" if state.deferred else ""
+        return f"Metadata: {state.ready:,} queued{deferred} · ≤1/min"
+    assert state.retry_at is not None
+    retry = datetime.fromtimestamp(state.retry_at).astimezone().strftime("%a %H:%M")
+    return f"Metadata: {state.deferred:,} deferred · retry {retry}"
 
 
 class HeaderUi(NamedTuple):
@@ -422,13 +440,8 @@ class LibraryWindow(
         catalog = self._service.catalog()
         self._ui.catalog.model.set_records(catalog.records, catalog.issues)
         self._ui.catalog.proxy.set_channel(channel_id)
-        metadata_count = self._service.db.metadata_backlog_count()
-        metadata_text = (
-            f"Metadata: {metadata_count:,} queued · ≤1/min"
-            if metadata_count
-            else "Metadata: complete"
-        )
-        self._ui.metadata_status.setText(metadata_text)
+        state = self._service.metadata_queue_state()
+        self._ui.metadata_status.setText(_metadata_status_text(state))
         self._refresh_smart_filters()
         self._restore_video_selection(selected_id)
         self._update_actions()
