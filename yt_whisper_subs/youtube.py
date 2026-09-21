@@ -19,6 +19,7 @@ from yt_whisper_subs import proc
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_HLS_FALLBACK_CLIENT = "web_safari"
 
 
 def yt_dlp_js_runtime_args() -> list[str]:
@@ -227,6 +228,8 @@ def download_command(
     metadata_dir: Path,
     paths: dict[str, Path],
     args: argparse.Namespace,
+    *,
+    player_client: str | None = None,
 ) -> list[str | os.PathLike[str]]:
     """Build the metadata-preserving yt-dlp command for one video.
 
@@ -263,10 +266,24 @@ def download_command(
         f"infojson:{metadata_dir / '%(id)s.%(ext)s'}",
     ]
     cmd.append("--force-overwrites" if args.force else "--continue")
+    if player_client:
+        cmd += ["--extractor-args", f"youtube:player_client={player_client}"]
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
     cmd.append(url)
     return cmd
+
+
+def _yt_dlp_error(lines: list[str], returncode: int) -> str:
+    """Recover an error even when yt-dlp appends it to a progress record.
+
+    Example: a carriage-return progress line ending in `ERROR: ...` keeps its cause.
+    """
+
+    for line in reversed(lines):
+        if (error_idx := line.casefold().find("error:")) >= 0:
+            return line[error_idx:]
+    return f"yt-dlp failed with exit code {returncode}"
 
 
 def download_video(
@@ -284,22 +301,46 @@ def download_video(
     video_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
     cfg.output_scratch_dir(video_dir.parent).mkdir(parents=True, exist_ok=True)
-    cmd = download_command(url, video_dir, metadata_dir, paths, args)
-    result = proc.run(cmd, capture_stdout=True, stream_stdout=True, check=False)
-    lines = [clean_output_line(line) for line in (result.stdout or "").splitlines() if clean_output_line(line)]
-    existing_paths = [Path(line) for line in lines if Path(line).exists()]
-    if existing_paths:
-        return existing_paths[-1].resolve()
+    player_client: str | None = None
+    while True:
+        cmd = download_command(
+            url,
+            video_dir,
+            metadata_dir,
+            paths,
+            args,
+            player_client=player_client,
+        )
+        result = proc.run(cmd, capture_stdout=True, stream_stdout=True, check=False)
+        lines = [
+            clean_output_line(line)
+            for line in (result.stdout or "").splitlines()
+            if clean_output_line(line)
+        ]
+        existing_paths = [Path(line) for line in lines if Path(line).exists()]
+        if existing_paths:
+            return existing_paths[-1].resolve()
 
-    fallback_path = latest_downloaded_video(video_dir, url)
-    if fallback_path and (result.returncode == 0 or not args.force):
-        if result.returncode != 0:
-            print(f"yt-dlp exited with {result.returncode}, but found final video: {fallback_path}")
-        return fallback_path
+        fallback_path = latest_downloaded_video(video_dir, url)
+        if fallback_path and (result.returncode == 0 or not args.force):
+            if result.returncode != 0:
+                print(f"yt-dlp exited with {result.returncode}, but found final video: {fallback_path}")
+            return fallback_path
 
-    if result.returncode != 0:
-        error_lines = [line for line in lines if line.casefold().startswith("error:")]
-        detail = error_lines[-1] if error_lines else f"yt-dlp failed with exit code {result.returncode}"
-        raise RuntimeError(detail)
+        if result.returncode == 0:
+            raise RuntimeError("could not determine downloaded video path from yt-dlp output")
 
-    raise RuntimeError("could not determine downloaded video path from yt-dlp output")
+        detail = _yt_dlp_error(lines, result.returncode)
+        should_retry_hls = (
+            player_client is None
+            and youtube_video_id(url) is not None
+            and "http error 403" in detail.casefold()
+        )
+        if not should_retry_hls:
+            raise RuntimeError(detail)
+
+        player_client = YOUTUBE_HLS_FALLBACK_CLIENT
+        print(
+            "YouTube rejected the default media URL with HTTP 403; "
+            f"retrying once with the {player_client} HLS client."
+        )

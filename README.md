@@ -105,6 +105,7 @@ These defaults are hard-coded near the top of the script:
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
 | Downloaded video container | `mkv` |
 | yt-dlp format selector | `bv*+ba/b` |
+| YouTube HTTP 403 fallback | one retry through `web_safari` HLS |
 | yt-dlp progress interval | `1` second |
 | Extracted audio format | `opus` |
 | Keep audio after run | yes |
@@ -589,6 +590,12 @@ bv*+ba/b
 That means "best video-only plus best audio-only, or best combined format as a
 fallback." These are compressed streams from the source platform; the script is
 not making a lossless video transcode.
+
+If YouTube rejects the selected media URL with HTTP 403, the script retries once
+through the `web_safari` HLS client. The normal client remains first choice, so
+the HLS route is used only when the selected DASH URL fails. The retry can select
+a combined HLS format and therefore does not necessarily use the requested merge
+container.
 
 The default merge container is:
 
@@ -2050,9 +2057,12 @@ temporary directory.
 The script installs yt-dlp's EJS component and automatically uses Deno or Node
 when either executable is on `PATH`. The managed yt-dlp package is also checked
 for updates weekly. Restart the library once to trigger an overdue update. If
-the warning remains, install a current Deno (preferred by yt-dlp) or Node release
-and ensure its executable is visible from PowerShell. Cookies may still be
-needed for private, age-gated, or account-specific videos.
+the default YouTube media URL itself returns HTTP 403, the downloader retries
+once using the `web_safari` HLS client. If both attempts fail, the GUI preserves
+yt-dlp's actual error even when it was appended to a progress line. Install a
+current Deno (preferred by yt-dlp) or Node release if a JavaScript warning
+remains. Cookies may still be needed for private, age-gated, or account-specific
+videos.
 
 ### yt-dlp download output is noisy
 

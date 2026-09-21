@@ -69,6 +69,102 @@ class DownloadCommandTests(unittest.TestCase):
 
         self.assertEqual(youtube.yt_dlp_js_runtime_args(), [])
 
+    @mock.patch("yt_whisper_subs.youtube.proc.run")
+    def test_download_retries_youtube_media_403_with_hls(self, run: mock.Mock) -> None:
+        """Retry a rejected default media URL through YouTube's HLS client.
+
+        Example: a visionOS DASH 403 falls back to web_safari HLS.
+        """
+
+        args = argparse.Namespace(
+            download_progress_delta=1.0,
+            video_format="bv*+ba/b",
+            merge_output_format="mkv",
+            force=False,
+            cookies_from_browser=None,
+        )
+        failed = mock.Mock(
+            returncode=1,
+            stdout="[download] 0.0% ETA 01:00ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            final_path = root / "videos" / "aaaaaaaaaaa.mp4"
+            final_path.parent.mkdir()
+
+            def successful_retry(*_args: object, **_kwargs: object) -> mock.Mock:
+                """Materialize the path printed by a successful fallback.
+
+                Example: yt-dlp prints its final path after moving the file.
+                """
+
+                final_path.write_bytes(b"video")
+                return mock.Mock(returncode=0, stdout=f"{final_path}\n")
+
+            def run_download(*call_args: object, **call_kwargs: object) -> mock.Mock:
+                """Return the rejected primary attempt, then run the fallback.
+
+                Example: the second invocation materializes the final HLS file.
+                """
+
+                if run.call_count == 1:
+                    return failed
+                return successful_retry(*call_args, **call_kwargs)
+
+            run.side_effect = run_download
+            result = youtube.download_video(
+                "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                root / "videos",
+                root / "metadata",
+                {"python": Path("python")},
+                args,
+            )
+
+        self.assertEqual(result, final_path.resolve())
+        first_cmd = [str(part) for part in run.call_args_list[0].args[0]]
+        retry_cmd = [str(part) for part in run.call_args_list[1].args[0]]
+        self.assertNotIn("--extractor-args", first_cmd)
+        extractor_idx = retry_cmd.index("--extractor-args")
+        self.assertEqual(
+            retry_cmd[extractor_idx + 1],
+            f"youtube:player_client={youtube.YOUTUBE_HLS_FALLBACK_CLIENT}",
+        )
+
+    @mock.patch("yt_whisper_subs.youtube.proc.run")
+    def test_download_keeps_inline_error_after_hls_retry_fails(self, run: mock.Mock) -> None:
+        """Surface yt-dlp's cause when both YouTube transports fail.
+
+        Example: progress text immediately followed by `ERROR:` remains actionable.
+        """
+
+        args = argparse.Namespace(
+            download_progress_delta=1.0,
+            video_format="bv*+ba/b",
+            merge_output_format="mkv",
+            force=False,
+            cookies_from_browser=None,
+        )
+        run.side_effect = [
+            mock.Mock(
+                returncode=1,
+                stdout="[download] 0.0%ERROR: unable to download video data: HTTP Error 403: Forbidden\n",
+            ),
+            mock.Mock(
+                returncode=1,
+                stdout="[download] 0.0%ERROR: HLS fragments returned HTTP Error 403: Forbidden\n",
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.assertRaisesRegex(RuntimeError, "HLS fragments returned HTTP Error 403"):
+                youtube.download_video(
+                    "https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                    root / "videos",
+                    root / "metadata",
+                    {"python": Path("python")},
+                    args,
+                )
+
 
 class PlaybackPrefsTests(unittest.TestCase):
     """Keep GUI and CLI playback on the same defaults and sidecar order.
