@@ -393,6 +393,65 @@ class DetailPanelTests(unittest.TestCase):
         window._ui.catalog.table.selectRow.assert_called_once_with(4)
         window._download_selected.assert_called_once_with()
 
+    def test_live_double_click_requests_an_immediate_status_check(self) -> None:
+        """Pass an explicit override only for a blocked stream activation.
+
+        Example: double-clicking Live now bypasses the stored lookup cooldown.
+        """
+
+        index = mock.Mock()
+        index.isValid.return_value = True
+        record = types.VideoRecord(
+            types.VideoMeta(
+                types.VideoIdentity("aaaaaaaaaaa", "https://youtu.be/aaaaaaaaaaa", "Live"),
+                types.VideoOrigin("Channel", "UC-example", 1),
+                types.VideoDetails(90, 1, "", None, "is_live"),
+            ),
+            1,
+            1,
+            None,
+            None,
+            None,
+        )
+        window = mock.Mock()
+        window._record_from_proxy_index.return_value = record
+
+        library_gui.LibraryWindow._activate_video(window, index)
+
+        window._download_selected.assert_called_once_with(force_live_check=True)
+
+    def test_live_activation_passes_override_to_service(self) -> None:
+        """Carry the override into the queued worker without forcing toolbar work.
+
+        Example: the queued live-row callback calls `download(..., force_live_check=True)`.
+        """
+
+        record = types.VideoRecord(
+            types.VideoMeta(
+                types.VideoIdentity("aaaaaaaaaaa", "https://youtu.be/aaaaaaaaaaa", "Live"),
+                types.VideoOrigin("Channel", "UC-example", 1),
+                types.VideoDetails(90, 1, "", None, "is_live"),
+            ),
+            1,
+            1,
+            None,
+            None,
+            None,
+        )
+        window = mock.Mock()
+        window._selected_record.return_value = record
+        window._service.db.pipeline_job.return_value = None
+        window._service.pipeline_issue.return_value = None
+
+        library_gui.LibraryWindow._download_selected(window, force_live_check=True)
+
+        download = window._queue_video_task.call_args.args[2]
+        report = mock.Mock()
+        download(report)
+        window._service.download.assert_called_once_with(
+            "aaaaaaaaaaa", report, force_live_check=True
+        )
+
     def test_cancel_action_requests_only_the_active_heavy_task(self) -> None:
         """Leave playback and queued work intact while stopping current compute.
 

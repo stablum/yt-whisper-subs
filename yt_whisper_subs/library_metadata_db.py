@@ -37,10 +37,16 @@ class MetadataDbMixin:
     Example: `db.metadata_backfill_ids(1, retry_before)` selects one lookup.
     """
 
-    def reserve_video_lookup(self, video_id: str, *, live_cooldown: int = 0) -> int:
-        """Space full video requests globally and repeated live probes per video.
+    def reserve_video_lookup(
+        self,
+        video_id: str,
+        *,
+        live_cooldown: int = 0,
+        force: bool = False,
+    ) -> int:
+        """Pace automatic lookups while recording explicit forced checks too.
 
-        Example: a rapid second click returns seconds to wait without network I/O.
+        Example: `force=True` bypasses waits but delays later queued metadata.
         """
 
         now = int(time.time())
@@ -59,7 +65,8 @@ class MetadataDbMixin:
             last_lookup = int(row["last_lookup_at"] or 0)
             global_wait = max(0, last_lookup + cfg.DEFAULT_LIBRARY_METADATA_PACE_SECONDS - now)
             live_wait = max(0, int(row["live_retry_at"] or 0) - now) if live_cooldown else 0
-            if wait := max(global_wait, live_wait):
+            wait = max(global_wait, live_wait)
+            if wait and not force:
                 return wait
             conn.execute(
                 """

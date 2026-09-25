@@ -930,6 +930,41 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertEqual(feed.video_info_calls, 2)
             self.assertEqual(downloader.calls, [video_id])
 
+    def test_explicit_live_double_click_can_probe_inside_cooldowns(self) -> None:
+        """Honor repeated user checks while keeping ordinary calls paced.
+
+        Example: a live-row double-click checks immediately after a channel scan.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            live = with_live_status(make_meta(video_id, "Stream"), "is_live")
+            feed = FakeFeed([live])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+
+            for _ in range(2):
+                with self.assertRaisesRegex(RuntimeError, "still reports"):
+                    service.download(video_id, force_live_check=True)
+            self.assertEqual(feed.video_info_calls, 2)
+            service.db.set_live_status(video_id, "was_live")
+            with self.assertRaisesRegex(RuntimeError, "still reports"):
+                service.download(video_id, force_live_check=True)
+            self.assertEqual(feed.video_info_calls, 3)
+            with self.assertRaisesRegex(RuntimeError, "retry in"):
+                service.download(video_id)
+            self.assertEqual(feed.video_info_calls, 3)
+
+            feed.videos = [with_live_status(live, "was_live")]
+            service.download(video_id, force_live_check=True)
+            self.assertEqual(feed.video_info_calls, 4)
+            self.assertEqual(downloader.calls, [video_id])
+
     def test_missing_fresh_status_does_not_preserve_live_claim(self) -> None:
         """Mark a previously live video uncertain when a fresh row omits status.
 
@@ -1556,6 +1591,25 @@ class PipelineRecoveryTests(unittest.TestCase):
                 self.assertEqual(db.reserve_video_lookup(second), 60)
             with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=1060):
                 self.assertEqual(db.reserve_video_lookup(second), 0)
+
+    def test_forced_lookup_still_delays_the_background_queue(self) -> None:
+        """Record explicit checks in the shared request clock despite override.
+
+        Example: a manual live check now postpones queued metadata one minute.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
+            db.upsert_video(make_meta(first, "First"))
+            db.upsert_video(make_meta(second, "Second"))
+
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=1000):
+                self.assertEqual(db.reserve_video_lookup(first), 0)
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=1001):
+                self.assertEqual(db.reserve_video_lookup(second, force=True), 0)
+                self.assertEqual(db.reserve_video_lookup(first), 60)
 
     def test_running_job_recovers_with_reached_stage_and_fraction(self) -> None:
         """Persist meaningful progress and mark stale execution interrupted.

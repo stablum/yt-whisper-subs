@@ -298,17 +298,23 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         self.db.set_setting("last_check_at", int(time.time()))
         return len(eligible)
 
-    def download(self, video_id: str, report: ReportFn = _ignore_report) -> None:
+    def download(
+        self,
+        video_id: str,
+        report: ReportFn = _ignore_report,
+        *,
+        force_live_check: bool = False,
+    ) -> None:
         """Run the full subtitle pipeline for one remote catalog entry.
 
-        Example: `service.download(video_id, report)` is the GUI button action.
+        Example: a live-row double-click uses `force_live_check=True`.
         """
 
         record = self.db.video(video_id)
         if not record:
             raise RuntimeError(f"unknown video: {video_id}")
-        if self._is_live(record) and not record.downloaded:
-            record = self._refresh_live_status(record, report)
+        if (self._is_live(record) or force_live_check) and not record.downloaded:
+            record = self._refresh_live_status(record, report, force=force_live_check)
             if self._is_live(record):
                 raise RuntimeError("YouTube still reports this stream as live, upcoming, or not ready")
         self.db.set_download_error(video_id, None)
@@ -332,16 +338,23 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
             self.db.set_download_error(video_id, str(exc), signature)
             raise
 
-    def _refresh_live_status(self, record: types.VideoRecord, report: ReportFn) -> types.VideoRecord:
-        """Probe one blocked stream on demand without bypassing lookup cooldowns.
+    def _refresh_live_status(
+        self,
+        record: types.VideoRecord,
+        report: ReportFn,
+        *,
+        force: bool = False,
+    ) -> types.VideoRecord:
+        """Probe one blocked stream, allowing an explicit GUI override.
 
-        Example: a click after a live broadcast ends can release its download.
+        Example: a live-row double-click checks immediately after broadcast end.
         """
 
         video_id = record.meta.identity.video_id
         wait = self.db.reserve_video_lookup(
             video_id,
             live_cooldown=cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS,
+            force=force,
         )
         if wait:
             raise RuntimeError(f"Live status was checked recently; retry in {wait} seconds")

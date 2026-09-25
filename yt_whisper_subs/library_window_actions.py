@@ -24,10 +24,10 @@ class WindowActionsMixin:
     Example: the Download button invokes `_download_selected()` from this mixin.
     """
 
-    def _download_selected(self) -> None:
+    def _download_selected(self, *, force_live_check: bool = False) -> None:
         """Download a remote row or repair an incomplete local pipeline.
 
-        Example: a corrupt Dutch SRT changes the action from Play to Repair.
+        Example: a live-row double-click forces a fresh status lookup.
         """
 
         record = self._selected_record()
@@ -63,7 +63,10 @@ class WindowActionsMixin:
             Example: `download(report)` runs off the GUI thread.
             """
 
-            self._service.download(video_id, report)
+            if force_live_check:
+                self._service.download(video_id, report, force_live_check=True)
+            else:
+                self._service.download(video_id, report)
 
         label = "Repairing pipeline…" if record.downloaded else "Starting download…"
         self._queue_video_task(video_id, label, download, lambda _: self.refresh())
@@ -84,7 +87,10 @@ class WindowActionsMixin:
         if record and record.downloaded and not issue and not record.download_error and not recoverable:
             self._play_selected()
         elif record:
-            self._download_selected()
+            if record.meta.details.live_status in types.LIVE_BLOCKED:
+                self._download_selected(force_live_check=True)
+            else:
+                self._download_selected()
 
     def _remove_selected(self) -> None:
         """Confirm an exact manifest before removing one video's managed yields.

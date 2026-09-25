@@ -847,8 +847,9 @@ ready items as **queued**, cooling-down items as **deferred**, and shows the
 earliest retry time when no work is currently eligible. The activity trace
 records each saved, deferred, and queue-paused lookup.
 
-A manual lookup of a blocked live stream shares the same persisted one-minute
-global spacing; it cannot create a burst alongside the metadata queue. An empty
+Ordinary manual lookups of blocked streams share the persisted one-minute
+global spacing. An explicit double-click bypasses that wait but updates the
+shared request clock, postponing subsequent background metadata work. An empty
 footer means the metadata lookup queue has no work, not that every live status
 is current.
 
@@ -944,14 +945,14 @@ listing can release them when YouTube explicitly reports `was_live` or
 `not_live`. Disabling automatic download clears those pending entries. No
 additional channel checks are scheduled for this transition.
 
-Double-clicking a blocked remote stream may check its current status on demand.
-For known live or upcoming streams, the first check respects the channel
-observation's cooldown. Repeat checks for the same video are at least 15 minutes
-apart, and all full-video lookups share the
-one-minute global limit. When the cooldown has not elapsed, the app reports the
-remaining wait without contacting YouTube. If the lookup still reports a live,
-upcoming, post-live, or unknown state, the download remains blocked. A normal
-available-video download continues through the existing CLI pipeline.
+Double-clicking a blocked remote stream checks its current status immediately,
+regardless of the channel observation's cooldown, the per-video 15-minute
+cooldown, or the shared one-minute lookup timer. This override applies only to
+an explicit row double-click; the Download button, background metadata queue,
+and automatic channel checks remain paced. The forced check updates both stored
+timers so later background work waits normally. If YouTube still reports a
+live, upcoming, post-live, or unknown state, the download remains blocked. A
+normal available-video download continues through the existing CLI pipeline.
 
 An automatic or manual library download is not a second media implementation.
 It executes the existing CLI with the video's canonical URL, the shared output
@@ -1922,8 +1923,9 @@ Start by preserving these invariants:
 34. Remove one video's yields only through an exact inspected manifest, one
     non-recursive unlink at a time, while preserving its tracked catalog row.
 35. Derive changing live status from scheduled flat channel listings or an
-    explicitly requested, cooldown-limited full lookup; keep sidecars for
-    durable metadata rather than current stream state.
+    explicitly requested full lookup; only an explicit row double-click may
+    bypass lookup cooldowns. Keep sidecars for durable metadata rather than
+    current stream state.
 36. Reconcile external file edits from debounced directory notifications while
     heavy work is idle, without periodic filesystem scans.
 
@@ -1946,7 +1948,8 @@ compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
-persisted live-probe pacing, unknown-state handling, pending stream releases,
+persisted live-probe pacing, explicit double-click overrides, unknown-state
+handling, pending stream releases,
 external-file reconciliation, and stale error/progress cleanup;
 native table-header resizing, reordering, persistence, and reset behavior;
 resizable inspector geometry, long-description containment, and split persistence;
