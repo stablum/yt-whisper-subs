@@ -6,6 +6,7 @@ Example: `LibraryService(out_dir, paths).check_all(report)`.
 from __future__ import annotations
 
 import json
+import math
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -313,10 +314,19 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         record = self.db.video(video_id)
         if not record:
             raise RuntimeError(f"unknown video: {video_id}")
-        if (self._is_live(record) or force_live_check) and not record.downloaded:
+        if force_live_check or self._is_live(record):
             record = self._refresh_live_status(record, report, force=force_live_check)
             if self._is_live(record):
-                raise RuntimeError("YouTube still reports this stream as live, upcoming, or not ready")
+                status = record.meta.details.live_status
+                if status == "post_live" and force_live_check:
+                    duration = record.meta.details.duration
+                    if duration is None or not math.isfinite(duration) or duration <= 0:
+                        raise RuntimeError("Replay duration is unavailable; cannot verify a complete download")
+                    report("Replay is processing · checking downloaded duration before transcription")
+                elif status == "post_live":
+                    raise RuntimeError("Replay is still processing; double-click its row to try a verified download")
+                else:
+                    raise RuntimeError("YouTube still reports this stream as live, upcoming, or not ready")
         self.db.set_download_error(video_id, None)
         try:
             tracker = library_pipeline.PipelineJobTracker(

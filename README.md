@@ -371,6 +371,7 @@ resolve source
   if URL:
     find exact cached video by YouTube ID unless --force
     otherwise download with yt-dlp
+    if requested, check local media duration before reusing it or transcribing
     canonicalize URL yields to video-id filenames
   if local file:
     resolve local path
@@ -950,9 +951,15 @@ regardless of the channel observation's cooldown, the per-video 15-minute
 cooldown, or the shared one-minute lookup timer. This override applies only to
 an explicit row double-click; the Download button, background metadata queue,
 and automatic channel checks remain paced. The forced check updates both stored
-timers so later background work waits normally. If YouTube still reports a
-live, upcoming, post-live, or unknown state, the download remains blocked. A
-normal available-video download continues through the existing CLI pipeline.
+timers so later background work waits normally. Live, upcoming, and unknown
+streams remain blocked. A `post_live` response still means YouTube is processing
+the replay, but an explicit double-click can attempt its download if YouTube
+reports a duration. Before transcription, the CLI checks that the local media
+lasts at least 98% of that reported duration. A short or unreadable file is kept
+for inspection and shown as a failed row; a later explicit retry checks the
+status again and redownloads that short file once. A complete cached file needs
+only one local duration probe and no repeat media download. The Download button
+and automatic downloads still wait for `was_live` or `not_live`.
 
 An automatic or manual library download is not a second media implementation.
 It executes the existing CLI with the video's canonical URL, the shared output
@@ -1568,6 +1575,7 @@ rejects `none` and `xhigh` for `gpt-5-mini`.
 | --- | --- | --- |
 | `--video-format FORMAT` | `bv*+ba/b` | yt-dlp format selector. |
 | `--merge-output-format mkv|mp4|webm` | `mkv` | Container for downloaded streams. |
+| `--min-video-duration SECONDS` | off | Check a URL video's local duration before transcription; the library sets this for explicit `post_live` attempts and retries of failed local media with known duration. |
 | `--download-progress-delta SECONDS` | `1` | Minimum interval between yt-dlp progress updates. |
 | `--audio-format opus|m4a|mp3` | `opus` | Kept lossy audio format for Whisper. |
 | `--keep-audio` | on | Keep extracted audio. |

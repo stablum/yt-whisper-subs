@@ -6,6 +6,7 @@ Example: `cli.parse_args()` returns the normalized source fields.
 from __future__ import annotations
 
 import argparse
+import math
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import opts
@@ -170,6 +171,11 @@ def parse_args() -> argparse.Namespace:
         choices=("mkv", "mp4", "webm"),
         default="mkv",
         help="Container for downloaded video streams. Default: mkv.",
+    )
+    parser.add_argument(
+        "--min-video-duration",
+        type=float,
+        help="Reject a downloaded video shorter than this many seconds before transcribing it.",
     )
     parser.add_argument(
         "--download-progress-delta",
@@ -385,6 +391,10 @@ def parse_args() -> argparse.Namespace:
         parser.error("--openai-translation-context-cues must be 0 or greater")
     if args.chapter_minutes <= 0:
         parser.error("--chapter-minutes must be greater than 0")
+    if args.min_video_duration is not None and (
+        not math.isfinite(args.min_video_duration) or args.min_video_duration <= 0
+    ):
+        parser.error("--min-video-duration must be a finite number greater than 0")
     if args.subtitle_gap_extension < 0:
         parser.error("--subtitle-gap-extension must be 0 or greater")
     if (

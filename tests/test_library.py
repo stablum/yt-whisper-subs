@@ -169,6 +169,35 @@ class PipelineDownloaderTests(unittest.TestCase):
     Example: `PipelineDownloaderTests("test_download_reports_root_error")`.
     """
 
+    def test_post_live_download_requires_duration_check(self) -> None:
+        """Verify a manual replay before the shared CLI can transcribe it.
+
+        Example: a 90-second post-live video must yield at least 88.2 seconds.
+        """
+
+        meta = with_live_status(make_meta("aaaaaaaaaaa", "Replay"), "post_live")
+        record = types.VideoRecord(meta, None, 0, None, None, None)
+        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
+        with mock.patch.object(downloader, "_run") as run:
+            downloader.download(record, mock.Mock())
+        cmd = run.call_args.args[1]
+        self.assertEqual(cmd[cmd.index("--min-video-duration") + 1], "88.2")
+
+    def test_failed_local_replay_keeps_duration_check_after_status_changes(self) -> None:
+        """Do not reuse a short replay after YouTube switches to `was_live`.
+
+        Example: a retry still checks the local file before Whisper starts.
+        """
+
+        meta = with_live_status(make_meta("aaaaaaaaaaa", "Replay"), "was_live")
+        local = types.LocalMedia(Path("replay.mkv"), 0, 100)
+        record = types.VideoRecord(meta, None, 0, local, "shorter than expected", None)
+        downloader = library_pipeline.PipelineDownloader(Path("python"), Path("output"))
+        with mock.patch.object(downloader, "_run") as run:
+            downloader.download(record, mock.Mock())
+        cmd = run.call_args.args[1]
+        self.assertEqual(cmd[cmd.index("--min-video-duration") + 1], "88.2")
+
     @mock.patch("yt_whisper_subs.library_pipeline.subprocess.Popen")
     def test_download_reports_root_error(self, popen: mock.Mock) -> None:
         """Show yt-dlp's HTTP failure instead of a generic wrapper message.
@@ -964,6 +993,66 @@ class LibraryServiceTests(unittest.TestCase):
             service.download(video_id, force_live_check=True)
             self.assertEqual(feed.video_info_calls, 4)
             self.assertEqual(downloader.calls, [video_id])
+
+    def test_explicit_post_live_download_keeps_automatic_work_blocked(self) -> None:
+        """Allow one user-requested replay without releasing pending automation.
+
+        Example: an explicit double-click bypasses cooldowns; auto stays pending.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            replay = with_live_status(make_meta(video_id, "Replay"), "post_live")
+            feed = FakeFeed([replay])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", True)
+            service.initialize_channel(channel.channel_id)
+            service.db.set_auto_pending((video_id,), True)
+
+            self.assertEqual(service.check_all(), 0)
+            self.assertEqual(feed.video_info_calls, 0)
+            self.assertEqual(downloader.calls, [])
+            due = int(time.time()) + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS + 2
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=due):
+                with self.assertRaisesRegex(RuntimeError, "double-click"):
+                    service.download(video_id)
+            self.assertEqual(downloader.calls, [])
+
+            service.download(video_id, force_live_check=True)
+            self.assertEqual(feed.video_info_calls, 2)
+            self.assertEqual(downloader.calls, [video_id])
+            self.assertFalse(service.db.auto_pending_ids(channel.channel_id))
+            with self.assertRaisesRegex(RuntimeError, "retry in"):
+                service.download(video_id)
+            self.assertEqual(feed.video_info_calls, 2)
+            self.assertEqual(downloader.calls, [video_id])
+
+    def test_post_live_without_duration_does_not_download(self) -> None:
+        """Refuse an unverifiable replay before starting costly media work.
+
+        Example: an extractor response without duration cannot pass the safety check.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            replay = with_live_status(make_meta("aaaaaaaaaaa", "Replay"), "post_live")
+            replay = replay._replace(details=replay.details._replace(duration=None))
+            feed = FakeFeed([replay])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+
+            with self.assertRaisesRegex(RuntimeError, "duration is unavailable"):
+                service.download("aaaaaaaaaaa", force_live_check=True)
+            self.assertEqual(feed.video_info_calls, 1)
+            self.assertEqual(downloader.calls, [])
 
     def test_missing_fresh_status_does_not_preserve_live_claim(self) -> None:
         """Mark a previously live video uncertain when a fresh row omits status.

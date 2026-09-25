@@ -5,6 +5,7 @@ Example: `PipelineDownloader(python, root).download(record, report)`.
 
 from __future__ import annotations
 
+import math
 import subprocess
 from collections import deque
 from collections.abc import Callable
@@ -60,6 +61,12 @@ class PipelineDownloader:
         ]
         if self._cookies:
             cmd += ["--cookies-from-browser", self._cookies]
+        duration = record.meta.details.duration
+        valid_duration = duration is not None and math.isfinite(duration) and duration > 0
+        if record.meta.details.live_status == "post_live" and not valid_duration:
+            raise RuntimeError("Replay duration is unavailable; cannot verify a complete download")
+        if valid_duration and (record.meta.details.live_status == "post_live" or record.download_error):
+            cmd += ["--min-video-duration", f"{duration * 0.98:g}"]
         self._run(record, cmd, "Download", report)
 
     def generate_chapters(self, record: types.VideoRecord, report: ReportFn) -> None:

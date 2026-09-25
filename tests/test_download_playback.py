@@ -16,6 +16,7 @@ from unittest import mock
 from yt_whisper_subs import cfg
 from yt_whisper_subs import media
 from yt_whisper_subs import mpv_ipc
+from yt_whisper_subs import pipeline
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress as progress
 from yt_whisper_subs import proc
@@ -383,6 +384,89 @@ class MediaDurationTests(unittest.TestCase):
         self.assertEqual(media.probe_duration_ms(Path("video.mkv")), 12_345)
         require.assert_called_once_with("ffprobe")
         self.assertIn("format=duration", run.call_args.args[0])
+
+
+class ReplayDurationTests(unittest.TestCase):
+    """Reject incomplete replay media before subtitle generation or reuse.
+
+    Example: `ReplayDurationTests("test_short_replay_stops_before_yield_migration")`.
+    """
+
+    @mock.patch("yt_whisper_subs.pipeline.youtube.migrate_legacy_youtube_yields_to_video_id")
+    @mock.patch("yt_whisper_subs.pipeline.youtube.canonicalize_youtube_video_filename")
+    @mock.patch("yt_whisper_subs.pipeline.youtube.latest_downloaded_video")
+    @mock.patch("yt_whisper_subs.pipeline.media.probe_duration_ms")
+    @mock.patch("yt_whisper_subs.pipeline.youtube.download_video")
+    @mock.patch("yt_whisper_subs.pipeline.proc.require_command")
+    def test_short_replay_stops_before_yield_migration(
+        self,
+        require: mock.Mock,
+        download: mock.Mock,
+        probe: mock.Mock,
+        latest: mock.Mock,
+        canonicalize: mock.Mock,
+        migrate: mock.Mock,
+    ) -> None:
+        """Leave a short file inspectable without treating it as a finished yield.
+
+        Example: a 50-second container fails a 88.2-second floor.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = argparse.Namespace(
+                url="https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                video_file=None,
+                force=False,
+                min_video_duration=88.2,
+            )
+            runner = pipeline.PipelineRunner(args, {}, Path(tmp), Path(tmp) / "run.log")
+            latest.return_value = Path(tmp) / "videos" / "aaaaaaaaaaa.mkv"
+            probe.side_effect = [50_000, 50_000]
+            download.return_value = latest.return_value
+            runner._ensure_python_deps = mock.Mock()
+
+            with self.assertRaisesRegex(RuntimeError, "shorter than expected"):
+                runner._resolve_video()
+
+        canonicalize.assert_not_called()
+        migrate.assert_not_called()
+        self.assertTrue(download.call_args.args[-1].force)
+        download.assert_called_once()
+        self.assertEqual(probe.call_count, 2)
+        require.assert_called_once_with("ffmpeg")
+
+    @mock.patch("yt_whisper_subs.pipeline.youtube.migrate_legacy_youtube_yields_to_video_id")
+    @mock.patch("yt_whisper_subs.pipeline.youtube.canonicalize_youtube_video_filename")
+    @mock.patch("yt_whisper_subs.pipeline.youtube.latest_downloaded_video")
+    @mock.patch("yt_whisper_subs.pipeline.media.probe_duration_ms")
+    def test_complete_replay_reuses_media_with_one_local_probe(
+        self,
+        probe: mock.Mock,
+        latest: mock.Mock,
+        canonicalize: mock.Mock,
+        migrate: mock.Mock,
+    ) -> None:
+        """Accept a complete cached replay without another YouTube download.
+
+        Example: a 90-second container exceeds the 88.2-second floor.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = argparse.Namespace(
+                url="https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                video_file=None,
+                force=False,
+                min_video_duration=88.2,
+            )
+            runner = pipeline.PipelineRunner(args, {}, Path(tmp), Path(tmp) / "run.log")
+            latest.return_value = Path(tmp) / "videos" / "aaaaaaaaaaa.mkv"
+            canonicalize.side_effect = lambda path, _id: path
+            probe.return_value = 90_000
+
+            self.assertEqual(runner._resolve_video()[1], latest.return_value)
+
+        probe.assert_called_once_with(latest.return_value)
+        migrate.assert_called_once()
 
 
 class PlaybackChapterTests(unittest.TestCase):

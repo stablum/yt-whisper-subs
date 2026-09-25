@@ -241,6 +241,15 @@ class PipelineRunner:
         source_video_id = youtube.youtube_video_id(self._args.url)
         progress.emit(progress.Stage.DOWNLOADING, 0.0)
         video_path = None if self._args.force else youtube.latest_downloaded_video(self._dirs.video, self._args.url)
+        min_duration = getattr(self._args, "min_video_duration", None)
+        duration_ms = None
+        retry_short = False
+        if video_path and min_duration:
+            duration_ms = media.probe_duration_ms(video_path)
+            retry_short = duration_ms is None or duration_ms < min_duration * 1000
+            if retry_short:
+                print(f"Existing replay is too short or unreadable; retrying its download: {video_path}")
+                video_path = None
         if video_path:
             print()
             print(f"Found existing video yield: {video_path}")
@@ -250,14 +259,26 @@ class PipelineRunner:
             proc.require_command("ffmpeg")
             print()
             print("Downloading compressed lossy video stream...")
+            # A prior short final file must not make yt-dlp skip this explicit retry.
+            download_args = argparse.Namespace(**(vars(self._args) | {"force": True})) if retry_short else self._args
             video_path = youtube.download_video(
                 self._args.url,
                 self._dirs.video,
                 self._dirs.metadata,
                 self._paths,
-                self._args,
+                download_args,
             )
             progress.emit(progress.Stage.DOWNLOADING, 1.0, "Video downloaded")
+
+        if min_duration:
+            if duration_ms is None or retry_short:
+                duration_ms = media.probe_duration_ms(video_path)
+            if duration_ms is None or duration_ms < min_duration * 1000:
+                found = "unknown" if duration_ms is None else f"{duration_ms / 1000:g}s"
+                raise RuntimeError(
+                    f"Downloaded replay is shorter than expected ({found}; need at least "
+                    f"{min_duration:g}s). The media was kept for inspection; transcription was skipped."
+                )
 
         if source_video_id:
             video_path = youtube.canonicalize_youtube_video_filename(video_path, source_video_id)
