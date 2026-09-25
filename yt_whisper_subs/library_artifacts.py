@@ -5,6 +5,7 @@ Example: `ArtifactCache(out_dir).catalog(db.videos())` prepares one UI snapshot.
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from typing import NamedTuple
@@ -61,6 +62,20 @@ def _stamp(path: Path) -> FileStamp:
     return str(path), stat.st_size, stat.st_mtime_ns
 
 
+def yield_signature(out_dir: Path, record: types.VideoRecord) -> str:
+    """Fingerprint local yields when a pipeline error is recorded.
+
+    Example: a repaired chapter file changes the signature on the next scan.
+    """
+
+    video = record.local.path if record.local else None
+    primary = video.with_suffix(".srt") if video else None
+    english = video.with_name(f"{video.stem}.en.srt") if video else None
+    chapter = chapters.ChapterFiles.for_video(out_dir, record.meta.identity.video_id).archive
+    paths = (video, primary, english, chapter)
+    return json.dumps([_stamp(path) if path else None for path in paths], separators=(",", ":"))
+
+
 def pipeline_issue(record: types.VideoRecord) -> str | None:
     """Describe a missing or corrupt required subtitle beside local media.
 
@@ -71,7 +86,7 @@ def pipeline_issue(record: types.VideoRecord) -> str | None:
         return None
     video = record.local.path
     if not video.is_file():
-        return None
+        return "video file is missing"
     primary = video.with_suffix(".srt")
     english = video.with_name(f"{video.stem}.en.srt")
     if issue := srt.file_issue(primary):

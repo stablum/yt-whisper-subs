@@ -345,9 +345,11 @@ under `metadata\`, embeds normal media metadata into the downloaded container,
 and embeds the info JSON as an MKV attachment when the container supports it.
 The sidecar is the catalog's durable source for title, channel, upload time,
 duration, views, description, thumbnail URL, source URL, and other yt-dlp
-fields. The library database is a query cache and subscription store; deleting
-it does not delete any videos or metadata sidecars, and the next library start
-can rebuild local download state.
+fields. Its `live_status` is only a past observation: fresh channel listings or
+an explicitly requested video lookup take precedence for current stream state.
+The library database is a query cache and subscription store; deleting it does
+not delete any videos or metadata sidecars, and the next library start can
+rebuild local download state.
 
 Privacy note: yt-dlp warns that info JSON can contain personal information and
 temporary extractor URLs. Keep the `metadata\` directory private; the project
@@ -661,6 +663,12 @@ entry automatically. Catalog mutations still trigger a fresh SQLite snapshot.
 WAL mode is configured once when the database opens instead of being renegotiated
 for every short read connection.
 
+The window also watches the output root and the media, metadata, and chapter
+directories for local changes. It coalesces notifications into one scan after
+three quiet seconds and waits for active work to finish; it does not poll the
+disk. External media deletion or subtitle repair therefore updates the table
+and Issues view while the app is open.
+
 Background subprocesses launched from the desktop application—including
 dependency setup, channel discovery, downloads, ffmpeg, and Whisper—use
 Windows' hidden, no-console process mode. mpv uses a distinct visible-application
@@ -692,8 +700,8 @@ without opening dialogs or combining contradictory dropdowns:
   end-of-file.
 - **Watched** shows videos with confirmed mpv completion.
 - **Issues** isolates videos whose latest download or subtitle processing
-  attempt failed, or whose required Dutch/English SRT files are missing,
-  unreadable, empty, or contain no valid cues.
+  attempt failed, whose media file vanished, or whose required Dutch/English
+  SRT files are missing, unreadable, empty, or contain no valid cues.
 
 The number on every chip is calculated from the current channel and search
 scope, but independently of the selected chip. This makes the shelf a small
@@ -734,8 +742,11 @@ download, audio extraction, speech-to-text, English translation, AI chapter
 planning, and final file work. The label above the bar changes through
 **Queued**, **Preparing**,
 **Downloading**, **Extracting audio**, **Speech-to-text**, **Translating**,
-**Creating chapters**, **Finalizing**, and **Ready to play**. Available, live, upcoming, and failed
-rows use the same column, so status is not split across unrelated UI elements.
+**Creating chapters**, **Finalizing**, and **Ready to play**. Available, live,
+upcoming, post-live, unknown-live-state, and failed rows use the same column, so
+status is not split across unrelated UI elements. A table refresh keeps only
+active or paused in-memory pipeline labels; completed labels are rebuilt from
+the current catalog and local file state.
 
 Percentages are sourced where the underlying tool exposes meaningful progress:
 yt-dlp supplies download percentage, Whisper's frame progress supplies
@@ -836,6 +847,11 @@ ready items as **queued**, cooling-down items as **deferred**, and shows the
 earliest retry time when no work is currently eligible. The activity trace
 records each saved, deferred, and queue-paused lookup.
 
+A manual lookup of a blocked live stream shares the same persisted one-minute
+global spacing; it cannot create a burst alongside the metadata queue. An empty
+footer means the metadata lookup queue has no work, not that every live status
+is current.
+
 A missing description alone does not place a historical row in this queue.
 Doing so would turn every dated legacy row into a separate YouTube request.
 Recent descriptions instead arrive through the channel's existing Atom request,
@@ -847,6 +863,10 @@ admitting flat, undated YouTube rows, so an old video is resolved once and does
 not return to the metadata queue every four hours. Startup reconciliation also
 applies existing sidecars to catalog rows and removes entries they prove are
 outside the configured retention window without another network request.
+
+When old and new info JSON files both exist, `metadata\` wins over the legacy
+copy beside the video. Sidecars restore stable fields but never restore an old
+live claim over a newer channel observation.
 
 Filesystem creation time is used as the best available historical download
 time. It is distinct from YouTube publication time and is shown in a separate
@@ -897,6 +917,11 @@ an overdue check. Checks run only while the application process is open; closing
 the window keeps it in the system tray by default. Choose **Library → Quit** to
 stop checks completely.
 
+These scheduled flat listings are also the normal path for updating a stream
+from live or upcoming to finished; there is no extra background per-video
+live-status poll. If a fresh listing omits a previously active status, the row
+becomes uncertain rather than retaining the old claim.
+
 Channel checks only discover catalog entries; they never launch a burst of
 per-video metadata requests. Metadata enrichment has its own one-item timer and
 runs only while the application process is open.
@@ -912,8 +937,21 @@ does not remain in its old 24-hour cooldown after credentials become available.
 Automatic download is a per-channel policy. The first successful channel check
 is always a baseline: it makes the existing back catalog browseable but never
 downloads it. If automatic download is enabled, only video IDs absent from the
-catalog and discovered by later checks are candidates. Active and upcoming live
-streams are excluded.
+catalog and discovered by later checks are candidates. Active, upcoming,
+post-live, and uncertain streams wait without a download attempt. Their pending
+auto-download eligibility is stored in SQLite, so a later scheduled channel
+listing can release them when YouTube explicitly reports `was_live` or
+`not_live`. Disabling automatic download clears those pending entries. No
+additional channel checks are scheduled for this transition.
+
+Double-clicking a blocked remote stream may check its current status on demand.
+For known live or upcoming streams, the first check respects the channel
+observation's cooldown. Repeat checks for the same video are at least 15 minutes
+apart, and all full-video lookups share the
+one-minute global limit. When the cooldown has not elapsed, the app reports the
+remaining wait without contacting YouTube. If the lookup still reports a live,
+upcoming, post-live, or unknown state, the download remains blocked. A normal
+available-video download continues through the existing CLI pipeline.
 
 An automatic or manual library download is not a second media implementation.
 It executes the existing CLI with the video's canonical URL, the shared output
@@ -939,6 +977,10 @@ durable outputs validate. Damaged, hallucinated, or incomplete rows expose
 what is missing. Replacing primary subtitles also regenerates dependent English
 subtitles and chapters, so downstream files cannot remain based on rejected
 speech recognition.
+
+An external repair clears a saved pipeline error only after the local yields
+change and the subtitles and chapter plan validate. An unchanged older valid
+yield cannot hide a failed rerun.
 
 **Video → Remove download and yields…** or **Shift+Delete** first shows a
 confirmation with the exact file manifest. Removal enumerates only immediate
@@ -1773,10 +1815,12 @@ High-level groups:
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
+| `yt_whisper_subs.library_media_db` | Batched local-file reconciliation and durable sidecar metadata updates. |
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
 | `yt_whisper_subs.library_artifacts` | File-stamped SRT-health and parsed-chapter cache for I/O-free Qt painting. |
 | `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
+| `yt_whisper_subs.library_channel_service` | Bounded channel-snapshot merging, live transitions, and automatic-download eligibility. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
@@ -1877,6 +1921,11 @@ Start by preserving these invariants:
     not stop independent playback or discard already queued channel work.
 34. Remove one video's yields only through an exact inspected manifest, one
     non-recursive unlink at a time, while preserving its tracked catalog row.
+35. Derive changing live status from scheduled flat channel listings or an
+    explicitly requested, cooldown-limited full lookup; keep sidecars for
+    durable metadata rather than current stream state.
+36. Reconcile external file edits from debounced directory notifications while
+    heavy work is idle, without periodic filesystem scans.
 
 When changing the project, useful verification commands are:
 
@@ -1897,6 +1946,8 @@ compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; watched completion persistence; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
+persisted live-probe pacing, unknown-state handling, pending stream releases,
+external-file reconciliation, and stale error/progress cleanup;
 native table-header resizing, reordering, persistence, and reset behavior;
 resizable inspector geometry, long-description containment, and split persistence;
 channel additions queued during active video work; the crucial future-only

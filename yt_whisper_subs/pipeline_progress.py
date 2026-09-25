@@ -38,6 +38,8 @@ class Stage(StrEnum):
     INTERRUPTED = "interrupted"
     LIVE = "live"
     UPCOMING = "upcoming"
+    POST_LIVE = "post_live"
+    LIVE_UNKNOWN = "live_unknown"
 
 
 class StageSpec(NamedTuple):
@@ -107,6 +109,8 @@ def stage_label(stage: Stage) -> str:
         Stage.INTERRUPTED: "Interrupted · ready to resume",
         Stage.LIVE: "Live now",
         Stage.UPCOMING: "Upcoming",
+        Stage.POST_LIVE: "Replay processing",
+        Stage.LIVE_UNKNOWN: "Stream status unconfirmed",
     }
     if spec := _WORK_SPECS.get(stage):
         return spec.label

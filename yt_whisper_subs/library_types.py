@@ -11,6 +11,12 @@ from typing import NamedTuple
 from typing import Any
 
 
+# Unknown means a fresh listing omitted the state of a previously active stream.
+LIVE_UNKNOWN = "unknown"
+LIVE_BLOCKED = frozenset({"is_live", "is_upcoming", "post_live", LIVE_UNKNOWN})
+LIVE_READY = frozenset({"not_live", "was_live"})
+
+
 class VideoIdentity(NamedTuple):
     """Identify one video without mixing in origin or local-file state.
 

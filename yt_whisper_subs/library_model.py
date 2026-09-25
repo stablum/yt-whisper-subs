@@ -189,6 +189,10 @@ def record_progress(
         return progress.make(video_id, progress.Stage.LIVE)
     if live_status == "is_upcoming":
         return progress.make(video_id, progress.Stage.UPCOMING)
+    if live_status == "post_live":
+        return progress.make(video_id, progress.Stage.POST_LIVE)
+    if live_status == types.LIVE_UNKNOWN:
+        return progress.make(video_id, progress.Stage.LIVE_UNKNOWN)
     return progress.make(video_id, progress.Stage.AVAILABLE)
 
 
@@ -258,6 +262,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             video_id: update
             for video_id, update in self._progress.items()
             if video_id in video_ids
+            and (progress.active(update) or update.stage is progress.Stage.PAUSED)
         }
         self._watched = {
             video_id: update

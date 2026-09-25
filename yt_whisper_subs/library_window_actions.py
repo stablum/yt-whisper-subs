@@ -300,7 +300,7 @@ class WindowActionsMixin:
             and not pending
             and (recoverable or not record.downloaded or issue or record.download_error)
         )
-        can_play = bool(record and record.downloaded)
+        can_play = bool(record and record.downloaded and issue != "video file is missing")
         self._ui.catalog.detail.set_busy(pending)
         needs_repair = bool(record and record.downloaded and (issue or record.download_error))
         if active:

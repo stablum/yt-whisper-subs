@@ -13,8 +13,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import NamedTuple
 
+from yt_whisper_subs import cfg
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_job_db
+from yt_whisper_subs import library_media_db
 from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import playback_progress as playback
 
@@ -48,10 +50,13 @@ CREATE TABLE IF NOT EXISTS videos (
     description TEXT NOT NULL DEFAULT '',
     thumbnail_url TEXT,
     live_status TEXT,
+    live_retry_at INTEGER,
+    auto_pending INTEGER NOT NULL DEFAULT 0,
     discovered_at INTEGER NOT NULL,
     metadata_checked_at INTEGER,
     metadata_attempted_at INTEGER,
-    download_error TEXT
+    download_error TEXT,
+    download_error_sig TEXT
 );
 
 CREATE TABLE IF NOT EXISTS media (
@@ -106,7 +111,11 @@ class SnapshotResult(NamedTuple):
     pruned: int
 
 
-class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobDbMixin):
+class LibraryDb(
+    library_metadata_db.MetadataDbMixin,
+    library_job_db.PipelineJobDbMixin,
+    library_media_db.MediaDbMixin,
+):
     """Own catalog SQL while opening one SQLite connection per worker thread.
 
     Example: `db.videos(channel_id=1)` lists one subscription's catalog.
@@ -135,6 +144,12 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
             }
             if "metadata_attempted_at" not in columns:
                 conn.execute("ALTER TABLE videos ADD COLUMN metadata_attempted_at INTEGER")
+            if "live_retry_at" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN live_retry_at INTEGER")
+            if "auto_pending" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN auto_pending INTEGER NOT NULL DEFAULT 0")
+            if "download_error_sig" not in columns:
+                conn.execute("ALTER TABLE videos ADD COLUMN download_error_sig TEXT")
             conn.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_videos_metadata_queue
@@ -210,6 +225,11 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
                 "UPDATE channels SET auto_download=? WHERE id=?",
                 (int(enabled), channel_id),
             )
+            if not enabled:
+                conn.execute(
+                    "UPDATE videos SET auto_pending=0 WHERE subscription_id=?",
+                    (channel_id,),
+                )
 
     def set_channel_pinned(self, channel_id: int, pinned: bool) -> None:
         """Move one subscription into or out of the priority shelf.
@@ -247,11 +267,14 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
         now = int(time.time())
         baseline_at = now if snapshot.complete else None
         with self._connect() as conn:
-            known_ids = {row[0] for row in conn.execute("SELECT video_id FROM videos")}
+            known_status = {
+                str(row["video_id"]): row["live_status"]
+                for row in conn.execute("SELECT video_id, live_status FROM videos")
+            }
             new_ids = [
                 meta.identity.video_id
                 for meta in snapshot.videos
-                if meta.identity.video_id not in known_ids
+                if meta.identity.video_id not in known_status
             ]
             conn.execute(
                 """
@@ -270,6 +293,13 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
                 ),
             )
             for meta in snapshot.videos:
+                prior_status = known_status.get(meta.identity.video_id)
+                if meta.details.live_status is None and (
+                    meta.identity.video_id not in known_status
+                    or prior_status in types.LIVE_BLOCKED
+                ):
+                    details = meta.details._replace(live_status=types.LIVE_UNKNOWN)
+                    meta = meta._replace(details=details)
                 metadata_checked_at = now if meta.origin.published_at is not None else None
                 self._upsert_video(
                     conn,
@@ -337,67 +367,71 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
         with self._connect() as conn:
             self._upsert_video(conn, meta, subscription_id, now, metadata_checked_at=now)
 
-    def add_local_placeholder(self, meta: types.VideoMeta, local: types.LocalMedia) -> None:
-        """Register a scanned media file before remote metadata is available.
-
-        Example: `db.add_local_placeholder(meta, local)` during reconciliation.
-        """
-
-        with self._connect() as conn:
-            self._upsert_video(conn, meta, None, local.downloaded_at, metadata_checked_at=None)
-            self._upsert_local(conn, meta.identity.video_id, local)
-
-    def reconcile_media(self, entries: list[types.ScannedMedia]) -> None:
-        """Make database download state match the current videos directory.
-
-        Example: `db.reconcile_media(scanned_entries)` clears stale paths.
-        """
-
-        with self._connect() as conn:
-            conn.execute("DELETE FROM media")
-            checked_at = int(time.time())
-            for scanned in entries:
-                metadata_checked_at = checked_at if scanned.metadata_complete else None
-                self._upsert_video(
-                    conn,
-                    scanned.meta,
-                    None,
-                    scanned.local.downloaded_at,
-                    metadata_checked_at=metadata_checked_at,
-                )
-                self._upsert_local(conn, scanned.meta.identity.video_id, scanned.local)
-
-    def refresh_known_metadata(self, metas: Iterable[types.VideoMeta]) -> int:
-        """Apply durable sidecars only to rows already admitted to the catalog.
-
-        Example: `db.refresh_known_metadata(sidecars.values())` clears stale queue work.
-        """
-
-        checked_at = int(time.time())
-        updated = 0
-        with self._connect() as conn:
-            known_ids = {str(row[0]) for row in conn.execute("SELECT video_id FROM videos")}
-            for meta in metas:
-                if meta.identity.video_id not in known_ids:
-                    continue
-                self._upsert_video(
-                    conn,
-                    meta,
-                    None,
-                    checked_at,
-                    metadata_checked_at=checked_at,
-                )
-                updated += 1
-        return updated
-
-    def set_download_error(self, video_id: str, message: str | None) -> None:
+    def set_download_error(
+        self,
+        video_id: str,
+        message: str | None,
+        signature: str | None = None,
+    ) -> None:
         """Record the last pipeline failure for a visible catalog status.
 
         Example: `db.set_download_error(video_id, None)` clears an error.
         """
 
         with self._connect() as conn:
-            conn.execute("UPDATE videos SET download_error=? WHERE video_id=?", (message, video_id))
+            conn.execute(
+                "UPDATE videos SET download_error=?, download_error_sig=? WHERE video_id=?",
+                (message, signature if message else None, video_id),
+            )
+
+    def set_live_status(self, video_id: str, status: str) -> None:
+        """Store the result of a full lookup, including an explicit unknown state.
+
+        Example: a video lookup without `live_status` replaces an old live claim.
+        """
+
+        with self._connect() as conn:
+            conn.execute("UPDATE videos SET live_status=? WHERE video_id=?", (status, video_id))
+
+    def set_auto_pending(self, video_ids: Iterable[str], pending: bool) -> None:
+        """Remember eligible new streams until a later channel snapshot ends them.
+
+        Example: an initially live auto-download candidate waits for `was_live`.
+        """
+
+        with self._connect() as conn:
+            conn.executemany(
+                "UPDATE videos SET auto_pending=? WHERE video_id=?",
+                ((int(pending), video_id) for video_id in video_ids),
+            )
+
+    def auto_pending_ids(self, channel_id: int) -> set[str]:
+        """Read pending stream IDs without making another YouTube request.
+
+        Example: the next scheduled snapshot checks whether a stream ended.
+        """
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT video_id FROM videos WHERE subscription_id=? AND auto_pending=1",
+                (channel_id,),
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
+    def failed_downloads(self) -> list[tuple[types.VideoRecord, str | None]]:
+        """Check only errored local rows for externally repaired artifacts.
+
+        Example: a media scan does not parse every healthy video's SRT files.
+        """
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"{_VIDEO_SELECT} WHERE v.download_error IS NOT NULL AND m.path IS NOT NULL"
+            ).fetchall()
+        return [
+            (self._video(row), str(row["download_error_sig"]) if row["download_error_sig"] else None)
+            for row in rows
+        ]
 
     def videos(
         self,
@@ -543,6 +577,12 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
         ident = meta.identity
         origin = meta.origin
         details = meta.details
+        live_retry_at = (
+            int(time.time()) + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS
+            if details.live_status in types.LIVE_BLOCKED
+            and details.live_status != types.LIVE_UNKNOWN
+            else None
+        )
         values = (
             ident.video_id,
             subscription_id,
@@ -556,6 +596,7 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
             details.description,
             details.thumbnail_url,
             details.live_status,
+            live_retry_at,
             discovered_at,
             metadata_checked_at,
         )
@@ -564,9 +605,9 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
             INSERT INTO videos(
                 video_id, subscription_id, url, title, channel_title,
                 channel_youtube_id, published_at, duration, view_count,
-                description, thumbnail_url, live_status, discovered_at,
+                description, thumbnail_url, live_status, live_retry_at, discovered_at,
                 metadata_checked_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(video_id) DO UPDATE SET
                 subscription_id=COALESCE(excluded.subscription_id, videos.subscription_id),
                 url=excluded.url,
@@ -582,28 +623,10 @@ class LibraryDb(library_metadata_db.MetadataDbMixin, library_job_db.PipelineJobD
                 description=CASE WHEN excluded.description != '' THEN excluded.description ELSE videos.description END,
                 thumbnail_url=COALESCE(excluded.thumbnail_url, videos.thumbnail_url),
                 live_status=COALESCE(excluded.live_status, videos.live_status),
+                live_retry_at=COALESCE(excluded.live_retry_at, videos.live_retry_at),
                 metadata_checked_at=COALESCE(excluded.metadata_checked_at, videos.metadata_checked_at)
             """,
             values,
-        )
-
-    @staticmethod
-    def _upsert_local(conn: sqlite3.Connection, video_id: str, local: types.LocalMedia) -> None:
-        """Insert one scanned file after its parent video row exists.
-
-        Example: `_upsert_local(conn, video_id, local)`.
-        """
-
-        conn.execute(
-            """
-            INSERT INTO media(video_id, path, downloaded_at, size_bytes)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(video_id) DO UPDATE SET
-                path=excluded.path,
-                downloaded_at=excluded.downloaded_at,
-                size_bytes=excluded.size_bytes
-            """,
-            (video_id, str(local.path), local.downloaded_at, local.size_bytes),
         )
 
     @staticmethod

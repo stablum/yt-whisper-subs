@@ -9,6 +9,7 @@ import io
 import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -42,6 +43,15 @@ def make_meta(video_id: str, title: str, published_at: int | None = 100) -> type
     return types.VideoMeta(ident, origin, details)
 
 
+def with_live_status(meta: types.VideoMeta, status: str | None) -> types.VideoMeta:
+    """Change only the stream state in a simulated YouTube response.
+
+    Example: `with_live_status(meta, "was_live")` ends a fake broadcast.
+    """
+
+    return meta._replace(details=meta.details._replace(live_status=status))
+
+
 class FakeFeed:
     """Supply mutable channel snapshots without network access.
 
@@ -53,6 +63,7 @@ class FakeFeed:
         self.fail = False
         self.complete = True
         self.video_fail = False
+        self.video_info_calls = 0
         self.channel_calls = 0
 
     def with_cookies(self, cookies: str | None) -> FakeFeed:
@@ -104,6 +115,7 @@ class FakeFeed:
         Example: `feed.video_info(url).document` becomes the test sidecar.
         """
 
+        self.video_info_calls += 1
         if self.video_fail:
             raise RuntimeError("simulated metadata failure")
         meta = self.video(url)
@@ -113,6 +125,7 @@ class FakeFeed:
             "channel": meta.origin.channel,
             "channel_id": meta.origin.channel_id,
             "timestamp": meta.origin.published_at,
+            "live_status": meta.details.live_status,
         }
         return types.VideoInfo(meta, document)
 
@@ -488,6 +501,13 @@ class LibraryDbTests(unittest.TestCase):
                 "",
             )
             legacy_schema = legacy_schema.replace(
+                "    live_retry_at INTEGER,\n    auto_pending INTEGER NOT NULL DEFAULT 0,\n",
+                "",
+            ).replace(
+                "    download_error TEXT,\n    download_error_sig TEXT\n",
+                "    download_error TEXT\n",
+            )
+            legacy_schema = legacy_schema.replace(
                 "    last_error TEXT,\n    pinned_at INTEGER\n",
                 "    last_error TEXT\n",
             )
@@ -521,6 +541,9 @@ CREATE TABLE IF NOT EXISTS playback (
                     for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
                 }
             self.assertIn("metadata_attempted_at", columns)
+            self.assertIn("live_retry_at", columns)
+            self.assertIn("auto_pending", columns)
+            self.assertIn("download_error_sig", columns)
             self.assertIn("pinned_at", channel_columns)
             self.assertIn("playback", tables)
 
@@ -786,6 +809,229 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertIsNone(recovered.last_error)
             self.assertEqual(downloader.calls, [])
 
+    def test_fresh_channel_status_overrides_saved_live_sidecar(self) -> None:
+        """Keep durable descriptive metadata without freezing stream state.
+
+        Example: a saved live broadcast becomes available after a fresh listing.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            old = with_live_status(make_meta(video_id, "Old title"), "is_live")
+            feed = FakeFeed([old])
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=FakeDownloader(root)
+            )
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+            metadata = root / "metadata"
+            metadata.mkdir()
+            (metadata / f"{video_id}.info.json").write_text(
+                json.dumps({"id": video_id, "title": "Old title", "timestamp": 100,
+                            "live_status": "is_live"}),
+                encoding="utf-8",
+            )
+            feed.videos = [with_live_status(make_meta(video_id, "New title", 200), "was_live")]
+
+            service.check_all()
+
+            record = service.db.video(video_id)
+            self.assertEqual(record.meta.details.live_status, "was_live")
+            self.assertEqual(record.meta.identity.title, "New title")
+            self.assertEqual(record.meta.origin.published_at, 200)
+
+    def test_ended_new_stream_keeps_auto_download_eligibility(self) -> None:
+        """Wait for a new stream to end without extra per-video lookups.
+
+        Example: the next scheduled flat channel scan releases one pending ID.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = FakeFeed([])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", True)
+            service.initialize_channel(channel.channel_id)
+            video_id = "aaaaaaaaaaa"
+            feed.videos = [with_live_status(make_meta(video_id, "Stream"), "is_live")]
+            self.assertEqual(service.check_all(), 0)
+            self.assertEqual(downloader.calls, [])
+            self.assertEqual(service.db.auto_pending_ids(channel.channel_id), {video_id})
+
+            feed.videos = [with_live_status(make_meta(video_id, "Stream"), "was_live")]
+            self.assertEqual(service.check_all(), 1)
+            self.assertEqual(downloader.calls, [video_id])
+            self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
+            self.assertEqual(feed.video_info_calls, 0)
+
+    def test_new_video_without_live_status_waits_for_explicit_ready_state(self) -> None:
+        """Avoid an unverified automatic download without probing every video.
+
+        Example: a flat row missing `live_status` waits for a later listing.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            feed = FakeFeed([])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", True)
+            service.initialize_channel(channel.channel_id)
+            video_id = "aaaaaaaaaaa"
+            ordinary = make_meta(video_id, "Uncertain")
+            feed.videos = [with_live_status(ordinary, None)]
+
+            self.assertEqual(service.check_all(), 0)
+            self.assertEqual(service.db.video(video_id).meta.details.live_status, types.LIVE_UNKNOWN)
+            self.assertEqual(service.db.auto_pending_ids(channel.channel_id), {video_id})
+            self.assertEqual(feed.video_info_calls, 0)
+            self.assertEqual(downloader.calls, [])
+
+            feed.videos = [ordinary]
+            self.assertEqual(service.check_all(), 1)
+            self.assertEqual(downloader.calls, [video_id])
+
+    def test_manual_live_probe_is_bounded_and_can_release_download(self) -> None:
+        """Rate-limit direct stream checks even when Download is clicked again.
+
+        Example: an ended stream downloads after one later permitted status probe.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            live = with_live_status(make_meta(video_id, "Stream"), "is_live")
+            feed = FakeFeed([live])
+            downloader = FakeDownloader(root)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=downloader
+            )
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+            due = int(time.time()) + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS + 2
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=due):
+                with self.assertRaisesRegex(RuntimeError, "still reports"):
+                    service.download(video_id)
+                with self.assertRaisesRegex(RuntimeError, "retry in"):
+                    service.download(video_id)
+            self.assertEqual(feed.video_info_calls, 1)
+            self.assertEqual(downloader.calls, [])
+
+            feed.videos = [with_live_status(live, "was_live")]
+            later = due + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS + 1
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=later):
+                service.download(video_id)
+            self.assertEqual(feed.video_info_calls, 2)
+            self.assertEqual(downloader.calls, [video_id])
+
+    def test_missing_fresh_status_does_not_preserve_live_claim(self) -> None:
+        """Mark a previously live video uncertain when a fresh row omits status.
+
+        Example: an incomplete flat listing cannot keep saying Live now.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            video_id = "aaaaaaaaaaa"
+            live = with_live_status(make_meta(video_id, "Stream"), "is_live")
+            feed = FakeFeed([live])
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=feed, downloader=FakeDownloader(root)
+            )
+            channel = service.track_channel("@example", False)
+            service.initialize_channel(channel.channel_id)
+            feed.videos = [with_live_status(live, None)]
+
+            service.check_all()
+
+            record = service.db.video(video_id)
+            self.assertEqual(record.meta.details.live_status, types.LIVE_UNKNOWN)
+            self.assertEqual(library_model.record_progress(record).stage, progress.Stage.LIVE_UNKNOWN)
+
+    def test_metadata_directory_wins_duplicate_legacy_sidecar(self) -> None:
+        """Prefer the current metadata folder over an old videos-folder copy.
+
+        Example: duplicate info JSON cannot roll a stream status backward.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=FakeFeed([]), downloader=FakeDownloader(root)
+            )
+            video_id = "aaaaaaaaaaa"
+            (root / "videos").mkdir()
+            (root / "metadata").mkdir()
+            for folder, status in (("videos", "is_upcoming"), ("metadata", "was_live")):
+                (root / folder / f"{video_id}.info.json").write_text(
+                    json.dumps({"id": video_id, "title": "Stream", "live_status": status}),
+                    encoding="utf-8",
+                )
+
+            self.assertEqual(service._metadata_sidecars()[video_id].details.live_status, "was_live")
+
+    def test_scan_clears_old_error_only_after_local_yields_are_usable(self) -> None:
+        """Drop a failed label after external repair without broad file parsing.
+
+        Example: only an errored video receives subtitle and chapter checks.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=FakeFeed([]), downloader=FakeDownloader(root)
+            )
+            video_id = "aaaaaaaaaaa"
+            service.db.upsert_video(make_meta(video_id, "Repaired"))
+            service.db.set_download_error(video_id, "old failure")
+            video_dir = root / "videos"
+            video_dir.mkdir()
+            (video_dir / f"{video_id}.mkv").write_bytes(b"video")
+            with mock.patch.object(service._artifacts, "issue", return_value=None), mock.patch.object(
+                service, "chapter_set", return_value=mock.Mock()
+            ):
+                service.scan_local()
+
+            self.assertIsNone(service.db.video(video_id).download_error)
+
+    def test_scan_keeps_failed_attempt_until_local_yields_change(self) -> None:
+        """Keep a real pipeline failure visible even when older yields are valid.
+
+        Example: an unchanged old chapter plan cannot hide a failed rerun.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=FakeFeed([]), downloader=FakeDownloader(root)
+            )
+            video_id = "aaaaaaaaaaa"
+            service.db.upsert_video(make_meta(video_id, "Earlier download"))
+            video_dir = root / "videos"
+            video_dir.mkdir()
+            video = video_dir / f"{video_id}.mkv"
+            video.write_bytes(b"old video")
+            service.scan_local()
+            record = service.db.video(video_id)
+            assert record is not None
+            signature = library_artifacts.yield_signature(root, record)
+            service.db.set_download_error(video_id, "rerun failed", signature)
+            with mock.patch.object(service._artifacts, "issue", return_value=None), mock.patch.object(
+                service, "chapter_set", return_value=mock.Mock()
+            ):
+                service.scan_local()
+                self.assertEqual(service.db.video(video_id).download_error, "rerun failed")
+                video.write_bytes(b"repaired video")
+                service.scan_local()
+
+            self.assertIsNone(service.db.video(video_id).download_error)
+
 
 class LibraryModelTests(unittest.TestCase):
     """Keep watched-column wording aligned with durable completion semantics.
@@ -866,7 +1112,7 @@ class LibraryModelTests(unittest.TestCase):
             types.VideoRecord(make_meta("eeeeeeeeeee", "Broken"), None, 100, None, "HTTP 403", None),
         ]
         model = library_model.VideoTableModel()
-        model.set_records(records)
+        model.set_records(records, {record.meta.identity.video_id: None for record in records})
         proxy = library_model.VideoFilterModel()
         proxy.setSourceModel(model)
 
@@ -923,6 +1169,25 @@ class LibraryModelTests(unittest.TestCase):
         self.assertEqual(proxy.facet_counts()[views.VideoView.ALL], 1)
         self.assertEqual(model.rowCount(), 2)
 
+    def test_catalog_refresh_discards_obsolete_terminal_progress(self) -> None:
+        """Let durable media state replace a completed in-memory progress bar.
+
+        Example: removing a download changes Ready to Available on refresh.
+        """
+
+        video_id = "aaaaaaaaaaa"
+        meta = make_meta(video_id, "Example")
+        local = types.LocalMedia(Path("video.mkv"), 100, 5)
+        downloaded = types.VideoRecord(meta, None, 100, local, None, None)
+        remote = downloaded._replace(local=None)
+        model = library_model.VideoTableModel()
+        model.set_records([downloaded], {video_id: None})
+        model.set_progress(progress.make(video_id, progress.Stage.READY, 1.0))
+
+        model.set_records([remote], {video_id: None})
+
+        self.assertEqual(model.progress_at(0).stage, progress.Stage.AVAILABLE)
+
     def test_painting_uses_precomputed_health_and_indexed_id_lookups(self) -> None:
         """Keep scrolling free of SRT parsing and expose constant-time ID lookup.
 
@@ -968,6 +1233,16 @@ class ArtifactCacheTests(unittest.TestCase):
 
     Example: editing an English SRT invalidates only that video's health.
     """
+
+    def test_missing_video_is_an_issue_even_before_directory_reconciliation(self) -> None:
+        """Prevent a deleted media file from looking ready to play.
+
+        Example: a still-cached SQLite media row produces a missing-video issue.
+        """
+
+        local = types.LocalMedia(Path("missing-video.mkv"), 100, 5)
+        record = types.VideoRecord(make_meta("aaaaaaaaaaa", "Gone"), None, 100, local, None, None)
+        self.assertEqual(library_artifacts.pipeline_issue(record), "video file is missing")
 
     def test_pipeline_health_revalidates_when_a_sidecar_changes(self) -> None:
         """Reuse unchanged validation and detect a replacement by file stamp.
@@ -1242,6 +1517,45 @@ class PipelineRecoveryTests(unittest.TestCase):
 
     Example: a stale running job becomes an interrupted GUI row at restart.
     """
+
+    def test_new_job_preserves_other_interrupted_recovery_marker(self) -> None:
+        """Starting unrelated work must not erase an unfinished Resume action.
+
+        Example: video A stays interrupted while video B starts its pipeline.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
+            db.upsert_video(make_meta(first, "First"))
+            db.upsert_video(make_meta(second, "Second"))
+            db.begin_pipeline_job(first, types.PipelineKind.DOWNLOAD)
+            db.recover_pipeline_jobs()
+
+            db.begin_pipeline_job(second, types.PipelineKind.DOWNLOAD)
+
+            self.assertEqual(db.pipeline_job(first).state, types.PipelineJobState.INTERRUPTED)
+            self.assertEqual([job.video_id for job in db.interrupted_pipeline_jobs()], [first])
+
+    def test_video_metadata_requests_share_a_durable_global_pace(self) -> None:
+        """Serialize full video lookups across the queue and manual live probes.
+
+        Example: a second ID cannot trigger another request in the same minute.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
+            db.initialize()
+            first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
+            db.upsert_video(make_meta(first, "First"))
+            db.upsert_video(make_meta(second, "Second"))
+
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=1000):
+                self.assertEqual(db.reserve_video_lookup(first), 0)
+                self.assertEqual(db.reserve_video_lookup(second), 60)
+            with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=1060):
+                self.assertEqual(db.reserve_video_lookup(second), 0)
 
     def test_running_job_recovers_with_reached_stage_and_fraction(self) -> None:
         """Persist meaningful progress and mark stale execution interrupted.

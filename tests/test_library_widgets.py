@@ -1068,6 +1068,7 @@ class TrayLifetimeTests(unittest.TestCase):
             _quitting=False,
             _timer=mock.Mock(),
             _metadata_timer=mock.Mock(),
+            _media_timer=mock.Mock(),
             _tray=mock.Mock(),
             _stop_workers=mock.Mock(),
         )
@@ -1085,11 +1086,12 @@ class TrayLifetimeTests(unittest.TestCase):
         Example: explicit Quit does not wait indefinitely for a thread pool.
         """
 
-        tasks = [mock.Mock(), mock.Mock(), mock.Mock()]
+        tasks = [mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock()]
         window = SimpleNamespace(
             _active_task=tasks[0],
             _metadata_task=tasks[1],
-            _channel_tasks={1: tasks[2]},
+            _media_task=tasks[2],
+            _channel_tasks={1: tasks[3]},
             _pool=mock.Mock(),
             _playback_pool=mock.Mock(),
             _service=mock.Mock(),

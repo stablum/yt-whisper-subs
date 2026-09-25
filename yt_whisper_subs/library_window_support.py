@@ -65,9 +65,9 @@ class WindowRuntimeMixin:
         self.refresh()
         self._schedule_next()
         count = int(new_count or 0)
-        self.statusBar().showMessage(f"Check complete · {count} new auto-download candidate(s)", 8000)
+        self.statusBar().showMessage(f"Check complete · {count} auto-download attempt(s)", 8000)
         if not self.isVisible() and count:
-            self._tray.showMessage("YouTube Library updated", f"Found {count} new video(s).")
+            self._tray.showMessage("YouTube Library updated", f"Attempted {count} auto-download(s).")
 
     def _scheduled_check(self) -> None:
         """Run an overdue check or defer briefly when another task is active.
@@ -127,7 +127,7 @@ class WindowRuntimeMixin:
         Example: `_metadata_timer` invokes this at the configured safe pace.
         """
 
-        if self._busy or self._channel_tasks or self._metadata_active:
+        if self._busy or self._channel_tasks or self._metadata_active or self._media_active:
             self._schedule_metadata_backfill()
             return
         self._metadata_active = True
@@ -151,7 +151,11 @@ class WindowRuntimeMixin:
                 self._ui.trace.append_message(
                     f"Metadata · Queue paused for {minutes} minutes after a failed lookup"
                 )
-            self._schedule_metadata_backfill(idle=idle)
+            wait = getattr(result, "retry_after_seconds", None)
+            if wait:
+                self._metadata_timer.start(max(1, int(wait)) * 1000)
+            else:
+                self._schedule_metadata_backfill(idle=idle)
 
         def failed(message: str, trace: str) -> None:
             """Keep maintenance failures non-modal and retry them gently.
@@ -168,6 +172,47 @@ class WindowRuntimeMixin:
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
         self._metadata_task = task
+        self._pool.start(task, -1)
+
+    def _scan_changed_media(self) -> None:
+        """Coalesce directory notifications into one idle, low-priority scan.
+
+        Example: deleting a video externally corrects its row without polling.
+        """
+
+        if self._busy or self._channel_tasks or self._metadata_active or self._media_active:
+            self._media_timer.start(5000)
+            return
+        if not self._local_scan_needed:
+            self.refresh()
+            return
+        self._local_scan_needed = False
+        self._media_active = True
+        task = library_workers.BackgroundTask(self._service.scan_local)
+        self._media_task = task
+
+        def done(_result: object) -> None:
+            """Reload the catalog only after the single directory scan completes.
+
+            Example: a removed media path disappears from On device.
+            """
+
+            self._media_active = False
+            self._media_task = None
+            self.refresh()
+
+        def failed(message: str, _trace: str) -> None:
+            """Keep a filesystem scan failure visible without repeated reads.
+
+            Example: an unavailable output drive records one trace message.
+            """
+
+            self._media_active = False
+            self._media_task = None
+            self._ui.trace.append_message(f"Local media scan failed · {message}")
+
+        task.signals.finished.connect(done)
+        task.signals.failed.connect(failed)
         self._pool.start(task, -1)
 
     def _report_metadata(self, message: str) -> None:
@@ -593,6 +638,7 @@ class WindowRuntimeMixin:
         self._quitting = True
         self._timer.stop()
         self._metadata_timer.stop()
+        self._media_timer.stop()
         self._tray.hide()
         self._stop_workers()
         QtWidgets.QApplication.quit()
@@ -603,7 +649,7 @@ class WindowRuntimeMixin:
         Example: the tray Quit action invokes `_stop_workers()` before event-loop exit.
         """
 
-        tasks = [self._active_task, self._metadata_task]
+        tasks = [self._active_task, self._metadata_task, self._media_task]
         tasks.extend(self._channel_tasks.values())
         for task in tasks:
             if task:

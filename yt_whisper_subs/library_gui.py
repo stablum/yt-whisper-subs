@@ -41,7 +41,7 @@ def _metadata_status_text(state: library_metadata_db.MetadataQueueState) -> str:
     """
 
     if not state.pending:
-        return "Metadata: complete"
+        return "Metadata lookup queue: empty"
     if state.ready:
         deferred = f" · {state.deferred:,} deferred" if state.deferred else ""
         return f"Metadata: {state.ready:,} queued{deferred} · ≤1/min"
@@ -120,9 +120,18 @@ class LibraryWindow(
         self._metadata_timer = QtCore.QTimer(self)
         self._metadata_timer.setSingleShot(True)
         self._metadata_timer.timeout.connect(self._metadata_tick)
+        self._media_watcher = QtCore.QFileSystemWatcher(self)
+        self._watch_local_paths()
+        self._media_timer = QtCore.QTimer(self)
+        self._media_timer.setSingleShot(True)
+        self._media_timer.timeout.connect(self._scan_changed_media)
+        self._media_watcher.directoryChanged.connect(self._local_files_changed)
+        self._local_scan_needed = False
         self._busy = False
         self._active_progress: progress.Update | None = None
         self._metadata_active = False
+        self._media_active = False
+        self._media_task: library_workers.BackgroundTask | None = None
         self._filter_key: tuple[str, int | None] = ("all", None)
         self._channels_by_id: dict[int, types.Channel] = {}
         self._active_task: library_workers.BackgroundTask | None = None
@@ -152,6 +161,33 @@ class LibraryWindow(
         self._restore_interrupted_pipelines()
         self._schedule_next(initial=True)
         self._schedule_metadata_backfill()
+
+    def _watch_local_paths(self) -> None:
+        """Watch a few output directories for local edits without disk polling.
+
+        Example: a newly created chapters directory joins the watcher.
+        """
+
+        watched = set(self._media_watcher.directories())
+        paths = (
+            self._service.out_dir,
+            self._service.video_dir,
+            self._service.metadata_dir,
+            self._service.out_dir / "chapters",
+        )
+        for path in paths:
+            if path.is_dir() and str(path) not in watched:
+                self._media_watcher.addPath(str(path))
+
+    def _local_files_changed(self, path: str) -> None:
+        """Coalesce local edits, including creation of a formerly absent folder.
+
+        Example: an external subtitle repair schedules one idle catalog scan.
+        """
+
+        self._watch_local_paths()
+        self._local_scan_needed |= path != str(self._service.out_dir / "chapters")
+        self._media_timer.start(3000)
 
     def _build_ui(self) -> LibraryUi:
         """Construct the cohesive sidebar, filters, table, and details layout.
@@ -439,6 +475,10 @@ class LibraryWindow(
         _, channel_id = self._filter_key
         catalog = self._service.catalog()
         self._ui.catalog.model.set_records(catalog.records, catalog.issues)
+        for job in self._service.interrupted_pipeline_jobs():
+            label = f"Interrupted · {job.label} · click Resume"
+            interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
+            self._ui.catalog.model.set_progress(interrupted)
         self._ui.catalog.proxy.set_channel(channel_id)
         state = self._service.metadata_queue_state()
         self._ui.metadata_status.setText(_metadata_status_text(state))

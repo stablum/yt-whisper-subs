@@ -8,14 +8,13 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable
-from datetime import datetime
-from datetime import timezone
 from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
+from yt_whisper_subs import library_channel_service
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_metadata_db
@@ -48,9 +47,10 @@ class MetadataBackfillResult(NamedTuple):
     attempted: bool
     completed: bool
     remaining: int
+    retry_after_seconds: int | None = None
 
 
-class LibraryService:
+class LibraryService(library_channel_service.ChannelServiceMixin):
     """Coordinate cohesive catalog operations independently from Qt widgets.
 
     Example: `service.track_channel("@OpenAI", False)` persists immediately.
@@ -144,6 +144,11 @@ class LibraryService:
 
         self.video_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
+        # Info sidecars preserve stable facts; their live state is only a past observation.
+        stable_sidecars = {
+            video_id: meta._replace(details=meta.details._replace(live_status=None))
+            for video_id, meta in sidecars.items()
+        }
         scanned: list[types.ScannedMedia] = []
         media_paths = sorted(
             path
@@ -155,13 +160,19 @@ class LibraryService:
             if not video_id:
                 continue
             metadata_complete = video_id in sidecars
-            meta = sidecars.get(video_id) or self._placeholder_meta(path, video_id)
+            meta = stable_sidecars.get(video_id) or self._placeholder_meta(path, video_id)
             stat = path.stat()
             downloaded_at = int(getattr(stat, "st_birthtime", stat.st_ctime))
             local = types.LocalMedia(path.resolve(), downloaded_at, stat.st_size)
             scanned.append(types.ScannedMedia(meta, local, metadata_complete))
         self.db.reconcile_media(scanned)
-        self.db.refresh_known_metadata(sidecars.values())
+        self.db.refresh_known_metadata(stable_sidecars.values())
+        for record, error_sig in self.db.failed_downloads():
+            video_id = record.meta.identity.video_id
+            if error_sig == library_artifacts.yield_signature(self.out_dir, record):
+                continue
+            if self._artifacts.issue(record) is None and self.chapter_set(video_id):
+                self.db.set_download_error(video_id, None)
         self.db.prune_remote_before(self._channel_policy().published_after)
         report(f"Indexed {len(scanned)} downloaded video(s)")
         return len(scanned)
@@ -180,6 +191,8 @@ class LibraryService:
             return MetadataBackfillResult(False, False, remaining)
 
         video_id = video_ids[0]
+        if wait := self.db.reserve_video_lookup(video_id):
+            return MetadataBackfillResult(False, False, remaining, wait)
         self.db.mark_metadata_attempt(video_id)
         report(f"Reading queued metadata · {video_id}")
         try:
@@ -192,8 +205,7 @@ class LibraryService:
             return MetadataBackfillResult(True, False, remaining)
 
         # The sidecar is the durable authority that prevents a pruned row from re-queuing.
-        self._write_metadata(info)
-        self.db.upsert_video(info.meta)
+        self._save_video_info(info)
         policy = self._channel_policy()
         record = self.db.video(video_id)
         expired = (
@@ -267,11 +279,15 @@ class LibraryService:
                 self.db.set_channel_error(channel.channel_id, str(exc))
                 report(f"Could not check {channel.title}: {exc}")
 
-        for idx, video_id in enumerate(dict.fromkeys(auto_ids), start=1):
+        eligible = []
+        for video_id in dict.fromkeys(auto_ids):
             record = self.db.video(video_id)
-            if not record or record.downloaded or self._is_live(record):
-                continue
-            report(f"Auto-download {idx}/{len(auto_ids)} · {record.meta.identity.title}")
+            if record and not record.downloaded and not self._is_live(record):
+                eligible.append(record)
+        for idx, record in enumerate(eligible, start=1):
+            video_id = record.meta.identity.video_id
+            self.db.set_auto_pending((video_id,), False)
+            report(f"Auto-download {idx}/{len(eligible)} · {record.meta.identity.title}")
             try:
                 self.download(video_id, report)
             except task_cancel.CancelledError:
@@ -280,7 +296,7 @@ class LibraryService:
                 report(f"Auto-download failed: {exc}")
 
         self.db.set_setting("last_check_at", int(time.time()))
-        return len(auto_ids)
+        return len(eligible)
 
     def download(self, video_id: str, report: ReportFn = _ignore_report) -> None:
         """Run the full subtitle pipeline for one remote catalog entry.
@@ -292,7 +308,9 @@ class LibraryService:
         if not record:
             raise RuntimeError(f"unknown video: {video_id}")
         if self._is_live(record) and not record.downloaded:
-            raise RuntimeError("live and upcoming videos cannot be downloaded from the library yet")
+            record = self._refresh_live_status(record, report)
+            if self._is_live(record):
+                raise RuntimeError("YouTube still reports this stream as live, upcoming, or not ready")
         self.db.set_download_error(video_id, None)
         try:
             tracker = library_pipeline.PipelineJobTracker(
@@ -304,12 +322,46 @@ class LibraryService:
             with tracker as tracked_report:
                 self._downloader.download(record, tracked_report)
                 self.scan_local(tracked_report)
+                self.db.set_auto_pending((video_id,), False)
         except task_cancel.CancelledError:
             self.scan_local()
             raise
         except Exception as exc:
-            self.db.set_download_error(video_id, str(exc))
+            record = self.db.video(video_id)
+            signature = library_artifacts.yield_signature(self.out_dir, record) if record else None
+            self.db.set_download_error(video_id, str(exc), signature)
             raise
+
+    def _refresh_live_status(self, record: types.VideoRecord, report: ReportFn) -> types.VideoRecord:
+        """Probe one blocked stream on demand without bypassing lookup cooldowns.
+
+        Example: a click after a live broadcast ends can release its download.
+        """
+
+        video_id = record.meta.identity.video_id
+        wait = self.db.reserve_video_lookup(
+            video_id,
+            live_cooldown=cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS,
+        )
+        if wait:
+            raise RuntimeError(f"Live status was checked recently; retry in {wait} seconds")
+        report(f"Checking current stream status · {video_id}")
+        info = self._feed.video_info(record.meta.identity.url)
+        self._save_video_info(info)
+        refreshed = self.db.video(video_id)
+        assert refreshed is not None
+        return refreshed
+
+    def _save_video_info(self, info: types.VideoInfo) -> None:
+        """Persist a full lookup while replacing unsupported live-state guesses.
+
+        Example: a missing yt-dlp status becomes unknown instead of staying live.
+        """
+
+        self._write_metadata(info)
+        self.db.upsert_video(info.meta)
+        if info.meta.details.live_status is None:
+            self.db.set_live_status(info.meta.identity.video_id, types.LIVE_UNKNOWN)
 
     def video_yields(self, video_id: str) -> library_yields.VideoYields:
         """Build the exact deletion manifest for one known catalog video.
@@ -345,6 +397,14 @@ class LibraryService:
         """
 
         return self.db.recover_pipeline_jobs()
+
+    def interrupted_pipeline_jobs(self) -> list[types.PipelineJob]:
+        """Expose only durable interrupted jobs during normal table refreshes.
+
+        Example: a later scan cannot leave a removed Resume marker onscreen.
+        """
+
+        return self.db.interrupted_pipeline_jobs()
 
     def resume_pipeline_job(
         self,
@@ -390,17 +450,25 @@ class LibraryService:
         record = self.db.video(video_id)
         if not record or not record.local or not record.local.path.exists():
             raise RuntimeError("download this video before generating chapters")
+        self.db.set_download_error(video_id, None)
         tracker = library_pipeline.PipelineJobTracker(
             self.db,
             video_id,
             types.PipelineKind.CHAPTERS,
             report,
         )
-        with tracker as tracked_report:
-            self._downloader.generate_chapters(record, tracked_report)
-        chapter_set = self.chapter_set(video_id)
-        if not chapter_set:
-            raise RuntimeError("chapter pipeline completed without a readable chapter plan")
+        try:
+            with tracker as tracked_report:
+                self._downloader.generate_chapters(record, tracked_report)
+            chapter_set = self.chapter_set(video_id)
+            if not chapter_set:
+                raise RuntimeError("chapter pipeline completed without a readable chapter plan")
+        except task_cancel.CancelledError:
+            raise
+        except Exception as exc:
+            signature = library_artifacts.yield_signature(self.out_dir, record)
+            self.db.set_download_error(video_id, str(exc), signature)
+            raise
         return chapter_set
 
     def apply_retention(self) -> int:
@@ -469,101 +537,13 @@ class LibraryService:
 
         return self._playback.quit()
 
-    def _check_channel(
-        self,
-        channel: types.Channel,
-        report: ReportFn,
-        sidecars: dict[str, types.VideoMeta],
-    ) -> list[str]:
-        """Persist one snapshot and select safe future auto-download candidates.
-
-        Example: `_check_channel(channel, report, sidecars)` returns new IDs after baseline.
-        """
-
-        initial_check = channel.baseline_at is None
-        known_ids = self.db.channel_video_ids(channel.channel_id)
-        policy = self._channel_policy()
-        snapshot = self._feed.channel(channel.url, policy, known_ids)
-        snapshot = self._apply_sidecars(snapshot, sidecars, policy.published_after)
-        result = self.db.store_snapshot(channel.channel_id, snapshot)
-        new_ids = [video_id for video_id in result.new_ids if video_id not in sidecars]
-        if not snapshot.complete:
-            warning = "Partial refresh: Streams could not be checked; history preserved"
-            self.db.set_channel_error(channel.channel_id, warning)
-            report(f"{snapshot.title}: {warning}")
-        entry_word = "entry" if result.pruned == 1 else "entries"
-        pruned = f", {result.pruned} old remote {entry_word} removed"
-        report(
-            f"{snapshot.title}: {len(snapshot.videos)} retained, "
-            f"{len(new_ids)} new{pruned if result.pruned else ''}"
-        )
-        if initial_check or not channel.auto_download:
-            return []
-        return new_ids
-
-    @staticmethod
-    def _apply_sidecars(
-        snapshot: types.ChannelSnapshot,
-        sidecars: dict[str, types.VideoMeta],
-        published_after: int | None,
-    ) -> types.ChannelSnapshot:
-        """Use durable metadata before deciding if flat channel rows are retained.
-
-        Example: an undated old row stays excluded after its first full lookup.
-        """
-
-        videos = [
-            sidecars.get(meta.identity.video_id, meta)
-            for meta in snapshot.videos
-        ]
-        if published_after is not None:
-            videos = [
-                meta
-                for meta in videos
-                if meta.origin.published_at is None
-                or meta.origin.published_at >= published_after
-            ]
-        return snapshot._replace(videos=videos)
-
-    def _channel_policy(self) -> library_feed.ChannelScanPolicy:
-        """Build bounded discovery policy from validated persisted settings.
-
-        Example: the default scans 50 recent entries from each channel tab.
-        """
-
-        raw_limit = self.db.setting(
-            "channel_recent_limit",
-            str(cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT),
-        )
-        try:
-            requested_limit = int(raw_limit)
-        except ValueError:
-            requested_limit = cfg.DEFAULT_LIBRARY_CHANNEL_RECENT_LIMIT
-        limit = min(
-            cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT,
-            max(1, requested_limit),
-        )
-        published_after = None
-        cutoff = self.db.setting("channel_published_after", "").strip()
-        try:
-            if cutoff:
-                value = datetime.strptime(cutoff, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                published_after = int(value.timestamp())
-        except ValueError:
-            pass
-        return library_feed.ChannelScanPolicy(
-            limit,
-            cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT,
-            published_after,
-        )
-
     def _metadata_sidecars(self) -> dict[str, types.VideoMeta]:
         """Load new metadata-directory and older video-directory info JSON.
 
         Example: `_metadata_sidecars()[video_id]` supplies a scanned title.
         """
 
-        paths = [*self.metadata_dir.glob("*.info.json"), *self.video_dir.glob("*.info.json")]
+        paths = [*self.video_dir.glob("*.info.json"), *self.metadata_dir.glob("*.info.json")]
         metas: dict[str, types.VideoMeta] = {}
         for path in paths:
             try:
@@ -605,4 +585,4 @@ class LibraryService:
         Example: `_is_live(record)` checks yt-dlp's live status.
         """
 
-        return record.meta.details.live_status in {"is_live", "is_upcoming"}
+        return record.meta.details.live_status in types.LIVE_BLOCKED

@@ -65,6 +65,8 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
             progress.Stage.PAUSED: "#f3bd63",
             progress.Stage.INTERRUPTED: "#f3bd63",
             progress.Stage.LIVE: "#ff8b8b",
+            progress.Stage.POST_LIVE: "#f3bd63",
+            progress.Stage.LIVE_UNKNOWN: "#f3bd63",
         }
         if not selected and update.stage in state_colors:
             muted_color = QtGui.QColor(state_colors[update.stage])

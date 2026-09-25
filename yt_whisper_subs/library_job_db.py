@@ -40,8 +40,7 @@ class PipelineJobDbMixin:
 
         now = int(time.time())
         with self._connect() as conn:
-            # The shared heavy-work lane guarantees only one recoverable pipeline.
-            conn.execute("DELETE FROM pipeline_jobs WHERE video_id<>?", (video_id,))
+            # Keep older interrupted jobs while the serial lane starts new work.
             conn.execute(
                 """
                 INSERT INTO pipeline_jobs(
@@ -147,6 +146,19 @@ class PipelineJobDbMixin:
                 (video_id,),
             ).fetchone()
         return self._pipeline_job(row) if row else None
+
+    def interrupted_pipeline_jobs(self) -> list[types.PipelineJob]:
+        """Read resumable markers without changing any running job state.
+
+        Example: a table refresh restores only genuinely interrupted labels.
+        """
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM pipeline_jobs WHERE state=? ORDER BY started_at, video_id",
+                (types.PipelineJobState.INTERRUPTED.value,),
+            ).fetchall()
+        return [self._pipeline_job(row) for row in rows]
 
     @staticmethod
     def _pipeline_job(row: sqlite3.Row) -> types.PipelineJob:

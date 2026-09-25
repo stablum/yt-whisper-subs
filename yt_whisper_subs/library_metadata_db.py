@@ -8,6 +8,8 @@ from __future__ import annotations
 import time
 from typing import NamedTuple
 
+from yt_whisper_subs import cfg
+
 
 class MetadataQueueState(NamedTuple):
     """Summarize ready and deferred metadata work from one database snapshot.
@@ -34,6 +36,44 @@ class MetadataDbMixin:
 
     Example: `db.metadata_backfill_ids(1, retry_before)` selects one lookup.
     """
+
+    def reserve_video_lookup(self, video_id: str, *, live_cooldown: int = 0) -> int:
+        """Space full video requests globally and repeated live probes per video.
+
+        Example: a rapid second click returns seconds to wait without network I/O.
+        """
+
+        now = int(time.time())
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT v.live_retry_at,
+                       (SELECT value FROM settings WHERE key='last_video_lookup_at') AS last_lookup_at
+                FROM videos v WHERE v.video_id=?
+                """,
+                (video_id,),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError(f"unknown video: {video_id}")
+            last_lookup = int(row["last_lookup_at"] or 0)
+            global_wait = max(0, last_lookup + cfg.DEFAULT_LIBRARY_METADATA_PACE_SECONDS - now)
+            live_wait = max(0, int(row["live_retry_at"] or 0) - now) if live_cooldown else 0
+            if wait := max(global_wait, live_wait):
+                return wait
+            conn.execute(
+                """
+                INSERT INTO settings(key, value) VALUES ('last_video_lookup_at', ?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value
+                """,
+                (str(now),),
+            )
+            if live_cooldown:
+                conn.execute(
+                    "UPDATE videos SET live_retry_at=? WHERE video_id=?",
+                    (now + live_cooldown, video_id),
+                )
+        return 0
 
     def metadata_backfill_ids(self, limit: int, retry_before: int) -> list[str]:
         """Select a fair metadata work slice without retrying cooled-down rows.
