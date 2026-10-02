@@ -18,72 +18,9 @@ from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_job_db
 from yt_whisper_subs import library_media_db
 from yt_whisper_subs import library_metadata_db
+from yt_whisper_subs import library_schema
 from yt_whisper_subs import playback_progress as playback
 
-
-_SCHEMA = f"""
-PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS channels (
-    id INTEGER PRIMARY KEY,
-    url TEXT NOT NULL UNIQUE,
-    youtube_id TEXT,
-    title TEXT NOT NULL,
-    auto_download INTEGER NOT NULL DEFAULT 0,
-    added_at INTEGER NOT NULL,
-    checked_at INTEGER,
-    baseline_at INTEGER,
-    last_error TEXT,
-    pinned_at INTEGER
-);
-
-CREATE TABLE IF NOT EXISTS videos (
-    video_id TEXT PRIMARY KEY,
-    subscription_id INTEGER REFERENCES channels(id) ON DELETE SET NULL,
-    url TEXT NOT NULL,
-    title TEXT NOT NULL,
-    channel_title TEXT NOT NULL,
-    channel_youtube_id TEXT,
-    published_at INTEGER,
-    duration REAL,
-    view_count INTEGER,
-    description TEXT NOT NULL DEFAULT '',
-    thumbnail_url TEXT,
-    live_status TEXT,
-    live_retry_at INTEGER,
-    auto_pending INTEGER NOT NULL DEFAULT 0,
-    discovered_at INTEGER NOT NULL,
-    metadata_checked_at INTEGER,
-    metadata_attempted_at INTEGER,
-    download_error TEXT,
-    download_error_sig TEXT
-);
-
-CREATE TABLE IF NOT EXISTS media (
-    video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
-    path TEXT NOT NULL UNIQUE,
-    downloaded_at INTEGER NOT NULL,
-    size_bytes INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS playback (
-    video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
-    position_seconds REAL NOT NULL DEFAULT 0,
-    duration_seconds REAL,
-    completed_at INTEGER,
-    updated_at INTEGER NOT NULL
-);
-
-{library_job_db.SCHEMA}
-
-CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_videos_subscription ON videos(subscription_id);
-CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC);
-"""
 
 _VIDEO_SELECT = """
     SELECT
@@ -102,16 +39,18 @@ _VIDEO_SELECT = """
 
 
 class SnapshotResult(NamedTuple):
-    """Report new discoveries and remote rows removed by bounded retention.
+    """Report discoveries, pruning, and resolved states for download decisions.
 
     Example: `result.pruned` feeds a concise channel-check trace message.
     """
 
     new_ids: list[str]
     pruned: int
+    statuses: dict[str, str | None]
 
 
 class LibraryDb(
+    library_schema.SchemaDbMixin,
     library_metadata_db.MetadataDbMixin,
     library_job_db.PipelineJobDbMixin,
     library_media_db.MediaDbMixin,
@@ -123,39 +62,6 @@ class LibraryDb(
 
     def __init__(self, path: Path) -> None:
         self.path = path
-
-    def initialize(self) -> None:
-        """Create the catalog and indexes idempotently.
-
-        Example: `db.initialize()` during native app startup.
-        """
-
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            conn.execute("PRAGMA journal_mode = WAL")
-            conn.executescript(_SCHEMA)
-            channel_rows = conn.execute("PRAGMA table_info(channels)").fetchall()
-            channel_columns = {str(row["name"]) for row in channel_rows}
-            if "pinned_at" not in channel_columns:
-                conn.execute("ALTER TABLE channels ADD COLUMN pinned_at INTEGER")
-            columns = {
-                str(row["name"])
-                for row in conn.execute("PRAGMA table_info(videos)").fetchall()
-            }
-            if "metadata_attempted_at" not in columns:
-                conn.execute("ALTER TABLE videos ADD COLUMN metadata_attempted_at INTEGER")
-            if "live_retry_at" not in columns:
-                conn.execute("ALTER TABLE videos ADD COLUMN live_retry_at INTEGER")
-            if "auto_pending" not in columns:
-                conn.execute("ALTER TABLE videos ADD COLUMN auto_pending INTEGER NOT NULL DEFAULT 0")
-            if "download_error_sig" not in columns:
-                conn.execute("ALTER TABLE videos ADD COLUMN download_error_sig TEXT")
-            conn.execute(
-                """
-                CREATE INDEX IF NOT EXISTS idx_videos_metadata_queue
-                ON videos(metadata_checked_at, metadata_attempted_at, discovered_at DESC)
-                """
-            )
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -267,14 +173,14 @@ class LibraryDb(
         now = int(time.time())
         baseline_at = now if snapshot.complete else None
         with self._connect() as conn:
-            known_status = {
-                str(row["video_id"]): row["live_status"]
-                for row in conn.execute("SELECT video_id, live_status FROM videos")
+            known = {
+                str(row["video_id"]): row
+                for row in conn.execute("SELECT video_id, live_status, live_retry_at FROM videos")
             }
             new_ids = [
                 meta.identity.video_id
                 for meta in snapshot.videos
-                if meta.identity.video_id not in known_status
+                if meta.identity.video_id not in known
             ]
             conn.execute(
                 """
@@ -292,14 +198,19 @@ class LibraryDb(
                     channel_id,
                 ),
             )
+            statuses = {}
             for meta in snapshot.videos:
-                prior_status = known_status.get(meta.identity.video_id)
-                if meta.details.live_status is None and (
-                    meta.identity.video_id not in known_status
-                    or prior_status in types.LIVE_BLOCKED
-                ):
-                    details = meta.details._replace(live_status=types.LIVE_UNKNOWN)
-                    meta = meta._replace(details=details)
+                video_id = meta.identity.video_id
+                prior = known.get(video_id)
+                status = meta.details.live_status
+                if status is None and prior is not None:
+                    prev = prior["live_status"]
+                    # Old new-upload warnings had no stream observation/probe timer.
+                    unsupported = prev == types.LIVE_UNKNOWN and prior["live_retry_at"] is None
+                    if not (unsupported and snapshot.complete):
+                        status = types.LIVE_UNKNOWN if prev in types.LIVE_BLOCKED else prev
+                    conn.execute("UPDATE videos SET live_status=? WHERE video_id=?", (status, video_id))
+                statuses[video_id] = status
                 metadata_checked_at = now if meta.origin.published_at is not None else None
                 self._upsert_video(
                     conn,
@@ -309,7 +220,7 @@ class LibraryDb(
                     metadata_checked_at=metadata_checked_at,
                 )
             pruned = self._prune_snapshot(conn, channel_id, snapshot) if snapshot.complete else 0
-        return SnapshotResult(new_ids, pruned)
+        return SnapshotResult(new_ids, pruned, statuses)
 
     def channel_video_ids(self, channel_id: int) -> set[str]:
         """Return IDs used to stop adaptive history expansion at overlap.
@@ -580,7 +491,6 @@ class LibraryDb(
         live_retry_at = (
             int(time.time()) + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS
             if details.live_status in types.LIVE_BLOCKED
-            and details.live_status != types.LIVE_UNKNOWN
             else None
         )
         values = (

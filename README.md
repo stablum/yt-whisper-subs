@@ -924,6 +924,16 @@ from live or upcoming to finished; there is no extra background per-video
 live-status poll. If a fresh listing omits a previously active status, the row
 becomes uncertain rather than retaining the old claim.
 
+Ordinary uploads whose Videos-tab listing omits `live_status` show **Available**;
+that omission is normal and does not identify a stream. Entries on the Streams
+tab, or videos previously observed live/upcoming/processing, remain blocked
+when their current status is missing. They show **Availability unconfirmed**;
+the tooltip explains that double-clicking checks the current status. A
+publication date alone does not confirm a stream's
+availability. Channel refreshes clear the old false upload warnings when no
+prior stream observation or explicit status probe was recorded; rows with such
+evidence remain conservative until YouTube supplies a ready status.
+
 Channel checks only discover catalog entries; they never launch a burst of
 per-video metadata requests. Metadata enrichment has its own one-item timer and
 runs only while the application process is open.
@@ -940,7 +950,10 @@ Automatic download is a per-channel policy. The first successful channel check
 is always a baseline: it makes the existing back catalog browseable but never
 downloads it. If automatic download is enabled, only video IDs absent from the
 catalog and discovered by later checks are candidates. Active, upcoming,
-post-live, and uncertain streams wait without a download attempt. Their pending
+post-live, and uncertain streams wait without a download attempt. Ordinary
+uploads with no stream marker are eligible even when yt-dlp omits their status.
+Download eligibility uses the resolved catalog state, including prior stream
+observations, rather than only the newest incomplete listing. Pending stream
 auto-download eligibility is stored in SQLite, so a later scheduled channel
 listing can release them when YouTube explicitly reports `was_live` or
 `not_live`. Disabling automatic download clears those pending entries. No
@@ -1824,6 +1837,7 @@ High-level groups:
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
+| `yt_whisper_subs.library_schema` | Startup catalog tables, indexes, and schema changes. |
 | `yt_whisper_subs.library_media_db` | Batched local-file reconciliation and durable sidecar metadata updates. |
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
 | `yt_whisper_subs.library_artifacts` | File-stamped SRT-health and parsed-chapter cache for I/O-free Qt painting. |

@@ -110,7 +110,7 @@ def stage_label(stage: Stage) -> str:
         Stage.LIVE: "Live now",
         Stage.UPCOMING: "Upcoming",
         Stage.POST_LIVE: "Replay processing",
-        Stage.LIVE_UNKNOWN: "Stream status unconfirmed",
+        Stage.LIVE_UNKNOWN: "Availability unconfirmed",
     }
     if spec := _WORK_SPECS.get(stage):
         return spec.label

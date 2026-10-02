@@ -53,11 +53,8 @@ class ChannelServiceMixin:
         )
         if initial_check or not channel.auto_download:
             return []
-        statuses = {
-            meta.identity.video_id: meta.details.live_status
-            for meta in snapshot.videos
-        }
-        pending_new = {video_id for video_id in new_ids if statuses[video_id] not in types.LIVE_READY}
+        statuses = result.statuses
+        pending_new = {video_id for video_id in new_ids if statuses[video_id] in types.LIVE_BLOCKED}
         if pending_new:
             self.db.set_auto_pending(pending_new, True)
         ready_new = [video_id for video_id in new_ids if video_id not in pending_new]
@@ -66,7 +63,7 @@ class ChannelServiceMixin:
             meta.identity.video_id
             for meta in snapshot.videos
             if meta.identity.video_id in pending_ids
-            and meta.details.live_status in types.LIVE_READY
+            and statuses[meta.identity.video_id] not in types.LIVE_BLOCKED
         ]
         return [*ready_new, *ready_pending]
 

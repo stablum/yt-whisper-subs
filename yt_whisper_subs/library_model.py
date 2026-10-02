@@ -470,6 +470,8 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return display if role == QtCore.Qt.ItemDataRole.DisplayRole else sort_value
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
             if column == PIPELINE_COLUMN and (update := self.progress_at(index.row())):
+                if update.stage is progress.Stage.LIVE_UNKNOWN:
+                    return "Current availability could not be confirmed. Double-click to check again."
                 overall = progress.overall_fraction(update)
                 return f"{update.label} · overall {overall:.0%}"
             if column == WATCHED_COLUMN and (watched := self.watched_at(index.row())):

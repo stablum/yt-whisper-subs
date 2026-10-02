@@ -245,15 +245,14 @@ class YtDlpFeed:
         complete = True
         for idx, tab_url in enumerate(channel_tab_urls(normalized_url)):
             try:
-                tab_infos.append(self._channel_tab(tab_url, policy, known_ids))
+                tab_infos.append((tab_url, self._channel_tab(tab_url, policy, known_ids)))
             except RuntimeError:
                 if idx == 0:
                     raise
                 complete = False
-        info = tab_infos[0]
-        videos = []
-        seen_ids: set[str] = set()
-        for tab_info in tab_infos:
+        info = tab_infos[0][1]
+        by_id: dict[str, types.VideoMeta] = {}
+        for tab_url, tab_info in tab_infos:
             for entry in tab_info.get("entries") or []:
                 if not isinstance(entry, dict):
                     continue
@@ -261,9 +260,13 @@ class YtDlpFeed:
                     meta = video_meta(entry, tab_info)
                 except ValueError:
                     continue
-                if meta.identity.video_id not in seen_ids:
-                    videos.append(meta)
-                    seen_ids.add(meta.identity.video_id)
+                # Tab membership is stream evidence even when yt-dlp omits badges.
+                if tab_url.endswith("/streams") and meta.details.live_status is None:
+                    meta = meta._replace(details=meta.details._replace(live_status=types.LIVE_UNKNOWN))
+                video_id = meta.identity.video_id
+                if video_id not in by_id or meta.details.live_status is not None:
+                    by_id[video_id] = meta
+        videos = list(by_id.values())
 
         youtube_id = info.get("channel_id") or info.get("uploader_id")
         youtube_id = str(youtube_id) if youtube_id else None

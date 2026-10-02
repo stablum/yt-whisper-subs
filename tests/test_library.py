@@ -23,6 +23,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_pipeline
+from yt_whisper_subs import library_schema
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
@@ -525,7 +526,7 @@ class LibraryDbTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "catalog.sqlite3"
-            legacy_schema = library_db._SCHEMA.replace(
+            legacy_schema = library_schema._SCHEMA.replace(
                 "    metadata_attempted_at INTEGER,\n",
                 "",
             )
@@ -897,10 +898,10 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
             self.assertEqual(feed.video_info_calls, 0)
 
-    def test_new_video_without_live_status_waits_for_explicit_ready_state(self) -> None:
-        """Avoid an unverified automatic download without probing every video.
+    def test_new_upload_without_live_status_downloads_normally(self) -> None:
+        """Allow ordinary uploads without interpreting omitted badges as streams.
 
-        Example: a flat row missing `live_status` waits for a later listing.
+        Example: a new Videos-tab upload downloads without an extra status probe.
         """
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -913,17 +914,13 @@ class LibraryServiceTests(unittest.TestCase):
             channel = service.track_channel("@example", True)
             service.initialize_channel(channel.channel_id)
             video_id = "aaaaaaaaaaa"
-            ordinary = make_meta(video_id, "Uncertain")
+            ordinary = make_meta(video_id, "Ordinary upload")
             feed.videos = [with_live_status(ordinary, None)]
 
-            self.assertEqual(service.check_all(), 0)
-            self.assertEqual(service.db.video(video_id).meta.details.live_status, types.LIVE_UNKNOWN)
-            self.assertEqual(service.db.auto_pending_ids(channel.channel_id), {video_id})
-            self.assertEqual(feed.video_info_calls, 0)
-            self.assertEqual(downloader.calls, [])
-
-            feed.videos = [ordinary]
             self.assertEqual(service.check_all(), 1)
+            self.assertIsNone(service.db.video(video_id).meta.details.live_status)
+            self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
+            self.assertEqual(feed.video_info_calls, 0)
             self.assertEqual(downloader.calls, [video_id])
 
     def test_manual_live_probe_is_bounded_and_can_release_download(self) -> None:
@@ -945,7 +942,7 @@ class LibraryServiceTests(unittest.TestCase):
             service.initialize_channel(channel.channel_id)
             due = int(time.time()) + cfg.DEFAULT_LIBRARY_LIVE_RECHECK_SECONDS + 2
             with mock.patch("yt_whisper_subs.library_metadata_db.time.time", return_value=due):
-                with self.assertRaisesRegex(RuntimeError, "still reports"):
+                with self.assertRaisesRegex(RuntimeError, "live now"):
                     service.download(video_id)
                 with self.assertRaisesRegex(RuntimeError, "retry in"):
                     service.download(video_id)
@@ -978,11 +975,11 @@ class LibraryServiceTests(unittest.TestCase):
             service.initialize_channel(channel.channel_id)
 
             for _ in range(2):
-                with self.assertRaisesRegex(RuntimeError, "still reports"):
+                with self.assertRaisesRegex(RuntimeError, "live now"):
                     service.download(video_id, force_live_check=True)
             self.assertEqual(feed.video_info_calls, 2)
             service.db.set_live_status(video_id, "was_live")
-            with self.assertRaisesRegex(RuntimeError, "still reports"):
+            with self.assertRaisesRegex(RuntimeError, "live now"):
                 service.download(video_id, force_live_check=True)
             self.assertEqual(feed.video_info_calls, 3)
             with self.assertRaisesRegex(RuntimeError, "retry in"):

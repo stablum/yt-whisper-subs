@@ -326,7 +326,12 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
                 elif status == "post_live":
                     raise RuntimeError("Replay is still processing; double-click its row to try a verified download")
                 else:
-                    raise RuntimeError("YouTube still reports this stream as live, upcoming, or not ready")
+                    reason = {
+                        "is_live": "Video is live now; wait for the broadcast to end",
+                        "is_upcoming": "Video is upcoming; wait until it becomes available",
+                        types.LIVE_UNKNOWN: "Video availability is unconfirmed; try a fresh status check later",
+                    }[status]
+                    raise RuntimeError(reason)
         self.db.set_download_error(video_id, None)
         try:
             tracker = library_pipeline.PipelineJobTracker(
@@ -378,12 +383,13 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
     def _save_video_info(self, info: types.VideoInfo) -> None:
         """Persist a full lookup while replacing unsupported live-state guesses.
 
-        Example: a missing yt-dlp status becomes unknown instead of staying live.
+        Example: a known stream missing its status stays blocked; an upload does not.
         """
 
+        prior = self.db.video(info.meta.identity.video_id)
         self._write_metadata(info)
         self.db.upsert_video(info.meta)
-        if info.meta.details.live_status is None:
+        if info.meta.details.live_status is None and prior is not None and self._is_live(prior):
             self.db.set_live_status(info.meta.identity.video_id, types.LIVE_UNKNOWN)
 
     def video_yields(self, video_id: str) -> library_yields.VideoYields:
