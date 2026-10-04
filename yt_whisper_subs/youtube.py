@@ -9,6 +9,7 @@ import argparse
 import os
 import re
 import shutil
+from enum import StrEnum
 from pathlib import Path
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
@@ -19,7 +20,30 @@ from yt_whisper_subs import proc
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 INTERMEDIATE_FORMAT_RE = re.compile(r"\.f\d+\.(?:m4a|mkv|mp4|webm)$", re.IGNORECASE)
 YOUTUBE_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
-YOUTUBE_HLS_FALLBACK_CLIENT = "web_safari"
+
+
+class DownloadMode(StrEnum):
+    """Bound retries by transport before changing YouTube clients.
+
+    Example: `DownloadMode.HLS` reuses the default client's working manifests.
+    """
+
+    DEFAULT = "default formats"
+    HLS = "default-client HLS"
+    SAFARI = "web_safari HLS"
+
+    def command_args(self) -> list[str]:
+        """Prefer HLS for both tracks without replacing the user's selector.
+
+        Example: an HLS video must not be paired with rejected HTTPS audio.
+        """
+
+        if self is DownloadMode.DEFAULT:
+            return []
+        args = ["--format-sort-force", "--format-sort", "proto:m3u8"]
+        if self is DownloadMode.SAFARI:
+            args += ["--extractor-args", "youtube:player_client=web_safari"]
+        return args
 
 
 def yt_dlp_js_runtime_args() -> list[str]:
@@ -229,7 +253,7 @@ def download_command(
     paths: dict[str, Path],
     args: argparse.Namespace,
     *,
-    player_client: str | None = None,
+    mode: DownloadMode = DownloadMode.DEFAULT,
 ) -> list[str | os.PathLike[str]]:
     """Build the metadata-preserving yt-dlp command for one video.
 
@@ -266,8 +290,7 @@ def download_command(
         f"infojson:{metadata_dir / '%(id)s.%(ext)s'}",
     ]
     cmd.append("--force-overwrites" if args.force else "--continue")
-    if player_client:
-        cmd += ["--extractor-args", f"youtube:player_client={player_client}"]
+    cmd += mode.command_args()
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
     cmd.append(url)
@@ -301,15 +324,17 @@ def download_video(
     video_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
     cfg.output_scratch_dir(video_dir.parent).mkdir(parents=True, exist_ok=True)
-    player_client: str | None = None
-    while True:
+    failures: list[str] = []
+    for mode in DownloadMode:
+        if failures:
+            print(f"YouTube media attempt failed: {failures[-1]}; retrying with {mode.value}.")
         cmd = download_command(
             url,
             video_dir,
             metadata_dir,
             paths,
             args,
-            player_client=player_client,
+            mode=mode,
         )
         result = proc.run(cmd, capture_stdout=True, stream_stdout=True, check=False)
         lines = [
@@ -331,16 +356,12 @@ def download_video(
             raise RuntimeError("could not determine downloaded video path from yt-dlp output")
 
         detail = _yt_dlp_error(lines, result.returncode)
-        should_retry_hls = (
-            player_client is None
-            and youtube_video_id(url) is not None
-            and "http error 403" in detail.casefold()
+        failures.append(detail)
+        retryable = (
+            youtube_video_id(url) is not None
+            and any(cause in detail.casefold() for cause in (
+                "http error 403", "requested format is not available",
+            ))
         )
-        if not should_retry_hls:
-            raise RuntimeError(detail)
-
-        player_client = YOUTUBE_HLS_FALLBACK_CLIENT
-        print(
-            "YouTube rejected the default media URL with HTTP 403; "
-            f"retrying once with the {player_client} HLS client."
-        )
+        if not retryable or mode is DownloadMode.SAFARI:
+            raise RuntimeError("; ".join(dict.fromkeys(failures)))

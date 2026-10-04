@@ -74,7 +74,7 @@ class DownloadCommandTests(unittest.TestCase):
     def test_download_retries_youtube_media_403_with_hls(self, run: mock.Mock) -> None:
         """Retry a rejected default media URL through YouTube's HLS client.
 
-        Example: a visionOS DASH 403 falls back to web_safari HLS.
+        Example: a visionOS DASH 403 falls back to the same client's HLS.
         """
 
         args = argparse.Namespace(
@@ -125,15 +125,15 @@ class DownloadCommandTests(unittest.TestCase):
         first_cmd = [str(part) for part in run.call_args_list[0].args[0]]
         retry_cmd = [str(part) for part in run.call_args_list[1].args[0]]
         self.assertNotIn("--extractor-args", first_cmd)
-        extractor_idx = retry_cmd.index("--extractor-args")
-        self.assertEqual(
-            retry_cmd[extractor_idx + 1],
-            f"youtube:player_client={youtube.YOUTUBE_HLS_FALLBACK_CLIENT}",
-        )
+        self.assertNotIn("--format-sort-force", first_cmd)
+        self.assertNotIn("--extractor-args", retry_cmd)
+        self.assertIn("--format-sort-force", retry_cmd)
+        self.assertEqual(retry_cmd[retry_cmd.index("--format-sort") + 1], "proto:m3u8")
+        self.assertEqual(run.call_count, 2)
 
     @mock.patch("yt_whisper_subs.youtube.proc.run")
     def test_download_keeps_inline_error_after_hls_retry_fails(self, run: mock.Mock) -> None:
-        """Surface yt-dlp's cause when both YouTube transports fail.
+        """Surface all causes after exhausting the bounded YouTube attempts.
 
         Example: progress text immediately followed by `ERROR:` remains actionable.
         """
@@ -154,10 +154,14 @@ class DownloadCommandTests(unittest.TestCase):
                 returncode=1,
                 stdout="[download] 0.0%ERROR: HLS fragments returned HTTP Error 403: Forbidden\n",
             ),
+            mock.Mock(
+                returncode=1,
+                stdout="WARNING: Only images are available\nERROR: Requested format is not available\n",
+            ),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with self.assertRaisesRegex(RuntimeError, "HLS fragments returned HTTP Error 403"):
+            with self.assertRaisesRegex(RuntimeError, "HLS fragments returned HTTP Error 403") as raised:
                 youtube.download_video(
                     "https://www.youtube.com/watch?v=aaaaaaaaaaa",
                     root / "videos",
@@ -165,6 +169,83 @@ class DownloadCommandTests(unittest.TestCase):
                     {"python": Path("python")},
                     args,
                 )
+
+        self.assertEqual(run.call_count, 3)
+        self.assertIn("Requested format is not available", str(raised.exception))
+        retry_cmd = [str(part) for part in run.call_args_list[-1].args[0]]
+        self.assertEqual(retry_cmd[retry_cmd.index("--extractor-args") + 1],
+                         "youtube:player_client=web_safari")
+        self.assertIn("--format-sort-force", retry_cmd)
+
+    @mock.patch("yt_whisper_subs.youtube.proc.run")
+    def test_format_failure_can_recover_on_safari(self, run: mock.Mock) -> None:
+        """Use Safari only after the default client's HLS also fails.
+
+        Example: a caller's codec constraint remains on every retry.
+        """
+
+        args = argparse.Namespace(
+            download_progress_delta=1.0,
+            video_format="bv*[vcodec^=avc]+ba/b",
+            merge_output_format="mkv",
+            force=False,
+            cookies_from_browser=None,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            final_path = root / "videos" / "aaaaaaaaaaa.mkv"
+
+            def attempt(*_args: object, **_kwargs: object) -> mock.Mock:
+                """Finish only when the third attempt changes client.
+
+                Example: missing default formats still permit Safari recovery.
+                """
+
+                if run.call_count < 3:
+                    return mock.Mock(returncode=1, stdout="ERROR: Requested format is not available\n")
+                final_path.write_bytes(b"video")
+                return mock.Mock(returncode=0, stdout=f"{final_path}\n")
+
+            run.side_effect = attempt
+            result = youtube.download_video(
+                "https://youtu.be/aaaaaaaaaaa", root / "videos", root / "metadata",
+                {"python": Path("python")}, args,
+            )
+            self.assertEqual(result, final_path.resolve())
+
+        self.assertEqual(run.call_count, 3)
+        for call in run.call_args_list:
+            cmd = call.args[0]
+            self.assertEqual(cmd[cmd.index("-f") + 1], args.video_format)
+
+    @mock.patch("yt_whisper_subs.youtube.proc.run")
+    def test_unrelated_errors_and_other_sites_do_not_retry(self, run: mock.Mock) -> None:
+        """Keep client retries confined to YouTube media/format failures.
+
+        Example: private videos and disk failures need different remedies.
+        """
+
+        args = argparse.Namespace(
+            download_progress_delta=1.0, video_format="bv*+ba/b",
+            merge_output_format="mkv", force=False, cookies_from_browser=None,
+        )
+        cases = (
+            ("https://youtu.be/aaaaaaaaaaa", "Private video"),
+            ("https://youtu.be/aaaaaaaaaaa", "No space left on device"),
+            ("https://example.com/video", "HTTP Error 403: Forbidden"),
+            ("https://example.com/video", "Requested format is not available"),
+        )
+        for url, error in cases:
+            with self.subTest(url=url, error=error), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                run.reset_mock()
+                run.return_value = mock.Mock(returncode=1, stdout=f"ERROR: {error}\n")
+                with self.assertRaisesRegex(RuntimeError, error):
+                    youtube.download_video(
+                        url, root / "videos", root / "metadata",
+                        {"python": Path("python")}, args,
+                    )
+                run.assert_called_once()
 
 
 class PlaybackPrefsTests(unittest.TestCase):

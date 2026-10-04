@@ -105,7 +105,7 @@ These defaults are hard-coded near the top of the script:
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
 | Downloaded video container | `mkv` |
 | yt-dlp format selector | `bv*+ba/b` |
-| YouTube HTTP 403 fallback | one retry through `web_safari` HLS |
+| YouTube media fallback | default-client HLS, then `web_safari` HLS; at most three attempts |
 | yt-dlp progress interval | `1` second |
 | Extracted audio format | `opus` |
 | Keep audio after run | yes |
@@ -594,11 +594,14 @@ That means "best video-only plus best audio-only, or best combined format as a
 fallback." These are compressed streams from the source platform; the script is
 not making a lossless video transcode.
 
-If YouTube rejects the selected media URL with HTTP 403, the script retries once
-through the `web_safari` HLS client. The normal client remains first choice, so
-the HLS route is used only when the selected DASH URL fails. The retry can select
-a combined HLS format and therefore does not necessarily use the requested merge
-container.
+For YouTube HTTP 403 or unavailable-format failures, downloads retry with HLS
+preferred on the default clients first, then with `web_safari` HLS. Some videos
+expose working HLS on the default client while Safari exposes only storyboard
+images. Both retries use `--format-sort-force --format-sort proto:m3u8` so video
+and audio prefer HLS; the user's `--video-format` selector still applies. There
+are at most three attempts, unrelated errors stop immediately, and the final
+error retains the causes from failed attempts. A retry can select a combined HLS
+format and therefore does not necessarily use the requested merge container.
 
 The default merge container is:
 
@@ -2128,14 +2131,16 @@ the fixed version; if a partial temporary subtitle directory remains under
 `subtitles\whisper-*`, it can be ignored because the next run creates a fresh
 temporary directory.
 
-### yt-dlp warns about JavaScript runtimes or returns HTTP 403
+### yt-dlp warns about JavaScript runtimes, HTTP 403, or unavailable formats
 
 The script installs yt-dlp's EJS component and automatically uses Deno or Node
 when either executable is on `PATH`. The managed yt-dlp package is also checked
 for updates weekly. Restart the library once to trigger an overdue update. If
-the default YouTube media URL itself returns HTTP 403, the downloader retries
-once using the `web_safari` HLS client. If both attempts fail, the GUI preserves
-yt-dlp's actual error even when it was appended to a progress line. Install a
+the default YouTube media URL returns HTTP 403 or no requested format is
+available, the downloader first retries with HLS preferred on the default
+clients, then with `web_safari` HLS. Safari can expose only images even when
+another client has usable media. If all three attempts fail, the GUI preserves
+each distinct yt-dlp error, including errors appended to progress lines. Install a
 current Deno (preferred by yt-dlp) or Node release if a JavaScript warning
 remains. Cookies may still be needed for private, age-gated, or account-specific
 videos.
