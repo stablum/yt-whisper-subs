@@ -113,7 +113,10 @@ class WindowActionsMixin:
             self,
         )
         box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Cancel)
-        box.setInformativeText("The tracked catalog entry remains available for downloading again.")
+        box.setInformativeText(
+            "The entry is marked Removed. Download and watch history stay in the catalog, "
+            "even outside channel retention, and you can download it again."
+        )
         box.setDetailedText("\n".join(str(path) for path in manifest.paths))
         if box.exec() != QtWidgets.QMessageBox.StandardButton.Yes:
             return

@@ -23,6 +23,7 @@ class VideoView(enum.IntEnum):
     WATCHED = 5
     ISSUES = 6
     PIPELINE = 7
+    REMOVED = 8
 
     @property
     def key(self) -> str:
@@ -60,9 +61,10 @@ class VideoViewSpec(NamedTuple):
 VIDEO_VIEWS = (
     VideoViewSpec(VideoView.ALL, "All", "Every video in the current library or channel"),
     VideoViewSpec(VideoView.ON_DEVICE, "On device", "Downloaded videos ready to play"),
-    VideoViewSpec(VideoView.AVAILABLE, "Available", "Tracked videos not downloaded yet"),
+    VideoViewSpec(VideoView.AVAILABLE, "Available", "Videos without a local download, including removed videos"),
+    VideoViewSpec(VideoView.REMOVED, "Removed", "Videos whose local video and yields were deliberately removed"),
     VideoViewSpec(VideoView.PIPELINE, "Pipeline", "Videos queued or currently being processed"),
-    VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Downloaded videos not started yet"),
+    VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Current or previous downloads not watched yet"),
     VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos still unfinished"),
     VideoViewSpec(VideoView.WATCHED, "Watched", "Videos with more than 95% watched or mpv completion"),
     VideoViewSpec(VideoView.ISSUES, "Issues", "Videos whose latest download or processing attempt failed"),

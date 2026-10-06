@@ -415,8 +415,11 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         if manifest.root != self.out_dir or not self.db.video(manifest.video_id):
             raise RuntimeError("refusing a yield manifest outside this library")
         removed = manifest.remove(report)
+        if library_yields.VideoYields.inspect(self.out_dir, manifest.video_id).paths:
+            self.scan_local(report)
+            raise RuntimeError("yield files remain; removal was not recorded as complete")
+        self.db.record_yield_removal(manifest.video_id)
         self.scan_local(report)
-        self.db.set_download_error(manifest.video_id, None)
         return removed
 
     def recover_pipeline_jobs(self) -> list[types.PipelineJob]:
@@ -501,7 +504,7 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         return chapter_set
 
     def apply_retention(self) -> int:
-        """Prune dated remote-only rows immediately after settings change.
+        """Prune untouched dated listings immediately after settings change.
 
         Example: `service.apply_retention()` removes known pre-April entries.
         """

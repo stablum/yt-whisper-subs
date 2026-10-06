@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS playback (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS video_history (
+    video_id TEXT PRIMARY KEY REFERENCES videos(video_id) ON DELETE CASCADE,
+    downloaded_at INTEGER,
+    removed_at INTEGER,
+    files_removed INTEGER NOT NULL DEFAULT 0
+);
+
 {library_job_db.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -89,6 +96,13 @@ class SchemaDbMixin:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_SCHEMA)
+            # Seed existing downloads before a scan can discard their media paths.
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO video_history(video_id, downloaded_at)
+                SELECT video_id, downloaded_at FROM media
+                """
+            )
             channel_rows = conn.execute("PRAGMA table_info(channels)").fetchall()
             channel_columns = {str(row["name"]) for row in channel_rows}
             if "pinned_at" not in channel_columns:

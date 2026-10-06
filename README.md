@@ -68,11 +68,13 @@ The companion library is optimized for a second workflow:
    inspector, and double-click any chapter to open or seek mpv at that moment.
 11. Cancel the active download/transcription/translation pipeline without stopping
    playback or discarding channel work already waiting in the serial queue.
-12. Pause and resume the active pipeline process tree without discarding its
+12. Preserve download, watch, and deliberate-removal history after deleting a
+    video's files; use the Removed filter to find those entries again.
+13. Pause and resume the active pipeline process tree without discarding its
     in-memory model state.
-13. Recover a pipeline left by a system crash from durable stage checkpoints and
+14. Recover a pipeline left by a system crash from durable stage checkpoints and
     reuse every complete or partial yield when the user clicks Resume.
-14. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
+15. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
     the exact reason as an Issue, and offer one-click Repair instead of claiming
     that the pipeline is complete.
 
@@ -141,7 +143,8 @@ These defaults are hard-coded near the top of the script:
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
 | Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
 | Library crash recovery | durable stage/overall-progress checkpoint; one-click Resume |
-| Library yield removal | confirmed exact per-video manifest; individual non-recursive unlinks |
+| Library yield removal | confirmed exact per-video manifest; individual non-recursive unlinks; durable Removed state |
+| Library personal history | download/removal dates and watch progress survive retention and channel removal |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
 | Compaction gap | `0.9` seconds |
@@ -617,7 +620,7 @@ downloads.
 The desktop library is a native PySide6/Qt application with a dark Windows UI.
 It contains:
 
-- counted smart views for All, On device, Available, Pipeline, Unwatched,
+- counted smart views for All, On device, Available, Removed, Pipeline, Unwatched,
   Continue, Watched, and Issues;
 - a counted, starred **Pinned** shelf above the regular channel list;
 - instant title, channel, and YouTube-ID search that composes with smart views;
@@ -695,11 +698,12 @@ without opening dialogs or combining contradictory dropdowns:
 
 - **All** shows the complete current library or selected channel.
 - **On device** shows every downloaded, playable video.
-- **Available** shows tracked videos that have not been downloaded.
+- **Available** shows videos without a local download, including removed entries.
+- **Removed** shows entries whose video and yields were deliberately removed.
 - **Pipeline** shows videos waiting in the FIFO or currently moving through an
   active processing stage. Completed, failed, cancelled, paused, and
   restart-interrupted rows are excluded because they are not presently running.
-- **Unwatched** shows downloaded videos with no observed playback position.
+- **Unwatched** shows current or previous downloads with no observed playback position.
 - **Continue** shows videos that were started but have not passed 95% or reached
   mpv end-of-file.
 - **Watched** shows videos with more than 95% reached or confirmed mpv completion.
@@ -815,6 +819,7 @@ The **Watched** column is a compact progress bar for downloaded videos opened
 from the desktop library. While mpv is running, the app samples its playback
 position and duration every five seconds. SQLite retains the furthest observed
 position, so rewinding or replaying a video never moves the bar backward.
+The bar and saved completion remain visible after the download and yields are removed.
 
 Once the furthest observed position exceeds 95% of the known duration, the app
 marks the video **Watched**, writes a separate completion timestamp, and renders
@@ -917,12 +922,13 @@ not add its entire backlog to the queue.
 Configure both controls under **Library → Settings**. **Recent history** is a
 per-section count, so the default retains at most roughly 100 deduplicated
 remote entries per channel. **Published since** is optional; choose a date such
-as `2026-04-01` to discard older remote entries. Saving a cutoff immediately
-removes rows already known to be older. Each later successful channel refresh
-also removes remote-only rows outside its complete bounded snapshot, including
-old rows whose date was never available. A partial refresh never prunes.
-Downloaded videos, subtitle and chapter files, metadata, and playback history
-are exempt from both retention controls.
+as `2026-04-01` to discard older untouched remote listings. Saving a cutoff
+immediately removes eligible rows already known to be older. Each later
+successful channel refresh also removes untouched remote listings outside its
+complete bounded snapshot, including old rows whose date was never available.
+A partial refresh never prunes. Any entry with download, watch, or deliberate
+removal history is exempt from both retention controls, even with no local file.
+Retention never deletes subtitle, chapter, or metadata files.
 
 The default interval is four hours and can be changed from **Library →
 Settings**. The schedule is persisted in SQLite, so reopening the app performs
@@ -1019,9 +1025,24 @@ confirmation with the exact file manifest. Removal enumerates only immediate
 files in the managed `videos`, `audio`, `metadata`, `subtitles`, `chapters`, and
 `logs` folders whose name has the selected 11-character ID plus its required
 delimiter. It rejects paths outside those folders and unlinks one explicit path
-at a time—never a recursive command or wildcard. A tracked catalog row remains
-Available afterward, so it can be downloaded again; playback history remains
-separate.
+at a time—never a recursive command or wildcard. After every yield is removed,
+the catalog entry is marked **Video + yields removed** and appears in the
+**Removed** filter. Its last download date remains in the Downloaded column;
+the inspector and tooltips show the removal date. Watched progress stays visible
+and continues to participate in the Watched, Continue, and Unwatched filters.
+Removed entries also remain Available for an explicit download.
+
+Download, watch, and removal history survives the publication-date cutoff,
+bounded channel-history pruning, and unsubscription. Those operations prune
+only untouched remote listings. Removal clears pending automatic downloads and
+interrupted pipeline checkpoints so routine channel checks do not undo the
+removal. Downloading again restores the normal local state while retaining the
+previous removal date and watched progress.
+
+Existing local downloads seed durable history when the updated catalog opens.
+An externally missing file is not falsely labelled as deliberately removed;
+its known download/watch history is still preserved. Entries already deleted
+from an older catalog cannot be reconstructed without a backup or other evidence.
 
 ### Shared Playback
 
@@ -1918,8 +1939,8 @@ Start by preserving these invariants:
 13. Keep GUI downloads routed through the existing one-video CLI pipeline.
 14. Keep GUI and CLI mpv behavior routed through `PlaybackPrefs` and
     `playback.play_video`.
-15. Keep YouTube metadata sidecars outside `videos\` and the SQLite catalog
-    rebuildable from local files.
+15. Keep YouTube metadata sidecars outside `videos\`; rebuild catalog metadata
+    from local files while preserving personal history and subscriptions in SQLite.
 16. Keep hidden subprocesses observable through the timestamped activity trace.
 17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
 18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
@@ -1942,7 +1963,7 @@ Start by preserving these invariants:
 27. Keep table-column and inspector-split state in the existing settings store,
     with shipped defaults and visible reset actions.
 28. Bound each channel section, expand only to recover known overlap, prune only
-    complete snapshots, and never remove a downloaded video through retention.
+    complete snapshots, and preserve all download, watch, and removal history.
 29. Ignore Shorts in subscriptions and treat absent Videos/Streams tabs as valid
     empty sections; resolve channel identity independently before saving a snapshot.
 30. Do not establish the automatic-download baseline from a partial channel
@@ -1954,7 +1975,8 @@ Start by preserving these invariants:
 33. Cancel only the active heavy task and its isolated child process tree; do
     not stop independent playback or discard already queued channel work.
 34. Remove one video's yields only through an exact inspected manifest, one
-    non-recursive unlink at a time, while preserving its tracked catalog row.
+    non-recursive unlink at a time, then record a durable Removed state before
+    reconciliation; keep its catalog row, dates, and watched progress permanently.
 35. Derive changing live status from scheduled flat channel listings or an
     explicitly requested full lookup; only an explicit row double-click may
     bypass lookup cooldowns. Keep sidecars for durable metadata rather than
@@ -2298,7 +2320,7 @@ If you remember only one thing, remember this:
 ```text
 Downloaded video is the durable media yield.
 YouTube info JSON is the durable source metadata yield.
-SQLite is a rebuildable catalog plus channel-subscription state.
+SQLite retains catalog metadata, subscriptions, and durable download/watch/removal history.
 Primary compacted and gap-extended SRT is the timing authority.
 OpenAI translates text only.
 The script renders English onto the primary SRT timings.

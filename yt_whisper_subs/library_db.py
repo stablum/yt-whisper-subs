@@ -31,10 +31,15 @@ _VIDEO_SELECT = """
         p.position_seconds AS playback_position_seconds,
         p.duration_seconds AS playback_duration_seconds,
         p.completed_at AS playback_completed_at,
-        p.updated_at AS playback_updated_at
+        p.updated_at AS playback_updated_at,
+        h.video_id AS history_video_id,
+        h.downloaded_at AS history_downloaded_at,
+        h.removed_at,
+        h.files_removed
     FROM videos v
     LEFT JOIN media m USING(video_id)
     LEFT JOIN playback p USING(video_id)
+    LEFT JOIN video_history h USING(video_id)
 """
 
 
@@ -148,17 +153,17 @@ class LibraryDb(
             conn.execute("UPDATE channels SET pinned_at=? WHERE id=?", (pinned_at, channel_id))
 
     def remove_channel(self, channel_id: int) -> None:
-        """Stop tracking a channel while retaining its downloaded videos.
+        """Stop tracking a channel while retaining personal video history.
 
-        Example: `db.remove_channel(1)` removes remote-only rows too.
+        Example: downloaded, watched, and removed videos survive unsubscription.
         """
 
         with self._connect() as conn:
             conn.execute(
-                """
+                f"""
                 DELETE FROM videos
                 WHERE subscription_id=?
-                  AND video_id NOT IN (SELECT video_id FROM media)
+                  AND {library_media_db.PRUNABLE_VIDEO}
                 """,
                 (channel_id,),
             )
@@ -236,21 +241,19 @@ class LibraryDb(
         return {str(row[0]) for row in rows}
 
     def prune_remote_before(self, published_at: int | None) -> int:
-        """Delete dated remote-only rows older than an optional cutoff.
+        """Delete untouched dated listings older than an optional cutoff.
 
-        Example: `prune_remote_before(april_2026)` never deletes local media.
+        Example: `prune_remote_before(april_2026)` preserves all personal history.
         """
 
         if published_at is None:
             return 0
         with self._connect() as conn:
             cursor = conn.execute(
-                """
+                f"""
                 DELETE FROM videos
                 WHERE published_at < ?
-                  AND NOT EXISTS (
-                      SELECT 1 FROM media WHERE media.video_id=videos.video_id
-                  )
+                  AND {library_media_db.PRUNABLE_VIDEO}
                 """,
                 (published_at,),
             )
@@ -444,9 +447,9 @@ class LibraryDb(
         channel_id: int,
         snapshot: types.ChannelSnapshot,
     ) -> int:
-        """Retain this complete recent slice plus every downloaded video.
+        """Retain this complete recent slice plus all personal video history.
 
-        Example: a 50-item bounded refresh removes older remote-only rows.
+        Example: a bounded refresh keeps previously downloaded or removed rows.
         """
 
         conn.execute(
@@ -457,12 +460,10 @@ class LibraryDb(
             ((meta.identity.video_id,) for meta in snapshot.videos),
         )
         cursor = conn.execute(
-            """
+            f"""
             DELETE FROM videos
             WHERE subscription_id=?
-              AND NOT EXISTS (
-                  SELECT 1 FROM media WHERE media.video_id=videos.video_id
-              )
+              AND {library_media_db.PRUNABLE_VIDEO}
               AND video_id NOT IN (SELECT video_id FROM retained_snapshot)
             """,
             (channel_id,),
@@ -592,6 +593,13 @@ class LibraryDb(
                 else None,
                 int(row["playback_updated_at"]),
             )
+        history = None
+        if row["history_video_id"] is not None:
+            history = types.VideoHistory(
+                int(row["history_downloaded_at"]) if row["history_downloaded_at"] is not None else None,
+                int(row["removed_at"]) if row["removed_at"] is not None else None,
+                bool(row["files_removed"]),
+            )
         return types.VideoRecord(
             types.VideoMeta(ident, origin, details),
             int(row["subscription_id"]) if row["subscription_id"] is not None else None,
@@ -599,4 +607,5 @@ class LibraryDb(
             local,
             str(row["download_error"]) if row["download_error"] else None,
             playback_state,
+            history,
         )

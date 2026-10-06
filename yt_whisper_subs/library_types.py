@@ -143,6 +143,17 @@ class PipelineJob(NamedTuple):
     updated_at: int
 
 
+class VideoHistory(NamedTuple):
+    """Keep download and removal facts after their files leave the device.
+
+    Example: `VideoHistory(100, 200, True)` remembers a removed download.
+    """
+
+    downloaded_at: int | None
+    removed_at: int | None
+    files_removed: bool
+
+
 class VideoRecord(NamedTuple):
     """Combine remote metadata, subscription ownership, and local media.
 
@@ -155,6 +166,7 @@ class VideoRecord(NamedTuple):
     local: LocalMedia | None
     download_error: str | None
     playback: PlaybackState | None
+    history: VideoHistory | None = None
 
     @property
     def downloaded(self) -> bool:
@@ -164,6 +176,15 @@ class VideoRecord(NamedTuple):
         """
 
         return self.local is not None
+
+    @property
+    def removed(self) -> bool:
+        """Distinguish deliberate yield removal from a never-downloaded video.
+
+        Example: a removed record can still be watched and downloaded again.
+        """
+
+        return not self.downloaded and bool(self.history and self.history.files_removed)
 
 
 class Channel(NamedTuple):

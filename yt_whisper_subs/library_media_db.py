@@ -12,8 +12,16 @@ from collections.abc import Iterable
 from yt_whisper_subs import library_types as types
 
 
+# Only untouched remote listings are disposable; all personal history survives.
+PRUNABLE_VIDEO = """
+    NOT EXISTS (SELECT 1 FROM media WHERE media.video_id=videos.video_id)
+    AND NOT EXISTS (SELECT 1 FROM video_history WHERE video_history.video_id=videos.video_id)
+    AND NOT EXISTS (SELECT 1 FROM playback WHERE playback.video_id=videos.video_id)
+"""
+
+
 class MediaDbMixin:
-    """Own media-table writes without coupling channel discovery to file scans.
+    """Own local-file availability and history independently from discovery.
 
     Example: `db.reconcile_media(scanned)` replaces stale local paths.
     """
@@ -37,6 +45,30 @@ class MediaDbMixin:
                     metadata_checked_at=metadata_checked_at,
                 )
                 self._upsert_local(conn, scanned.meta.identity.video_id, scanned.local)
+
+    def record_yield_removal(self, video_id: str) -> None:
+        """Remember a completed removal before reconciliation or retention runs.
+
+        Example: the watched record survives after all its yields are unlinked.
+        """
+
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO video_history(video_id, downloaded_at, removed_at, files_removed)
+                VALUES (?, (SELECT downloaded_at FROM media WHERE video_id=?), ?, 1)
+                ON CONFLICT(video_id) DO UPDATE SET
+                    removed_at=excluded.removed_at,
+                    files_removed=1
+                """,
+                (video_id, video_id, int(time.time())),
+            )
+            conn.execute("DELETE FROM media WHERE video_id=?", (video_id,))
+            conn.execute("DELETE FROM pipeline_jobs WHERE video_id=?", (video_id,))
+            conn.execute(
+                "UPDATE videos SET auto_pending=0, download_error=NULL, download_error_sig=NULL WHERE video_id=?",
+                (video_id,),
+            )
 
     def refresh_known_metadata(self, metas: Iterable[types.VideoMeta]) -> int:
         """Apply durable sidecars only to rows already admitted to the catalog.
@@ -78,4 +110,14 @@ class MediaDbMixin:
                 size_bytes=excluded.size_bytes
             """,
             (video_id, str(local.path), local.downloaded_at, local.size_bytes),
+        )
+        conn.execute(
+            """
+            INSERT INTO video_history(video_id, downloaded_at)
+            VALUES (?, ?)
+            ON CONFLICT(video_id) DO UPDATE SET
+                downloaded_at=excluded.downloaded_at,
+                files_removed=0
+            """,
+            (video_id, local.downloaded_at),
         )

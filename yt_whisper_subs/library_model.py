@@ -99,7 +99,8 @@ def watched_progress(
     Example: `watched_progress(record).fraction` feeds sorting and painting.
     """
 
-    if not record.downloaded:
+    previously_downloaded = bool(record.history and record.history.downloaded_at is not None)
+    if not record.downloaded and not previously_downloaded and not record.playback and not update:
         return None
     stored = record.playback
     stored_position = stored.position_seconds if stored else 0.0
@@ -152,6 +153,8 @@ def accepts_view(
         return record.downloaded
     if view is views.VideoView.AVAILABLE:
         return not record.downloaded
+    if view is views.VideoView.REMOVED:
+        return record.removed
     if view is views.VideoView.PIPELINE:
         return progress.active(pipeline)
     if view is views.VideoView.ISSUES:
@@ -185,6 +188,8 @@ def record_progress(
         return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Incomplete · {resolved}")
     if record.downloaded:
         return progress.make(video_id, progress.Stage.READY, 1.0)
+    if record.removed:
+        return progress.make(video_id, progress.Stage.REMOVED)
     live_status = record.meta.details.live_status
     if live_status == "is_live":
         return progress.make(video_id, progress.Stage.LIVE)
@@ -474,6 +479,13 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             display, sort_value = self._cell_values(record, column)
             return display if role == QtCore.Qt.ItemDataRole.DisplayRole else sort_value
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
+            if column == PIPELINE_COLUMN and record.removed:
+                return f"Video and yields removed {format_timestamp(record.history.removed_at)}; history retained"
+            if column == 5 and record.history:
+                text = f"Last downloaded {format_timestamp(record.history.downloaded_at)}"
+                if record.history.removed_at is not None:
+                    text += f" · Last removed {format_timestamp(record.history.removed_at)}"
+                return text
             if column == PIPELINE_COLUMN and (update := self.progress_at(index.row())):
                 if update.stage is progress.Stage.LIVE_UNKNOWN:
                     return "Current availability could not be confirmed. Double-click to check again."
@@ -505,7 +517,10 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         if column == PUBLISHED_COLUMN:
             return format_timestamp(meta.origin.published_at), meta.origin.published_at or 0
         if column == 5:
-            downloaded_at = record.local.downloaded_at if record.local else None
+            downloaded_at = (
+                record.local.downloaded_at if record.local
+                else record.history.downloaded_at if record.history else None
+            )
             return format_timestamp(downloaded_at), downloaded_at or 0
         if column == DURATION_COLUMN:
             return format_duration(meta.details.duration), meta.details.duration or 0
@@ -602,6 +617,7 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
             counts[views.VideoView.ALL] += 1
             availability = views.VideoView.ON_DEVICE if record.downloaded else views.VideoView.AVAILABLE
             counts[availability] += 1
+            counts[views.VideoView.REMOVED] += int(record.removed)
             counts[views.VideoView.PIPELINE] += int(progress.active(model.progress_at(row)))
             counts[views.VideoView.ISSUES] += int(bool(record.download_error or issue))
             if watched:

@@ -141,6 +141,7 @@ class DetailPanel(QtWidgets.QFrame):
         self._title.setWordWrap(True)
         self._facts = QtWidgets.QLabel("")
         self._facts.setObjectName("detailFacts")
+        self._facts.setWordWrap(True)
         self._facts.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextSelectableByMouse)
         self._description = QtWidgets.QTextEdit()
         self._description.setReadOnly(True)
@@ -223,6 +224,12 @@ class DetailPanel(QtWidgets.QFrame):
         facts = [meta.origin.channel, f"Published {published}", f"YouTube ID {meta.identity.video_id}"]
         if record.local:
             facts.append(str(record.local.path))
+        if record.history:
+            if record.history.downloaded_at is not None:
+                facts.append(f"Last downloaded {library_model.format_timestamp(record.history.downloaded_at)}")
+            if record.history.removed_at is not None:
+                label = "Video + yields removed" if record.removed else "Previously removed"
+                facts.append(f"{label} {library_model.format_timestamp(record.history.removed_at)}")
         if record.download_error:
             facts.append(f"Last error: {record.download_error}")
         self._facts.setText("  ·  ".join(facts))
@@ -461,7 +468,8 @@ class SettingsDialog(QtWidgets.QDialog):
             "Scheduled checks run while the app is open or living in the system tray. "
             "Start with Windows is per-user and needs no administrator rights. "
             "Recent history applies independently to Videos and Streams; Shorts are "
-            "ignored. Older remote entries are removed; downloaded videos are always preserved."
+            "ignored. Older untouched remote entries are removed; download, watch, and removal "
+            "history are always preserved."
         )
         note.setWordWrap(True)
         note.setObjectName("settingsNote")

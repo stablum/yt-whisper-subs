@@ -23,6 +23,7 @@ class Stage(StrEnum):
     """
 
     AVAILABLE = "available"
+    REMOVED = "removed"
     QUEUED = "queued"
     PREPARING = "preparing"
     DOWNLOADING = "downloading"
@@ -101,6 +102,7 @@ def stage_label(stage: Stage) -> str:
 
     labels = {
         Stage.AVAILABLE: "Available",
+        Stage.REMOVED: "Video + yields removed",
         Stage.QUEUED: "Queued",
         Stage.READY: "Ready to play",
         Stage.FAILED: "Failed",
