@@ -5,8 +5,11 @@ Example: `LibraryDb` composes `PipelineJobDbMixin` beside its catalog methods.
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
+
+import psutil
 
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import pipeline_progress as progress
@@ -21,9 +24,29 @@ CREATE TABLE IF NOT EXISTS pipeline_jobs (
     fraction REAL NOT NULL DEFAULT 0,
     label TEXT NOT NULL,
     started_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    owner_pid INTEGER,
+    owner_started_at REAL
 );
 """
+
+
+def _owner_is_alive(row: sqlite3.Row) -> bool:
+    """Distinguish a live owner from a dead process or a reused process ID.
+
+    Example: a second catalog client cannot interrupt the first client's job.
+    """
+
+    if row["owner_pid"] is None or row["owner_started_at"] is None:
+        return False
+    try:
+        owner = psutil.Process(int(row["owner_pid"]))
+        return owner.is_running() and owner.create_time() == row["owner_started_at"]
+    except psutil.NoSuchProcess:
+        return False
+    except psutil.AccessDenied:
+        # An inaccessible process is not evidence of a crash.
+        return True
 
 
 class PipelineJobDbMixin:
@@ -44,8 +67,9 @@ class PipelineJobDbMixin:
             conn.execute(
                 """
                 INSERT INTO pipeline_jobs(
-                    video_id, kind, state, stage, fraction, label, started_at, updated_at
-                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                    video_id, kind, state, stage, fraction, label, started_at, updated_at,
+                    owner_pid, owner_started_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id) DO UPDATE SET
                     kind=excluded.kind,
                     state=excluded.state,
@@ -53,7 +77,9 @@ class PipelineJobDbMixin:
                     fraction=excluded.fraction,
                     label=excluded.label,
                     started_at=excluded.started_at,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    owner_pid=excluded.owner_pid,
+                    owner_started_at=excluded.owner_started_at
                 """,
                 (
                     video_id,
@@ -63,6 +89,8 @@ class PipelineJobDbMixin:
                     progress.stage_label(progress.Stage.QUEUED),
                     now,
                     now,
+                    os.getpid(),
+                    psutil.Process().create_time(),
                 ),
             )
 
@@ -118,19 +146,23 @@ class PipelineJobDbMixin:
         """
 
         with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE pipeline_jobs SET state=?
-                WHERE state IN (?, ?)
-                """,
-                (
-                    types.PipelineJobState.INTERRUPTED.value,
-                    types.PipelineJobState.RUNNING.value,
-                    types.PipelineJobState.PAUSED.value,
-                ),
-            )
+            live = conn.execute(
+                "SELECT * FROM pipeline_jobs WHERE state IN (?, ?)",
+                (types.PipelineJobState.RUNNING.value, types.PipelineJobState.PAUSED.value),
+            ).fetchall()
+            for row in live:
+                if not _owner_is_alive(row):
+                    conn.execute(
+                        """
+                        UPDATE pipeline_jobs SET state=? WHERE video_id=?
+                          AND owner_pid IS ? AND owner_started_at IS ?
+                        """,
+                        (types.PipelineJobState.INTERRUPTED.value, row["video_id"],
+                         row["owner_pid"], row["owner_started_at"]),
+                    )
             rows = conn.execute(
-                "SELECT * FROM pipeline_jobs ORDER BY started_at, video_id"
+                "SELECT * FROM pipeline_jobs WHERE state=? ORDER BY started_at, video_id",
+                (types.PipelineJobState.INTERRUPTED.value,),
             ).fetchall()
         return [self._pipeline_job(row) for row in rows]
 

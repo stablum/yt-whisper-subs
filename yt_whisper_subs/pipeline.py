@@ -15,6 +15,7 @@ from yt_whisper_subs import media
 from yt_whisper_subs import openai_chapters
 from yt_whisper_subs import openai_translate
 from yt_whisper_subs import opts
+from yt_whisper_subs import output_lock
 from yt_whisper_subs import playback
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
@@ -22,6 +23,7 @@ from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
 from yt_whisper_subs import whisper_local
 from yt_whisper_subs import youtube
+from yt_whisper_subs import yield_files
 
 
 class YieldDirs(NamedTuple):
@@ -154,6 +156,22 @@ class PipelineRunner:
         Example: `runner.run()`.
         """
 
+        with output_lock.OutputLock(self._dirs.video.parent, "pipeline"):
+            run_yields = self._run_locked()
+            chapter_path = run_yields.chapters.ensure_mpv() if not self._args.no_play else None
+        # Playback may last hours; release write ownership before launching mpv.
+        if self._args.no_play:
+            run_yields.print_done(self._log_path)
+        else:
+            self._play(run_yields, chapter_path)
+        return 0
+
+    def _run_locked(self) -> RunYields:
+        """Resolve and finalize yields while this process owns all pipeline writes.
+
+        Example: CLI and GUI children cannot extract into the same cache concurrently.
+        """
+
         progress.emit(progress.Stage.PREPARING, 0.0, "Preparing pipeline")
         self._ensure_requested_tools()
         self._dirs.create()
@@ -171,14 +189,19 @@ class PipelineRunner:
             and not self._force_chapters(run_yields)
         ):
             progress.emit(progress.Stage.FINALIZING, 0.0, "Reusing completed files")
-            result = self._reuse_ready_yields(run_yields)
+            self._reuse_ready_yields(run_yields)
             progress.emit(progress.Stage.READY, 1.0)
-            return result
+            return run_yields
 
         need_primary_generation = (not run_yields.primary.ready()) or self._args.force
+        if need_primary_generation:
+            run_yields.english.invalidate()
+            run_yields.chapters.invalidate()
         need_english_generation = run_yields.make_english and (
             (not run_yields.english.ready()) or self._args.force or self._force_english(run_yields)
         )
+        if need_english_generation:
+            run_yields.chapters.invalidate()
         need_whisper = need_primary_generation or (
             need_english_generation and not opts.uses_openai_english_translation(self._args)
         )
@@ -201,12 +224,12 @@ class PipelineRunner:
             self._generate_chapters(run_yields, regenerate=subtitles_changed)
 
         progress.emit(progress.Stage.FINALIZING, 0.0, "Finalizing files")
-        self._finish(run_yields)
+        self._delete_audio_if_requested(run_yields)
         if not run_yields.all_ready():
             raise RuntimeError("pipeline finished without all requested usable subtitle and chapter yields")
         progress.emit(progress.Stage.FINALIZING, 1.0, "Files finalized")
         progress.emit(progress.Stage.READY, 1.0)
-        return 0
+        return run_yields
 
     def _ensure_requested_tools(self) -> None:
         """Install optional tools and fail early if requested playback cannot run.
@@ -343,7 +366,7 @@ class PipelineRunner:
             force=self._args.force,
         )
         run_yields.primary.ensure_extended_gaps(self._args, label="primary", force=self._args.force)
-        if not run_yields.make_english:
+        if not run_yields.make_english or yield_files.stale_path(run_yields.english.archive).exists():
             return
 
         run_yields.english.ensure_compacted(
@@ -361,10 +384,10 @@ class PipelineRunner:
                 force=self._args.force,
             )
 
-    def _reuse_ready_yields(self, run_yields: RunYields) -> int:
+    def _reuse_ready_yields(self, run_yields: RunYields) -> None:
         """Handle the cheap path when all requested yields already exist.
 
-        Example: `return self._reuse_ready_yields(run_yields)`.
+        Example: `self._reuse_ready_yields(run_yields)` avoids expensive generation.
         """
 
         if self._args.install_python_deps and not self._python_deps_ready:
@@ -373,13 +396,6 @@ class PipelineRunner:
         print()
         print("All requested yields are already present; skipping yt-dlp, ffmpeg, CUDA, Whisper, and OpenAI.")
         self._delete_audio_if_requested(run_yields)
-
-        if self._args.no_play:
-            run_yields.print_done(self._log_path)
-        else:
-            self._play(run_yields)
-
-        return 0
 
     def _ensure_whisper_ready(self) -> None:
         """Validate local tools and CUDA visibility before Whisper work.
@@ -423,8 +439,7 @@ class PipelineRunner:
         )
         run_yields.primary.accept_sidecar_replacement()
         run_yields.primary.finalize(self._args, is_english=False, label="primary")
-        if not run_yields.primary.ready():
-            raise RuntimeError("speech-to-text finished without usable primary subtitle yields")
+        run_yields.primary.complete()
         progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
 
     def _generate_english_subs(self, run_yields: RunYields, *, regenerate: bool = False) -> None:
@@ -454,6 +469,7 @@ class PipelineRunner:
         Example: `self._generate_openai_english_subs(run_yields)`.
         """
 
+        run_yields.english.invalidate()
         if not srt.file_is_usable(run_yields.primary.sidecar):
             raise RuntimeError("primary subtitles are required before OpenAI English translation can run.")
 
@@ -472,8 +488,7 @@ class PipelineRunner:
             label="English",
             force=False,
         )
-        if not run_yields.english.ready():
-            raise RuntimeError("translation finished without usable English subtitle yields")
+        run_yields.english.complete()
         progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
 
     def _generate_whisper_english_subs(self, run_yields: RunYields) -> None:
@@ -484,6 +499,7 @@ class PipelineRunner:
 
         print()
         print("Generating English subtitles from Dutch audio...")
+        run_yields.english.invalidate()
         progress.emit(progress.Stage.TRANSLATING, 0.0, "Preparing speech translation")
         media.extract_audio(run_yields.video, run_yields.audio, self._args.audio_format, self._args.force)
         whisper_local.run_whisper(
@@ -498,8 +514,7 @@ class PipelineRunner:
         )
         run_yields.english.accept_sidecar_replacement()
         run_yields.english.finalize(self._args, is_english=True, label="English")
-        if not run_yields.english.ready():
-            raise RuntimeError("speech translation finished without usable English subtitle yields")
+        run_yields.english.complete()
         progress.emit(progress.Stage.TRANSLATING, 1.0, "Speech translation complete")
 
     def _generate_chapters(self, run_yields: RunYields, *, regenerate: bool = False) -> None:
@@ -520,6 +535,7 @@ class PipelineRunner:
 
         print()
         print("Creating bilingual topic chapters with OpenAI...")
+        run_yields.chapters.invalidate()
         progress.emit(progress.Stage.CHAPTERING, 0.0, "Reading timestamped transcript")
         english_path = run_yields.english.sidecar if run_yields.english.ready() else None
         duration_ms = media.probe_duration_ms(run_yields.video)
@@ -539,26 +555,14 @@ class PipelineRunner:
         progress.emit(progress.Stage.CHAPTERING, 1.0, f"Created {count} bilingual chapters")
         print(f"Created {count} bilingual chapters: {run_yields.chapters.archive}")
 
-    def _finish(self, run_yields: RunYields) -> None:
-        """Clean up optional audio and either print summary or open playback.
-
-        Example: `self._finish(run_yields)`.
-        """
-
-        self._delete_audio_if_requested(run_yields)
-        if self._args.no_play:
-            run_yields.print_done(self._log_path)
-        else:
-            self._play(run_yields)
-
     def _delete_audio_if_requested(self, run_yields: RunYields) -> None:
         """Remove the extracted audio cache only when the user requested it.
 
         Example: `self._delete_audio_if_requested(run_yields)`.
         """
 
-        if not self._args.keep_audio and run_yields.audio.exists():
-            run_yields.audio.unlink()
+        if not self._args.keep_audio:
+            media.remove_audio(run_yields.audio)
 
     def _force_english(self, run_yields: RunYields) -> bool:
         """Check whether only the English subtitle yield should be regenerated.
@@ -576,10 +580,10 @@ class PipelineRunner:
 
         return run_yields.make_chapters and bool(getattr(self._args, "force_chapters", False))
 
-    def _play(self, run_yields: RunYields) -> None:
+    def _play(self, run_yields: RunYields, chapter_path: Path | None) -> None:
         """Launch mpv with the sidecar subtitles selected for this run.
 
-        Example: `self._play(run_yields)`.
+        Example: `self._play(run_yields, chapter_path)` after releasing write ownership.
         """
 
         print()
@@ -588,7 +592,7 @@ class PipelineRunner:
             run_yields.video,
             run_yields.srt_paths(),
             playback.PlaybackPrefs.from_args(self._args),
-            playback.PlaybackSession(chapter_path=run_yields.chapters.ensure_mpv()),
+            playback.PlaybackSession(chapter_path=chapter_path),
         )
 
 

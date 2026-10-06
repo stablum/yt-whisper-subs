@@ -1683,7 +1683,8 @@ class PipelineRecoveryTests(unittest.TestCase):
             db.upsert_video(make_meta(first, "First"))
             db.upsert_video(make_meta(second, "Second"))
             db.begin_pipeline_job(first, types.PipelineKind.DOWNLOAD)
-            db.recover_pipeline_jobs()
+            with mock.patch("yt_whisper_subs.library_job_db._owner_is_alive", return_value=False):
+                db.recover_pipeline_jobs()
 
             db.begin_pipeline_job(second, types.PipelineKind.DOWNLOAD)
 
@@ -1742,7 +1743,8 @@ class PipelineRecoveryTests(unittest.TestCase):
             update = progress.make("aaaaaaaaaaa", progress.Stage.TRANSCRIBING, 0.5)
             db.update_pipeline_job(update)
 
-            jobs = db.recover_pipeline_jobs()
+            with mock.patch("yt_whisper_subs.library_job_db._owner_is_alive", return_value=False):
+                jobs = db.recover_pipeline_jobs()
 
             self.assertEqual(len(jobs), 1)
             self.assertEqual(jobs[0].state, types.PipelineJobState.INTERRUPTED)

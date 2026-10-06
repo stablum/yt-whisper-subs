@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import NamedTuple
 
+from yt_whisper_subs import yield_files
+
 
 SCHEMA_VERSION = 1
 
@@ -83,7 +85,7 @@ class ChapterFiles(NamedTuple):
         Example: `files.load()` supplies chapters to the GUI.
         """
 
-        if not self.archive.exists():
+        if not self.archive.exists() or yield_files.stale_path(self.archive).exists():
             return None
         try:
             return parse_document(self.archive.read_text(encoding="utf-8"))
@@ -107,8 +109,17 @@ class ChapterFiles(NamedTuple):
             "chapters": [chapter._asdict() for chapter in chapter_set.chapters],
         }
         json_text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
-        atomic_write(self.archive, json_text)
-        atomic_write(self.mpv, render_ffmetadata(chapter_set))
+        yield_files.atomic_write(self.archive, json_text)
+        yield_files.atomic_write(self.mpv, render_ffmetadata(chapter_set))
+        yield_files.stale_path(self.archive).unlink(missing_ok=True)
+
+    def invalidate(self) -> None:
+        """Keep an old plan unavailable until its changed subtitles are processed.
+
+        Example: failed English regeneration leaves chapter invalidation durable.
+        """
+
+        yield_files.atomic_write(yield_files.stale_path(self.archive), "Source subtitles changed\n")
 
     def ensure_mpv(self) -> Path | None:
         """Recreate the derived mpv file when only the JSON archive remains.
@@ -121,7 +132,7 @@ class ChapterFiles(NamedTuple):
             return None
         mpv_stale = not self.mpv.exists() or self.mpv.stat().st_mtime_ns < self.archive.stat().st_mtime_ns
         if mpv_stale:
-            atomic_write(self.mpv, render_ffmetadata(chapter_set))
+            yield_files.atomic_write(self.mpv, render_ffmetadata(chapter_set))
         return self.mpv
 
 
@@ -259,18 +270,6 @@ def ffmetadata_escape(text: str) -> str:
     for char in ("=", ";", "#"):
         escaped = escaped.replace(char, f"\\{char}")
     return escaped
-
-
-def atomic_write(path: Path, text: str) -> None:
-    """Replace one UTF-8 text file only after its full content is durable.
-
-    Example: `atomic_write(path, json_text)` avoids partial GUI reads.
-    """
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    temp_path.write_text(text, encoding="utf-8", newline="\n")
-    temp_path.replace(path)
 
 
 def _clean_title(value: object) -> str:

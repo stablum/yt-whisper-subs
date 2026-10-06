@@ -17,6 +17,7 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import openai_client
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import srt
+from yt_whisper_subs import yield_files
 
 
 class OpenAITranslationParseResult(NamedTuple):
@@ -690,7 +691,7 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
     ]
 
     english_srt_path.parent.mkdir(parents=True, exist_ok=True)
-    english_srt_path.write_text(srt.render_srt(translated_cues, args), encoding="utf-8", newline="\n")
+    yield_files.atomic_write(english_srt_path, srt.render_srt(translated_cues, args))
     checkpoint_path = translator.checkpoint_path
     if checkpoint_path.exists():
         checkpoint_path.unlink()

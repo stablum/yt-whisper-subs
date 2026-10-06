@@ -291,12 +291,15 @@ Inside it:
 ```text
 yt-whisper-subs\
   .tmp\
+    library.lock
+    pipeline.lock
   videos\
     youtube_id.mkv
     youtube_id.srt
     youtube_id.en.srt
   audio\
     youtube_id.opus
+    youtube_id.opus.source.json
   logs\
     youtube_id-YYYYMMDD-HHMMSS.log
   metadata\
@@ -321,6 +324,12 @@ transient and are never treated as durable video yields.
 
 The exact `.uncompact.*` files appear only when compaction changed an existing
 subtitle file and a backup did not already exist.
+
+When upstream subtitles are regenerated, `.en.srt.stale` in `subtitles\` and
+`.chapters.json.stale` in `chapters\` record unfinished downstream work.
+These markers survive failure, cancellation, and restart; they disappear only
+after usable replacements are committed. Old outputs remain on disk while
+marked stale and are not treated as ready or shown as current chapters.
 
 For YouTube URLs, filenames are based on the video ID instead of the title. This
 avoids title punctuation, Unicode, path length, and title-change problems. If an
@@ -408,6 +417,26 @@ yields are already present.
 
 On normal runs, the script reuses existing yields.
 
+Missing or invalid subtitle sidecars are restored from a usable archive before
+generation is considered. A usable canonical copy takes precedence over an
+older uncompacted backup. Invalid sidecars never overwrite usable archives;
+copying, transforming, and replacing subtitle files uses atomic staged writes.
+
+Primary regeneration marks English and chapters stale before generating new
+cues. English regeneration marks chapters stale too. A retry therefore resumes
+unfinished dependent stages even when obsolete files still parse successfully,
+while retaining a primary or English replacement that already succeeded.
+Unrequested dependent stages remain marked stale for a later requested run.
+
+Audio extraction also writes into a staging file and promotes it only after
+ffmpeg succeeds and ffprobe validates the output. When the source audio stream
+reports a duration, the result must match within 2% or 500 milliseconds,
+whichever is larger. This compares audio stream length rather than the whole
+video, which can legitimately continue after its audio ends. A `.source.json`
+record binds the validated cache to the source and audio file revisions.
+Unvalidated, externally modified, or differently sourced audio is rebuilt when
+extraction is needed. A failed replacement preserves the previous audio.
+
 For URL input, the video cache lookup is intentionally exact. The script extracts
 the YouTube video ID from supported URL shapes and looks first for a final media
 file whose stem is exactly `video_id`. It also recognizes the older
@@ -470,6 +499,7 @@ The script expects to run on Windows. It uses:
 - `mpv`
 - `PySide6-Essentials` for the native library GUI
 - `psutil` for pausing and resuming the complete owned pipeline process tree
+  and distinguishing live pipeline owners from crashed or reused process IDs
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
@@ -780,6 +810,21 @@ Select another row and click its process action, or simply double-click another
 remote video, to add it. The queue is intentionally session-scoped; the one
 pipeline that was actually active at an unclean exit retains the existing
 durable crash-recovery checkpoint.
+
+Version `0.4.8` protects running, paused, and interrupted checkpoints from all
+catalog pruning paths, including date retention and stopping channel tracking.
+Recovery checks the recorded owner's PID and process creation time and offers
+only work whose owner has gone away. It also waits to offer recovery if an
+orphaned pipeline child still owns the output root.
+
+Only one native-library instance may open a given output root. A second launch
+reports that the library is already open before scanning or changing its
+catalog. GUI children, direct CLI processing, and yield removal share a separate
+OS write lock for that root. Competing writers report that the root is in use;
+an OS lock is released automatically after process exit or a crash, without
+deleting lock files. CLI playback releases pipeline ownership before launching
+mpv so playing a completed video does not block another pipeline. These checks
+are event-driven and introduce no background polling.
 
 The counted **Pipeline** smart-view chip filters the table to the active video
 and every waiting FIFO entry. Its count follows the current search and selected
@@ -1709,6 +1754,9 @@ The split is intentionally responsibility-oriented:
   `OpenAISrtTranslator`, `TranslationChunk`, and `TranslationCheckpoint`.
 - `subtitle_files.py` owns sidecar/archive repair, compaction backups, timing
   alignment, and pair finalization through `SubtitlePair`.
+- `yield_files.py` owns shared atomic yield writes/copies and stale-marker paths.
+- `output_lock.py` owns OS-enforced output-root ownership for library instances
+  and pipeline writers.
 - `playback.py` owns ASS generation and mpv launch details.
 - `pipeline.py` owns end-to-end orchestration, concrete yield paths, and cheap
   reuse through `PipelineRunner`, `YieldDirs`, and `RunYields`.
@@ -1872,6 +1920,8 @@ High-level groups:
 | `yt_whisper_subs.library_schema` | Startup catalog tables, indexes, and schema changes. |
 | `yt_whisper_subs.library_media_db` | Batched local-file reconciliation and durable sidecar metadata updates. |
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
+| `yt_whisper_subs.yield_files` | Atomic staged yield replacement and durable dependency-marker paths. |
+| `yt_whisper_subs.output_lock` | Nonblocking OS locks for a single library instance and shared CLI/GUI pipeline writes. |
 | `yt_whisper_subs.library_artifacts` | File-stamped SRT-health and parsed-chapter cache for I/O-free Qt painting. |
 | `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
@@ -1983,6 +2033,16 @@ Start by preserving these invariants:
     current stream state.
 36. Reconcile external file edits from debounced directory notifications while
     heavy work is idle, without periodic filesystem scans.
+37. Persist dependent-yield invalidation before upstream regeneration; keep
+    old files unavailable until validated replacements complete.
+38. Never overwrite a usable subtitle archive from a damaged sidecar, and
+    stage durable replacements so a failed write preserves the previous file.
+39. Reuse audio only with successful extraction/validation evidence matching
+    the current source and cached audio revisions.
+40. Preserve unfinished pipeline jobs through every catalog pruning path and
+    recover only work whose process owner is gone.
+41. Enforce one native-library instance and one yield writer per output root;
+    release write ownership before independent playback.
 
 When changing the project, useful verification commands are:
 
@@ -2022,6 +2082,14 @@ failure reporting.
 Bootstrap tests cover normal managed-GUI exit propagation and Ctrl+C cleanup;
 the subprocess tests independently require child termination before an
 interrupt returns terminal control.
+
+Yield-recovery tests cover failed translation and chapter regeneration followed
+by a fresh runner, invalid sidecar recovery from a valid archive, failed atomic
+copies, cancelled/forced audio extraction, source/output cache invalidation,
+source audio shorter than its video container, and write-lock release before
+playback. Ownership tests exercise real cross-process exclusion, abrupt owner
+death, PID reuse, live/paused owner protection, old-schema migration, and all
+three pruning paths while an unfinished job exists.
 
 Mock the OpenAI translation path without making an API call:
 
@@ -2125,6 +2193,9 @@ should reuse the downloaded video and primary subtitles, then retry only the
 missing English subtitle yield. If a `.en.partial.json` checkpoint exists, the
 script also reuses completed OpenAI translation chunks. Avoid `--force` unless
 you intentionally want to redownload and regenerate everything.
+
+An old English file or chapter archive marked `.stale` also counts as unfinished
+work: rerun normally to replace it without retranscribing a usable primary SRT.
 
 ### CUDA is not visible
 
@@ -2281,8 +2352,8 @@ This repository is licensed under the GNU General Public License version 3. See
 - `--language auto` does not trigger automatic English-for-Dutch translation.
 - Existing `.en.srt` files are reusable regardless of whether they were produced
   by Whisper or OpenAI, provided they parse and do not contain a detected long
-  repeated phrase loop. Use `--force-english` or `--force` for other semantic
-  translation problems.
+  repeated phrase loop and have no durable stale marker. Use `--force-english`
+  or `--force` for other semantic translation problems.
 - The YouTube `.info.json` sidecar does not yet record subtitle-generation
   provenance such as Whisper/OpenAI models, prompt version, or compaction
   settings.

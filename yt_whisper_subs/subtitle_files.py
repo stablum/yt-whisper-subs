@@ -6,12 +6,12 @@ Example: `subtitle_files.SubtitlePair(sidecar, archive).hydrate("primary", args,
 from __future__ import annotations
 
 import argparse
-import shutil
 from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import opts
 from yt_whisper_subs import srt
+from yt_whisper_subs import yield_files
 
 
 def compact_srt_content(content: str, args: argparse.Namespace, *, is_english: bool = False) -> str:
@@ -89,24 +89,43 @@ class SubtitlePair(NamedTuple):
     archive: Path
 
     def ready(self) -> bool:
-        """Check whether both playback and archive subtitle yields exist.
+        """Require usable, current playback and archive subtitle yields.
 
         Example: `pair.ready()`.
         """
 
-        return srt.file_is_usable(self.sidecar) and srt.file_is_usable(self.archive)
+        usable = srt.file_is_usable(self.sidecar) and srt.file_is_usable(self.archive)
+        return usable and not yield_files.stale_path(self.archive).exists()
+
+    def invalidate(self) -> None:
+        """Persist dependency invalidation before upstream subtitles change.
+
+        Example: an interrupted primary repair leaves English marked stale.
+        """
+
+        yield_files.atomic_write(yield_files.stale_path(self.archive), "Upstream subtitles changed\n")
+
+    def complete(self) -> None:
+        """Clear invalidation only after both replacement copies are usable.
+
+        Example: failed translation cannot make old English ready again.
+        """
+
+        if not all(srt.file_is_usable(path) for path in self):
+            raise RuntimeError("subtitle generation finished without usable sidecar and archive yields")
+        yield_files.stale_path(self.archive).unlink(missing_ok=True)
 
     def seed_sidecar_from_archive(self) -> bool:
-        """Copy an archive subtitle beside the video when the sidecar is missing.
+        """Restore an absent or damaged sidecar from a usable archive.
 
         Example: `pair.seed_sidecar_from_archive()`.
         """
 
-        if self.sidecar.exists() or not self.archive.exists():
+        if srt.file_is_usable(self.sidecar) or not srt.file_is_usable(self.archive):
             return False
 
         self.sidecar.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.archive, self.sidecar)
+        yield_files.atomic_copy(self.archive, self.sidecar)
         return True
 
     def sync_archive(self) -> None:
@@ -115,11 +134,11 @@ class SubtitlePair(NamedTuple):
         Example: `pair.sync_archive()`.
         """
 
-        if not self.sidecar.exists() or self.sidecar.resolve() == self.archive.resolve():
+        if not srt.file_is_usable(self.sidecar) or self.sidecar.resolve() == self.archive.resolve():
             return
 
         self.archive.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(self.sidecar, self.archive)
+        yield_files.atomic_copy(self.sidecar, self.archive)
 
     def accept_sidecar_replacement(self) -> None:
         """Make a new sidecar authoritative before applying final transforms.
@@ -127,9 +146,11 @@ class SubtitlePair(NamedTuple):
         Example: `pair.accept_sidecar_replacement()` precedes finalizing repaired cues.
         """
 
+        if not srt.file_is_usable(self.sidecar):
+            raise RuntimeError("replacement subtitle sidecar is unusable; previous archive was preserved")
+        self.sync_archive()
         for path in self:
             uncompacted_backup_path(path).unlink(missing_ok=True)
-        self.sync_archive()
 
     def hydrate(
         self,
@@ -139,7 +160,7 @@ class SubtitlePair(NamedTuple):
         is_english: bool,
         force: bool,
     ) -> None:
-        """Repair missing sidecar/archive subtitles before expensive generation.
+        """Repair absent or damaged subtitle copies before expensive generation.
 
         Example: `pair.hydrate("primary", args, is_english=False, force=False)`.
         """
@@ -147,23 +168,18 @@ class SubtitlePair(NamedTuple):
         if force:
             return
 
-        self._restore_from_uncompacted_backup(
-            self.sidecar,
-            args,
-            is_english=is_english,
-            label=f"{label} sidecar",
-        )
-        self._restore_from_uncompacted_backup(
-            self.archive,
-            args,
-            is_english=is_english,
-            label=f"{label} archive",
-        )
-
+        # Prefer a current canonical copy over an older uncompacted backup.
+        if not any(srt.file_is_usable(path) for path in self):
+            for path in self:
+                restored = self._restore_from_uncompacted_backup(
+                    path, args, is_english=is_english, label=f"{label} {path.name}",
+                )
+                if restored:
+                    break
         if self.seed_sidecar_from_archive():
             print()
             print(f"Copied existing {label} subtitle archive next to the video for mpv auto-detection.")
-        elif self.sidecar.exists() and not self.archive.exists():
+        elif srt.file_is_usable(self.sidecar) and not srt.file_is_usable(self.archive):
             self.sync_archive()
             print()
             print(f"Copied existing {label} subtitle sidecar into the subtitle archive.")
@@ -237,9 +253,9 @@ class SubtitlePair(NamedTuple):
 
         changed = self._align_file(reference_srt_path, self.sidecar, args, label=f"{label} sidecar")
 
-        if self.sidecar.exists():
+        if srt.file_is_usable(self.sidecar):
             self.sync_archive()
-        elif self.archive.exists():
+        elif srt.file_is_usable(self.archive):
             archive_changed = self._align_file(reference_srt_path, self.archive, args, label=f"{label} archive")
             changed = changed or archive_changed
             self.seed_sidecar_from_archive()
@@ -266,14 +282,14 @@ class SubtitlePair(NamedTuple):
         self.ensure_extended_gaps(args, label=label, force=False)
 
     def _resync_existing(self) -> None:
-        """Mirror whichever subtitle copy exists so future runs stay cheap.
+        """Mirror only usable subtitle content so repair cannot destroy archives.
 
         Example: called after pair transforms.
         """
 
-        if self.sidecar.exists():
+        if srt.file_is_usable(self.sidecar):
             self.sync_archive()
-        elif self.archive.exists():
+        elif srt.file_is_usable(self.archive):
             self.seed_sidecar_from_archive()
 
     def _save_uncompacted_backup(self, path: Path, content: str, *, label: str) -> Path | None:
@@ -286,7 +302,7 @@ class SubtitlePair(NamedTuple):
         if backup_path.exists():
             return None
 
-        backup_path.write_text(content, encoding="utf-8", newline="\n")
+        yield_files.atomic_write(backup_path, content)
         print(f"Saved {label} uncompacted subtitle backup: {backup_path}")
         return backup_path
 
@@ -298,16 +314,16 @@ class SubtitlePair(NamedTuple):
         is_english: bool,
         label: str,
     ) -> bool:
-        """Rebuild a missing subtitle from its uncompacted backup when available.
+        """Rebuild an unusable subtitle from a usable uncompacted backup.
 
         Example: `pair._restore_from_uncompacted_backup(path, args, is_english=False, label="primary")`.
         """
 
-        if path.exists():
+        if srt.file_is_usable(path):
             return False
 
         backup_path = uncompacted_backup_path(path)
-        if not backup_path.exists():
+        if not srt.file_is_usable(backup_path):
             return False
 
         backup_content = backup_path.read_text(encoding="utf-8-sig")
@@ -322,7 +338,7 @@ class SubtitlePair(NamedTuple):
             return False
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(restored_content, encoding="utf-8", newline="\n")
+        yield_files.atomic_write(path, restored_content)
         print(f"{action} {label} subtitles from uncompacted backup: {path}")
         return True
 
@@ -332,7 +348,7 @@ class SubtitlePair(NamedTuple):
         Example: `pair._compact_file(path, args, is_english=True, label="English")`.
         """
 
-        if not path.exists():
+        if not srt.file_is_usable(path):
             return False
 
         original = path.read_text(encoding="utf-8-sig")
@@ -344,7 +360,7 @@ class SubtitlePair(NamedTuple):
             return False
 
         self._save_uncompacted_backup(path, original, label=label)
-        path.write_text(compacted, encoding="utf-8", newline="\n")
+        yield_files.atomic_write(path, compacted)
         print(f"Compacted {label} subtitles: {path}")
         return True
 
@@ -354,7 +370,7 @@ class SubtitlePair(NamedTuple):
         Example: `pair._extend_gaps_file(path, args, label="primary")`.
         """
 
-        if not path.exists():
+        if not srt.file_is_usable(path):
             return False
 
         original = path.read_text(encoding="utf-8-sig")
@@ -362,7 +378,7 @@ class SubtitlePair(NamedTuple):
         if not changed or not extended:
             return False
 
-        path.write_text(extended, encoding="utf-8", newline="\n")
+        yield_files.atomic_write(path, extended)
         print(f"Extended {label} subtitle gaps: {path}")
         return True
 
@@ -379,7 +395,7 @@ class SubtitlePair(NamedTuple):
         Example: `pair._align_file(primary, english, args, label="English")`.
         """
 
-        if not reference_srt_path.exists() or not target_srt_path.exists():
+        if not srt.file_is_usable(reference_srt_path) or not srt.file_is_usable(target_srt_path):
             return False
 
         reference = reference_srt_path.read_text(encoding="utf-8-sig")
@@ -388,6 +404,6 @@ class SubtitlePair(NamedTuple):
         if not changed or not aligned:
             return False
 
-        target_srt_path.write_text(aligned, encoding="utf-8", newline="\n")
+        yield_files.atomic_write(target_srt_path, aligned)
         print(f"Aligned {label} subtitle timings to primary subtitles: {target_srt_path}")
         return True

@@ -17,6 +17,7 @@ PRUNABLE_VIDEO = """
     NOT EXISTS (SELECT 1 FROM media WHERE media.video_id=videos.video_id)
     AND NOT EXISTS (SELECT 1 FROM video_history WHERE video_history.video_id=videos.video_id)
     AND NOT EXISTS (SELECT 1 FROM playback WHERE playback.video_id=videos.video_id)
+    AND NOT EXISTS (SELECT 1 FROM pipeline_jobs WHERE pipeline_jobs.video_id=videos.video_id)
 """
 
 

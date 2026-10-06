@@ -9,13 +9,13 @@ import argparse
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
+from yt_whisper_subs import yield_files
 
 
 def run_whisper(
@@ -72,9 +72,7 @@ def run_whisper(
         if issue := srt.file_issue(generated_srt):
             raise RuntimeError(f"Whisper finished, but its subtitles {issue}: {generated_srt}")
 
-        if srt_path.exists():
-            srt_path.unlink()
-        shutil.move(str(generated_srt), str(srt_path))
+        yield_files.atomic_copy(generated_srt, srt_path)
 
 
 def whisper_cache_root() -> Path:

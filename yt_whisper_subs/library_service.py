@@ -24,6 +24,7 @@ from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_yields
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress
+from yt_whisper_subs import output_lock
 from yt_whisper_subs import proc
 from yt_whisper_subs import task_cancel
 from yt_whisper_subs import youtube
@@ -414,13 +415,14 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
 
         if manifest.root != self.out_dir or not self.db.video(manifest.video_id):
             raise RuntimeError("refusing a yield manifest outside this library")
-        removed = manifest.remove(report)
-        if library_yields.VideoYields.inspect(self.out_dir, manifest.video_id).paths:
+        with output_lock.OutputLock(self.out_dir, "pipeline"):
+            removed = manifest.remove(report)
+            if library_yields.VideoYields.inspect(self.out_dir, manifest.video_id).paths:
+                self.scan_local(report)
+                raise RuntimeError("yield files remain; removal was not recorded as complete")
+            self.db.record_yield_removal(manifest.video_id)
             self.scan_local(report)
-            raise RuntimeError("yield files remain; removal was not recorded as complete")
-        self.db.record_yield_removal(manifest.video_id)
-        self.scan_local(report)
-        return removed
+            return removed
 
     def recover_pipeline_jobs(self) -> list[types.PipelineJob]:
         """Load work left live by an unclean prior application exit.
@@ -428,7 +430,11 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         Example: the window re-queues the single pipeline active at a crash.
         """
 
-        return self.db.recover_pipeline_jobs()
+        try:
+            with output_lock.OutputLock(self.out_dir, "pipeline"):
+                return self.db.recover_pipeline_jobs()
+        except output_lock.OutputBusyError:
+            return []
 
     def interrupted_pipeline_jobs(self) -> list[types.PipelineJob]:
         """Expose only durable interrupted jobs during normal table refreshes.
@@ -539,7 +545,7 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
             report(playback_progress.encode(update))
 
         observer = playback_progress.Observer(video_id, save)
-        chapter_path = chapters.ChapterFiles.for_video(self.out_dir, video_id).ensure_mpv()
+        chapter_path = self._playback_chapters(video_id)
         session = playback.PlaybackSession(
             observer=observer,
             chapter_path=chapter_path,
@@ -552,6 +558,19 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
             playback.PlaybackPrefs.defaults(),
             session,
         )
+
+    def _playback_chapters(self, video_id: str) -> Path | None:
+        """Repair derived chapters only while holding ownership, keeping playback independent.
+
+        Example: during another pipeline, use an existing current plan without writing.
+        """
+
+        files = chapters.ChapterFiles.for_video(self.out_dir, video_id)
+        try:
+            with output_lock.OutputLock(self.out_dir, "pipeline"):
+                return files.ensure_mpv()
+        except output_lock.OutputBusyError:
+            return files.mpv if files.ready() and files.mpv.is_file() else None
 
     def seek(self, video_id: str, seconds: float) -> bool:
         """Seek the matching library-owned mpv process when it is active.

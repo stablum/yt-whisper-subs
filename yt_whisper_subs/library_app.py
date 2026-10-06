@@ -13,6 +13,7 @@ from PySide6 import QtWidgets
 from yt_whisper_subs import library_gui
 from yt_whisper_subs import library_service
 from yt_whisper_subs import pipeline
+from yt_whisper_subs import output_lock
 from yt_whisper_subs import proc
 
 
@@ -46,16 +47,23 @@ def main(argv: list[str] | None = None) -> int:
     qt_app.setOrganizationName("yt-whisper-subs")
     qt_app.setQuitOnLastWindowClosed(False)
     try:
-        service = library_service.LibraryService(out_dir, proc.venv_paths())
-        service.scan_local()
+        with output_lock.OutputLock(out_dir, "library"):
+            service = library_service.LibraryService(out_dir, proc.venv_paths())
+            service.scan_local()
+            window = library_gui.LibraryWindow(service)
+            start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()
+            if not start_in_tray:
+                window.show()
+            return qt_app.exec()
+    except output_lock.OutputBusyError:
+        QtWidgets.QMessageBox.information(
+            None, "Library is already running",
+            "This library is already open. Use its window or system tray icon.",
+        )
+        return 0
     except Exception as exc:
         QtWidgets.QMessageBox.critical(None, "Could not open YouTube Library", str(exc))
         return 1
-    window = library_gui.LibraryWindow(service)
-    start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()
-    if not start_in_tray:
-        window.show()
-    return qt_app.exec()
 
 
 if __name__ == "__main__":

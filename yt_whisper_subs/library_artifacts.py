@@ -13,10 +13,11 @@ from typing import NamedTuple
 from yt_whisper_subs import chapters
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import srt
+from yt_whisper_subs import yield_files
 
 
 type FileStamp = tuple[str, int, int]
-type PipelineStamp = tuple[FileStamp, FileStamp, FileStamp]
+type PipelineStamp = tuple[FileStamp, ...]
 
 
 class CatalogState(NamedTuple):
@@ -45,7 +46,7 @@ class _ChapterEntry(NamedTuple):
     Example: `_ChapterEntry(stamp, chapter_set)` avoids repeat JSON reads.
     """
 
-    stamp: FileStamp
+    stamp: tuple[FileStamp, FileStamp]
     chapter_set: chapters.ChapterSet | None
 
 
@@ -72,7 +73,8 @@ def yield_signature(out_dir: Path, record: types.VideoRecord) -> str:
     primary = video.with_suffix(".srt") if video else None
     english = video.with_name(f"{video.stem}.en.srt") if video else None
     chapter = chapters.ChapterFiles.for_video(out_dir, record.meta.identity.video_id).archive
-    paths = (video, primary, english, chapter)
+    stale = _stale_yields(out_dir, record.meta.identity.video_id)
+    paths = (video, primary, english, chapter, *stale.values())
     return json.dumps([_stamp(path) if path else None for path in paths], separators=(",", ":"))
 
 
@@ -93,7 +95,24 @@ def pipeline_issue(record: types.VideoRecord) -> str | None:
         return f"Dutch subtitles {issue}"
     if issue := srt.file_issue(english):
         return f"English subtitles {issue}"
+    for issue, marker in _stale_yields(video.parent.parent, record.meta.identity.video_id).items():
+        if marker.exists():
+            return issue
     return None
+
+
+def _stale_yields(out_dir: Path, video_id: str) -> dict[str, Path]:
+    """Keep dependency markers visible to readiness, error cleanup, and the GUI.
+
+    Example: syntactically valid old English remains a repairable Issue.
+    """
+
+    english = out_dir / "subtitles" / f"{video_id}.en.srt"
+    chapter = chapters.ChapterFiles.for_video(out_dir, video_id).archive
+    return {
+        "English subtitles need regeneration": yield_files.stale_path(english),
+        "chapter plan needs regeneration": yield_files.stale_path(chapter),
+    }
 
 
 class ArtifactCache:
@@ -143,8 +162,9 @@ class ArtifactCache:
         video = record.local.path
         primary = video.with_suffix(".srt")
         english = video.with_name(f"{video.stem}.en.srt")
-        stamp = (_stamp(video), _stamp(primary), _stamp(english))
         video_id = record.meta.identity.video_id
+        paths = (video, primary, english, *_stale_yields(self._out_dir, video_id).values())
+        stamp = tuple(_stamp(path) for path in paths)
         with self._lock:
             cached = self._issues.get(video_id)
             if cached and cached.stamp == stamp:
@@ -161,7 +181,7 @@ class ArtifactCache:
         """
 
         files = chapters.ChapterFiles.for_video(self._out_dir, video_id)
-        stamp = _stamp(files.archive)
+        stamp = (_stamp(files.archive), _stamp(yield_files.stale_path(files.archive)))
         with self._lock:
             cached = self._chapters.get(video_id)
             if cached and cached.stamp == stamp:

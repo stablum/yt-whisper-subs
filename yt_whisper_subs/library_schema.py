@@ -96,6 +96,12 @@ class SchemaDbMixin:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_SCHEMA)
+            job_columns = {
+                str(row["name"]) for row in conn.execute("PRAGMA table_info(pipeline_jobs)")
+            }
+            for name, sql_type in (("owner_pid", "INTEGER"), ("owner_started_at", "REAL")):
+                if name not in job_columns:
+                    conn.execute(f"ALTER TABLE pipeline_jobs ADD COLUMN {name} {sql_type}")
             # Seed existing downloads before a scan can discard their media paths.
             conn.execute(
                 """

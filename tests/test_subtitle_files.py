@@ -85,8 +85,8 @@ class SubtitlePairTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             root = Path(tmp_dir)
             pair = subtitle_files.SubtitlePair(root / "video.srt", root / "archive.srt")
-            pair.sidecar.write_text("new", encoding="utf-8")
-            pair.archive.write_text("stale", encoding="utf-8")
+            pair.sidecar.write_text(self._srt_text("new"), encoding="utf-8")
+            pair.archive.write_text(self._srt_text("stale"), encoding="utf-8")
             backups = [subtitle_files.uncompacted_backup_path(path) for path in pair]
             for path in backups:
                 path.write_text("stale", encoding="utf-8")
@@ -94,7 +94,7 @@ class SubtitlePairTests(unittest.TestCase):
             pair.accept_sidecar_replacement()
 
             self.assertFalse(any(path.exists() for path in backups))
-            self.assertEqual(pair.archive.read_text(encoding="utf-8"), "new")
+            self.assertEqual(pair.archive.read_text(encoding="utf-8"), self._srt_text("new"))
 
     def _args(self, *, compact_subs: str) -> argparse.Namespace:
         """Build the option namespace used by subtitle pair transforms.
