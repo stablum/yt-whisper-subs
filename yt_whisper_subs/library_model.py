@@ -116,22 +116,25 @@ def watched_progress(
     normalized = playback.make(record.meta.identity.video_id, position, duration, completed)
     completed = normalized.completed
     fraction = playback.fraction(normalized)
-    if completed:
-        label = "✓ 100%"
-        tooltip = (
-            f"Marked watched {format_timestamp(stored.completed_at)}"
-            if stored and stored.completed_at is not None
-            else "Watched: more than 95% reached or mpv reported the end"
-        )
-    elif duration:
-        label = f"{fraction:.0%}"
+    if duration:
+        # Whole-percent rounding must not claim the end before it is reached.
+        percent = min(round(fraction * 100), 99 if fraction < 1 else 100)
+        label = f"{percent}%"
         tooltip = f"Watched to {format_duration(position)} of {format_duration(duration)}"
-    elif position:
+    elif position or completed:
         label = "Started"
         tooltip = f"Watched to {format_duration(position)}; duration unavailable"
     else:
         label = "0%"
         tooltip = "Not watched yet"
+    if completed:
+        label = f"✓ {label}" if duration else "✓ Watched"
+        marked = (
+            f"Marked watched {format_timestamp(stored.completed_at)}"
+            if stored and stored.completed_at is not None
+            else "Watched: more than 95% reached or mpv reported the end"
+        )
+        tooltip = f"{tooltip}\n{marked}"
     return WatchedProgress(fraction, label, tooltip, completed, position > 0 or completed)
 
 

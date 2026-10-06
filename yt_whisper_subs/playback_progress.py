@@ -68,13 +68,11 @@ def make(
 
 
 def fraction(update: Update) -> float:
-    """Render watched videos as complete and otherwise show observed progress.
+    """Measure observed progress independently of the watched classification.
 
-    Example: `fraction(make("id", 96, 100))` is `1.0`.
+    Example: `fraction(make("id", 98, 100))` is `0.98` even when watched.
     """
 
-    if update.completed:
-        return 1.0
     if not update.duration_seconds:
         return 0.0
     raw = update.position_seconds / update.duration_seconds

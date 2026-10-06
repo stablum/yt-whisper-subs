@@ -580,7 +580,7 @@ CREATE TABLE IF NOT EXISTS playback (
     def test_playback_progress_and_completion_are_durable_and_monotonic(self) -> None:
         """Keep furthest position and never erase a threshold-based watched state.
 
-        Example: replaying from the beginning leaves a completed video at 100%.
+        Example: replaying preserves the furthest percentage and watched timestamp.
         """
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -607,6 +607,9 @@ CREATE TABLE IF NOT EXISTS playback (
             completed = reopened.video("aaaaaaaaaaa").playback
             self.assertEqual(completed.position_seconds, 95.01)
             self.assertEqual(completed.completed_at, watched_at)
+            view = library_model.watched_progress(reopened.video("aaaaaaaaaaa"))
+            self.assertAlmostEqual(view.fraction, .9501)
+            self.assertEqual(view.label, "✓ 95%")
 
             db.record_playback(playback_progress.make("aaaaaaaaaaa", 100, 100, True))
             completed = db.video("aaaaaaaaaaa").playback
@@ -1186,22 +1189,33 @@ class LibraryModelTests(unittest.TestCase):
             None,
         )
 
-        for position in (94.99, 95, 95.01, 100):
+        for position, label in ((94.99, "95%"), (95, "95%"), (95.01, "✓ 95%"),
+                                (98, "✓ 98%"), (99.9, "✓ 99%"), (100, "✓ 100%")):
             with self.subTest(position=position):
                 saved = record._replace(playback=types.PlaybackState(position, 100, None, 200))
                 watched = library_model.watched_progress(saved)
                 expected = position > 95
                 self.assertEqual(watched.completed, expected)
-                self.assertEqual(watched.fraction, 1.0 if expected else position / 100)
-                self.assertEqual(watched.label, "✓ 100%" if expected else "95%")
+                self.assertEqual(watched.fraction, position / 100)
+                self.assertEqual(watched.label, label)
+                self.assertIn("Watched to", watched.tooltip)
                 self.assertEqual(library_model.accepts_view(saved, watched, views.VideoView.WATCHED), expected)
                 self.assertEqual(library_model.accepts_view(saved, watched, views.VideoView.CONTINUE), not expected)
 
         completed_view = library_model.watched_progress(
             record._replace(playback=types.PlaybackState(20, None, 300, 300))
         )
-        self.assertEqual(completed_view.fraction, 1.0)
-        self.assertEqual(completed_view.label, "✓ 100%")
+        self.assertEqual(completed_view.fraction, 20 / 90)
+        self.assertEqual(completed_view.label, "✓ 22%")
+
+        unknown_meta = record.meta._replace(details=record.meta.details._replace(duration=None))
+        unknown = library_model.watched_progress(record._replace(
+            meta=unknown_meta, playback=types.PlaybackState(20, None, 300, 300)
+        ))
+        self.assertTrue(unknown.completed)
+        self.assertEqual(unknown.fraction, 0)
+        self.assertEqual(unknown.label, "✓ Watched")
+        self.assertIn("duration unavailable", unknown.tooltip)
 
         saved = record._replace(playback=types.PlaybackState(86, None, None, 200))
         self.assertTrue(library_model.watched_progress(saved).completed)

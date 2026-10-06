@@ -609,7 +609,7 @@ class MpvEventTrackerTests(unittest.TestCase):
         self.assertEqual(len(updates), 2)
         self.assertTrue(updates[-1].completed)
         self.assertEqual(updates[-1].position_seconds, 96)
-        self.assertEqual(progress.fraction(updates[-1]), 1.0)
+        self.assertEqual(progress.fraction(updates[-1]), .96)
 
         tracker.ingest({"event": "end-file", "reason": "eof"}, now=6)
 
@@ -629,7 +629,7 @@ class MpvEventTrackerTests(unittest.TestCase):
         tracker.ingest({"event": "end-file", "reason": "eof"}, now=0)
 
         self.assertTrue(updates[-1].completed)
-        self.assertEqual(progress.fraction(updates[-1]), 1.0)
+        self.assertEqual(progress.fraction(updates[-1]), 0)
 
     def test_quit_applies_threshold_to_unsampled_final_position(self) -> None:
         """Apply the strict boundary when closing mpv between paced samples.

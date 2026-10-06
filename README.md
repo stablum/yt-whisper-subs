@@ -867,8 +867,12 @@ position, so rewinding or replaying a video never moves the bar backward.
 The bar and saved completion remain visible after the download and yields are removed.
 
 Once the furthest observed position exceeds 95% of the known duration, the app
-marks the video **Watched**, writes a separate completion timestamp, and renders
-the green **✓ 100%** state. Exactly 95% remains unfinished. An mpv `end-file`
+marks the video **Watched**, writes a separate completion timestamp, and adds
+a checkmark and green styling. The percentage and bar fill always reflect the
+furthest recorded position: a video stopped at 98% shows green **✓ 98%**.
+Whole percentages are rounded, capped at 99% until the full duration is reached;
+100% is reserved for the end. Without a known duration, a completed video shows
+**✓ Watched** without a percentage. Exactly 95% remains unfinished. An mpv `end-file`
 event with reason `eof` also marks the video watched, even without a known
 duration. Closing or stopping playback flushes the last position and applies
 the same threshold. The actual position is retained rather than rounded up to
@@ -1910,7 +1914,7 @@ High-level groups:
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles, launch-scoped mpv policy, and thread-safe ownership of the active library player. |
 | `yt_whisper_subs.mpv_ipc` | Duplex ephemeral named-pipe connection, queued exact seeks, paced property observation, and EOF handling. |
-| `yt_whisper_subs.playback_progress` | Typed playback updates, shared 95% watched policy, worker-signal encoding, and completion-aware fraction math. |
+| `yt_whisper_subs.playback_progress` | Typed playback updates, shared 95% watched policy, worker-signal encoding, and observed-position fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.library_pipeline` | Controlled CLI pipeline launch, process-tree pause/resume, trace forwarding, and durable progress checkpointing. |
@@ -1996,6 +2000,7 @@ Start by preserving these invariants:
 18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
 19. Keep watched progress monotonic and mark videos watched above 95% or on
     confirmed mpv EOF, storing the timestamp separately from the actual position.
+    Keep the displayed percentage and bar fill independent of watched status.
 20. Keep playback IPC launch-scoped; never rewrite or bypass the user's mpv
     configuration.
 21. Keep smart-view predicates single-sourced with their facet counts; channel,
@@ -2062,7 +2067,8 @@ validation repair, exact timestamp mapping, persistence, and mpv sidecars;
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; the strict 95% watched boundary, saved
-progress classification, sticky completion persistence, and one-time activity
+progress classification, accurate watched percentages (including removed entries
+and unknown duration), sticky completion persistence, and one-time activity
 announcements; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
 persisted live-probe pacing, explicit double-click overrides, unknown-state
