@@ -1002,6 +1002,32 @@ class PlaybackLaneTests(unittest.TestCase):
     Example: mpv starts while a simulated Whisper worker occupies its lane.
     """
 
+    def test_watched_threshold_is_announced_once(self) -> None:
+        """Announce Watched without claiming EOF or repeating each sample.
+
+        Example: updates at 96%, 97%, and EOF produce one activity message.
+        """
+
+        model = library_model.VideoTableModel()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "video.mkv"
+            path.write_bytes(b"video")
+            record = DetailPanelTests._record(path)
+        model.set_records([record], {"aaaaaaaaaaa": None})
+        window = mock.Mock()
+        window._ui.catalog.model = model
+
+        for position in (95, 96, 97, 100):
+            update = playback_progress.make("aaaaaaaaaaa", position, 100, position == 100)
+            library_window_support.WindowRuntimeMixin._show_watched_progress(
+                window,
+                update,
+                update_status=True,
+            )
+
+        window._ui.trace.append_message.assert_called_once_with("◆ Example · Marked watched")
+        window.statusBar().showMessage.assert_called_with("Watched · Example")
+
     def test_playback_progress_preserves_active_pipeline_status(self) -> None:
         """Keep concurrent watched updates out of the busy status bar.
 

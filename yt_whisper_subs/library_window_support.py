@@ -564,14 +564,14 @@ class WindowRuntimeMixin:
         Example: concurrent playback updates its row without hiding Whisper's label.
         """
 
-        self._ui.catalog.model.set_watched_progress(watched)
+        became_watched = self._ui.catalog.model.set_watched_progress(watched)
         title = self._ui.catalog.model.title_for(watched.video_id)
         fraction = playback_progress.fraction(watched)
         label = "Watched" if watched.completed else f"Watching · {fraction:.0%}"
         if update_status:
             self.statusBar().showMessage(f"{label} · {title}")
-        if watched.completed:
-            self._ui.trace.append_message(f"◆ {title} · Reached end · 100% watched")
+        if became_watched:
+            self._ui.trace.append_message(f"◆ {title} · Marked watched")
 
     def _report_progress(self, message: str) -> None:
         """Route structured stages to the GUI and raw output to the trace.

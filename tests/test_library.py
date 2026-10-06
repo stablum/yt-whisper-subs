@@ -578,7 +578,7 @@ CREATE TABLE IF NOT EXISTS playback (
             self.assertIn("playback", tables)
 
     def test_playback_progress_and_completion_are_durable_and_monotonic(self) -> None:
-        """Keep furthest position and never erase a confirmed watched state.
+        """Keep furthest position and never erase a threshold-based watched state.
 
         Example: replaying from the beginning leaves a completed video at 100%.
         """
@@ -597,11 +597,21 @@ CREATE TABLE IF NOT EXISTS playback (
             self.assertEqual(partial.position_seconds, 40)
             self.assertIsNone(partial.completed_at)
 
-            db.record_playback(playback_progress.make("aaaaaaaaaaa", 99, 100, True))
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 95, 100))
+            self.assertIsNone(db.video("aaaaaaaaaaa").playback.completed_at)
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 95.01, 100))
+            watched_at = db.video("aaaaaaaaaaa").playback.completed_at
+            self.assertIsNotNone(watched_at)
             db.record_playback(playback_progress.make("aaaaaaaaaaa", 5, 100))
+            reopened = library_db.LibraryDb(db.path)
+            completed = reopened.video("aaaaaaaaaaa").playback
+            self.assertEqual(completed.position_seconds, 95.01)
+            self.assertEqual(completed.completed_at, watched_at)
+
+            db.record_playback(playback_progress.make("aaaaaaaaaaa", 100, 100, True))
             completed = db.video("aaaaaaaaaaa").playback
             self.assertEqual(completed.position_seconds, 100)
-            self.assertIsNotNone(completed.completed_at)
+            self.assertEqual(completed.completed_at, watched_at)
 
 
 class LibraryServiceTests(unittest.TestCase):
@@ -1157,34 +1167,44 @@ class LibraryServiceTests(unittest.TestCase):
 class LibraryModelTests(unittest.TestCase):
     """Keep watched-column wording aligned with durable completion semantics.
 
-    Example: `LibraryModelTests("test_100_percent_requires_completion")`.
+    Example: `LibraryModelTests("test_saved_progress_applies_watched_threshold")`.
     """
 
-    def test_100_percent_requires_completion(self) -> None:
-        """Cap position-derived display at 99 until an EOF timestamp exists.
+    def test_saved_progress_applies_watched_threshold(self) -> None:
+        """Classify saved progress above 95% without requiring an EOF timestamp.
 
-        Example: reaching duration numerically is not itself completion proof.
+        Example: an existing 96% record moves from Continue to Watched on load.
         """
 
         local = types.LocalMedia(Path("video.mkv"), 100, 5)
-        partial = types.VideoRecord(
+        record = types.VideoRecord(
             make_meta("aaaaaaaaaaa", "First"),
             None,
             100,
             local,
             None,
-            types.PlaybackState(100, 100, None, 200),
+            None,
         )
 
-        partial_view = library_model.watched_progress(partial)
+        for position in (94.99, 95, 95.01, 100):
+            with self.subTest(position=position):
+                saved = record._replace(playback=types.PlaybackState(position, 100, None, 200))
+                watched = library_model.watched_progress(saved)
+                expected = position > 95
+                self.assertEqual(watched.completed, expected)
+                self.assertEqual(watched.fraction, 1.0 if expected else position / 100)
+                self.assertEqual(watched.label, "✓ 100%" if expected else "95%")
+                self.assertEqual(library_model.accepts_view(saved, watched, views.VideoView.WATCHED), expected)
+                self.assertEqual(library_model.accepts_view(saved, watched, views.VideoView.CONTINUE), not expected)
+
         completed_view = library_model.watched_progress(
-            partial._replace(playback=types.PlaybackState(100, 100, 300, 300))
+            record._replace(playback=types.PlaybackState(20, None, 300, 300))
         )
-
-        self.assertEqual(partial_view.fraction, 0.99)
-        self.assertEqual(partial_view.label, "99%")
         self.assertEqual(completed_view.fraction, 1.0)
         self.assertEqual(completed_view.label, "✓ 100%")
+
+        saved = record._replace(playback=types.PlaybackState(86, None, None, 200))
+        self.assertTrue(library_model.watched_progress(saved).completed)
 
     def test_corrupt_or_missing_subtitles_are_not_pipeline_complete(self) -> None:
         """Represent real local artifact damage as a visible repairable issue.
@@ -1270,6 +1290,17 @@ class LibraryModelTests(unittest.TestCase):
         searched = proxy.facet_counts()
         self.assertEqual(searched[views.VideoView.ALL], 1)
         self.assertEqual(searched[views.VideoView.CONTINUE], 1)
+
+        model.set_watched_progress(playback_progress.make("ccccccccccc", 95, 100))
+        self.assertEqual(proxy.rowCount(), 1)
+        self.assertTrue(model.set_watched_progress(playback_progress.make("ccccccccccc", 96, 100)))
+        self.assertEqual(proxy.rowCount(), 0)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.CONTINUE], 0)
+        self.assertEqual(proxy.facet_counts()[views.VideoView.WATCHED], 1)
+        self.assertFalse(model.set_watched_progress(playback_progress.make("ccccccccccc", 97, 100)))
+
+        proxy.set_view(views.VideoView.WATCHED)
+        self.assertEqual(proxy.rowCount(), 1)
 
     def test_channel_scope_filters_resident_records_without_model_reset(self) -> None:
         """Apply sidebar scope to one resident catalog and its facet counts.

@@ -94,7 +94,7 @@ def watched_progress(
     record: types.VideoRecord,
     update: playback.Update | None = None,
 ) -> WatchedProgress | None:
-    """Combine durable and live state while reserving 100 percent for EOF.
+    """Apply the shared watched rule to both saved and live progress.
 
     Example: `watched_progress(record).fraction` feeds sorting and painting.
     """
@@ -113,13 +113,14 @@ def watched_progress(
     duration = next((value for value in duration_candidates if value and value > 0), None)
     completed = bool(stored and stored.completed_at is not None) or bool(update and update.completed)
     normalized = playback.make(record.meta.identity.video_id, position, duration, completed)
+    completed = normalized.completed
     fraction = playback.fraction(normalized)
     if completed:
         label = "✓ 100%"
         tooltip = (
-            f"Completed {format_timestamp(stored.completed_at)}"
+            f"Marked watched {format_timestamp(stored.completed_at)}"
             if stored and stored.completed_at is not None
-            else "Completed during this playback"
+            else "Watched: more than 95% reached or mpv reported the end"
         )
     elif duration:
         label = f"{fraction:.0%}"
@@ -302,20 +303,24 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             if was_active != progress.active(update):
                 self.facets_changed.emit()
 
-    def set_watched_progress(self, update: playback.Update) -> None:
-        """Store one live mpv observation and repaint its graphical cell.
+    def set_watched_progress(self, update: playback.Update) -> bool:
+        """Repaint live progress and report the first transition into Watched.
 
-        Example: `model.set_watched_progress(update)` advances the watched bar.
+        Example: a `True` result lets the activity trace announce completion once.
         """
 
         self._watched[update.video_id] = update
         row = self._row_by_id.get(update.video_id)
         if row is not None:
-            self._watched_views[update.video_id] = watched_progress(self._records[row], update)
+            prev = self._watched_views.get(update.video_id)
+            current = watched_progress(self._records[row], update)
+            self._watched_views[update.video_id] = current
             cell = self.index(row, WATCHED_COLUMN)
             roles = [QtCore.Qt.ItemDataRole.DisplayRole, WATCHED_ROLE, SORT_ROLE]
             self.dataChanged.emit(cell, cell, roles)
             self.facets_changed.emit()
+            return bool(current and current.completed and not (prev and prev.completed))
+        return False
 
     def progress_at(self, row: int) -> progress.Update | None:
         """Return live progress or the durable fallback for a table row.

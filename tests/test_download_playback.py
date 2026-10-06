@@ -587,13 +587,13 @@ class PlaybackChapterTests(unittest.TestCase):
 class MpvEventTrackerTests(unittest.TestCase):
     """Convert mpv property and terminal events into trustworthy progress.
 
-    Example: `MpvEventTrackerTests("test_eof_alone_reaches_100_percent")`.
+    Example: `MpvEventTrackerTests("test_eof_marks_watched_without_duration")`.
     """
 
-    def test_eof_alone_reaches_100_percent(self) -> None:
-        """Pace ordinary updates and reserve completion for the EOF reason.
+    def test_progress_pacing_marks_watched_above_95_percent(self) -> None:
+        """Mark paced progress above the threshold before receiving EOF.
 
-        Example: a position equal to duration remains 99 percent before EOF.
+        Example: 96% becomes watched during normal playback sampling.
         """
 
         updates: list[progress.Update] = []
@@ -604,16 +604,67 @@ class MpvEventTrackerTests(unittest.TestCase):
         tracker.ingest({"event": "property-change", "name": "duration", "data": 100.0}, now=0)
         tracker.ingest({"event": "property-change", "name": "time-pos", "data": 10.0}, now=0)
         tracker.ingest({"event": "property-change", "name": "time-pos", "data": 40.0}, now=1)
-        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 100.0}, now=5)
+        tracker.ingest({"event": "property-change", "name": "time-pos", "data": 96.0}, now=5)
 
         self.assertEqual(len(updates), 2)
-        self.assertEqual(progress.fraction(updates[-1]), 0.99)
+        self.assertTrue(updates[-1].completed)
+        self.assertEqual(updates[-1].position_seconds, 96)
+        self.assertEqual(progress.fraction(updates[-1]), 1.0)
 
         tracker.ingest({"event": "end-file", "reason": "eof"}, now=6)
 
         self.assertTrue(updates[-1].completed)
+        self.assertEqual(updates[-1].position_seconds, 100)
         self.assertEqual(progress.fraction(updates[-1]), 1.0)
         self.assertFalse(tracker.finish())
+
+    def test_eof_marks_watched_without_duration(self) -> None:
+        """Keep EOF sufficient when mpv cannot provide a useful duration.
+
+        Example: an unknown-duration video still finishes in the Watched view.
+        """
+
+        updates: list[progress.Update] = []
+        tracker = mpv_ipc.MpvEventTracker(progress.Observer("aaaaaaaaaaa", updates.append))
+        tracker.ingest({"event": "end-file", "reason": "eof"}, now=0)
+
+        self.assertTrue(updates[-1].completed)
+        self.assertEqual(progress.fraction(updates[-1]), 1.0)
+
+    def test_quit_applies_threshold_to_unsampled_final_position(self) -> None:
+        """Apply the strict boundary when closing mpv between paced samples.
+
+        Example: quitting at 95.01% counts as watched while 95% does not.
+        """
+
+        for position in (94.99, 95, 95.01):
+            with self.subTest(position=position):
+                updates: list[progress.Update] = []
+                tracker = mpv_ipc.MpvEventTracker(
+                    progress.Observer("aaaaaaaaaaa", updates.append),
+                    emit_interval=60,
+                )
+                tracker.ingest({"event": "property-change", "name": "duration", "data": 100}, now=0)
+                tracker.ingest({"event": "property-change", "name": "time-pos", "data": 50}, now=0)
+                tracker.ingest({"event": "property-change", "name": "time-pos", "data": position}, now=1)
+                self.assertEqual(len(updates), 1)
+
+                tracker.ingest({"event": "end-file", "reason": "quit"}, now=2)
+
+                self.assertEqual(updates[-1].position_seconds, position)
+                self.assertEqual(updates[-1].completed, position > 95)
+
+    def test_position_without_duration_does_not_mark_watched(self) -> None:
+        """Require a positive duration before applying percentage completion.
+
+        Example: a saved position with missing duration stays unfinished until EOF.
+        """
+
+        for duration in (None, 0):
+            with self.subTest(duration=duration):
+                update = progress.make("aaaaaaaaaaa", 100, duration)
+                self.assertFalse(update.completed)
+                self.assertEqual(progress.fraction(update), 0)
 
     def test_quit_flushes_progress_without_completion(self) -> None:
         """Distinguish a normal window close from reaching the end of the file.

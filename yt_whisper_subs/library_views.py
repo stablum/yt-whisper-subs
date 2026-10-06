@@ -63,7 +63,7 @@ VIDEO_VIEWS = (
     VideoViewSpec(VideoView.AVAILABLE, "Available", "Tracked videos not downloaded yet"),
     VideoViewSpec(VideoView.PIPELINE, "Pipeline", "Videos queued or currently being processed"),
     VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Downloaded videos not started yet"),
-    VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos that have not reached the end"),
-    VideoViewSpec(VideoView.WATCHED, "Watched", "Videos confirmed complete by mpv"),
+    VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos still unfinished"),
+    VideoViewSpec(VideoView.WATCHED, "Watched", "Videos with more than 95% watched or mpv completion"),
     VideoViewSpec(VideoView.ISSUES, "Issues", "Videos whose latest download or processing attempt failed"),
 )

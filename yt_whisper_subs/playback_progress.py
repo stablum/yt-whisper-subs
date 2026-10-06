@@ -11,6 +11,7 @@ from typing import NamedTuple
 
 
 PREFIX = "@@yt-whisper-playback "
+WATCHED_FRACTION = 0.95
 
 
 class Update(NamedTuple):
@@ -55,20 +56,21 @@ def make(
     duration_seconds: float | None,
     completed: bool = False,
 ) -> Update:
-    """Normalize raw mpv time values into a safe progress update.
+    """Normalize mpv times and mark progress beyond the watched threshold.
 
-    Example: `make("id", -2, 100)` clamps the position to zero.
+    Example: `make("id", 96, 100).completed` is `True` before EOF.
     """
 
     position = max(0.0, float(position_seconds))
     duration = None if duration_seconds is None else max(0.0, float(duration_seconds))
-    return Update(video_id, position, duration, bool(completed))
+    completed = bool(completed or (duration and position > duration * WATCHED_FRACTION))
+    return Update(video_id, position, duration, completed)
 
 
 def fraction(update: Update) -> float:
-    """Calculate progress while reserving 100 percent for confirmed EOF.
+    """Render watched videos as complete and otherwise show observed progress.
 
-    Example: `fraction(make("id", 100, 100))` is `0.99` without EOF.
+    Example: `fraction(make("id", 96, 100))` is `1.0`.
     """
 
     if update.completed:
@@ -76,7 +78,7 @@ def fraction(update: Update) -> float:
     if not update.duration_seconds:
         return 0.0
     raw = update.position_seconds / update.duration_seconds
-    return min(0.99, max(0.0, raw))
+    return min(1.0, max(0.0, raw))
 
 
 def encode(update: Update) -> str:

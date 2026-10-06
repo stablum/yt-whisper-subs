@@ -95,7 +95,7 @@ class ScannedMedia(NamedTuple):
 
 
 class PlaybackState(NamedTuple):
-    """Persist furthest playback separately from confirmed completion.
+    """Persist furthest playback separately from the watched timestamp.
 
     Example: `PlaybackState(30, 120, None, now)` represents partial viewing.
     """

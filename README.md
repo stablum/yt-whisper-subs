@@ -60,7 +60,7 @@ The companion library is optimized for a second workflow:
    discovered after a channel's initial baseline check.
 7. Double-click downloaded videos to open the same English-first dual-subtitle
    `mpv` view used by the CLI.
-8. Track furthest watched position and confirmed completion for library-launched
+8. Track furthest watched position and automatic watched status for library-launched
    playback without changing the user's mpv configuration.
 9. Queue multiple selected videos for serial download, repair, resume, or chapter
    generation without waiting for the current pipeline to finish.
@@ -132,7 +132,7 @@ These defaults are hard-coded near the top of the script:
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
-| Library 100% watched rule | confirmed mpv end-of-file event only |
+| Library watched rule | more than `95%` reached, or confirmed mpv end-of-file |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | persistent starred Pinned shelf; right-click or `Alt+P` |
 | Library column layout | resizable, reorderable, and remembered across launches |
@@ -700,9 +700,9 @@ without opening dialogs or combining contradictory dropdowns:
   active processing stage. Completed, failed, cancelled, paused, and
   restart-interrupted rows are excluded because they are not presently running.
 - **Unwatched** shows downloaded videos with no observed playback position.
-- **Continue** shows videos that were started but have not reached confirmed
-  end-of-file.
-- **Watched** shows videos with confirmed mpv completion.
+- **Continue** shows videos that were started but have not passed 95% or reached
+  mpv end-of-file.
+- **Watched** shows videos with more than 95% reached or confirmed mpv completion.
 - **Issues** isolates videos whose latest download or subtitle processing
   attempt failed, whose media file vanished, or whose required Dutch/English
   SRT files are missing, unreadable, empty, or contain no valid cues.
@@ -816,13 +816,16 @@ from the desktop library. While mpv is running, the app samples its playback
 position and duration every five seconds. SQLite retains the furthest observed
 position, so rewinding or replaying a video never moves the bar backward.
 
-Position-derived progress is capped at 99%. The app writes a separate
-completion timestamp only when mpv emits `end-file` with reason `eof`; that
-event alone renders the green **✓ 100%** state. Closing the window, stopping
-playback, or an mpv error flushes the last position without marking the video
-complete. Seeking directly to the end counts as completion because mpv reports
-EOF; the feature models “reached the end,” not second-by-second viewing
-coverage.
+Once the furthest observed position exceeds 95% of the known duration, the app
+marks the video **Watched**, writes a separate completion timestamp, and renders
+the green **✓ 100%** state. Exactly 95% remains unfinished. An mpv `end-file`
+event with reason `eof` also marks the video watched, even without a known
+duration. Closing or stopping playback flushes the last position and applies
+the same threshold. The actual position is retained rather than rounded up to
+the duration, and watched status survives rewinding, replaying, and restarts.
+Existing saved progress above 95% qualifies immediately when loaded, without
+replaying the video. Seeking past the threshold counts too; progress tracks the
+furthest reached position rather than second-by-second viewing coverage.
 
 Tracking uses a unique local JSON IPC named pipe supplied on that single mpv
 command line. It does not edit `mpv.conf`, pass `--no-config`, or interfere with
@@ -1838,7 +1841,7 @@ High-level groups:
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles, launch-scoped mpv policy, and thread-safe ownership of the active library player. |
 | `yt_whisper_subs.mpv_ipc` | Duplex ephemeral named-pipe connection, queued exact seeks, paced property observation, and EOF handling. |
-| `yt_whisper_subs.playback_progress` | Typed playback updates, worker-signal encoding, and completion-aware fraction math. |
+| `yt_whisper_subs.playback_progress` | Typed playback updates, shared 95% watched policy, worker-signal encoding, and completion-aware fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.library_pipeline` | Controlled CLI pipeline launch, process-tree pause/resume, trace forwarding, and durable progress checkpointing. |
@@ -1920,8 +1923,8 @@ Start by preserving these invariants:
 16. Keep hidden subprocesses observable through the timestamped activity trace.
 17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
 18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
-19. Keep watched progress monotonic and reserve 100% for a confirmed mpv EOF
-    event stored separately from the numeric position.
+19. Keep watched progress monotonic and mark videos watched above 95% or on
+    confirmed mpv EOF, storing the timestamp separately from the actual position.
 20. Keep playback IPC launch-scoped; never rewrite or bypass the user's mpv
     configuration.
 21. Keep smart-view predicates single-sourced with their facet counts; channel,
@@ -1976,7 +1979,9 @@ validation repair, exact timestamp mapping, persistence, and mpv sidecars;
 `SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
-semantics; playback IPC event handling; watched completion persistence; smart
+semantics; playback IPC event handling; the strict 95% watched boundary, saved
+progress classification, sticky completion persistence, and one-time activity
+announcements; smart
 view classification, live transitions, search-scoped counts, sidecar ingestion;
 persisted live-probe pacing, explicit double-click overrides, unknown-state
 handling, pending stream releases,

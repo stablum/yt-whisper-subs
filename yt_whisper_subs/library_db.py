@@ -383,7 +383,7 @@ class LibraryDb(
         return self._video(row) if row else None
 
     def record_playback(self, update: playback.Update) -> None:
-        """Persist furthest progress while making confirmed completion sticky.
+        """Persist the observed position while making watched status sticky.
 
         Example: `db.record_playback(update)` stores one paced mpv observation.
         """
@@ -391,8 +391,6 @@ class LibraryDb(
         now = int(time.time())
         completed_at = now if update.completed else None
         position = update.position_seconds
-        if update.completed and update.duration_seconds is not None:
-            position = max(position, update.duration_seconds)
         with self._connect() as conn:
             conn.execute(
                 """
