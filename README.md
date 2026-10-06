@@ -890,10 +890,15 @@ values fill only fields omitted by the flat listing, preserving richer yt-dlp
 values when present. Remaining rows without a flat timestamp are progressively
 hydrated with full per-video metadata.
 
-Shorts are deliberately excluded from subscriptions. A channel without a
-Streams tab is treated as having an empty Streams section, not as a failed
-refresh. Genuine extraction or network failures remain partial refreshes and
-preserve old rows rather than risking destructive synchronization.
+Shorts are deliberately excluded from subscriptions. An absent Videos or
+Streams tab is a valid empty section. Channel identity comes from either
+available tab; if neither supplies it, one metadata-only lookup of the main
+channel page resolves the official title and ID without importing home-page
+videos or Shorts. A channel with no public long-form videos can therefore
+display its proper title with an empty catalog. Missing identity is a visible
+lookup failure, never a successful URL-titled baseline. Genuine extraction or
+network failures preserve old rows rather than risking destructive
+synchronization.
 
 Tracking is visible immediately: the app first persists and selects a compact
 handle-based placeholder in the sidebar, then queues resolution of the official
@@ -1935,8 +1940,8 @@ Start by preserving these invariants:
     with shipped defaults and visible reset actions.
 28. Bound each channel section, expand only to recover known overlap, prune only
     complete snapshots, and never remove a downloaded video through retention.
-29. Ignore Shorts in subscriptions and treat an absent Streams tab as a valid
-    empty section rather than a partial-refresh failure.
+29. Ignore Shorts in subscriptions and treat absent Videos/Streams tabs as valid
+    empty sections; resolve channel identity independently before saving a snapshot.
 30. Do not establish the automatic-download baseline from a partial channel
     refresh; surface the warning and retry safely.
 31. Keep visible mpv playback independent from the serialized heavy-work lane,
@@ -1978,7 +1983,8 @@ handling, pending stream releases,
 external-file reconciliation, and stale error/progress cleanup;
 native table-header resizing, reordering, persistence, and reset behavior;
 resizable inspector geometry, long-description containment, and split persistence;
-channel additions queued during active video work; the crucial future-only
+channel additions queued during active video work; empty and stream-only channel
+identity recovery, with failed lookups preserving history; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
 retention that preserves local media; playback dispatch during active work;
 single-Dutch-track mpv selection; invalid-yield repair classification; exact

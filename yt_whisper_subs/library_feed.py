@@ -250,7 +250,7 @@ class YtDlpFeed:
                 if idx == 0:
                     raise
                 complete = False
-        info = tab_infos[0][1]
+        youtube_id, title = self._channel_identity(tab_infos)
         by_id: dict[str, types.VideoMeta] = {}
         for tab_url, tab_info in tab_infos:
             for entry in tab_info.get("entries") or []:
@@ -268,9 +268,7 @@ class YtDlpFeed:
                     by_id[video_id] = meta
         videos = list(by_id.values())
 
-        youtube_id = info.get("channel_id") or info.get("uploader_id")
-        youtube_id = str(youtube_id) if youtube_id else None
-        if youtube_id:
+        if videos:
             atom_meta = self._atom_metadata(youtube_id)
             videos = [
                 self._with_atom_metadata(meta, atom_meta.get(meta.identity.video_id))
@@ -284,15 +282,31 @@ class YtDlpFeed:
                 or meta.origin.published_at >= policy.published_after
             ]
 
-        title = str(
-            info.get("channel")
-            or info.get("uploader")
-            or info.get("title")
-            or normalized_url
-        )
-        if title.endswith(" - Videos"):
-            title = title.removesuffix(" - Videos")
         return types.ChannelSnapshot(normalized_url, youtube_id, title, videos, complete)
+
+    def _channel_identity(self, tab_infos: list[tuple[str, dict[str, Any]]]) -> tuple[str, str]:
+        """Resolve identity independently of whether upload tabs exist.
+
+        Example: an empty channel gets its title from a metadata-only root lookup.
+        """
+
+        title_keys = ("channel", "uploader", "title")
+        candidates = (
+            info for _, info in tab_infos
+            if info.get("channel_id") and any(info.get(key) for key in title_keys)
+        )
+        info = next(candidates, None)
+        if info is None:
+            root_url = tab_infos[0][0].rsplit("/", 1)[0]
+            # Index 0 requests only the channel header, never home-page videos/Shorts.
+            info = self._json(
+                ["--flat-playlist", "--playlist-items", "0", "--dump-single-json", root_url]
+            )
+        youtube_id = str(info.get("channel_id") or "").strip()
+        title = next((str(info[key]).strip() for key in title_keys if info.get(key)), "")
+        if not youtube_id or not title:
+            raise RuntimeError("YouTube returned channel metadata without an ID or title")
+        return youtube_id, title.removesuffix(" - Videos")
 
     def _channel_tab(
         self,

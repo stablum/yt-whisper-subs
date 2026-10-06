@@ -153,7 +153,11 @@ class StreamPolicyTests(unittest.TestCase):
         """
 
         feed = library_feed.YtDlpFeed(Path("python"))
-        videos = {"entries": [{"id": "aaaaaaaaaaa"}, {"id": "bbbbbbbbbbb"}]}
+        videos = {
+            "channel_id": "UC-example",
+            "channel": "Example",
+            "entries": [{"id": "aaaaaaaaaaa"}, {"id": "bbbbbbbbbbb"}],
+        }
         streams = {"entries": [{"id": "bbbbbbbbbbb"}, {"id": "ccccccccccc", "live_status": "was_live"}]}
         policy = library_feed.ChannelScanPolicy(50, 500, None)
         with mock.patch.object(feed, "_channel_tab", side_effect=[videos, streams]):
