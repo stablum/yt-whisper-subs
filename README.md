@@ -1080,8 +1080,11 @@ An external repair clears a saved pipeline error only after the local yields
 change and the subtitles and chapter plan validate. An unchanged older valid
 yield cannot hide a failed rerun.
 
-**Video → Remove download and yields…** or **Shift+Delete** first shows a
-confirmation with the exact file manifest. Removal enumerates only immediate
+Click **Remove…** beside **Play** in the top toolbar, use **Video → Remove
+download and yields…**, or press **Shift+Delete** to show a confirmation with
+the exact file manifest. The toolbar button stays visible and is enabled only
+for a selected downloaded video while no library operation is active. All
+three controls share the same removal action. Removal enumerates only immediate
 files in the managed `videos`, `audio`, `metadata`, `subtitles`, `chapters`, and
 `logs` folders whose name has the selected 11-character ID plus its required
 delimiter. It rejects paths outside those folders and unlinks one explicit path

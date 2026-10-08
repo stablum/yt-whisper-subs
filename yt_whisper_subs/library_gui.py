@@ -60,6 +60,7 @@ class HeaderUi(NamedTuple):
     check: QtWidgets.QPushButton
     download: QtWidgets.QPushButton
     play: QtWidgets.QPushButton
+    remove: QtWidgets.QToolButton
     pause: QtWidgets.QPushButton
     cancel: QtWidgets.QPushButton
 
@@ -261,7 +262,7 @@ class LibraryWindow(
         return sidebar, channels
 
     def _build_header(self) -> tuple[HeaderUi, QtWidgets.QHBoxLayout]:
-        """Create search, manual check, download, and playback actions.
+        """Keep search and common video actions directly accessible.
 
         Example: `_build_header()` returns controls plus their layout.
         """
@@ -270,11 +271,14 @@ class LibraryWindow(
         search = QtWidgets.QLineEdit()
         search.setPlaceholderText("Search title, channel, or YouTube ID…")
         search.setClearButtonEnabled(True)
-        search.setMinimumWidth(360)
+        search.setMinimumWidth(120)
         check = QtWidgets.QPushButton("↻  Check now")
         download = QtWidgets.QPushButton("↓  Download")
         download.setToolTip("Download, repair, or queue the selected video")
         play = QtWidgets.QPushButton("▶  Play")
+        remove = QtWidgets.QToolButton()
+        remove.setObjectName("dangerButton")
+        remove.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
         pause = QtWidgets.QPushButton("Ⅱ  Pause")
         pause.hide()
         cancel = QtWidgets.QPushButton("■  Cancel")
@@ -287,7 +291,8 @@ class LibraryWindow(
         layout.addWidget(pause)
         layout.addWidget(cancel)
         layout.addWidget(play)
-        return HeaderUi(search, check, download, play, pause, cancel), layout
+        layout.addWidget(remove)
+        return HeaderUi(search, check, download, play, remove, pause, cancel), layout
 
     def _build_catalog(self, channels: QtWidgets.QListWidget) -> CatalogUi:
         """Create the model-backed table and selected-video detail panel.
@@ -392,6 +397,13 @@ class LibraryWindow(
         self._cancel_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
         self._remove_action = video_menu.addAction("Remove download and yields…", self._remove_selected)
         self._remove_action.setShortcut(QtGui.QKeySequence("Shift+Delete"))
+        self._remove_action.setIconText("Remove…")
+        self._remove_action.setToolTip(
+            "Remove the selected download and all generated files (Shift+Delete). "
+            "Download and watch history stay in the catalog."
+        )
+        # Let Qt share activation and availability with the menu and shortcut.
+        self._ui.header.remove.setDefaultAction(self._remove_action)
         view_menu = self.menuBar().addMenu("View")
         search_action = view_menu.addAction("Focus search")
         search_action.setShortcut(QtGui.QKeySequence.StandardKey.Find)
