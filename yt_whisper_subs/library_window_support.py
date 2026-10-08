@@ -332,9 +332,9 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
+            self._release_video_slot(succeeded=True)
             self._active_progress = None
             self._paused_progress = None
-            self._release_video_slot()
             self.statusBar().showMessage("Ready", 3000)
             self._ui.trace.append_message(f"✓ {label}")
             if finished:
@@ -350,9 +350,9 @@ class WindowRuntimeMixin:
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
+            self._release_video_slot()
             self._active_progress = None
             self._paused_progress = None
-            self._release_video_slot()
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
@@ -583,6 +583,12 @@ class WindowRuntimeMixin:
             self._show_watched_progress(watched, update_status=True)
             return
         if update := progress.parse(message):
+            previous = self._active_progress
+            if previous and previous.video_id != update.video_id and self._active_video_id is None:
+                # A channel-check worker can finish several videos before its finished signal.
+                self._finish_video_playback(
+                    previous.video_id, succeeded=previous.stage is progress.Stage.READY,
+                )
             first_pipeline_update = self._active_progress is None
             self._pipeline_status_active = True
             self._active_progress = update

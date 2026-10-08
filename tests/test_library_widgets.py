@@ -387,6 +387,7 @@ class DetailPanelTests(unittest.TestCase):
         )
         window = mock.Mock()
         window._record_from_proxy_index.return_value = record
+        window._is_video_pending.return_value = False
 
         library_gui.LibraryWindow._activate_video(window, index)
 
@@ -415,6 +416,7 @@ class DetailPanelTests(unittest.TestCase):
         )
         window = mock.Mock()
         window._record_from_proxy_index.return_value = record
+        window._is_video_pending.return_value = False
 
         library_gui.LibraryWindow._activate_video(window, index)
 
@@ -993,7 +995,7 @@ class VideoQueueTests(unittest.TestCase):
         done("result")
 
         finished.assert_called_once_with("result")
-        window._release_video_slot.assert_called_once_with()
+        window._release_video_slot.assert_called_once_with(succeeded=True)
         window._continue_video_queue.assert_called_once_with()
         self.assertFalse(window._busy)
 

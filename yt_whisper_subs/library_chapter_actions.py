@@ -69,15 +69,18 @@ class ChapterActionsMixin:
             return
         self._play_from(start_seconds)
 
-    def _play_from(self, start_seconds: float | None) -> None:
-        """Dispatch mpv without blocking Qt, optionally seeking at launch.
+    def _play_from(self, start_seconds: float | None, *, video_id: str | None = None) -> None:
+        """Dispatch selected or explicitly requested playback without blocking Qt.
 
-        Example: `_play_from(None)` preserves mpv's normal resume policy.
+        Example: `_play_from(None, video_id=id)` survives a selection change.
         """
 
-        record = self._selected_record()
+        record = self._service.db.video(video_id) if video_id is not None else self._selected_record()
         if not record:
             return
+        if video_id is not None:
+            if not record.downloaded or record.download_error or self._service.pipeline_issue(record):
+                return
         if not record.downloaded:
             self._download_selected()
             return

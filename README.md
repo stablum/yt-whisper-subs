@@ -1060,7 +1060,12 @@ behavior therefore remain single-sourced.
 
 Double-clicking a remote-only row starts that pipeline immediately; there is no
 extra confirmation dialog after the deliberate double-click. Repeating this on
-other rows queues them immediately instead of rejecting the action. During
+other rows queues them immediately instead of rejecting the action. Double-click
+the same row again while it is queued, processing, or paused to request playback
+as soon as its pipeline succeeds. The status bar confirms **Will play when
+processing finishes**. Further double-clicks keep that one request; changing
+selection or filters does not change the playback target. Failure, cancellation,
+or quitting clears the request, and requests do not survive an app restart. During
 active heavy work the header exposes **Cancel**; **Video → Cancel current operation**
 and **Ctrl+Shift+X** are equivalent. Cancellation terminates the isolated child
 process tree, so yt-dlp, ffmpeg, Whisper, or an in-flight API-stage parent cannot
@@ -1109,7 +1114,7 @@ from an older catalog cannot be reconstructed without a backup or other evidence
 
 ### Shared Playback
 
-Double-clicking a downloaded row or choosing Play invokes
+Double-clicking a completed downloaded row or choosing Play invokes
 `playback.play_video` with the same English-first sidecar discovery, colors,
 positions, primary font scale, secondary ASS conversion, and mpv options as the
 CLI. Double-clicking a remote-only row starts its download directly. mpv runs in a
@@ -2094,7 +2099,9 @@ resizable inspector geometry, long-description containment, and split persistenc
 channel additions queued during active video work; empty and stream-only channel
 identity recovery, with failed lookups preserving history; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
-retention that preserves local media; playback dispatch during active work;
+retention that preserves local media; playback dispatch during active work,
+one-time playback after a repeated pipeline-row activation, target preservation
+across selection changes, and cancellation/failure cleanup;
 single-Dutch-track mpv selection; invalid-yield repair classification; exact
 single-video removal isolation; and active process-tree cancellation.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,

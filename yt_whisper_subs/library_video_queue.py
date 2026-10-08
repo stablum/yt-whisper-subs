@@ -107,13 +107,29 @@ class VideoQueueMixin:
         self._update_actions()
         self._schedule_metadata_backfill()
 
-    def _release_video_slot(self) -> None:
-        """Forget only the current request while retaining the waiting FIFO.
+    def _release_video_slot(self, *, succeeded: bool = False) -> None:
+        """Release active work and consume its one-time playback request.
 
         Example: Cancel removes the active ID but leaves later videos queued.
         """
 
+        active = self._active_progress
+        video_id = self._active_video_id or (active.video_id if active else None)
         self._active_video_id = None
+        if video_id:
+            self._finish_video_playback(video_id, succeeded=succeeded)
+
+    def _finish_video_playback(self, video_id: str, *, succeeded: bool) -> None:
+        """Consume playback intent on any outcome and launch only after success.
+
+        Example: repeated double-clicks result in one mpv launch for this ID.
+        """
+
+        if video_id not in self._play_after_pipeline:
+            return
+        self._play_after_pipeline.remove(video_id)
+        if succeeded and not self._quitting:
+            self._play_from(None, video_id=video_id)
 
     def _update_video_queue(self) -> None:
         """Refresh waiting row labels and the compact status-bar summary.

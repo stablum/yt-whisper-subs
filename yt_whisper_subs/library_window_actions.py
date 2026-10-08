@@ -72,7 +72,7 @@ class WindowActionsMixin:
         self._queue_video_task(video_id, label, download, lambda _: self.refresh())
 
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
-        """Play a complete row or immediately process a remote/incomplete row.
+        """Play, process, or request playback after an already pending pipeline.
 
         Example: double-clicking Available starts without a confirmation prompt.
         """
@@ -81,6 +81,14 @@ class WindowActionsMixin:
             return
         self._ui.catalog.table.selectRow(index.row())
         record = self._record_from_proxy_index(index)
+        if record and self._is_video_pending(record.meta.identity.video_id):
+            video_id = record.meta.identity.video_id
+            message = f"Will play when processing finishes · {record.meta.identity.title}"
+            if video_id not in self._play_after_pipeline:
+                self._play_after_pipeline.add(video_id)
+                self._ui.trace.append_message(message)
+            self.statusBar().showMessage(message, 5_000)
+            return
         job = self._service.db.pipeline_job(record.meta.identity.video_id) if record else None
         issue = self._service.pipeline_issue(record) if record else None
         recoverable = bool(job and job.state is types.PipelineJobState.INTERRUPTED)

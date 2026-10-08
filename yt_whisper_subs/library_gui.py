@@ -138,6 +138,7 @@ class LibraryWindow(
         self._active_task: library_workers.BackgroundTask | None = None
         self._active_video_id: str | None = None
         self._video_queue: dict[str, library_video_queue.VideoWork] = {}
+        self._play_after_pipeline: set[str] = set()
         self._paused_progress: progress.Update | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
