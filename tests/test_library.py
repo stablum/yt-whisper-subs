@@ -1329,7 +1329,7 @@ class LibraryModelTests(unittest.TestCase):
         proxy = library_model.VideoFilterModel()
         proxy.setSourceModel(model)
 
-        proxy.set_channel(2)
+        proxy.set_channels(frozenset({2}))
 
         self.assertEqual(proxy.rowCount(), 1)
         self.assertEqual(proxy.facet_counts()[views.VideoView.ALL], 1)

@@ -215,11 +215,26 @@ class WindowActionsMixin:
         del previous
         if current and (key := current.data(QtCore.Qt.ItemDataRole.UserRole)):
             self._filter_key = tuple(key)
-            _, channel_id = self._filter_key
-            self._ui.catalog.proxy.set_channel(channel_id)
+            self._apply_channel_scope()
             self._ui.catalog.table.clearSelection()
             self._ui.catalog.detail.set_record(None)
             self._update_actions()
+
+    def _apply_channel_scope(self) -> None:
+        """Resolve sidebar navigation using the current subscription snapshot.
+
+        Example: selecting Pinned combines every currently pinned channel.
+        """
+
+        kind, channel_id = self._filter_key
+        channel_ids = None
+        if kind == "pinned":
+            channel_ids = frozenset(
+                channel.channel_id for channel in self._channels_by_id.values() if channel.pinned
+            )
+        elif kind == "channel" and channel_id is not None:
+            channel_ids = frozenset({channel_id})
+        self._ui.catalog.proxy.set_channels(channel_ids)
 
     def _selection_changed(self) -> None:
         """Update detail text and action availability for the selected row.

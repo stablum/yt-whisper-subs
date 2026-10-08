@@ -548,7 +548,7 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         super().__init__()
         self._search = ""
         self._view = views.VideoView.ALL
-        self._channel_id: int | None = None
+        self._channel_ids: frozenset[int] | None = None
         self.setSortRole(SORT_ROLE)
         self.setDynamicSortFilter(True)
 
@@ -588,16 +588,16 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
         self.criteria_changed.emit()
 
-    def set_channel(self, channel_id: int | None) -> None:
-        """Filter the resident catalog by subscription without reloading SQL.
+    def set_channels(self, channel_ids: frozenset[int] | None) -> None:
+        """Scope the resident catalog to subscriptions without reloading SQL.
 
-        Example: `proxy.set_channel(7)` switches the sidebar immediately.
+        Example: `proxy.set_channels(frozenset({7, 8}))` combines two channels.
         """
 
-        if channel_id == self._channel_id:
+        if channel_ids == self._channel_ids:
             return
         self.beginFilterChange()
-        self._channel_id = channel_id
+        self._channel_ids = channel_ids
         self.endFilterChange(QtCore.QSortFilterProxyModel.Direction.Rows)
         self.criteria_changed.emit()
 
@@ -654,12 +654,12 @@ class VideoFilterModel(QtCore.QSortFilterProxyModel):
         return accepts_view(record, watched, self._view, issue, pipeline)
 
     def _matches_scope(self, record: types.VideoRecord) -> bool:
-        """Apply the selected sidebar channel against the in-memory record.
+        """Apply the sidebar's subscription scope against an in-memory record.
 
-        Example: All videos uses a `None` channel and accepts every row.
+        Example: `None` accepts all videos; an empty set accepts none.
         """
 
-        return self._channel_id is None or record.subscription_id == self._channel_id
+        return self._channel_ids is None or record.subscription_id in self._channel_ids
 
     def _matches_search(self, record: types.VideoRecord) -> bool:
         """Match one record against normalized title, channel, or YouTube ID text.

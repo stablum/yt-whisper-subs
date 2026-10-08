@@ -690,10 +690,11 @@ class ChannelQueueTests(unittest.TestCase):
             _update_actions=mock.Mock(),
             refresh=mock.Mock(),
         )
+        window._apply_channel_scope = partial(library_gui.LibraryWindow._apply_channel_scope, window)
 
         library_gui.LibraryWindow._channel_filter_changed(window, item, None)
 
-        catalog.proxy.set_channel.assert_called_once_with(7)
+        catalog.proxy.set_channels.assert_called_once_with(frozenset({7}))
         catalog.table.clearSelection.assert_called_once_with()
         window.refresh.assert_not_called()
 
@@ -730,12 +731,13 @@ class ChannelQueueTests(unittest.TestCase):
         )
         channels = QtWidgets.QListWidget()
         window = SimpleNamespace(
-            _ui=SimpleNamespace(catalog=SimpleNamespace(channels=channels)),
+            _ui=SimpleNamespace(catalog=SimpleNamespace(channels=channels, proxy=mock.Mock())),
             _service=SimpleNamespace(db=SimpleNamespace(channels=lambda: [pinned, regular])),
             _filter_key=("all", None),
             _channels_by_id={},
             _add_channel_item=library_gui.LibraryWindow._add_channel_item,
         )
+        window._apply_channel_scope = partial(library_gui.LibraryWindow._apply_channel_scope, window)
 
         library_gui.LibraryWindow._refresh_channels(window)
 

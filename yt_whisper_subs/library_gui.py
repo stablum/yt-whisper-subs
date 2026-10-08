@@ -472,14 +472,12 @@ class LibraryWindow(
         selected_video = self._selected_record()
         selected_id = selected_video.meta.identity.video_id if selected_video else None
         self._refresh_channels()
-        _, channel_id = self._filter_key
         catalog = self._service.catalog()
         self._ui.catalog.model.set_records(catalog.records, catalog.issues)
         for job in self._service.interrupted_pipeline_jobs():
             label = f"Interrupted · {job.label} · click Resume"
             interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
             self._ui.catalog.model.set_progress(interrupted)
-        self._ui.catalog.proxy.set_channel(channel_id)
         state = self._service.metadata_queue_state()
         self._ui.metadata_status.setText(_metadata_status_text(state))
         self._refresh_smart_filters()
@@ -511,8 +509,13 @@ class LibraryWindow(
             if not channels:
                 continue
             heading = QtWidgets.QListWidgetItem(f"  {label} · {len(channels):,}")
-            heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
-            heading.setForeground(QtGui.QColor("#778292"))
+            if channels is pinned:
+                heading.setData(QtCore.Qt.ItemDataRole.UserRole, ("pinned", None))
+                heading.setToolTip("Show videos from all pinned channels")
+                heading.setForeground(QtGui.QColor("#f1c75b"))
+            else:
+                heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+                heading.setForeground(QtGui.QColor("#778292"))
             widget.addItem(heading)
             for channel in channels:
                 self._add_channel_item(widget, channel)
@@ -525,6 +528,7 @@ class LibraryWindow(
             widget.setCurrentRow(0)
             self._filter_key = ("all", None)
         widget.blockSignals(False)
+        self._apply_channel_scope()
 
     @staticmethod
     def _add_channel_item(widget: QtWidgets.QListWidget, channel: types.Channel) -> None:
@@ -565,7 +569,6 @@ class LibraryWindow(
             return
         self._filter_key = ("channel", channel.channel_id)
         self._refresh_channels()
-        self._ui.catalog.proxy.set_channel(channel.channel_id)
         self._ui.catalog.table.clearSelection()
         self._ui.catalog.detail.set_record(None)
         self._update_actions()
