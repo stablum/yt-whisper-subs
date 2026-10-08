@@ -744,7 +744,7 @@ class ChannelQueueTests(unittest.TestCase):
         labels = [channels.item(row).text() for row in range(channels.count())]
         self.assertEqual(sum("Important" in label for label in labels), 1)
         self.assertLess(labels.index("  ★  PINNED · 1"), labels.index("Important"))
-        self.assertLess(labels.index("Important"), labels.index("  CHANNELS · 1"))
+        self.assertLess(labels.index("Important"), labels.index("  OTHER CHANNELS · 1"))
         self.assertIn("⚡ Regular", labels)
 
     def test_channel_lookups_share_the_single_worker_queue(self) -> None:

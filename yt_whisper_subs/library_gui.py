@@ -503,19 +503,16 @@ class LibraryWindow(
         tracked = self._service.db.channels()
         self._channels_by_id = {channel.channel_id: channel for channel in tracked}
         pinned = [channel for channel in tracked if channel.pinned]
-        regular = [channel for channel in tracked if not channel.pinned]
-        sections = (("★  PINNED", pinned), ("CHANNELS", regular))
-        for label, channels in sections:
+        unpinned = [channel for channel in tracked if not channel.pinned]
+        sections = (("pinned", "★  PINNED", pinned), ("unpinned", "OTHER CHANNELS", unpinned))
+        for kind, label, channels in sections:
             if not channels:
                 continue
             heading = QtWidgets.QListWidgetItem(f"  {label} · {len(channels):,}")
-            if channels is pinned:
-                heading.setData(QtCore.Qt.ItemDataRole.UserRole, ("pinned", None))
-                heading.setToolTip("Show videos from all pinned channels")
-                heading.setForeground(QtGui.QColor("#f1c75b"))
-            else:
-                heading.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
-                heading.setForeground(QtGui.QColor("#778292"))
+            heading.setData(QtCore.Qt.ItemDataRole.UserRole, (kind, None))
+            heading.setToolTip(f"Show videos from all {kind} channels")
+            color = "#f1c75b" if kind == "pinned" else "#aeb8c6"
+            heading.setForeground(QtGui.QColor(color))
             widget.addItem(heading)
             for channel in channels:
                 self._add_channel_item(widget, channel)

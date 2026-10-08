@@ -136,7 +136,7 @@ These defaults are hard-coded near the top of the script:
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | Library watched rule | more than `95%` reached, or confirmed mpv end-of-file |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
-| Channel quick access | clickable Pinned shelf for combined videos; right-click or `Alt+P` to pin |
+| Channel quick access | clickable Pinned and Other channels groups; right-click or `Alt+P` to pin |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -652,7 +652,7 @@ It contains:
 
 - counted smart views for All, On device, Available, Removed, Pipeline, Unwatched,
   Continue, Watched, and Issues;
-- a counted, clickable **Pinned** shelf showing all pinned channels' videos;
+- counted, clickable **Pinned** and **Other channels** groups for combined videos;
 - instant title, channel, and YouTube-ID search that composes with smart views;
 - sortable, resizable, and reorderable pipeline, watched, title, channel,
   published, downloaded, duration, size, and view-count columns;
@@ -668,35 +668,40 @@ The native title bar includes the current application version. That value comes
 directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
 it is not duplicated in the window code.
 
-### Pinned Channels
+### Channel Groups
 
 Channels that matter most can be moved to the starred **Pinned** shelf at the
 top of the sidebar. Select a channel and use **Channel → Pin selected channel**,
 press **Alt+P**, or right-click the row and choose **Pin to quick access**.
 Pinned channels are shown only in that shelf, so they are not duplicated in the
-long regular list. The most recently pinned channel appears first; unpinned
+**Other channels** list. The most recently pinned channel appears first; unpinned
 channels remain alphabetical. Pin state is durable SQLite subscription data and
 survives restarts. The same context menu also exposes automatic-download and
 stop-tracking controls.
 
-Click the **Pinned** heading itself to see the combined video list from all
-pinned channels. Search, sorting, smart views, and their counts apply within
-that combined scope, just as they do for an individual channel. **Clear** keeps
-the Pinned scope selected. The list follows pin changes and catalog refreshes;
-if no pinned channels remain, the sidebar returns to **All videos**.
+Click **Pinned** to see the combined video list from all pinned channels, or
+**Other channels** to see videos from tracked channels that are not pinned.
+The count beside each heading is the number of channels in that group; add the
+two counts for the total tracked channels. **All videos** includes the whole
+catalog, including videos from channels that are not tracked.
+
+Search, sorting, smart views, and their counts apply within either combined
+scope, just as they do for an individual channel. **Clear** keeps the selected
+channel group. Both lists follow pin changes and catalog refreshes; if the
+selected group becomes empty, the sidebar returns to **All videos**.
 
 ### Responsiveness And Derived-State Safety
 
 Channel selection no longer queries SQLite or resets and resorts thousands of
 table rows. The complete current catalog lives in one Qt source model and the
-selected channel or Pinned shelf is applied by its proxy as an in-memory scope.
+selected channel or channel group is applied by its proxy as an in-memory scope.
 Stable YouTube IDs have an O(1) row index for pipeline/playback updates and
 selection restore; facet counts classify each matching row once instead of
 evaluating every view strategy repeatedly. Cell painting formats only the
 requested field and never opens or parses a file. Pipeline progress updates do
-not recalculate watched facets. The Pipeline facet refreshes only when a row enters or leaves active
-work, while percentage updates remain local to that row. Playback updates
-refresh watched facets only when their classification can change.
+not recalculate watched facets. The Pipeline facet refreshes only when a row
+enters or leaves active work, while percentage updates remain local to that row.
+Playback updates refresh watched facets only when their classification can change.
 
 SQLite, media, SRT, and chapter files remain the sources of truth. The only
 cross-refresh cache contains derived SRT validity and parsed chapter data. Every
@@ -732,7 +737,7 @@ logs continue to be written under `logs\`.
 The compact **Show** shelf above the table answers common library questions
 without opening dialogs or combining contradictory dropdowns:
 
-- **All** shows the complete current library, selected channel, or Pinned scope.
+- **All** shows every video within the selected channel or channel group.
 - **On device** shows every downloaded, playable video.
 - **Available** shows videos without a local download, including removed entries.
 - **Removed** shows entries whose video and yields were deliberately removed.
@@ -756,13 +761,13 @@ surprising blank table.
 
 These contextual counts replace the older four-card Videos, Downloaded,
 Available, and Channels summary row, reclaiming vertical space for the catalog.
-The sidebar shows separate counts for the **Pinned** and regular channel shelves.
+The sidebar shows separate channel counts for **Pinned** and **Other channels**.
 
 Only one smart view can be active, so availability and viewing-state filters
 cannot contradict each other. Channel selection remains in the sidebar and
 free-text search remains in the top bar; all three scopes compose. **Clear** or
 **Ctrl+Shift+F** resets search and the smart view without leaving the selected
-channel or Pinned scope. **Ctrl+F** focuses search. The chosen smart view is
+channel or channel group. **Ctrl+F** focuses search. The chosen smart view is
 remembered across application launches.
 
 Every table header divider can be dragged to resize its column, and every
@@ -2076,8 +2081,8 @@ semantics; playback IPC event handling; the strict 95% watched boundary, saved
 progress classification, accurate watched percentages (including removed entries
 and unknown duration), sticky completion persistence, and one-time activity
 announcements; smart
-view classification, live transitions, search-scoped counts, combined Pinned
-navigation and subscription changes, sidecar ingestion;
+view classification, live transitions, search-scoped counts, combined Pinned and
+Other channels navigation and subscription changes, sidecar ingestion;
 persisted live-probe pacing, explicit double-click overrides, unknown-state
 handling, pending stream releases,
 external-file reconciliation, and stale error/progress cleanup;

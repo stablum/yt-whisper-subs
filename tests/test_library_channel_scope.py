@@ -1,4 +1,4 @@
-"""Exercise combined Pinned navigation through real Qt widgets and SQLite.
+"""Exercise grouped channel navigation through real Qt widgets and SQLite.
 
 Example: `python -m unittest tests.test_library_channel_scope`.
 """
@@ -23,7 +23,7 @@ from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_views as views  # noqa: E402
 
 
-class PinnedScopeTests(unittest.TestCase):
+class ChannelScopeTests(unittest.TestCase):
     """Verify sidebar clicks, composable filters, and live pin membership.
 
     Example: clicking Pinned excludes regular and unsubscribed videos.
@@ -155,6 +155,48 @@ class PinnedScopeTests(unittest.TestCase):
         for channel in self._channels:
             db.set_channel_pinned(channel.channel_id, False)
         self._window.refresh()
+        self.assertEqual(self._window._filter_key, ("all", None))
+        self.assertEqual(len(self._visible_ids()), 4)
+
+    def test_other_channels_excludes_pinned_and_untracked_videos(self) -> None:
+        """Click Other channels while preserving search, view, and scoped counts.
+
+        Example: Issues shows only a failed video from an unpinned subscription.
+        """
+
+        self._service.db.set_download_error("ccccccccccc", "Download failed")
+        self._window.refresh()
+        self._click_scope(("pinned", None))
+        self._window._ui.header.search.setText("news")
+        proxy = self._window._ui.catalog.proxy
+        proxy.set_view(views.VideoView.ISSUES)
+        self.assertEqual(self._visible_ids(), set())
+        self._click_scope(("unpinned", None))
+        self.assertEqual(self._visible_ids(), {"ccccccccccc"})
+        self.assertEqual(proxy.view, views.VideoView.ISSUES)
+        counts = proxy.facet_counts()
+        self.assertEqual(counts[views.VideoView.ALL], 1)
+        self.assertEqual(counts[views.VideoView.ISSUES], 1)
+        self._window._clear_filters()
+        self.assertEqual(self._window._filter_key, ("unpinned", None))
+        self.assertEqual(self._visible_ids(), {"ccccccccccc"})
+        self.assertIsNone(self._window._selected_channel())
+
+    def test_other_channels_tracks_pin_changes_and_falls_back_when_empty(self) -> None:
+        """Keep the unpinned group current after membership changes and refresh.
+
+        Example: unpinning a channel adds its videos without another sidebar click.
+        """
+
+        self._click_scope(("unpinned", None))
+        db = self._service.db
+        db.set_channel_pinned(self._channels[0].channel_id, False)
+        self._window.refresh()
+        self.assertEqual(self._window._filter_key, ("unpinned", None))
+        self.assertEqual(self._visible_ids(), {"aaaaaaaaaaa", "ccccccccccc"})
+        for channel in self._channels:
+            db.set_channel_pinned(channel.channel_id, True)
+        self._window._refresh_channels()
         self.assertEqual(self._window._filter_key, ("all", None))
         self.assertEqual(len(self._visible_ids()), 4)
 

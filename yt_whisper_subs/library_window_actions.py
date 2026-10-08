@@ -223,14 +223,16 @@ class WindowActionsMixin:
     def _apply_channel_scope(self) -> None:
         """Resolve sidebar navigation using the current subscription snapshot.
 
-        Example: selecting Pinned combines every currently pinned channel.
+        Example: Pinned and Other channels select complementary channel groups.
         """
 
         kind, channel_id = self._filter_key
         channel_ids = None
-        if kind == "pinned":
+        if kind in {"pinned", "unpinned"}:
+            pinned = kind == "pinned"
             channel_ids = frozenset(
-                channel.channel_id for channel in self._channels_by_id.values() if channel.pinned
+                channel.channel_id for channel in self._channels_by_id.values()
+                if channel.pinned == pinned
             )
         elif kind == "channel" and channel_id is not None:
             channel_ids = frozenset({channel_id})
