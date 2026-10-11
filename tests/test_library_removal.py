@@ -24,6 +24,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_removal_actions
 from yt_whisper_subs import library_service
+from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
 from yt_whisper_subs import library_widgets
@@ -309,3 +310,40 @@ class FilteredRemovalUiTests(RemovalFixture, unittest.TestCase):
         self.assertIs(button.menu().actions()[0], action)
         action.setEnabled(False)
         self.assertFalse(button.menu().actions()[0].isEnabled())
+
+    def test_narrow_filter_bar_keeps_one_row_and_overflow_selection(self) -> None:
+        """Retain filter semantics when the row overflows; e.g. choose Watched in a narrow window."""
+
+        bar = library_widgets.SmartFilterBar()
+        bar.setStyleSheet(library_theme.STYLE)
+        counts = {spec.view: 27 for spec in views.VIDEO_VIEWS}
+        counts[views.VideoView.ALL] = 775
+        counts[views.VideoView.ISSUES] = 0
+        bar.set_counts(counts, 775, False)
+        changes: list[int] = []
+        bar.view_changed.connect(changes.append)
+        bar.resize(500, bar.sizeHint().height())
+        bar.show()
+        self.addCleanup(bar.close)
+        self._app.processEvents()
+        toolbar = bar.findChild(QtWidgets.QToolBar, "filterViews")
+        extension = toolbar.findChild(QtWidgets.QToolButton, "qt_toolbar_ext_button")
+        self.assertTrue(extension.isVisible())
+        actions = {action.data(): action for action in extension.menu().actions()}
+        watched = actions[int(views.VideoView.WATCHED)]
+        self.assertFalse(actions[int(views.VideoView.ISSUES)].isEnabled())
+
+        watched.trigger()
+        bar.set_counts(counts, 27, False)
+        self._app.processEvents()
+
+        self.assertEqual(changes, [int(views.VideoView.WATCHED)])
+        self.assertTrue(watched.isChecked())
+        self.assertEqual(sum(action.isChecked() for action in toolbar.actions()), 1)
+        tops = {toolbar.widgetForAction(action).y() for action in toolbar.actions()
+                if toolbar.widgetForAction(action).isVisible()}
+        self.assertEqual(len(tops), 1)
+        self.assertTrue(bar.rect().contains(bar.findChild(QtWidgets.QToolButton, "filterActions").geometry()))
+        bar.set_view(views.VideoView.ALL)
+        self.assertFalse(watched.isChecked())
+        self.assertEqual(changes, [int(views.VideoView.WATCHED)])

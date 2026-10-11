@@ -31,15 +31,17 @@ QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }
 QToolButton#filterActions { background: transparent; border: 1px solid #353e4b; border-radius: 7px; padding: 0 6px; font-size: 16pt; }
 QToolButton#filterActions:hover { background: #303946; border-color: #485567; }
 QToolButton#filterActions::menu-indicator { image: none; }
-QPushButton#filterChip {
+QToolBar#filterViews { background: transparent; border: 0; spacing: 6px; padding: 0; }
+QToolBar#filterViews QToolButton {
   background: #272d37; border: 1px solid #353e4b; border-radius: 13px;
   color: #aeb8c6; padding: 5px 10px;
 }
-QPushButton#filterChip:hover { background: #303946; border-color: #485567; color: #e6edf5; }
-QPushButton#filterChip:checked {
+QToolBar#filterViews QToolButton:hover { background: #303946; border-color: #485567; color: #e6edf5; }
+QToolBar#filterViews QToolButton:checked {
   background: #254f78; border-color: #4ea1f3; color: #ffffff; font-weight: 600;
 }
-QPushButton#filterChip:disabled { background: #20252d; border-color: #2b313b; color: #5f6875; }
+QToolBar#filterViews QToolButton:disabled { background: #20252d; border-color: #2b313b; color: #5f6875; }
+QToolBar#filterViews QToolButton#qt_toolbar_ext_button { background: transparent; border: 0; padding: 0; }
 QPushButton#clearFilters { background: transparent; border: 0; color: #8fc7ff; padding: 5px 7px; }
 QPushButton#clearFilters:hover { background: #293440; color: white; }
 QTableView { background: #1c2028; alternate-background-color: #191d24; border: 1px solid #2d3440; border-radius: 8px; gridline-color: transparent; }

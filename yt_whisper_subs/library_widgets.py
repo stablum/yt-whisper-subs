@@ -49,32 +49,39 @@ class SmartFilterBar(QtWidgets.QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("filterBar")
-        layout = QtWidgets.QGridLayout(self)
+        layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(11, 9, 11, 9)
         layout.setSpacing(6)
         eyebrow = QtWidgets.QLabel("SHOW")
         eyebrow.setObjectName("filterEyebrow")
-        layout.addWidget(eyebrow, 0, 0, 2, 1)
+        layout.addWidget(eyebrow)
 
-        self._group = QtWidgets.QButtonGroup(self)
+        # Qt provides a native overflow menu instead of wrapping or clipping filters.
+        self._views = QtWidgets.QToolBar()
+        self._views.setObjectName("filterViews")
+        self._views.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self._views.setMovable(False)
+        self._views.setFloatable(False)
+        extension = self._views.findChild(QtWidgets.QToolButton, "qt_toolbar_ext_button")
+        # Text-only chips must not suppress Qt's icon-only overflow arrow.
+        extension.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
+        extension.setArrowType(QtCore.Qt.ArrowType.RightArrow)
+        extension.setToolTip("More video filters")
+        extension.setAccessibleName("More video filters")
+        layout.addWidget(self._views, 1)
+        self._group = QtGui.QActionGroup(self)
         self._group.setExclusive(True)
-        self._buttons: dict[views.VideoView, QtWidgets.QPushButton] = {}
-        # Two rows retain readable labels beside cleanup at the minimum window width.
-        for idx, spec in enumerate(views.VIDEO_VIEWS):
-            button = QtWidgets.QPushButton(spec.label)
-            button.setObjectName("filterChip")
-            button.setCheckable(True)
-            button.setToolTip(spec.tooltip)
-            button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
-            self._group.addButton(button, int(spec.view))
-            self._buttons[spec.view] = button
-            layout.addWidget(button, idx // 5, idx % 5 + 1, QtCore.Qt.AlignmentFlag.AlignLeft)
-        self._buttons[views.VideoView.ALL].setChecked(True)
-        self._group.idClicked.connect(self.view_changed.emit)
-
-        controls = QtWidgets.QHBoxLayout()
-        controls.setSpacing(6)
-        controls.addStretch(1)
+        self._view_actions: dict[views.VideoView, QtGui.QAction] = {}
+        for spec in views.VIDEO_VIEWS:
+            action = self._views.addAction(spec.label)
+            action.setCheckable(True)
+            action.setData(int(spec.view))
+            action.setToolTip(spec.tooltip)
+            self._group.addAction(action)
+            self._view_actions[spec.view] = action
+            self._views.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+        self._view_actions[views.VideoView.ALL].setChecked(True)
+        self._group.triggered.connect(lambda action: self.view_changed.emit(action.data()))
         self._result = QtWidgets.QLabel("0 videos")
         self._result.setObjectName("filterResult")
         self._clear = QtWidgets.QPushButton("Clear")
@@ -82,8 +89,8 @@ class SmartFilterBar(QtWidgets.QFrame):
         self._clear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._clear.clicked.connect(lambda: self.reset_requested.emit())
         self._clear.hide()
-        controls.addWidget(self._result)
-        controls.addWidget(self._clear)
+        layout.addWidget(self._result)
+        layout.addWidget(self._clear)
         self._actions = QtWidgets.QToolButton()
         self._actions.setText("...")
         self._actions.setObjectName("filterActions")
@@ -91,10 +98,7 @@ class SmartFilterBar(QtWidgets.QFrame):
         self._actions.setAccessibleName("Filtered video actions")
         self._actions.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self._actions.setMenu(QtWidgets.QMenu(self._actions))
-        controls.addWidget(self._actions)
-        # Give spare width to an empty column, not the Pipeline chip above the controls.
-        layout.setColumnStretch(6, 1)
-        layout.addLayout(controls, 1, 5, 1, 2)
+        layout.addWidget(self._actions)
 
     def set_removal_action(self, action: QtGui.QAction) -> None:
         """Share the window's filtered cleanup action; e.g. Watched → ... → Remove."""
@@ -107,7 +111,7 @@ class SmartFilterBar(QtWidgets.QFrame):
         Example: startup restores a persisted `views.VideoView.CONTINUE` selection.
         """
 
-        self._buttons[view].setChecked(True)
+        self._view_actions[view].setChecked(True)
 
     def set_counts(
         self,
@@ -120,12 +124,12 @@ class SmartFilterBar(QtWidgets.QFrame):
         Example: zero-result inactive views become quiet and non-clickable.
         """
 
-        active = views.VideoView(self._group.checkedId())
+        active = views.VideoView(self._group.checkedAction().data())
         labels = {spec.view: spec.label for spec in views.VIDEO_VIEWS}
-        for view, button in self._buttons.items():
+        for view, action in self._view_actions.items():
             count = counts.get(view, 0)
-            button.setText(f"{labels[view]}  {count:,}")
-            button.setEnabled(bool(count) or view in {active, views.VideoView.ALL})
+            action.setText(f"{labels[view]}  {count:,}")
+            action.setEnabled(bool(count) or view in {active, views.VideoView.ALL})
 
         available = counts.get(views.VideoView.ALL, 0)
         noun = "match" if search_active else "video"

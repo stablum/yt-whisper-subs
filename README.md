@@ -1133,10 +1133,10 @@ and continues to participate in the Watched, Continue, and Unwatched filters.
 Removed entries also remain Available for an explicit download.
 
 To reclaim space from multiple videos, choose **Remove filtered downloads…**
-from the filter bar's **...** menu or the **Video** menu. The filter chips use
-two rows so their labels and the cleanup menu fit the minimum window width.
-Chips keep their natural widths; unused space separates them from the result
-count and cleanup menu, which remain aligned to the right.
+from the filter bar's **...** menu or the **Video** menu. The filter chips stay
+on one row at their natural widths. When a narrow window cannot fit them all,
+Qt's toolbar overflow menu exposes the remaining filters. The result count,
+Clear control, and cleanup menu stay on the same row at the right.
 For watched downloads, select **Watched** first. The action combines the current smart filter, channel
 scope, and search; it includes every matching row, even outside the visible
 viewport, and needs no row selection. With **All** and no channel/search
