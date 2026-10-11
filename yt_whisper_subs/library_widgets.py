@@ -452,8 +452,14 @@ class SettingsDialog(QtWidgets.QDialog):
         self._resolution.currentIndexChanged.connect(
             lambda _idx: self._higher.setEnabled(bool(self._resolution.currentData()))
         )
-        self._resolution.setToolTip("Applies to future downloads; existing videos are reused.")
-        self._higher.setToolTip("Turn off to use the best available resolution at or below the preference.")
+        self._resolution.setToolTip(
+            "Try this resolution, the next lower option, higher resolutions, then remaining lower ones. "
+            "Applies to future downloads; existing videos are reused."
+        )
+        self._higher.setToolTip(
+            "Higher resolutions are tried only after the preferred resolution and next lower option. "
+            "Turn off to keep the preferred resolution as a ceiling."
+        )
         self._recent = QtWidgets.QSpinBox()
         self._recent.setRange(1, cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT)
         self._recent.setSuffix(" per section")

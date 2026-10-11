@@ -20,18 +20,29 @@ class VideoPrefs(NamedTuple):
     allow_higher: bool = cfg.DEFAULT_ALLOW_HIGHER_RESOLUTION
 
     def format_selector(self) -> str:
-        """Prefer an exact height, or enforce a ceiling when higher is disabled.
+        """Try the preferred height, next lower preset, higher, then remaining lower.
 
-        Example: 1080p beats 4K; absent 1080p can still fall back to 4K.
+        Example: 1080p -> 720p -> above 1080p -> remaining lower heights.
         """
 
         best = "bv*+ba/b"
         if not self.resolution:
             return best
-        comparison = "=" if self.allow_higher else "<="
-        height = f"[height{comparison}{self.resolution}]"
-        preferred = f"bv*{height}+ba/b{height}"
-        return f"{preferred}/{best}" if self.allow_higher else preferred
+        filters = [f"[height={self.resolution}]"]
+        next_lower = next(
+            (res for res in reversed(cfg.VIDEO_RESOLUTIONS) if 0 < res < self.resolution),
+            None,
+        )
+        if next_lower is not None:
+            filters.append(f"[height={next_lower}]")
+        if self.allow_higher:
+            filters.append(f"[height>{self.resolution}]")
+        filters.append(f"[height<{self.resolution}]")
+        choices = [f"bv*{height}+ba/b{height}" for height in filters]
+        if self.allow_higher:
+            # Unreported heights are a last resort; a strict ceiling cannot verify them.
+            choices.append(best)
+        return "/".join(choices)
 
     def command_args(self) -> list[str]:
         """Pass the same policy to a library-owned CLI pipeline.

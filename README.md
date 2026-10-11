@@ -107,8 +107,9 @@ These defaults are hard-coded near the top of the script:
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
 | Downloaded video container | `mkv` |
 | Preferred video resolution | `1080p`; configurable in Library Settings and the CLI |
-| Higher-resolution fallback | allowed when the preferred resolution is unavailable |
-| yt-dlp format selector | `bv*[height=1080]+ba/b[height=1080]/bv*+ba/b` by default |
+| Resolution preference order | `1080p` → `720p` → higher than `1080p` → remaining lower resolutions |
+| Higher-resolution fallback | allowed only after the preferred resolution and next lower preset are unavailable |
+| yt-dlp format selector | derived from the resolution preferences; explicit CLI override supported |
 | YouTube media fallback | default-client HLS, then `web_safari` HLS; at most three attempts |
 | yt-dlp progress interval | `1` second |
 | Extracted audio format | `opus` |
@@ -369,11 +370,11 @@ Privacy note: yt-dlp warns that info JSON can contain personal information and
 temporary extractor URLs. Keep the `metadata\` directory private; the project
 does not upload these sidecars or put them in the repository.
 
-The video file is intentionally not lossless. New downloads prefer 1080p over
-higher resolutions to save disk space. If 1080p is unavailable, the default
-falls back to the best available resolution, including higher ones. The yt-dlp
-format selector keeps YouTube's already-compressed audio/video streams and
-merges them into an `mkv` container without resizing or re-encoding. Audio
+The video file is intentionally not lossless. New downloads try 1080p, then
+720p, then higher than 1080p, then remaining lower resolutions. This saves disk
+space when 720p is available alongside higher resolutions but 1080p is missing.
+The yt-dlp format selector keeps YouTube's already-compressed audio/video streams
+and merges them into an `mkv` container without resizing or re-encoding. Audio
 extracted for Whisper is also lossy, defaulting to Opus at 48 kbps, mono, 16 kHz.
 
 ## The End-To-End Pipeline
@@ -624,22 +625,27 @@ Design notes:
 The default format selector is:
 
 ```text
-bv*[height=1080]+ba/b[height=1080]/bv*+ba/b
+bv*[height=1080]+ba/b[height=1080]/bv*[height=720]+ba/b[height=720]/bv*[height>1080]+ba/b[height>1080]/bv*[height<1080]+ba/b[height<1080]/bv*+ba/b
 ```
 
-This first selects a video stream at exactly 1080 pixels high with the best
-audio, or a combined 1080p format. If neither is available, it selects the best
-available video/audio, including higher or lower resolutions. The resolution
-preference is checked before transport preferences on HLS retries. These are
-compressed source streams; the script does not resize or re-encode them.
+This tries four stages: exactly 1080 pixels high, exactly 720 pixels high,
+higher than 1080 pixels, then remaining lower heights. Within each stage it
+selects the best video stream with the best audio, or a combined format. Formats
+with unreported heights are a last resort after all known heights. The stages
+are checked before transport preferences on HLS retries. These are compressed
+source streams; the script does not resize or re-encode them.
 
 Under **Library → Settings**, choose **Preferred video resolution** (360p through
 4320p, or **Best available**) and **Allow higher resolution when preferred is
 unavailable**. The defaults are 1080p with higher-resolution fallback enabled.
-Turning fallback off uses the best available video at or below the preference;
-if every format exceeds that ceiling, the download fails instead of exceeding
-it. Settings are persisted in SQLite and apply to subsequent downloads,
-including videos already queued. An active download keeps its current settings,
+Choosing another preferred resolution substitutes that target and its next
+lower preset: for example, 1440p → 1080p → higher than 1440p → remaining lower
+heights. The lowest preset, 360p, has no second preferred preset. Turning higher
+fallback off skips the higher stage and rejects unreported heights, keeping the
+selected preference as a strict ceiling. If every format exceeds that ceiling,
+the download fails instead of exceeding it. Settings are persisted in SQLite and
+apply to subsequent downloads, including videos already queued. An active
+download keeps its current settings,
 and existing downloaded videos remain reusable at their original resolution.
 
 The CLI has the same preferences. For example, to cap new downloads at 720p:
@@ -1712,8 +1718,8 @@ rejects `none` and `xhigh` for `gpt-5-mini`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--video-resolution HEIGHT` | `1080` | Prefer this video height; choices: `0` (best available), `360`, `480`, `720`, `1080`, `1440`, `2160`, `4320`. |
-| `--allow-higher-resolution` / `--no-allow-higher-resolution` | allowed | Fall back to best available if the preference is missing; disabling sets a resolution ceiling. |
+| `--video-resolution HEIGHT` | `1080` | Try this height, next lower preset, higher, then remaining lower; choices: `0` (best available), `360`, `480`, `720`, `1080`, `1440`, `2160`, `4320`. |
+| `--allow-higher-resolution` / `--no-allow-higher-resolution` | allowed | Allow the higher stage after both preferred heights are missing; disabling sets a strict resolution ceiling. |
 | `--video-format FORMAT` | derived from resolution preferences | Explicit yt-dlp format selector; overrides both resolution preferences. |
 | `--merge-output-format mkv|mp4|webm` | `mkv` | Container for downloaded streams. |
 | `--min-video-duration SECONDS` | off | Check a URL video's local duration before transcription; the library sets this for explicit `post_live` attempts and retries of failed local media with known duration. |

@@ -70,26 +70,35 @@ class ResolutionTests(unittest.TestCase):
         with yt_dlp.YoutubeDL(options) as downloader:
             return downloader.process_ie_result(info, download=False)
 
-    def test_default_prefers_1080_in_all_transports(self) -> None:
-        """Choose full HD ahead of 1440p/4K on every bounded retry.
+    def test_default_chain_in_all_transports(self) -> None:
+        """Keep the four resolution stages ahead of every transport's ranking.
 
-        Example: HLS sorting still honors the exact-height first choice.
+        Example: missing 1080p chooses 720p even when 4K is available.
         """
 
+        cases = (
+            ((720, 1080, 1440, 2160), 1080),
+            ((480, 720, 1440, 2160), 720),
+            ((480, 1440, 2160), 2160),
+            ((240, 360, 480), 480),
+            ((480, 900, 1440), 1440),
+            ((720, 900, 1440), 720),
+        )
         for mode in youtube.DownloadMode:
             for combined in (False, True):
-                with self.subTest(mode=mode, combined=combined):
-                    result = self._select((720, 1080, 1440, 2160), combined=combined, mode=mode)
-                    self.assertEqual(result["height"], 1080)
-                    self.assertNotEqual(result["acodec"], "none")
+                for heights, expected in cases:
+                    with self.subTest(mode=mode, combined=combined, heights=heights):
+                        result = self._select(heights, combined=combined, mode=mode)
+                        self.assertEqual(result["height"], expected)
+                        self.assertNotEqual(result["acodec"], "none")
 
     def test_missing_preference_accepts_other_resolutions(self) -> None:
-        """Retain best-available fallback above, below, or without known height.
+        """Retain usable fallbacks when preferred formats or height metadata are absent.
 
-        Example: only 720p and 1440p available permits 1440p.
+        Example: missing 1080p and 720p still permits 1440p.
         """
 
-        for heights, expected in (((720, 1440), 1440), ((720,), 720), ((None,), None)):
+        for heights, expected in (((480, 1440), 1440), ((720,), 720), ((None,), None)):
             with self.subTest(heights=heights):
                 self.assertEqual(self._select(heights).get("height"), expected)
 
@@ -101,7 +110,12 @@ class ResolutionTests(unittest.TestCase):
 
         cases = (
             (("--video-resolution", "720"), (720, 1080, 2160), 720),
+            (("--video-resolution", "720"), (360, 480, 1080), 480),
+            (("--video-resolution", "1440"), (720, 1080, 2160), 1080),
+            (("--video-resolution", "360"), (240,), 240),
             (("--no-allow-higher-resolution",), (720, 1440), 720),
+            (("--no-allow-higher-resolution",), (720, 900, 1440), 720),
+            (("--no-allow-higher-resolution",), (480, 900, 1440), 900),
             (("--video-resolution", "0"), (720, 1080, 2160), 2160),
             (("--no-allow-higher-resolution", "--video-format", "bv*+ba/b"), (1080, 2160), 2160),
         )
@@ -110,6 +124,8 @@ class ResolutionTests(unittest.TestCase):
                 self.assertEqual(self._select(heights, flags)["height"], expected)
         with self.assertRaises(yt_dlp.utils.ExtractorError):
             self._select((1440,), ("--no-allow-higher-resolution",))
+        with self.assertRaises(yt_dlp.utils.ExtractorError):
+            self._select((None,), ("--no-allow-higher-resolution",))
 
 
 class NativePrefsTests(unittest.TestCase):

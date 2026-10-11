@@ -164,13 +164,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         choices=cfg.VIDEO_RESOLUTIONS,
         default=cfg.DEFAULT_VIDEO_RESOLUTION,
-        help="Preferred video height in pixels; 0 selects best available. Default: 1080.",
+        help=(
+            "Preferred height, then next lower preset, higher, and remaining lower heights. "
+            "0 selects best available. Default: 1080."
+        ),
     )
     parser.add_argument(
         "--allow-higher-resolution",
         action=argparse.BooleanOptionalAction,
         default=cfg.DEFAULT_ALLOW_HIGHER_RESOLUTION,
-        help="Allow best available resolution when the preferred height is missing. Default: on.",
+        help="Allow higher resolutions after the preferred height and next lower preset are missing. Default: on.",
     )
     parser.add_argument(
         "--video-format",
