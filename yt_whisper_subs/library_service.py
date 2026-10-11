@@ -14,6 +14,7 @@ from typing import NamedTuple
 
 from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
+from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_channel_service
 from yt_whisper_subs import library_db
@@ -78,6 +79,7 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
             paths["python"],
             self.out_dir,
             cookies,
+            prefs=self.video_prefs(),
         )
         self._playback = playback.PlaybackControl()
         self._artifacts = library_artifacts.ArtifactCache(self.out_dir)
@@ -99,14 +101,32 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         return self._artifacts.issue(record)
 
     def reload_clients(self) -> None:
-        """Apply changed cookie settings to subsequent network operations.
+        """Apply saved cookies and resolution policy to subsequent operations.
 
         Example: `service.reload_clients()` after the settings dialog.
         """
 
         cookies = self.cookies_from_browser()
         self._feed = self._feed.with_cookies(cookies)
-        self._downloader = self._downloader.with_cookies(cookies)
+        self._downloader = self._downloader.with_settings(cookies, self.video_prefs())
+
+    def video_prefs(self) -> download_prefs.VideoPrefs:
+        """Read durable download preferences with safe resolution validation.
+
+        Example: reopening the library retains a saved 720p ceiling.
+        """
+
+        raw = self.db.setting("video_resolution", str(cfg.DEFAULT_VIDEO_RESOLUTION))
+        try:
+            resolution = int(raw)
+        except ValueError:
+            resolution = cfg.DEFAULT_VIDEO_RESOLUTION
+        if resolution not in cfg.VIDEO_RESOLUTIONS:
+            resolution = cfg.DEFAULT_VIDEO_RESOLUTION
+        allow_higher = self.db.setting(
+            "allow_higher_resolution", str(int(cfg.DEFAULT_ALLOW_HIGHER_RESOLUTION)),
+        ) in {"1", "True", "true"}
+        return download_prefs.VideoPrefs(resolution, allow_higher)
 
     def cookies_from_browser(self) -> str | None:
         """Read the optional yt-dlp browser cookie source.

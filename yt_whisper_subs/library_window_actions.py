@@ -164,6 +164,7 @@ class WindowActionsMixin:
             windows_startup.is_enabled(self._service.out_dir),
             recent,
             self._service.db.setting("channel_published_after", ""),
+            self._service.video_prefs(),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -186,6 +187,8 @@ class WindowActionsMixin:
         self._service.db.set_setting("minimize_to_tray", int(values.minimize_to_tray))
         self._service.db.set_setting("channel_recent_limit", values.channel_recent_limit)
         self._service.db.set_setting("channel_published_after", values.channel_published_after)
+        self._service.db.set_setting("video_resolution", values.download.resolution)
+        self._service.db.set_setting("allow_higher_resolution", int(values.download.allow_higher))
         self._service.reload_clients()
         if cookies_changed:
             released = self._service.db.reset_metadata_attempts()

@@ -14,6 +14,7 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
+from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
@@ -33,6 +34,7 @@ class SettingsValues(NamedTuple):
     start_with_windows: bool
     channel_recent_limit: int
     channel_published_after: str
+    download: download_prefs.VideoPrefs = download_prefs.VideoPrefs()
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -415,7 +417,7 @@ class AddChannelDialog(QtWidgets.QDialog):
 
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Edit scheduling, retention, browser, tray, and login preferences.
+    """Edit download, scheduling, retention, browser, tray, and login preferences.
 
     Example: `dialog.values()` supplies durable settings after acceptance.
     """
@@ -437,6 +439,21 @@ class SettingsDialog(QtWidgets.QDialog):
         self._cookies.setEditable(True)
         self._cookies.addItems(["", "firefox", "chrome", "edge", "brave"])
         self._cookies.setCurrentText(values.cookies_from_browser)
+        self._resolution = QtWidgets.QComboBox()
+        self._resolution.setObjectName("videoResolution")
+        for resolution in cfg.VIDEO_RESOLUTIONS:
+            label = f"{resolution}p" if resolution else "Best available"
+            self._resolution.addItem(label, resolution)
+        self._resolution.setCurrentIndex(self._resolution.findData(values.download.resolution))
+        self._higher = QtWidgets.QCheckBox("Allow higher resolution when preferred is unavailable")
+        self._higher.setObjectName("allowHigherResolution")
+        self._higher.setChecked(values.download.allow_higher)
+        self._higher.setEnabled(bool(values.download.resolution))
+        self._resolution.currentIndexChanged.connect(
+            lambda _idx: self._higher.setEnabled(bool(self._resolution.currentData()))
+        )
+        self._resolution.setToolTip("Applies to future downloads; existing videos are reused.")
+        self._higher.setToolTip("Turn off to use the best available resolution at or below the preference.")
         self._recent = QtWidgets.QSpinBox()
         self._recent.setRange(1, cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT)
         self._recent.setSuffix(" per section")
@@ -460,6 +477,8 @@ class SettingsDialog(QtWidgets.QDialog):
             self._startup.setToolTip("Available only on Windows")
         form.addRow("Check every", self._hours)
         form.addRow("Cookies from browser", self._cookies)
+        form.addRow("Preferred video resolution", self._resolution)
+        form.addRow("Resolution fallback", self._higher)
         form.addRow("Recent history", self._recent)
         form.addRow("Published since", self._cutoff)
         form.addRow("Background", self._tray)
@@ -500,4 +519,5 @@ class SettingsDialog(QtWidgets.QDialog):
             self._startup.isChecked(),
             self._recent.value(),
             published_after,
+            download_prefs.VideoPrefs(self._resolution.currentData(), self._higher.isChecked()),
         )

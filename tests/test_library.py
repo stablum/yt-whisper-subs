@@ -18,6 +18,7 @@ from unittest import mock
 from PySide6 import QtCore
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
@@ -141,13 +142,13 @@ class FakeDownloader:
         self._out_dir = out_dir
         self.calls: list[str] = []
 
-    def with_cookies(self, cookies: str | None) -> FakeDownloader:
+    def with_settings(self, cookies: str | None, prefs: download_prefs.VideoPrefs) -> FakeDownloader:
         """Keep the same fake strategy when settings change.
 
-        Example: `downloader.with_cookies("firefox") is downloader`.
+        Example: saving download preferences retains the fake strategy.
         """
 
-        del cookies
+        del cookies, prefs
         return self
 
     def download(self, record: types.VideoRecord, report) -> None:

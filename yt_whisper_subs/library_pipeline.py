@@ -14,6 +14,7 @@ from pathlib import Path
 from types import TracebackType
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import pipeline_progress as progress
@@ -30,18 +31,22 @@ class PipelineDownloader:
     Example: `downloader.download(record, report)` preserves CLI behavior.
     """
 
-    def __init__(self, python_exe: Path, out_dir: Path, cookies: str | None = None) -> None:
+    def __init__(
+        self, python_exe: Path, out_dir: Path, cookies: str | None = None,
+        *, prefs: download_prefs.VideoPrefs = download_prefs.VideoPrefs(),
+    ) -> None:
         self._python_exe = python_exe
         self._out_dir = out_dir
         self._cookies = cookies
+        self._prefs = prefs
 
-    def with_cookies(self, cookies: str | None) -> PipelineDownloader:
-        """Return a downloader configured for private or age-gated feeds.
+    def with_settings(self, cookies: str | None, prefs: download_prefs.VideoPrefs) -> PipelineDownloader:
+        """Apply cookies and resolution policy to subsequent downloads.
 
-        Example: `downloader.with_cookies("firefox")`.
+        Example: saving native settings changes the next queued download.
         """
 
-        return type(self)(self._python_exe, self._out_dir, cookies or None)
+        return type(self)(self._python_exe, self._out_dir, cookies or None, prefs=prefs)
 
     def download(self, record: types.VideoRecord, report: ReportFn) -> None:
         """Generate all normal durable yields without opening mpv afterward.
@@ -58,6 +63,7 @@ class PipelineDownloader:
             str(self._out_dir),
             "--no-play",
             "--chapters",
+            *self._prefs.command_args(),
         ]
         if self._cookies:
             cmd += ["--cookies-from-browser", self._cookies]

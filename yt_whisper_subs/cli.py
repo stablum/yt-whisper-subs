@@ -9,6 +9,7 @@ import argparse
 import math
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import download_prefs
 from yt_whisper_subs import opts
 
 
@@ -159,12 +160,21 @@ def parse_args() -> argparse.Namespace:
         help="Lossy audio format to keep for Whisper input. Default: opus.",
     )
     parser.add_argument(
+        "--video-resolution",
+        type=int,
+        choices=cfg.VIDEO_RESOLUTIONS,
+        default=cfg.DEFAULT_VIDEO_RESOLUTION,
+        help="Preferred video height in pixels; 0 selects best available. Default: 1080.",
+    )
+    parser.add_argument(
+        "--allow-higher-resolution",
+        action=argparse.BooleanOptionalAction,
+        default=cfg.DEFAULT_ALLOW_HIGHER_RESOLUTION,
+        help="Allow best available resolution when the preferred height is missing. Default: on.",
+    )
+    parser.add_argument(
         "--video-format",
-        default="bv*+ba/b",
-        help=(
-            "yt-dlp format selector. The default stores YouTube's already-lossy "
-            "compressed A/V streams without creating a lossless video."
-        ),
+        help="Explicit yt-dlp format selector; overrides the resolution preferences.",
     )
     parser.add_argument(
         "--merge-output-format",
@@ -415,5 +425,9 @@ def parse_args() -> argparse.Namespace:
 
     if args.force_chapters:
         args.chapters = True
+
+    if args.video_format is None:
+        prefs = download_prefs.VideoPrefs(args.video_resolution, args.allow_higher_resolution)
+        args.video_format = prefs.format_selector()
 
     return args

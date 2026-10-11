@@ -106,7 +106,9 @@ These defaults are hard-coded near the top of the script:
 | Python version for uv venv | `3.14` |
 | Torch CUDA wheel index | `https://download.pytorch.org/whl/cu128` |
 | Downloaded video container | `mkv` |
-| yt-dlp format selector | `bv*+ba/b` |
+| Preferred video resolution | `1080p`; configurable in Library Settings and the CLI |
+| Higher-resolution fallback | allowed when the preferred resolution is unavailable |
+| yt-dlp format selector | `bv*[height=1080]+ba/b[height=1080]/bv*+ba/b` by default |
 | YouTube media fallback | default-client HLS, then `web_safari` HLS; at most three attempts |
 | yt-dlp progress interval | `1` second |
 | Extracted audio format | `opus` |
@@ -367,10 +369,12 @@ Privacy note: yt-dlp warns that info JSON can contain personal information and
 temporary extractor URLs. Keep the `metadata\` directory private; the project
 does not upload these sidecars or put them in the repository.
 
-The video file is intentionally not lossless. The default yt-dlp format selector
-keeps YouTube's already-compressed audio/video streams and merges them into an
-`mkv` container. Audio extracted for Whisper is also lossy, defaulting to Opus at
-48 kbps, mono, 16 kHz.
+The video file is intentionally not lossless. New downloads prefer 1080p over
+higher resolutions to save disk space. If 1080p is unavailable, the default
+falls back to the best available resolution, including higher ones. The yt-dlp
+format selector keeps YouTube's already-compressed audio/video streams and
+merges them into an `mkv` container without resizing or re-encoding. Audio
+extracted for Whisper is also lossy, defaulting to Opus at 48 kbps, mono, 16 kHz.
 
 ## The End-To-End Pipeline
 
@@ -620,12 +624,34 @@ Design notes:
 The default format selector is:
 
 ```text
-bv*+ba/b
+bv*[height=1080]+ba/b[height=1080]/bv*+ba/b
 ```
 
-That means "best video-only plus best audio-only, or best combined format as a
-fallback." These are compressed streams from the source platform; the script is
-not making a lossless video transcode.
+This first selects a video stream at exactly 1080 pixels high with the best
+audio, or a combined 1080p format. If neither is available, it selects the best
+available video/audio, including higher or lower resolutions. The resolution
+preference is checked before transport preferences on HLS retries. These are
+compressed source streams; the script does not resize or re-encode them.
+
+Under **Library → Settings**, choose **Preferred video resolution** (360p through
+4320p, or **Best available**) and **Allow higher resolution when preferred is
+unavailable**. The defaults are 1080p with higher-resolution fallback enabled.
+Turning fallback off uses the best available video at or below the preference;
+if every format exceeds that ceiling, the download fails instead of exceeding
+it. Settings are persisted in SQLite and apply to subsequent downloads,
+including videos already queued. An active download keeps its current settings,
+and existing downloaded videos remain reusable at their original resolution.
+
+The CLI has the same preferences. For example, to cap new downloads at 720p:
+
+```powershell
+python .\yt_whisper_subs.py --video-resolution 720 --no-allow-higher-resolution "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Use `--video-resolution 0` for best available quality. An explicit
+`--video-format FORMAT` overrides both resolution preferences. Direct CLI runs
+use their own flags/defaults; the desktop library passes its saved preferences
+to the shared pipeline. Source video height defines the `p` value.
 
 For YouTube HTTP 403 or unavailable-format failures, downloads retry with HLS
 preferred on the default clients first, then with `web_safari` HLS. Some videos
@@ -1686,7 +1712,9 @@ rejects `none` and `xhigh` for `gpt-5-mini`.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--video-format FORMAT` | `bv*+ba/b` | yt-dlp format selector. |
+| `--video-resolution HEIGHT` | `1080` | Prefer this video height; choices: `0` (best available), `360`, `480`, `720`, `1080`, `1440`, `2160`, `4320`. |
+| `--allow-higher-resolution` / `--no-allow-higher-resolution` | allowed | Fall back to best available if the preference is missing; disabling sets a resolution ceiling. |
+| `--video-format FORMAT` | derived from resolution preferences | Explicit yt-dlp format selector; overrides both resolution preferences. |
 | `--merge-output-format mkv|mp4|webm` | `mkv` | Container for downloaded streams. |
 | `--min-video-duration SECONDS` | off | Check a URL video's local duration before transcription; the library sets this for explicit `post_live` attempts and retries of failed local media with known duration. |
 | `--download-progress-delta SECONDS` | `1` | Minimum interval between yt-dlp progress updates. |
