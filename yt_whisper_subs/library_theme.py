@@ -30,6 +30,7 @@ QLabel#filterEyebrow { color: #778292; font-size: 8pt; font-weight: 700; padding
 QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }
 QToolButton#filterActions { background: transparent; border: 1px solid #353e4b; border-radius: 7px; padding: 0 6px; font-size: 16pt; }
 QToolButton#filterActions:hover { background: #303946; border-color: #485567; }
+QToolButton#filterActions::menu-indicator { image: none; }
 QPushButton#filterChip {
   background: #272d37; border: 1px solid #353e4b; border-radius: 13px;
   color: #aeb8c6; padding: 5px 10px;

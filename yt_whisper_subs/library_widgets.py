@@ -68,7 +68,7 @@ class SmartFilterBar(QtWidgets.QFrame):
             button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             self._group.addButton(button, int(spec.view))
             self._buttons[spec.view] = button
-            layout.addWidget(button, idx // 5, idx % 5 + 1)
+            layout.addWidget(button, idx // 5, idx % 5 + 1, QtCore.Qt.AlignmentFlag.AlignLeft)
         self._buttons[views.VideoView.ALL].setChecked(True)
         self._group.idClicked.connect(self.view_changed.emit)
 
@@ -92,7 +92,9 @@ class SmartFilterBar(QtWidgets.QFrame):
         self._actions.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self._actions.setMenu(QtWidgets.QMenu(self._actions))
         controls.addWidget(self._actions)
-        layout.addLayout(controls, 1, 5)
+        # Give spare width to an empty column, not the Pipeline chip above the controls.
+        layout.setColumnStretch(6, 1)
+        layout.addLayout(controls, 1, 5, 1, 2)
 
     def set_removal_action(self, action: QtGui.QAction) -> None:
         """Share the window's filtered cleanup action; e.g. Watched → ... → Remove."""
