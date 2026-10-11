@@ -19,6 +19,7 @@ from yt_whisper_subs import library_layout
 from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_progress
+from yt_whisper_subs import library_removal_actions
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import library_types as types
@@ -95,6 +96,7 @@ class LibraryUi(NamedTuple):
 
 
 class LibraryWindow(
+    library_removal_actions.RemovalActionsMixin,
     library_window_actions.WindowActionsMixin,
     library_chapter_actions.ChapterActionsMixin,
     library_layout.LayoutMixin,
@@ -405,6 +407,14 @@ class LibraryWindow(
         )
         # Let Qt share activation and availability with the menu and shortcut.
         self._ui.header.remove.setDefaultAction(self._remove_action)
+        self._remove_filtered_action = video_menu.addAction(
+            "Remove filtered downloads…", self._remove_filtered,
+        )
+        self._remove_filtered_action.setToolTip(
+            "Remove downloads and generated files for all current filter matches. "
+            "Choose Watched to reclaim space while keeping watch history."
+        )
+        self._ui.catalog.filters.set_removal_action(self._remove_filtered_action)
         view_menu = self.menuBar().addMenu("View")
         search_action = view_menu.addAction("Focus search")
         search_action.setShortcut(QtGui.QKeySequence.StandardKey.Find)

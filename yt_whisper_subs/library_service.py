@@ -21,8 +21,8 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_pipeline
+from yt_whisper_subs import library_removal
 from yt_whisper_subs import library_types as types
-from yt_whisper_subs import library_yields
 from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import output_lock
@@ -53,7 +53,10 @@ class MetadataBackfillResult(NamedTuple):
     retry_after_seconds: int | None = None
 
 
-class LibraryService(library_channel_service.ChannelServiceMixin):
+class LibraryService(
+    library_channel_service.ChannelServiceMixin,
+    library_removal.RemovalServiceMixin,
+):
     """Coordinate cohesive catalog operations independently from Qt widgets.
 
     Example: `service.track_channel("@OpenAI", False)` persists immediately.
@@ -412,37 +415,6 @@ class LibraryService(library_channel_service.ChannelServiceMixin):
         self.db.upsert_video(info.meta)
         if info.meta.details.live_status is None and prior is not None and self._is_live(prior):
             self.db.set_live_status(info.meta.identity.video_id, types.LIVE_UNKNOWN)
-
-    def video_yields(self, video_id: str) -> library_yields.VideoYields:
-        """Build the exact deletion manifest for one known catalog video.
-
-        Example: the GUI previews `service.video_yields(id).paths`.
-        """
-
-        if not self.db.video(video_id):
-            raise RuntimeError(f"unknown video: {video_id}")
-        return library_yields.VideoYields.inspect(self.out_dir, video_id)
-
-    def remove_yields(
-        self,
-        manifest: library_yields.VideoYields,
-        report: ReportFn = _ignore_report,
-    ) -> int:
-        """Remove one pre-inspected manifest and reconcile its catalog state.
-
-        Example: the exact paths confirmed in the GUI are the paths removed.
-        """
-
-        if manifest.root != self.out_dir or not self.db.video(manifest.video_id):
-            raise RuntimeError("refusing a yield manifest outside this library")
-        with output_lock.OutputLock(self.out_dir, "pipeline"):
-            removed = manifest.remove(report)
-            if library_yields.VideoYields.inspect(self.out_dir, manifest.video_id).paths:
-                self.scan_local(report)
-                raise RuntimeError("yield files remain; removal was not recorded as complete")
-            self.db.record_yield_removal(manifest.video_id)
-            self.scan_local(report)
-            return removed
 
     def recover_pipeline_jobs(self) -> list[types.PipelineJob]:
         """Load work left live by an unclean prior application exit.

@@ -28,6 +28,8 @@ QPushButton#dangerButton:disabled, QToolButton#dangerButton:disabled { color: #8
 QFrame#filterBar { background: #1e232c; border: 1px solid #303844; border-radius: 9px; }
 QLabel#filterEyebrow { color: #778292; font-size: 8pt; font-weight: 700; padding: 0 5px 0 2px; }
 QLabel#filterResult { color: #8f9aaa; padding: 0 3px 0 8px; }
+QToolButton#filterActions { background: transparent; border: 1px solid #353e4b; border-radius: 7px; padding: 0 6px; font-size: 16pt; }
+QToolButton#filterActions:hover { background: #303946; border-color: #485567; }
 QPushButton#filterChip {
   background: #272d37; border: 1px solid #353e4b; border-radius: 13px;
   color: #aeb8c6; padding: 5px 10px;
@@ -49,6 +51,10 @@ QLabel#detailTitle, QLabel#dialogHeading { font-size: 14pt; font-weight: 700; co
 QLabel#detailFacts { color: #8fc7ff; }
 QTextEdit#detailDescription {
   background: transparent; color: #b4bdc9; border: 0; padding: 0;
+  selection-background-color: #294467;
+}
+QMessageBox QTextEdit {
+  background: #1c2028; color: #d8dee8; border: 1px solid #363e4a;
   selection-background-color: #294467;
 }
 QTextEdit#detailDescription QScrollBar:vertical {

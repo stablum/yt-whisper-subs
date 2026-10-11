@@ -328,6 +328,7 @@ class DetailPanelTests(unittest.TestCase):
             _cancel_action=mock.Mock(),
             _pause_action=mock.Mock(),
             _remove_action=mock.Mock(),
+            _remove_filtered_action=mock.Mock(),
         )
 
         library_gui.LibraryWindow._update_actions(window)

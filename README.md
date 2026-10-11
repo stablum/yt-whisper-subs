@@ -146,7 +146,7 @@ These defaults are hard-coded near the top of the script:
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
 | Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
 | Library crash recovery | durable stage/overall-progress checkpoint; one-click Resume |
-| Library yield removal | confirmed exact per-video manifest; individual non-recursive unlinks; durable Removed state |
+| Library yield removal | selected video or captured filter matches; confirmed exact manifests; individual non-recursive unlinks; durable Removed state |
 | Library personal history | download/removal dates and watch progress survive retention and channel removal |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
 | Subtitle compaction mode | `english` |
@@ -1132,6 +1132,29 @@ the inspector and tooltips show the removal date. Watched progress stays visible
 and continues to participate in the Watched, Continue, and Unwatched filters.
 Removed entries also remain Available for an explicit download.
 
+To reclaim space from multiple videos, choose **Remove filtered downloads…**
+from the filter bar's **...** menu or the **Video** menu. The filter chips use
+two rows so their labels and the cleanup menu fit the minimum window width.
+For watched downloads, select **Watched** first. The action combines the current smart filter, channel
+scope, and search; it includes every matching row, even outside the visible
+viewport, and needs no row selection. With **All** and no channel/search
+restriction, it applies to the entire library. Matching videos with only
+leftover generated files are also eligible; entries with no managed files
+are omitted.
+
+Inspection runs in the background and captures the matching IDs when clicked.
+The confirmation shows video/file counts, an estimated total file size, and
+the exact titles and paths in **Show Details**; **Cancel** is the default.
+Changing the filters during inspection cannot expand that captured selection.
+Playing videos, queued work, and active, paused, or interrupted pipeline jobs
+are skipped, and protection is checked again before removal. The batch holds
+the same pipeline writer lock as single-video removal and CLI processing.
+If extra files appear before execution, it stops before deleting anything and
+requires a fresh preview. Folder junctions and directory symlinks are rejected.
+Cancellation or a file error preserves completed removals and reconciles the
+catalog without claiming incomplete removals succeeded. Both removal actions
+preserve catalog entries and download/watch history.
+
 Download, watch, and removal history survives the publication-date cutoff,
 bounded channel-history pruning, and unsubscription. Those operations prune
 only untouched remote listings. Removal clears pending automatic downloads and
@@ -1988,8 +2011,10 @@ High-level groups:
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, scroll-bounded bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
-| `yt_whisper_subs.library_window_actions` | Selection, settings, download/repair, and manifest-confirmed removal actions. |
-| `yt_whisper_subs.library_yields` | Exact non-recursive per-video yield inventory and individual-file removal. |
+| `yt_whisper_subs.library_window_actions` | Selection, settings, and download/repair actions. |
+| `yt_whisper_subs.library_removal_actions` | Selected/filtered scope capture, shared exact-file confirmation, and cleanup worker dispatch. |
+| `yt_whisper_subs.library_removal` | Locked removal batches, pending/playback protection, durable history, and cancellation-safe reconciliation. |
+| `yt_whisper_subs.library_yields` | Single-pass exact yield inventory, validated manifests, and non-recursive individual-file removal. |
 | `yt_whisper_subs.task_cancel` | Qt-independent task controls for cooperative pause/resume, cancellation, and active process hooks. |
 | `yt_whisper_subs.library_workers` | Background Qt task signalling with pause/resume plus distinct completion, failure, and cancellation outcomes. |
 | `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
@@ -2082,9 +2107,11 @@ Start by preserving these invariants:
     corrupt, and cue-less SRT files remain repairable Issues.
 33. Cancel only the active heavy task and its isolated child process tree; do
     not stop independent playback or discard already queued channel work.
-34. Remove one video's yields only through an exact inspected manifest, one
-    non-recursive unlink at a time, then record a durable Removed state before
-    reconciliation; keep its catalog row, dates, and watched progress permanently.
+34. Remove selected or filtered videos' yields only through exact inspected
+    manifests, one non-recursive unlink at a time. Freeze filter matches before
+    preview, protect pending work and players in batches, and record completed
+    removals before reconciliation; keep catalog rows, dates, and watched progress
+    permanently, including after partial cancellation or failure.
 35. Derive changing live status from scheduled flat channel listings or an
     explicitly requested full lookup; only an explicit row double-click may
     bypass lookup cooldowns. Keep sidecars for durable metadata rather than
@@ -2137,7 +2164,10 @@ retention that preserves local media; playback dispatch during active work,
 one-time playback after a repeated pipeline-row activation, target preservation
 across selection changes, and cancellation/failure cleanup;
 single-Dutch-track mpv selection; invalid-yield repair classification; exact
-single-video removal isolation; and active process-tree cancellation.
+single-video and filtered removal isolation, composed channel/search/watched
+scope, stale/foreign manifests, writer ownership, protected playback and jobs,
+one-pass directory inventory, junction rejection, and partial-batch cancellation
+and file-error reconciliation; and active process-tree cancellation.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

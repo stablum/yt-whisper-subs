@@ -112,6 +112,12 @@ class PlaybackControl:
         if closing:
             monitor.quit()
 
+    def active_video_ids(self) -> frozenset[str]:
+        """Snapshot owned players under the session lock; e.g. protect cleanup candidates."""
+
+        with self._lock:
+            return frozenset(self._sessions.values())
+
     def deactivate(self, monitor: mpv_ipc.MpvMonitor) -> None:
         """Clear the session only when the same monitor is still active.
 

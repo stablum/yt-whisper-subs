@@ -49,17 +49,18 @@ class SmartFilterBar(QtWidgets.QFrame):
     def __init__(self) -> None:
         super().__init__()
         self.setObjectName("filterBar")
-        layout = QtWidgets.QHBoxLayout(self)
+        layout = QtWidgets.QGridLayout(self)
         layout.setContentsMargins(11, 9, 11, 9)
         layout.setSpacing(6)
         eyebrow = QtWidgets.QLabel("SHOW")
         eyebrow.setObjectName("filterEyebrow")
-        layout.addWidget(eyebrow)
+        layout.addWidget(eyebrow, 0, 0, 2, 1)
 
         self._group = QtWidgets.QButtonGroup(self)
         self._group.setExclusive(True)
         self._buttons: dict[views.VideoView, QtWidgets.QPushButton] = {}
-        for spec in views.VIDEO_VIEWS:
+        # Two rows retain readable labels beside cleanup at the minimum window width.
+        for idx, spec in enumerate(views.VIDEO_VIEWS):
             button = QtWidgets.QPushButton(spec.label)
             button.setObjectName("filterChip")
             button.setCheckable(True)
@@ -67,11 +68,13 @@ class SmartFilterBar(QtWidgets.QFrame):
             button.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
             self._group.addButton(button, int(spec.view))
             self._buttons[spec.view] = button
-            layout.addWidget(button)
+            layout.addWidget(button, idx // 5, idx % 5 + 1)
         self._buttons[views.VideoView.ALL].setChecked(True)
         self._group.idClicked.connect(self.view_changed.emit)
 
-        layout.addStretch(1)
+        controls = QtWidgets.QHBoxLayout()
+        controls.setSpacing(6)
+        controls.addStretch(1)
         self._result = QtWidgets.QLabel("0 videos")
         self._result.setObjectName("filterResult")
         self._clear = QtWidgets.QPushButton("Clear")
@@ -79,8 +82,22 @@ class SmartFilterBar(QtWidgets.QFrame):
         self._clear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._clear.clicked.connect(lambda: self.reset_requested.emit())
         self._clear.hide()
-        layout.addWidget(self._result)
-        layout.addWidget(self._clear)
+        controls.addWidget(self._result)
+        controls.addWidget(self._clear)
+        self._actions = QtWidgets.QToolButton()
+        self._actions.setText("...")
+        self._actions.setObjectName("filterActions")
+        self._actions.setToolTip("Actions for all videos matching the current filters")
+        self._actions.setAccessibleName("Filtered video actions")
+        self._actions.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._actions.setMenu(QtWidgets.QMenu(self._actions))
+        controls.addWidget(self._actions)
+        layout.addLayout(controls, 1, 5)
+
+    def set_removal_action(self, action: QtGui.QAction) -> None:
+        """Share the window's filtered cleanup action; e.g. Watched → ... → Remove."""
+
+        self._actions.menu().addAction(action)
 
     def set_view(self, view: views.VideoView) -> None:
         """Synchronize checked chip state without synthesizing a user click.

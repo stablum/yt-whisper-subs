@@ -1,4 +1,4 @@
-"""Selection, settings, download, and exact-removal actions for the library window.
+"""Selection, settings, and download actions for the library window.
 
 Example: `LibraryWindow` mixes these slots into its native Qt shell.
 """
@@ -99,45 +99,6 @@ class WindowActionsMixin:
                 self._download_selected(force_live_check=True)
             else:
                 self._download_selected()
-
-    def _remove_selected(self) -> None:
-        """Confirm an exact manifest before removing one video's managed yields.
-
-        Example: Video -> Remove lists every path and never uses a wildcard.
-        """
-
-        record = self._selected_record()
-        if not record or not record.downloaded or self._busy:
-            return
-        video_id = record.meta.identity.video_id
-        manifest = self._service.video_yields(video_id)
-        if not manifest.paths:
-            return
-        box = QtWidgets.QMessageBox(
-            QtWidgets.QMessageBox.Icon.Warning,
-            "Remove download and yields?",
-            f"Remove {record.meta.identity.title} and {len(manifest.paths)} managed file(s)?",
-            QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
-            self,
-        )
-        box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Cancel)
-        box.setInformativeText(
-            "The entry is marked Removed. Download and watch history stay in the catalog, "
-            "even outside channel retention, and you can download it again."
-        )
-        box.setDetailedText("\n".join(str(path) for path in manifest.paths))
-        if box.exec() != QtWidgets.QMessageBox.StandardButton.Yes:
-            return
-
-        def remove(report: Callable[[str], None]) -> int:
-            """Delete the inspected video's files one path at a time.
-
-            Example: the serial worker reports every individual unlink operation.
-            """
-
-            return self._service.remove_yields(manifest, report)
-
-        self._run_task("Removing download…", remove, lambda _: self.refresh())
 
     def _edit_settings(self) -> None:
         """Persist scheduling, retention, browser, tray, and login settings.
@@ -362,6 +323,7 @@ class WindowActionsMixin:
         self._pause_action.setText("Resume current pipeline" if paused else "Pause current pipeline")
         self._pause_action.setEnabled(pipeline_active)
         self._remove_action.setEnabled(bool(record and record.downloaded and not self._busy))
+        self._remove_filtered_action.setEnabled(not self._busy)
         pin_action = getattr(self, "_pin_channel_action", None)
         if pin_action:
             channel = self._selected_channel()
