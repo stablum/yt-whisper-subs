@@ -979,6 +979,13 @@ column.
 
 ### Channel Subscription Checks
 
+**Check now** and scheduled checks update the video list, filter counts, and
+channel warnings after each individual channel finishes. Newly discovered
+videos appear while the remaining channels are still scanning, before any
+automatic downloads begin. Search, channel scope, sorting, the selected video,
+and the browsing position are preserved; if you are at the top, new uploads
+appear there normally. Cancelling a check keeps every result already saved.
+
 Track a channel with an `@handle` or a `/channel/`, `/c/`, or `/user/` URL. The
 service checks the channel's Videos and Streams tabs with yt-dlp's flat
 playlist mode and deduplicates them by video ID. A normal check requests only
@@ -2018,7 +2025,7 @@ High-level groups:
 | `yt_whisper_subs.library_removal` | Locked removal batches, pending/playback protection, durable history, and cancellation-safe reconciliation. |
 | `yt_whisper_subs.library_yields` | Single-pass exact yield inventory, validated manifests, and non-recursive individual-file removal. |
 | `yt_whisper_subs.task_cancel` | Qt-independent task controls for cooperative pause/resume, cancellation, and active process hooks. |
-| `yt_whisper_subs.library_workers` | Background Qt task signalling with pause/resume plus distinct completion, failure, and cancellation outcomes. |
+| `yt_whisper_subs.library_workers` | Background Qt task signalling with pause/resume, per-channel catalog updates, and distinct completion, failure, and cancellation outcomes. |
 | `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
 | `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
@@ -2159,7 +2166,9 @@ handling, pending stream releases,
 external-file reconciliation, and stale error/progress cleanup;
 native table-header resizing, reordering, persistence, and reset behavior;
 resizable inspector geometry, long-description containment, and split persistence;
-channel additions queued during active video work; empty and stream-only channel
+channel additions queued during active video work; per-channel refreshes before
+batch completion, GUI-thread delivery, browsing-state preservation, and partial
+results after cancellation; empty and stream-only channel
 identity recovery, with failed lookups preserving history; the crucial future-only
 automatic-download baseline; bounded adaptive feed scans; and complete-snapshot
 retention that preserves local media; playback dispatch during active work,

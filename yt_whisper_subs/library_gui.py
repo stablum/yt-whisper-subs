@@ -486,6 +486,7 @@ class LibraryWindow(
         self._ui.header.search.setFocus()
         self._ui.header.search.selectAll()
 
+    @QtCore.Slot()
     def refresh(self) -> None:
         """Reload channels, filtered videos, counts, and selection actions.
 
@@ -494,18 +495,19 @@ class LibraryWindow(
 
         selected_video = self._selected_record()
         selected_id = selected_video.meta.identity.video_id if selected_video else None
-        self._refresh_channels()
-        catalog = self._service.catalog()
-        self._ui.catalog.model.set_records(catalog.records, catalog.issues)
-        for job in self._service.interrupted_pipeline_jobs():
-            label = f"Interrupted · {job.label} · click Resume"
-            interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
-            self._ui.catalog.model.set_progress(interrupted)
-        state = self._service.metadata_queue_state()
-        self._ui.metadata_status.setText(_metadata_status_text(state))
-        self._refresh_smart_filters()
-        self._restore_video_selection(selected_id)
-        self._update_actions()
+        with self._preserve_catalog_scroll():
+            self._refresh_channels()
+            catalog = self._service.catalog()
+            self._ui.catalog.model.set_records(catalog.records, catalog.issues)
+            for job in self._service.interrupted_pipeline_jobs():
+                label = f"Interrupted · {job.label} · click Resume"
+                interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
+                self._ui.catalog.model.set_progress(interrupted)
+            state = self._service.metadata_queue_state()
+            self._ui.metadata_status.setText(_metadata_status_text(state))
+            self._refresh_smart_filters()
+            self._restore_video_selection(selected_id)
+            self._update_actions()
 
     def _refresh_channels(self) -> None:
         """Rebuild the sidebar while preserving the logical selected filter.

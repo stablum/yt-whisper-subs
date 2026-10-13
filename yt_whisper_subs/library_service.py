@@ -284,8 +284,13 @@ class LibraryService(
         assert updated is not None
         return updated
 
-    def check_all(self, report: ReportFn = _ignore_report) -> int:
-        """Refresh subscriptions and auto-download only later new discoveries.
+    def check_all(
+        self,
+        report: ReportFn = _ignore_report,
+        *,
+        channel_checked: Callable[[], None] | None = None,
+    ) -> int:
+        """Publish each saved channel before auto-downloading later discoveries.
 
         Example: `service.check_all(report)` is called by the four-hour timer.
         """
@@ -303,6 +308,8 @@ class LibraryService(
             except Exception as exc:
                 self.db.set_channel_error(channel.channel_id, str(exc))
                 report(f"Could not check {channel.title}: {exc}")
+            if channel_checked:
+                channel_checked()
 
         eligible = []
         for video_id in dict.fromkeys(auto_ids):

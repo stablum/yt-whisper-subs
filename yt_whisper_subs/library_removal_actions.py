@@ -11,6 +11,7 @@ from PySide6 import QtCore
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_model
+from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_yields
 
 
@@ -38,7 +39,7 @@ class RemovalActionsMixin:
 
             return self._service.remove_yields(manifest, report)
 
-        self._run_task("Removing download…", remove, lambda _: self.refresh())
+        self._run_task("Removing download…", library_workers.BackgroundTask(remove), lambda _: self.refresh())
 
     def _remove_filtered(self) -> None:
         """Snapshot all matching rows, independent of selection or scrolling.
@@ -60,7 +61,8 @@ class RemovalActionsMixin:
 
             return self._service.yield_selection(video_ids, report, excluded=excluded)
 
-        self._run_task("Inspecting filtered downloads…", inspect, self._remove_inspected)
+        task = library_workers.BackgroundTask(inspect)
+        self._run_task("Inspecting filtered downloads…", task, self._remove_inspected)
 
     def _remove_inspected(self, selection: library_yields.YieldSelection) -> None:
         """Review a frozen preview before starting removal; e.g. filters may have changed."""
@@ -80,7 +82,7 @@ class RemovalActionsMixin:
 
             return self._service.remove_yield_selection(selection, report, excluded=excluded)
 
-        self._run_task("Removing filtered downloads…", remove, self._removed_filtered)
+        self._run_task("Removing filtered downloads…", library_workers.BackgroundTask(remove), self._removed_filtered)
 
     def _confirm_yields(
         self, selection: library_yields.YieldSelection, *, filtered: bool = False,

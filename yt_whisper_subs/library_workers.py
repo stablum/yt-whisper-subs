@@ -8,10 +8,14 @@ from __future__ import annotations
 import traceback
 from collections.abc import Callable
 from typing import Any
+from typing import TYPE_CHECKING
 
 from PySide6 import QtCore
 
 from yt_whisper_subs import task_cancel
+
+if TYPE_CHECKING:
+    from yt_whisper_subs import library_service
 
 
 class TaskSignals(QtCore.QObject):
@@ -22,6 +26,7 @@ class TaskSignals(QtCore.QObject):
 
     started = QtCore.Signal()
     progress = QtCore.Signal(str)
+    catalog_changed = QtCore.Signal()
     finished = QtCore.Signal(object)
     failed = QtCore.Signal(str, str)
     cancelled = QtCore.Signal()
@@ -110,3 +115,27 @@ class BackgroundTask(QtCore.QRunnable):
             self.signals.failed.emit(str(exc), traceback.format_exc())
         else:
             self.signals.finished.emit(result)
+
+
+class ChannelCheckTask(BackgroundTask):
+    """Publish channel commits through Qt without coupling the service to widgets.
+
+    Example: `ChannelCheckTask(service)` refreshes while later channels scan.
+    """
+
+    def __init__(self, service: library_service.LibraryService) -> None:
+        """Bind discovery to this worker's catalog notification signal.
+
+        Example: the manual and scheduled checks share this task.
+        """
+
+        self._service = service
+        super().__init__(self._check)
+
+    def _check(self, report: Callable[[str], None]) -> int:
+        """Emit only after each channel's catalog or error state is saved.
+
+        Example: a failed channel updates its sidebar warning before the next scan.
+        """
+
+        return self._service.check_all(report, channel_checked=self.signals.catalog_changed.emit)

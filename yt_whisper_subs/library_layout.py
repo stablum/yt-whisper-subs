@@ -5,6 +5,9 @@ Example: `LayoutMixin._store_ui_layout(window)` saves columns and pane sizes.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
@@ -45,6 +48,35 @@ class LayoutMixin:
 
     Example: `LibraryWindow` mixes this beside its UI-construction concern.
     """
+
+    @contextmanager
+    def _preserve_catalog_scroll(self) -> Iterator[None]:
+        """Keep browsing anchored while channel results replace the model.
+
+        Example: new uploads above the visible rows do not move the reading position.
+        """
+
+        ui = self._ui.catalog
+        table = ui.table
+        top = table.indexAt(QtCore.QPoint(0, 0))
+        record = ui.proxy.data(top, QtCore.Qt.ItemDataRole.UserRole) if top.isValid() else None
+        anchor_id = record.meta.identity.video_id if record else None
+        vertical = table.verticalScrollBar().value()
+        horizontal = table.horizontalScrollBar().value()
+        sidebar = ui.channels.verticalScrollBar().value()
+        try:
+            yield
+        finally:
+            table.doItemsLayout()
+            row = ui.model.row_for(anchor_id) if anchor_id else None
+            anchor = ui.proxy.mapFromSource(ui.model.index(row, 0)) if row is not None else QtCore.QModelIndex()
+            if anchor.isValid() and vertical:
+                # At the top, keep new uploads visible; elsewhere, follow the previous top video.
+                table.scrollTo(anchor, QtWidgets.QAbstractItemView.ScrollHint.PositionAtTop)
+            else:
+                table.verticalScrollBar().setValue(vertical)
+            table.horizontalScrollBar().setValue(horizontal)
+            ui.channels.verticalScrollBar().setValue(sidebar)
 
     @staticmethod
     def _apply_default_catalog_layout(splitter: QtWidgets.QSplitter) -> None:

@@ -20,6 +20,7 @@ from PySide6 import QtWidgets  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
+from yt_whisper_subs import library_workers  # noqa: E402
 from yt_whisper_subs import pipeline_progress as progress  # noqa: E402
 
 
@@ -233,7 +234,7 @@ class DeferredPlaybackTests(unittest.TestCase):
         Example: A starts playing when automatic processing switches to B.
         """
 
-        self._window._run_task("Checking channels…", mock.Mock())
+        self._window._run_task("Checking channels…", library_workers.BackgroundTask(mock.Mock()))
         self._window._report_progress(progress.encode(progress.make("aaaaaaaaaaa", progress.Stage.TRANSCRIBING)))
         self._activate("aaaaaaaaaaa")
         self._make_ready("aaaaaaaaaaa")

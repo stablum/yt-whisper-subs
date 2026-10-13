@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 from typing import NamedTuple
 
+from yt_whisper_subs import library_workers
 from yt_whisper_subs import pipeline_progress as progress
 
 
@@ -92,7 +93,7 @@ class VideoQueueMixin:
         work = self._video_queue.pop(video_id)
         self._active_video_id = video_id
         self._update_video_queue()
-        self._run_task(work.label, work.fn, work.finished)
+        self._run_task(work.label, library_workers.BackgroundTask(work.fn), work.finished)
 
     def _continue_video_queue(self) -> None:
         """Advance after any foreground outcome or resume quiet maintenance.

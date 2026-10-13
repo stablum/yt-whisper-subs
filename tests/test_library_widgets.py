@@ -917,7 +917,10 @@ class VideoQueueTests(unittest.TestCase):
 
         self.assertEqual(window._active_video_id, "bbbbbbbbbbb")
         self.assertEqual(list(window._video_queue), ["ccccccccccc"])
-        window._run_task.assert_called_once_with("Download B", first.fn, None)
+        label, task, finished = window._run_task.call_args.args
+        self.assertEqual(label, "Download B")
+        self.assertIs(task._fn, first.fn)
+        self.assertIsNone(finished)
 
     def test_download_action_queues_while_another_pipeline_is_busy(self) -> None:
         """Route a second selected remote video through queue admission.
@@ -953,8 +956,7 @@ class VideoQueueTests(unittest.TestCase):
         window._service.download.assert_called_once_with("bbbbbbbbbbb", report)
         window._run_task.assert_not_called()
 
-    @mock.patch("yt_whisper_subs.library_window_support.library_workers.BackgroundTask")
-    def test_finished_worker_releases_and_advances_video_queue(self, task_cls: mock.Mock) -> None:
+    def test_finished_worker_releases_and_advances_video_queue(self) -> None:
         """Advance the waiting FIFO when the active worker emits completion.
 
         Example: finishing video A immediately hands the lane to video B.
@@ -962,11 +964,12 @@ class VideoQueueTests(unittest.TestCase):
 
         signals = SimpleNamespace(
             progress=mock.Mock(),
+            catalog_changed=mock.Mock(),
             finished=mock.Mock(),
             failed=mock.Mock(),
             cancelled=mock.Mock(),
         )
-        task = task_cls.return_value
+        task = mock.Mock()
         task.signals = signals
         finished = mock.Mock()
         window = SimpleNamespace(
@@ -984,12 +987,13 @@ class VideoQueueTests(unittest.TestCase):
             _update_actions=mock.Mock(),
             _release_video_slot=mock.Mock(),
             _continue_video_queue=mock.Mock(),
+            refresh=mock.Mock(),
         )
 
         library_window_support.WindowRuntimeMixin._run_task(
             window,
             "Download A",
-            mock.Mock(),
+            task,
             finished,
         )
         done = signals.finished.connect.call_args.args[0]

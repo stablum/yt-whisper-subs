@@ -278,10 +278,13 @@ class FilteredRemovalUiTests(RemovalFixture, unittest.TestCase):
             _remove_inspected=mock.Mock(),
         )
         library_removal_actions.RemovalActionsMixin._remove_filtered(window)
-        inspect = window._run_task.call_args.args[1]
+        task = window._run_task.call_args.args[1]
         proxy.set_search("")
         proxy.set_view(views.VideoView.ALL)
-        selection = inspect(lambda _: None)
+        results = []
+        task.signals.finished.connect(results.append)
+        task.run()
+        selection = results[0]
         self.assertEqual([item.yields.video_id for item in selection.items], [self.ids[0]])
         self.assertTrue(self.service.db.video(self.ids[0]).local.path.exists())
 

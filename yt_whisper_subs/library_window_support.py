@@ -54,7 +54,8 @@ class WindowRuntimeMixin:
         Example: the toolbar and tray both invoke `check_now()`.
         """
 
-        self._run_task("Checking channels…", self._service.check_all, self._check_finished)
+        task = library_workers.ChannelCheckTask(self._service)
+        self._run_task("Checking channels…", task, self._check_finished)
 
     def _check_finished(self, new_count: object) -> None:
         """Refresh, reschedule, and optionally notify after a library check.
@@ -301,12 +302,12 @@ class WindowRuntimeMixin:
     def _run_task(
         self,
         label: str,
-        fn: Callable[[Callable[[str], None]], Any],
+        task: library_workers.BackgroundTask,
         finished: Callable[[object], None] | None = None,
     ) -> None:
         """Serialize background work and centralize progress/error UX.
 
-        Example: `_run_task("Checking…", service.check_all, handler)`.
+        Example: `_run_task("Checking…", ChannelCheckTask(service), handler)`.
         """
 
         if self._busy:
@@ -320,8 +321,8 @@ class WindowRuntimeMixin:
         self._reported_stage_key = None
         self.statusBar().showMessage(label)
         self._ui.trace.append_message(f"▶ {label}")
-        task = library_workers.BackgroundTask(fn)
         task.signals.progress.connect(self._report_progress)
+        task.signals.catalog_changed.connect(self.refresh, QtCore.Qt.ConnectionType.QueuedConnection)
 
         def done(result: object) -> None:
             """Restore idle state before invoking an operation-specific handler.
