@@ -385,12 +385,19 @@ class LibraryDb(
             ).fetchone()
         return self._video(row) if row else None
 
-    def record_playback(self, update: playback.Update) -> None:
+    def record_playback(self, update: playback.Update) -> playback.Update:
         """Persist the observed position while making watched status sticky.
 
         Example: `db.record_playback(update)` stores one paced mpv observation.
         """
 
+        record = self.video(update.video_id)
+        stored = record.playback if record else None
+        position = max(update.position_seconds, stored.position_seconds if stored else 0)
+        duration = update.duration_seconds or (stored.duration_seconds if stored else None)
+        duration = duration or (record.meta.details.duration if record else None)
+        completed = update.completed or bool(stored and stored.completed_at is not None)
+        update = self.watch_policy().apply(playback.Update(update.video_id, position, duration, completed))
         now = int(time.time())
         completed_at = now if update.completed else None
         position = update.position_seconds
@@ -415,6 +422,59 @@ class LibraryDb(
                     now,
                 ),
             )
+        return update
+
+    def watch_policy(self) -> playback.WatchPolicy:
+        """Read the watched boundary for this output root rather than global state.
+
+        Example: an active mpv session observes a newly saved 90-percent setting.
+        """
+
+        return playback.WatchPolicy.from_percent(
+            self.setting("watched_percent", str(playback.WatchPolicy().percent))
+        )
+
+    def set_watch_policy(self, policy: playback.WatchPolicy) -> None:
+        """Save the threshold and promote existing progress without undoing completions.
+
+        Example: lowering to 80 percent immediately marks a saved 85-percent entry watched.
+        """
+
+        prev_policy = self.watch_policy()
+        self.set_setting("watched_percent", policy.percent)
+        now = int(time.time())
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT p.video_id, p.position_seconds,
+                       COALESCE(NULLIF(p.duration_seconds, 0), v.duration) AS duration
+                FROM playback p JOIN videos v USING(video_id)
+                WHERE p.completed_at IS NULL
+                """
+            ).fetchall()
+            completed = []
+            for row in rows:
+                update = playback.Update(str(row["video_id"]), row["position_seconds"], row["duration"], False)
+                if prev_policy.apply(update).completed or policy.apply(update).completed:
+                    completed.append((now, now, update.video_id))
+            conn.executemany(
+                "UPDATE playback SET completed_at=?, updated_at=? WHERE video_id=? AND completed_at IS NULL",
+                completed,
+            )
+
+    def mark_watched(self, video_id: str) -> playback.Update:
+        """Persist an explicit completion while keeping the observed playback position.
+
+        Example: marking a removed or remote video watched creates no media files.
+        """
+
+        record = self.video(video_id)
+        if record is None:
+            raise RuntimeError(f"unknown video: {video_id}")
+        stored = record.playback
+        position = stored.position_seconds if stored else 0.0
+        duration = stored.duration_seconds if stored else record.meta.details.duration
+        return self.record_playback(playback.Update(video_id, position, duration, True))
 
     def setting(self, key: str, default: str) -> str:
         """Read a persisted application setting with a supplied default.

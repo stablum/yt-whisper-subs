@@ -126,6 +126,7 @@ class WindowActionsMixin:
             recent,
             self._service.db.setting("channel_published_after", ""),
             self._service.video_prefs(),
+            self._service.db.watch_policy(),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -151,6 +152,8 @@ class WindowActionsMixin:
         self._service.db.set_setting("video_resolution", values.download.resolution)
         self._service.db.set_setting("allow_higher_resolution", int(values.download.allow_higher))
         self._service.reload_clients()
+        self._service.db.set_watch_policy(values.watch)
+        self.refresh()
         if cookies_changed:
             released = self._service.db.reset_metadata_attempts()
             if released:
@@ -173,6 +176,36 @@ class WindowActionsMixin:
         record = self._selected_record()
         if record:
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(record.meta.identity.url))
+
+    def _mark_watched(self) -> None:
+        """Mark the selected entry watched without running playback or changing its position.
+
+        Example: the toolbar, Video menu, and table context menu share this action.
+        """
+
+        record = self._selected_record()
+        if record is None:
+            return
+        self._service.db.mark_watched(record.meta.identity.video_id)
+        self.refresh()
+        message = f"Marked watched · {record.meta.identity.title}"
+        self._ui.trace.append_message(message)
+        self.statusBar().showMessage(message, 5000)
+
+    def _show_video_context_menu(self, pos: QtCore.QPoint) -> None:
+        """Offer the same watched action for the row under the pointer.
+
+        Example: right-clicking a different row targets that video rather than the old selection.
+        """
+
+        table = self._ui.catalog.table
+        index = table.indexAt(pos)
+        if not index.isValid():
+            return
+        table.selectRow(index.row())
+        menu = QtWidgets.QMenu(self)
+        menu.addAction(self._watched_action)
+        menu.exec(table.viewport().mapToGlobal(pos))
 
     def _channel_filter_changed(
         self,
@@ -279,6 +312,9 @@ class WindowActionsMixin:
 
         record = self._selected_record()
         model = getattr(self._ui.catalog, "model", None)
+        row = model.row_for(record.meta.identity.video_id) if model and record else None
+        watched = model.watched_at(row) if row is not None else None
+        self._watched_action.setEnabled(bool(record and not (watched and watched.completed)))
         pending_fn = getattr(self, "_is_video_pending", lambda _video_id: False)
         active_fn = getattr(self, "_is_video_active", lambda _video_id: False)
         issue = None

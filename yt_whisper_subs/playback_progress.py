@@ -6,12 +6,45 @@ Example: `encode(make("id", 30, 120))` crosses the worker signal boundary.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from typing import NamedTuple
 
+from yt_whisper_subs import cfg
 
 PREFIX = "@@yt-whisper-playback "
-WATCHED_FRACTION = 0.95
+
+
+class WatchPolicy(NamedTuple):
+    """Keep the configurable strict watched boundary shared across consumers.
+
+    Example: `WatchPolicy(90).apply(update)` marks progress above 90 percent.
+    """
+
+    percent: float = cfg.DEFAULT_LIBRARY_WATCHED_PERCENT
+
+    @classmethod
+    def from_percent(cls, value: str | float) -> WatchPolicy:
+        """Reject invalid saved percentages in favor of the shipped default.
+
+        Example: a damaged SQLite setting cannot classify every video as watched.
+        """
+
+        try:
+            percent = float(value)
+        except (TypeError, ValueError):
+            return cls()
+        return cls(percent) if math.isfinite(percent) and 1 <= percent <= 100 else cls()
+
+    def apply(self, update: Update) -> Update:
+        """Classify an observation without fabricating playback progress.
+
+        Example: an explicit completion at 20 percent remains 20 percent.
+        """
+
+        duration = update.duration_seconds
+        reached = bool(duration and update.position_seconds > duration * self.percent / 100)
+        return update._replace(completed=update.completed or reached)
 
 
 class Update(NamedTuple):
@@ -25,6 +58,17 @@ class Update(NamedTuple):
     duration_seconds: float | None
     completed: bool
 
+    def normalized(self) -> Update:
+        """Clamp times while preserving the sender's completion decision.
+
+        Example: decoding a 96-percent update must not reapply the default threshold.
+        """
+
+        position = max(0.0, float(self.position_seconds))
+        duration = self.duration_seconds
+        duration = None if duration is None else max(0.0, float(duration))
+        return self._replace(position_seconds=position, duration_seconds=duration, completed=bool(self.completed))
+
 
 class Observer(NamedTuple):
     """Bind a catalog video ID to its playback-update consumer.
@@ -34,6 +78,7 @@ class Observer(NamedTuple):
 
     video_id: str
     callback: Callable[[Update], None]
+    policy: Callable[[], WatchPolicy] = WatchPolicy
 
     def publish(
         self,
@@ -47,7 +92,8 @@ class Observer(NamedTuple):
         Example: `observer.publish(60, 120)` records halfway progress.
         """
 
-        self.callback(make(self.video_id, position_seconds, duration_seconds, completed))
+        update = make(self.video_id, position_seconds, duration_seconds, completed, policy=self.policy())
+        self.callback(update)
 
 
 def make(
@@ -55,16 +101,16 @@ def make(
     position_seconds: float,
     duration_seconds: float | None,
     completed: bool = False,
+    *,
+    policy: WatchPolicy = WatchPolicy(),
 ) -> Update:
     """Normalize mpv times and mark progress beyond the watched threshold.
 
     Example: `make("id", 96, 100).completed` is `True` before EOF.
     """
 
-    position = max(0.0, float(position_seconds))
-    duration = None if duration_seconds is None else max(0.0, float(duration_seconds))
-    completed = bool(completed or (duration and position > duration * WATCHED_FRACTION))
-    return Update(video_id, position, duration, completed)
+    update = Update(video_id, position_seconds, duration_seconds, completed).normalized()
+    return policy.apply(update)
 
 
 def fraction(update: Update) -> float:
@@ -104,13 +150,13 @@ def parse(message: str) -> Update | None:
         return None
     try:
         payload = json.loads(message.removeprefix(PREFIX))
-        return make(
+        return Update(
             str(payload["video_id"]),
             float(payload["position_seconds"]),
             float(payload["duration_seconds"])
             if payload.get("duration_seconds") is not None
             else None,
             bool(payload["completed"]),
-        )
+        ).normalized()
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None

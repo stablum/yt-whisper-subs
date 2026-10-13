@@ -61,6 +61,7 @@ class HeaderUi(NamedTuple):
     check: QtWidgets.QPushButton
     download: QtWidgets.QPushButton
     play: QtWidgets.QPushButton
+    watched: QtWidgets.QToolButton
     remove: QtWidgets.QToolButton
     pause: QtWidgets.QPushButton
     cancel: QtWidgets.QPushButton
@@ -271,14 +272,18 @@ class LibraryWindow(
         """
 
         layout = QtWidgets.QHBoxLayout()
+        layout.setSpacing(6)
         search = QtWidgets.QLineEdit()
         search.setPlaceholderText("Search title, channel, or YouTube ID…")
         search.setClearButtonEnabled(True)
-        search.setMinimumWidth(120)
+        search.setMinimumWidth(100)
         check = QtWidgets.QPushButton("↻  Check now")
         download = QtWidgets.QPushButton("↓  Download")
         download.setToolTip("Download, repair, or queue the selected video")
         play = QtWidgets.QPushButton("▶  Play")
+        watched = QtWidgets.QToolButton()
+        watched.setObjectName("watchedButton")
+        watched.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
         remove = QtWidgets.QToolButton()
         remove.setObjectName("dangerButton")
         remove.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
@@ -294,8 +299,9 @@ class LibraryWindow(
         layout.addWidget(pause)
         layout.addWidget(cancel)
         layout.addWidget(play)
+        layout.addWidget(watched)
         layout.addWidget(remove)
-        return HeaderUi(search, check, download, play, remove, pause, cancel), layout
+        return HeaderUi(search, check, download, play, watched, remove, pause, cancel), layout
 
     def _build_catalog(self, channels: QtWidgets.QListWidget) -> CatalogUi:
         """Create the model-backed table and selected-video detail panel.
@@ -362,6 +368,8 @@ class LibraryWindow(
         selection = self._ui.catalog.table.selectionModel()
         selection.selectionChanged.connect(self._selection_changed)
         self._ui.catalog.table.doubleClicked.connect(self._activate_video)
+        self._ui.catalog.table.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
+        self._ui.catalog.table.customContextMenuRequested.connect(self._show_video_context_menu)
         header = self._ui.catalog.table.horizontalHeader()
         header.sectionMoved.connect(self._schedule_layout_store)
         header.sectionResized.connect(self._schedule_layout_store)
@@ -393,6 +401,10 @@ class LibraryWindow(
         video_menu.addAction("Play selected", self._play_selected)
         video_menu.addAction("Generate chapters", self._generate_chapters_selected)
         video_menu.addAction("Open on YouTube", self._open_selected_url)
+        self._watched_action = video_menu.addAction("Mark as watched", self._mark_watched)
+        self._watched_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton))
+        self._watched_action.setToolTip("Mark the selected video watched without changing its playback percentage")
+        self._ui.header.watched.setDefaultAction(self._watched_action)
         video_menu.addSeparator()
         self._pause_action = video_menu.addAction("Pause current pipeline", self._pause_active_task)
         self._pause_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+P"))
@@ -498,7 +510,9 @@ class LibraryWindow(
         with self._preserve_catalog_scroll():
             self._refresh_channels()
             catalog = self._service.catalog()
-            self._ui.catalog.model.set_records(catalog.records, catalog.issues)
+            self._ui.catalog.model.set_records(
+                catalog.records, catalog.issues, watch_policy=self._service.db.watch_policy(),
+            )
             for job in self._service.interrupted_pipeline_jobs():
                 label = f"Interrupted · {job.label} · click Resume"
                 interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)

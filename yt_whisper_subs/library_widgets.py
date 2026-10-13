@@ -19,6 +19,7 @@ from yt_whisper_subs import library_model
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
 from yt_whisper_subs import openai_chapters
+from yt_whisper_subs import playback_progress
 from yt_whisper_subs import windows_startup
 
 
@@ -35,6 +36,7 @@ class SettingsValues(NamedTuple):
     channel_recent_limit: int
     channel_published_after: str
     download: download_prefs.VideoPrefs = download_prefs.VideoPrefs()
+    watch: playback_progress.WatchPolicy = playback_progress.WatchPolicy()
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -458,6 +460,16 @@ class SettingsDialog(QtWidgets.QDialog):
         self._hours.setDecimals(2)
         self._hours.setSuffix(" hours")
         self._hours.setValue(values.check_hours)
+        self._watched = QtWidgets.QDoubleSpinBox()
+        self._watched.setObjectName("watchedPercent")
+        self._watched.setRange(1, 100)
+        self._watched.setDecimals(1)
+        self._watched.setSuffix(" %")
+        self._watched.setValue(values.watch.percent)
+        self._watched.setToolTip(
+            "Mark watched after more than this percentage is reached, or at the end of the video. "
+            "Already watched entries keep their status."
+        )
         self._cookies = QtWidgets.QComboBox()
         self._cookies.setEditable(True)
         self._cookies.addItems(["", "firefox", "chrome", "edge", "brave"])
@@ -505,6 +517,7 @@ class SettingsDialog(QtWidgets.QDialog):
         if not windows_startup.supported():
             self._startup.setToolTip("Available only on Windows")
         form.addRow("Check every", self._hours)
+        form.addRow("Watched threshold", self._watched)
         form.addRow("Cookies from browser", self._cookies)
         form.addRow("Preferred video resolution", self._resolution)
         form.addRow("Resolution fallback", self._higher)
@@ -549,4 +562,5 @@ class SettingsDialog(QtWidgets.QDialog):
             self._recent.value(),
             published_after,
             download_prefs.VideoPrefs(self._resolution.currentData(), self._higher.isChecked()),
+            playback_progress.WatchPolicy(self._watched.value()),
         )

@@ -137,7 +137,7 @@ These defaults are hard-coded near the top of the script:
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
-| Library watched rule | more than `95%` reached, or confirmed mpv end-of-file |
+| Library watched rule | configurable threshold, default more than `95%`; confirmed mpv end-of-file or manual marking also completes |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | clickable Pinned and Other channels groups; right-click or `Alt+P` to pin |
 | Library column layout | resizable, reorderable, and remembered across launches |
@@ -777,9 +777,9 @@ without opening dialogs or combining contradictory dropdowns:
   active processing stage. Completed, failed, cancelled, paused, and
   restart-interrupted rows are excluded because they are not presently running.
 - **Unwatched** shows current or previous downloads with no observed playback position.
-- **Continue** shows videos that were started but have not passed 95% or reached
-  mpv end-of-file.
-- **Watched** shows videos with more than 95% reached or confirmed mpv completion.
+- **Continue** shows videos that were started but have not been marked watched.
+- **Watched** shows videos marked manually, past the configured percentage
+  threshold, or completed through mpv end-of-file.
 - **Issues** isolates videos whose latest download or subtitle processing
   attempt failed, whose media file vanished, or whose required Dutch/English
   SRT files are missing, unreadable, empty, or contain no valid cues.
@@ -909,20 +909,37 @@ position and duration every five seconds. SQLite retains the furthest observed
 position, so rewinding or replaying a video never moves the bar backward.
 The bar and saved completion remain visible after the download and yields are removed.
 
-Once the furthest observed position exceeds 95% of the known duration, the app
-marks the video **Watched**, writes a separate completion timestamp, and adds
-a checkmark and green styling. The percentage and bar fill always reflect the
+Under **Library → Settings**, **Watched threshold** controls the percentage
+required for automatic completion, from 1% to 100% in 0.1% steps. It defaults
+to 95% and is saved per library output root. Saving applies immediately to
+existing progress and active playback sessions. Lowering the threshold can
+mark previously unfinished entries watched; raising it keeps already watched
+entries watched. At 100%, normal automatic completion requires mpv end-of-file.
+
+Once the furthest observed position exceeds that percentage of the known
+duration, the app marks the video **Watched**, writes a separate completion
+timestamp, and adds a checkmark and green styling. The percentage and bar fill always reflect the
 furthest recorded position: a video stopped at 98% shows green **✓ 98%**.
 Whole percentages are rounded, capped at 99% until the full duration is reached;
 100% is reserved for the end. Without a known duration, a completed video shows
-**✓ Watched** without a percentage. Exactly 95% remains unfinished. An mpv `end-file`
-event with reason `eof` also marks the video watched, even without a known
-duration. Closing or stopping playback flushes the last position and applies
+**✓ Watched** without a percentage. Exactly the threshold remains unfinished.
+An mpv `end-file` event with reason `eof` also marks the video watched, even
+without a known duration. Closing or stopping playback flushes the last position and applies
 the same threshold. The actual position is retained rather than rounded up to
 the duration, and watched status survives rewinding, replaying, and restarts.
-Existing saved progress above 95% qualifies immediately when loaded, without
-replaying the video. Seeking past the threshold counts too; progress tracks the
-furthest reached position rather than second-by-second viewing coverage.
+Existing saved progress above the configured threshold qualifies immediately
+when loaded, without replaying the video. Seeking past the threshold counts
+too; progress tracks the furthest reached position rather than second-by-second viewing coverage.
+
+Select a video and click the **✓ (Mark as watched)** button beside Play, choose
+**Video → Mark as watched**, or right-click its table row and choose **Mark as watched**. This
+works for downloaded, removed, and remote entries, including while another
+pipeline or playback is running. It records a persistent completion timestamp
+without downloading files or inventing a playback position: an entry observed
+at 20% remains **✓ 20%**, and one never played remains **✓ 0%** when duration
+is known. Marked entries join the Watched filter immediately, and their status
+survives restart, removal, redownload, and later playback. The action is disabled
+for entries already watched.
 
 Tracking uses a unique local JSON IPC named pipe supplied on that single mpv
 command line. It does not edit `mpv.conf`, pass `--no-config`, or interfere with
@@ -1999,7 +2016,7 @@ High-level groups:
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles, launch-scoped mpv policy, and thread-safe ownership of the active library player. |
 | `yt_whisper_subs.mpv_ipc` | Duplex ephemeral named-pipe connection, queued exact seeks, paced property observation, and EOF handling. |
-| `yt_whisper_subs.playback_progress` | Typed playback updates, shared 95% watched policy, worker-signal encoding, and observed-position fraction math. |
+| `yt_whisper_subs.playback_progress` | Typed playback updates, configurable watched policy, worker-signal encoding that preserves completion, and observed-position fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |
 | `yt_whisper_subs.library_pipeline` | Controlled CLI pipeline launch, process-tree pause/resume, trace forwarding, and durable progress checkpointing. |
@@ -2085,7 +2102,7 @@ Start by preserving these invariants:
 16. Keep hidden subprocesses observable through the timestamped activity trace.
 17. Keep structured GUI progress opt-in so direct CLI output remains unchanged.
 18. Keep a terminal-launched library interruptible without orphaning pythonw.exe.
-19. Keep watched progress monotonic and mark videos watched above 95% or on
+19. Keep watched progress monotonic and mark videos watched above the configured threshold, manually, or on
     confirmed mpv EOF, storing the timestamp separately from the actual position.
     Keep the displayed percentage and bar fill independent of watched status.
 20. Keep playback IPC launch-scoped; never rewrite or bypass the user's mpv
@@ -2155,7 +2172,8 @@ validation repair, exact timestamp mapping, persistence, and mpv sidecars;
 `SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
 playback policy; channel normalization and timestamp mapping; SQLite catalog
-semantics; playback IPC event handling; the strict 95% watched boundary, saved
+semantics; playback IPC event handling; the strict configurable watched boundary,
+settings persistence and active-session changes, manual completion without fake progress, saved
 progress classification, accurate watched percentages (including removed entries
 and unknown duration), sticky completion persistence, and one-time activity
 announcements; smart

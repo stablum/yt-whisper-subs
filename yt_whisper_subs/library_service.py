@@ -540,10 +540,10 @@ class LibraryService(
             Example: `save(update)` refreshes both SQLite and the live table bar.
             """
 
-            self.db.record_playback(update)
+            update = self.db.record_playback(update)
             report(playback_progress.encode(update))
 
-        observer = playback_progress.Observer(video_id, save)
+        observer = playback_progress.Observer(video_id, save, self.db.watch_policy)
         chapter_path = self._playback_chapters(video_id)
         session = playback.PlaybackSession(
             observer=observer,

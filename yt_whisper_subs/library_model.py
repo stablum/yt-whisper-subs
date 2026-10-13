@@ -93,6 +93,7 @@ def format_size(size_bytes: int | None) -> str:
 def watched_progress(
     record: types.VideoRecord,
     update: playback.Update | None = None,
+    policy: playback.WatchPolicy = playback.WatchPolicy(),
 ) -> WatchedProgress | None:
     """Apply the shared watched rule to both saved and live progress.
 
@@ -113,7 +114,7 @@ def watched_progress(
     )
     duration = next((value for value in duration_candidates if value and value > 0), None)
     completed = bool(stored and stored.completed_at is not None) or bool(update and update.completed)
-    normalized = playback.make(record.meta.identity.video_id, position, duration, completed)
+    normalized = playback.make(record.meta.identity.video_id, position, duration, completed, policy=policy)
     completed = normalized.completed
     fraction = playback.fraction(normalized)
     if duration:
@@ -132,7 +133,7 @@ def watched_progress(
         marked = (
             f"Marked watched {format_timestamp(stored.completed_at)}"
             if stored and stored.completed_at is not None
-            else "Watched: more than 95% reached or mpv reported the end"
+            else f"Watched: more than {policy.percent:g}% reached or mpv reported the end"
         )
         tooltip = f"{tooltip}\n{marked}"
     return WatchedProgress(fraction, label, tooltip, completed, position > 0 or completed)
@@ -234,11 +235,14 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         self._progress: dict[str, progress.Update] = {}
         self._watched: dict[str, playback.Update] = {}
         self._watched_views: dict[str, WatchedProgress | None] = {}
+        self._watch_policy = playback.WatchPolicy()
 
     def set_records(
         self,
         records: list[types.VideoRecord],
         issues: dict[str, str | None] | None = None,
+        *,
+        watch_policy: playback.WatchPolicy | None = None,
     ) -> None:
         """Replace table contents in one reset for reliable proxy filtering.
 
@@ -246,6 +250,8 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         """
 
         self.beginResetModel()
+        if watch_policy is not None:
+            self._watch_policy = watch_policy
         self._records = records
         self._row_by_id = {
             record.meta.identity.video_id: row
@@ -282,6 +288,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             record.meta.identity.video_id: watched_progress(
                 record,
                 self._watched.get(record.meta.identity.video_id),
+                self._watch_policy,
             )
             for record in records
         }
@@ -321,7 +328,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         row = self._row_by_id.get(update.video_id)
         if row is not None:
             prev = self._watched_views.get(update.video_id)
-            current = watched_progress(self._records[row], update)
+            current = watched_progress(self._records[row], update, self._watch_policy)
             self._watched_views[update.video_id] = current
             cell = self.index(row, WATCHED_COLUMN)
             roles = [QtCore.Qt.ItemDataRole.DisplayRole, WATCHED_ROLE, SORT_ROLE]

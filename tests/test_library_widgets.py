@@ -324,6 +324,7 @@ class DetailPanelTests(unittest.TestCase):
                 catalog=SimpleNamespace(detail=detail),
             ),
             _active_progress=mock.Mock(),
+            _watched_action=mock.Mock(),
             _active_task=task,
             _cancel_action=mock.Mock(),
             _pause_action=mock.Mock(),

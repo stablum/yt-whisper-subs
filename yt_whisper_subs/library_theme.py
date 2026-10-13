@@ -16,9 +16,9 @@ QLineEdit, QComboBox, QDoubleSpinBox {
   background: #222730; border: 1px solid #343b47; border-radius: 7px; padding: 7px 9px;
 }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus { border-color: #4ea1f3; }
-QPushButton, QToolButton#dangerButton { background: #2b313c; border: 1px solid #3a424f; border-radius: 7px; padding: 7px 13px; }
-QPushButton:hover, QToolButton#dangerButton:hover { background: #353d49; }
-QPushButton:disabled, QToolButton#dangerButton:disabled { color: #697381; background: #22262d; }
+QPushButton, QToolButton#dangerButton, QToolButton#watchedButton { background: #2b313c; border: 1px solid #3a424f; border-radius: 7px; padding: 7px 13px; }
+QPushButton:hover, QToolButton#dangerButton:hover, QToolButton#watchedButton:hover { background: #353d49; }
+QPushButton:disabled, QToolButton#dangerButton:disabled, QToolButton#watchedButton:disabled { color: #697381; background: #22262d; }
 QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: white; font-weight: 600; }
 QPushButton#primaryButton:hover { background: #2b83db; }
 QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
