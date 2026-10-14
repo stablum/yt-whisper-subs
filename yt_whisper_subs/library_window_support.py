@@ -55,6 +55,7 @@ class WindowRuntimeMixin:
         """
 
         task = library_workers.ChannelCheckTask(self._service)
+        task.signals.channel_checking.connect(self._ui.catalog.channels.set_checking)
         self._run_task("Checking channels…", task, self._check_finished)
 
     def _check_finished(self, new_count: object) -> None:
@@ -227,7 +228,7 @@ class WindowRuntimeMixin:
     def _queue_channel_task(
         self,
         label: str,
-        fn: Callable[[Callable[[str], None]], Any],
+        task: library_workers.ChannelCheckTask,
     ) -> None:
         """Queue channel hydration behind work in the single execution lane.
 
@@ -236,10 +237,10 @@ class WindowRuntimeMixin:
 
         self._metadata_timer.stop()
         queued = self._busy or bool(self._channel_tasks)
-        task = library_workers.BackgroundTask(fn)
         task_id = id(task)
         self._channel_tasks[task_id] = task
         task.signals.progress.connect(self._report_channel)
+        task.signals.channel_checking.connect(self._ui.catalog.channels.set_checking)
         if queued:
             self._ui.trace.append_message(f"○ Channel queued · {label}")
 

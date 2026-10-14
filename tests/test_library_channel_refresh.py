@@ -25,6 +25,7 @@ from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_views as views  # noqa: E402
+from yt_whisper_subs import library_workers  # noqa: E402
 from yt_whisper_subs import task_cancel  # noqa: E402
 
 
@@ -136,6 +137,18 @@ class ChannelRefreshTests(unittest.TestCase):
             for row in range(proxy.rowCount())
         }
 
+    def _channel_item(self, channel_id: int) -> QtWidgets.QListWidgetItem:
+        """Find the current sidebar row after a catalog or pin-state rebuild.
+
+        Example: a channel's activity stays attached to its ID rather than title.
+        """
+
+        channels = self._window._ui.catalog.channels
+        return next(
+            channels.item(row) for row in range(channels.count())
+            if channels.item(row).data(QtCore.Qt.ItemDataRole.UserRole) == ("channel", channel_id)
+        )
+
     def test_each_notification_follows_commit_and_precedes_next_lookup(self) -> None:
         """Expose only committed channel results before moving to another feed.
 
@@ -215,9 +228,23 @@ class ChannelRefreshTests(unittest.TestCase):
         self.assertTrue(all(thread == self._app.thread() for thread in threads))
         self.assertFalse(self._window._ui.header.check.isEnabled())
         self.assertTrue(self._window._ui.header.cancel.isEnabled())
+        channels = ui.channels
+        active_item = self._channel_item(self._beta.channel_id)
+        self.assertIn("Checking…", active_item.text())
+        self.assertFalse(active_item.icon().isNull())
+        self.assertNotIn("Checking…", self._channel_item(self._alpha.channel_id).text())
+        icon_key = active_item.icon().cacheKey()
+        self._wait_for(lambda: active_item.icon().cacheKey() != icon_key)
+        self._service.db.set_channel_pinned(self._beta.channel_id, True)
+        self._window.refresh()
+        self.assertIn("Checking…", self._channel_item(self._beta.channel_id).text())
+        self.assertEqual(self._window._filter_key, ("channel", self._alpha.channel_id))
         self._release.set()
         self._wait_for(lambda: not self._window._busy)
         self.assertIsNotNone(self._service.db.video("bbbbbbbbbbb"))
+        self.assertNotIn("Checking…", self._channel_item(self._beta.channel_id).text())
+        self.assertTrue(self._channel_item(self._beta.channel_id).icon().isNull())
+        self.assertFalse(channels._timer.isActive())
 
     def test_failed_channel_publishes_warning_and_preserves_existing_history(self) -> None:
         """Refresh saved errors after a failed lookup while continuing the batch.
@@ -273,6 +300,57 @@ class ChannelRefreshTests(unittest.TestCase):
         self.assertNotIn("bbbbbbbbbbb", self._visible_ids())
         self.assertIsNone(self._service.db.channel(self._beta.channel_id).last_error)
         self.assertEqual(self._service.db.setting("last_check_at", "0"), "0")
+        self.assertNotIn("Checking…", self._channel_item(self._beta.channel_id).text())
+        self.assertFalse(self._window._ui.catalog.channels._timer.isActive())
+
+    def test_first_lookup_waits_for_worker_slot_and_clears_failed_activity(self) -> None:
+        """Show activity only while a queued subscription is actually being checked.
+
+        Example: a new channel waits behind video work and returns to its warning on failure.
+        """
+
+        occupied = threading.Event()
+        entered = threading.Event()
+        finish_lookup = threading.Event()
+        task = library_workers.ChannelCheckTask(self._service, self._beta.channel_id)
+
+        def occupy(_report: object) -> None:
+            """Hold the serial lane before the new subscription lookup begins.
+
+            Example: model an existing video download.
+            """
+
+            occupied.set()
+            self._release.wait(5)
+
+        def fail(_url: str, _policy: object, _known: set[str]) -> None:
+            """Gate a failing lookup so its visible activity can be inspected.
+
+            Example: YouTube goes offline while resolving the channel title.
+            """
+
+            entered.set()
+            finish_lookup.wait(5)
+            raise RuntimeError("Offline")
+
+        self._feed.channel.side_effect = fail
+        self._window._pool.start(library_workers.BackgroundTask(occupy))
+        self._wait_for(occupied.is_set)
+        self._window._queue_channel_task("Adding Beta…", task)
+        self.assertNotIn("Checking…", self._channel_item(self._beta.channel_id).text())
+        self._release.set()
+        try:
+            self._wait_for(
+                lambda: entered.is_set() and "Checking…" in self._channel_item(self._beta.channel_id).text()
+            )
+        finally:
+            finish_lookup.set()
+        self._wait_for(lambda: not self._window._channel_tasks)
+        item = self._channel_item(self._beta.channel_id)
+        self.assertNotIn("Checking…", item.text())
+        self.assertIn("!", item.text())
+        self.assertIn("Offline", item.toolTip())
+        self.assertFalse(self._window._ui.catalog.channels._timer.isActive())
 
     def test_refresh_at_top_exposes_new_uploads_without_scrolling_to_selection(self) -> None:
         """Keep the newest uploads visible when the user is browsing the top.

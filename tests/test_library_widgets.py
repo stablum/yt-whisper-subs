@@ -23,6 +23,7 @@ from PySide6 import QtWidgets  # noqa: E402
 
 from yt_whisper_subs import chapters  # noqa: E402
 from yt_whisper_subs import library_chapter_actions  # noqa: E402
+from yt_whisper_subs import library_channels  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_metadata_db  # noqa: E402
 from yt_whisper_subs import library_model  # noqa: E402
@@ -668,11 +669,10 @@ class ChannelQueueTests(unittest.TestCase):
         window._service.track_channel.assert_called_once_with("@ruis", False)
         window._refresh_channels.assert_called_once_with()
         window.refresh.assert_not_called()
-        label, initialize = window._queue_channel_task.call_args.args
+        label, task = window._queue_channel_task.call_args.args
         self.assertEqual(label, "Adding @ruis…")
-        report = mock.Mock()
-        initialize(report)
-        window._service.initialize_channel.assert_called_once_with(7, report)
+        task.run()
+        window._service.initialize_channel.assert_called_once_with(7, mock.ANY)
 
     def test_channel_click_filters_in_memory_without_refreshing_catalog(self) -> None:
         """Keep sidebar navigation independent from SQLite and model rebuilds.
@@ -733,13 +733,12 @@ class ChannelQueueTests(unittest.TestCase):
             None,
             None,
         )
-        channels = QtWidgets.QListWidget()
+        channels = library_channels.ChannelList()
         window = SimpleNamespace(
             _ui=SimpleNamespace(catalog=SimpleNamespace(channels=channels, proxy=mock.Mock())),
             _service=SimpleNamespace(db=SimpleNamespace(channels=lambda: [pinned, regular])),
             _filter_key=("all", None),
             _channels_by_id={},
-            _add_channel_item=library_gui.LibraryWindow._add_channel_item,
         )
         window._apply_channel_scope = partial(library_gui.LibraryWindow._apply_channel_scope, window)
 
@@ -762,20 +761,20 @@ class ChannelQueueTests(unittest.TestCase):
             _channel_tasks={},
             _metadata_timer=mock.Mock(),
             _pool=mock.Mock(),
-            _ui=SimpleNamespace(trace=mock.Mock()),
+            _ui=SimpleNamespace(trace=mock.Mock(), catalog=SimpleNamespace(channels=mock.Mock())),
             _report_channel=mock.Mock(),
         )
-        task_fn = mock.Mock()
+        service = mock.Mock()
 
         library_window_support.WindowRuntimeMixin._queue_channel_task(
             window,
             "Adding first…",
-            task_fn,
+            library_workers.ChannelCheckTask(service, 1),
         )
         library_window_support.WindowRuntimeMixin._queue_channel_task(
             window,
             "Adding second…",
-            task_fn,
+            library_workers.ChannelCheckTask(service, 2),
         )
 
         self.assertEqual(window._pool.start.call_count, 2)

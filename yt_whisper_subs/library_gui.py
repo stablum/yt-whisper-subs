@@ -5,7 +5,6 @@ Example: `LibraryWindow(service).show()` starts the desktop companion.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import datetime
 from typing import NamedTuple
 
@@ -15,6 +14,7 @@ from PySide6 import QtWidgets
 
 import yt_whisper_subs
 from yt_whisper_subs import library_chapter_actions
+from yt_whisper_subs import library_channels
 from yt_whisper_subs import library_layout
 from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_model
@@ -73,7 +73,7 @@ class CatalogUi(NamedTuple):
     Example: `ui.catalog.model.set_records(records)`.
     """
 
-    channels: QtWidgets.QListWidget
+    channels: library_channels.ChannelList
     table: QtWidgets.QTableView
     model: library_model.VideoTableModel
     proxy: library_model.VideoFilterModel
@@ -253,7 +253,7 @@ class LibraryWindow(
         title.setObjectName("appTitle")
         subtitle = QtWidgets.QLabel("Watch · track · subtitle")
         subtitle.setObjectName("appSubtitle")
-        channels = QtWidgets.QListWidget()
+        channels = library_channels.ChannelList()
         channels.setObjectName("channelList")
         add = QtWidgets.QPushButton("＋  Track channel")
         add.setObjectName("primaryButton")
@@ -554,7 +554,7 @@ class LibraryWindow(
             heading.setForeground(QtGui.QColor(color))
             widget.addItem(heading)
             for channel in channels:
-                self._add_channel_item(widget, channel)
+                widget.add_channel(channel)
         for row in range(widget.count()):
             item = widget.item(row)
             if item.data(QtCore.Qt.ItemDataRole.UserRole) == self._filter_key:
@@ -565,28 +565,6 @@ class LibraryWindow(
             self._filter_key = ("all", None)
         widget.blockSignals(False)
         self._apply_channel_scope()
-
-    @staticmethod
-    def _add_channel_item(widget: QtWidgets.QListWidget, channel: types.Channel) -> None:
-        """Render one subscription with compact automation and error signals.
-
-        Example: pinned rows appear beneath the dedicated star shelf.
-        """
-
-        auto = "⚡ " if channel.auto_download else ""
-        error = "  !" if channel.last_error else ""
-        item = QtWidgets.QListWidgetItem(f"{auto}{channel.title}{error}")
-        item.setData(QtCore.Qt.ItemDataRole.UserRole, ("channel", channel.channel_id))
-        tips = [channel.url]
-        if channel.pinned:
-            tips.append("Pinned for quick access")
-            item.setForeground(QtGui.QColor("#f1c75b"))
-        if channel.auto_download:
-            tips.append("Automatic download enabled")
-        if channel.last_error:
-            tips.append(channel.last_error)
-        item.setToolTip("\n".join(tips))
-        widget.addItem(item)
 
     def _add_channel(self) -> None:
         """Show a subscription immediately, then queue its network hydration.
@@ -609,15 +587,8 @@ class LibraryWindow(
         self._ui.catalog.detail.set_record(None)
         self._update_actions()
 
-        def initialize(report: Callable[[str], None]) -> types.Channel:
-            """Bind the persisted placeholder into its queued network check.
-
-            Example: `initialize(report)` replaces `@ruis` with its YouTube title.
-            """
-
-            return self._service.initialize_channel(channel.channel_id, report)
-
-        self._queue_channel_task(f"Adding {channel.title}…", initialize)
+        task = library_workers.ChannelCheckTask(self._service, channel.channel_id)
+        self._queue_channel_task(f"Adding {channel.title}…", task)
 
     def _remove_channel(self) -> None:
         """Confirm and remove the selected subscription and remote-only rows.

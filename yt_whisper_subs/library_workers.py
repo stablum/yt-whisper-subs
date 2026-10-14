@@ -27,6 +27,7 @@ class TaskSignals(QtCore.QObject):
     started = QtCore.Signal()
     progress = QtCore.Signal(str)
     catalog_changed = QtCore.Signal()
+    channel_checking = QtCore.Signal(object)
     finished = QtCore.Signal(object)
     failed = QtCore.Signal(str, str)
     cancelled = QtCore.Signal()
@@ -123,19 +124,39 @@ class ChannelCheckTask(BackgroundTask):
     Example: `ChannelCheckTask(service)` refreshes while later channels scan.
     """
 
-    def __init__(self, service: library_service.LibraryService) -> None:
+    def __init__(self, service: library_service.LibraryService, channel_id: int | None = None) -> None:
         """Bind discovery to this worker's catalog notification signal.
 
         Example: the manual and scheduled checks share this task.
         """
 
         self._service = service
+        self._channel_id = channel_id
         super().__init__(self._check)
 
-    def _check(self, report: Callable[[str], None]) -> int:
-        """Emit only after each channel's catalog or error state is saved.
+    def _check(self, report: Callable[[str], None]) -> object:
+        """Publish activity for batch scans and first lookups, clearing every exit.
 
         Example: a failed channel updates its sidebar warning before the next scan.
         """
 
-        return self._service.check_all(report, channel_checked=self.signals.catalog_changed.emit)
+        try:
+            if self._channel_id is not None:
+                self.signals.channel_checking.emit(self._channel_id)
+                return self._service.initialize_channel(self._channel_id, report)
+            return self._service.check_all(
+                report,
+                channel_checked=self._channel_checked,
+                channel_started=self.signals.channel_checking.emit,
+            )
+        finally:
+            self.signals.channel_checking.emit(None)
+
+    def _channel_checked(self) -> None:
+        """Clear activity before publishing the newly saved catalog snapshot.
+
+        Example: automatic downloads begin with no channel still marked Checking.
+        """
+
+        self.signals.channel_checking.emit(None)
+        self.signals.catalog_changed.emit()

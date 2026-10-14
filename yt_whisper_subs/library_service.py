@@ -289,6 +289,7 @@ class LibraryService(
         report: ReportFn = _ignore_report,
         *,
         channel_checked: Callable[[], None] | None = None,
+        channel_started: Callable[[int], None] | None = None,
     ) -> int:
         """Publish each saved channel before auto-downloading later discoveries.
 
@@ -301,6 +302,8 @@ class LibraryService(
         channels = self.db.channels()
         for idx, channel in enumerate(channels, start=1):
             report(f"Checking channel {idx}/{len(channels)} · {channel.title}")
+            if channel_started:
+                channel_started(channel.channel_id)
             try:
                 auto_ids.extend(self._check_channel(channel, report, sidecars))
             except task_cancel.CancelledError:
