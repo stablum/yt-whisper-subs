@@ -195,6 +195,15 @@ icon's persistent **Quit** action for a normal zero-code exit. Explicit shutdown
 hides the icon immediately, cancels owned background work, and asks every
 library-launched mpv session to close so worker threads cannot strand the process.
 
+The managed GUI uses the visible-application launch policy: its console stays
+suppressed, while Windows is allowed to show the library window. On Windows it
+receives null standard input because keyboard input belongs to its own window;
+this also avoids uv's **Making stdin inheritable failed** warning when launching
+from a terminal. The tray's **Show library** action resets Qt's visibility before
+restoring the window, recovering even when Windows hid it while Qt still
+considered it visible. **Start quietly in the system tray** remains controlled
+by the application's explicit startup flag.
+
 Choose **Library → Settings**, enable **Start quietly in the system tray when I
 sign in**, and click Save to start the library with the current Windows user.
 This writes one exact value under the current user's standard Windows Run key,
@@ -2210,6 +2219,8 @@ The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
 Bootstrap tests cover normal managed-GUI exit propagation and Ctrl+C cleanup;
+native Windows startup tests check actual window visibility and tray restoration
+when Qt's visibility state disagrees with Windows;
 the subprocess tests independently require child termination before an
 interrupt returns terminal control.
 

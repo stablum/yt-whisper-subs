@@ -111,6 +111,10 @@ def child_process_kwargs(
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startup_info.wShowWindow = subprocess.SW_HIDE
             kwargs["startupinfo"] = startup_info
+        else:
+            # GUI applications take keyboard input from their own window. A console
+            # stdin handle is invalid in pythonw and triggers uv launcher warnings.
+            kwargs["stdin"] = subprocess.DEVNULL
     return kwargs
 
 

@@ -34,7 +34,9 @@ def main() -> int:
     gui_python = paths["python_gui"] if paths["python_gui"].exists() else paths["python"]
     cmd = [str(gui_python), "-m", "yt_whisper_subs.library_app", *sys.argv[1:]]
     try:
-        result = proc.run(cmd, check=False, silence_seconds=None)
+        result = proc.run(
+            cmd, check=False, silence_seconds=None, window=proc.ChildWindow.VISIBLE,
+        )
     except KeyboardInterrupt:
         return 130
     return result.returncode

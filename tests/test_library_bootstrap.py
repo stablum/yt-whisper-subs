@@ -16,6 +16,7 @@ from unittest import mock
 
 from yt_whisper_subs import library_app
 from yt_whisper_subs import library_bootstrap
+from yt_whisper_subs import proc
 
 
 class LibraryBootstrapTests(unittest.TestCase):
@@ -49,7 +50,9 @@ class LibraryBootstrapTests(unittest.TestCase):
         cmd = run.call_args.args[0]
         self.assertEqual(Path(cmd[0]), paths["python_gui"])
         self.assertEqual(cmd[1:3], ["-m", "yt_whisper_subs.library_app"])
-        self.assertEqual(run.call_args.kwargs, {"check": False, "silence_seconds": None})
+        self.assertEqual(run.call_args.kwargs, {
+            "check": False, "silence_seconds": None, "window": proc.ChildWindow.VISIBLE,
+        })
 
     @mock.patch("yt_whisper_subs.library_bootstrap.proc.configure_stdio")
     @mock.patch("yt_whisper_subs.library_bootstrap.proc.ensure_library_deps")

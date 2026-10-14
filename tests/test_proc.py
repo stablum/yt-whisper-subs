@@ -52,6 +52,7 @@ class ChildProcessOptionsTests(unittest.TestCase):
         if os.name == "nt":
             self.assertEqual(kwargs["creationflags"], subprocess.CREATE_NO_WINDOW)
             self.assertNotIn("startupinfo", kwargs)
+            self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
         else:
             self.assertNotIn("creationflags", kwargs)
             self.assertNotIn("startupinfo", kwargs)

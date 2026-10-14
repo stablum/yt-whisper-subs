@@ -619,6 +619,8 @@ class WindowRuntimeMixin:
         Example: the tray's Show action invokes `_show_window()`.
         """
 
+        # Windows startup flags can hide the native window while Qt thinks it is visible.
+        self.hide()
         self.showNormal()
         self.raise_()
         self.activateWindow()
