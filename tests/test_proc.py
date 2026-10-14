@@ -8,12 +8,14 @@ from __future__ import annotations
 import io
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from yt_whisper_subs import proc
+from yt_whisper_subs import cfg
 
 
 class ChildProcessOptionsTests(unittest.TestCase):
@@ -97,6 +99,36 @@ class ChildProcessOptionsTests(unittest.TestCase):
         parent.suspend.assert_called_once_with()
         child.suspend.assert_called_once_with()
         self.assertEqual(resumed, ["child", "parent"])
+
+    def test_python_runtime_probes_version_and_modules_together(self) -> None:
+        """Read usable runtime facts in one child instead of per-module launches.
+
+        Example: an unavailable package is omitted while a stdlib package is found.
+        """
+
+        minor, modules = proc.python_runtime(Path(sys.executable), ("json", "missing_library_probe"))
+        expected = f"{sys.version_info.major}.{sys.version_info.minor}"
+        self.assertEqual(minor, expected)
+        self.assertEqual(modules, frozenset({"json"}))
+
+    @mock.patch("yt_whisper_subs.proc.managed_module_available", side_effect=AssertionError("extra probe"))
+    @mock.patch("yt_whisper_subs.proc.python_runtime")
+    def test_library_setup_reuses_one_runtime_probe(
+        self, runtime: mock.Mock, _available: mock.Mock,
+    ) -> None:
+        """Reuse the yt-dlp observation when an update check is not due.
+
+        Example: normal GUI startup needs no second module-probe process.
+        """
+
+        modules = (*cfg.LIBRARY_REQUIRED_MODULES, "yt_dlp")
+        runtime.return_value = "3.14", frozenset(modules)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".yt-dlp-update-check").touch()
+            paths = {"python": root / "python.exe", "venv_dir": root}
+            proc.ensure_library_deps(paths, "3.14")
+        runtime.assert_called_once_with(paths["python"], modules)
 
     def test_output_records_split_terminal_progress(self) -> None:
         """Expose carriage-return progress as individual live trace messages.

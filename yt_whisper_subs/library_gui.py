@@ -130,7 +130,7 @@ class LibraryWindow(
         self._media_timer.setSingleShot(True)
         self._media_timer.timeout.connect(self._scan_changed_media)
         self._media_watcher.directoryChanged.connect(self._local_files_changed)
-        self._local_scan_needed = False
+        self._local_scan_needed = True
         self._busy = False
         self._active_progress: progress.Update | None = None
         self._metadata_active = False
@@ -166,6 +166,7 @@ class LibraryWindow(
         self._restore_interrupted_pipelines()
         self._schedule_next(initial=True)
         self._schedule_metadata_backfill()
+        self._media_timer.start(0)
 
     def _watch_local_paths(self) -> None:
         """Watch a few output directories for local edits without disk polling.

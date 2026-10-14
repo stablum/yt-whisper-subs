@@ -1089,6 +1089,34 @@ class LibraryServiceTests(unittest.TestCase):
             self.assertEqual(record.meta.details.live_status, types.LIVE_UNKNOWN)
             self.assertEqual(library_model.record_progress(record).stage, progress.Stage.LIVE_UNKNOWN)
 
+    def test_scan_opens_only_metadata_for_catalog_and_local_files(self) -> None:
+        """Avoid decoding unrelated historical archives during startup scans.
+
+        Example: an old removed listing's multi-megabyte info JSON stays unopened.
+        """
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = library_service.LibraryService(
+                root, {"python": Path("python")}, feed=FakeFeed([]), downloader=FakeDownloader(root),
+            )
+            service.db.upsert_video(make_meta("aaaaaaaaaaa", "Old title"))
+            (root / "videos").mkdir()
+            (root / "metadata").mkdir()
+            (root / "videos" / "bbbbbbbbbbb.mkv").write_bytes(b"media")
+            for video_id in ("aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"):
+                info = {"id": video_id, "title": f"Saved {video_id}", "timestamp": 100}
+                path = root / "metadata" / f"{video_id}.info.json"
+                path.write_text(json.dumps(info), encoding="utf-8")
+            with mock.patch.object(Path, "read_text", autospec=True, side_effect=Path.read_text) as read:
+                service.scan_local()
+            opened = {call.args[0].name for call in read.call_args_list}
+            self.assertIn("aaaaaaaaaaa.info.json", opened)
+            self.assertIn("bbbbbbbbbbb.info.json", opened)
+            self.assertNotIn("ccccccccccc.info.json", opened)
+            self.assertEqual(service.db.video("aaaaaaaaaaa").meta.identity.title, "Saved aaaaaaaaaaa")
+            self.assertTrue(service.db.video("bbbbbbbbbbb").downloaded)
+
     def test_metadata_directory_wins_duplicate_legacy_sidecar(self) -> None:
         """Prefer the current metadata folder over an old videos-folder copy.
 
@@ -1109,7 +1137,8 @@ class LibraryServiceTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
-            self.assertEqual(service._metadata_sidecars()[video_id].details.live_status, "was_live")
+            sidecars = library_artifacts.MetadataSidecars(root)
+            self.assertEqual(sidecars.get(video_id).details.live_status, "was_live")
 
     def test_scan_clears_old_error_only_after_local_yields_are_usable(self) -> None:
         """Drop a failed label after external repair without broad file parsing.

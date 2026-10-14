@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from yt_whisper_subs import chapters
+from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import srt
 from yt_whisper_subs import yield_files
@@ -48,6 +49,43 @@ class _ChapterEntry(NamedTuple):
 
     stamp: tuple[FileStamp, FileStamp]
     chapter_set: chapters.ChapterSet | None
+
+
+class MetadataSidecars:
+    """Read metadata only for requested IDs within one scan or channel batch.
+
+    Example: an old archive outside the catalog stays unopened until rediscovered.
+    """
+
+    def __init__(self, out_dir: Path) -> None:
+        """Keep one operation's loaded metadata without a persistent derived cache.
+
+        Example: a later scan sees an externally replaced info JSON immediately.
+        """
+
+        self._out_dir = out_dir
+        self._metas: dict[str, types.VideoMeta | None] = {}
+
+    def get(self, video_id: str) -> types.VideoMeta | None:
+        """Load the authoritative sidecar once, falling back to the videos folder.
+
+        Example: channel discovery can consult an archived ID absent from SQLite.
+        """
+
+        if video_id in self._metas:
+            return self._metas[video_id]
+        for folder in ("metadata", "videos"):
+            path = self._out_dir / folder / f"{video_id}.info.json"
+            try:
+                info = json.loads(path.read_text(encoding="utf-8"))
+                meta = library_feed.video_meta(info)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError):
+                continue
+            if meta.identity.video_id == video_id:
+                self._metas[video_id] = meta
+                return meta
+        self._metas[video_id] = None
+        return None
 
 
 def _stamp(path: Path) -> FileStamp:

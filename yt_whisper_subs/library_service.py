@@ -154,37 +154,40 @@ class LibraryService(
         Example: `service.scan_local()` makes old downloads visible immediately.
         """
 
-        sidecars = self._metadata_sidecars()
+        sidecars = library_artifacts.MetadataSidecars(self.out_dir)
         return self._scan_local(sidecars, report)
 
     def _scan_local(
         self,
-        sidecars: dict[str, types.VideoMeta],
+        sidecars: library_artifacts.MetadataSidecars,
         report: ReportFn,
     ) -> int:
-        """Reconcile media while applying one already-loaded metadata cache.
+        """Reconcile media while sharing on-demand metadata within this operation.
 
         Example: channel checks reuse `sidecars` instead of parsing them twice.
         """
 
         self.video_dir.mkdir(parents=True, exist_ok=True)
         self.metadata_dir.mkdir(parents=True, exist_ok=True)
-        # Info sidecars preserve stable facts; their live state is only a past observation.
-        stable_sidecars = {
-            video_id: meta._replace(details=meta.details._replace(live_status=None))
-            for video_id, meta in sidecars.items()
-        }
-        scanned: list[types.ScannedMedia] = []
         media_paths = sorted(
             path
             for path in self.video_dir.iterdir()
             if path.is_file() and path.suffix.casefold() in cfg.MEDIA_SUFFIXES
         )
-        for path in media_paths:
-            video_id = youtube.video_id_from_filename(path)
-            if not video_id:
-                continue
-            metadata_complete = video_id in sidecars
+        local_ids = {
+            path: video_id for path in media_paths
+            if (video_id := youtube.video_id_from_filename(path))
+        }
+        known_ids = {record.meta.identity.video_id for record in self.db.videos()}
+        requested = known_ids | set(local_ids.values())
+        # Historical archives stay unopened; their metadata is loaded on rediscovery.
+        stable_sidecars = {}
+        for video_id in requested:
+            if meta := sidecars.get(video_id):
+                stable_sidecars[video_id] = meta._replace(details=meta.details._replace(live_status=None))
+        scanned: list[types.ScannedMedia] = []
+        for path, video_id in local_ids.items():
+            metadata_complete = video_id in stable_sidecars
             meta = stable_sidecars.get(video_id) or self._placeholder_meta(path, video_id)
             stat = path.stat()
             downloaded_at = int(getattr(stat, "st_birthtime", stat.st_ctime))
@@ -274,7 +277,8 @@ class LibraryService(
             raise RuntimeError("tracked channel no longer exists")
         report(f"Checking {channel.url}")
         try:
-            self._check_channel(channel, report, self._metadata_sidecars())
+            sidecars = library_artifacts.MetadataSidecars(self.out_dir)
+            self._check_channel(channel, report, sidecars)
         except task_cancel.CancelledError:
             raise
         except Exception as exc:
@@ -296,7 +300,7 @@ class LibraryService(
         Example: `service.check_all(report)` is called by the four-hour timer.
         """
 
-        sidecars = self._metadata_sidecars()
+        sidecars = library_artifacts.MetadataSidecars(self.out_dir)
         self._scan_local(sidecars, report)
         auto_ids: list[str] = []
         channels = self.db.channels()
@@ -589,23 +593,6 @@ class LibraryService(
         """
 
         return self._playback.quit()
-
-    def _metadata_sidecars(self) -> dict[str, types.VideoMeta]:
-        """Load new metadata-directory and older video-directory info JSON.
-
-        Example: `_metadata_sidecars()[video_id]` supplies a scanned title.
-        """
-
-        paths = [*self.video_dir.glob("*.info.json"), *self.metadata_dir.glob("*.info.json")]
-        metas: dict[str, types.VideoMeta] = {}
-        for path in paths:
-            try:
-                info = json.loads(path.read_text(encoding="utf-8"))
-                meta = library_feed.video_meta(info)
-            except (OSError, json.JSONDecodeError, TypeError, ValueError):
-                continue
-            metas[meta.identity.video_id] = meta
-        return metas
 
     def _write_metadata(self, info: types.VideoInfo) -> None:
         """Keep the complete extractor sidecar for GUI-backfilled videos.

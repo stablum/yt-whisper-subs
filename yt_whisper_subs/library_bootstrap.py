@@ -5,6 +5,7 @@ Example: `library_bootstrap.main()` is called by the `.pyw` launcher.
 
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -23,7 +24,7 @@ def main() -> int:
     current = Path(sys.executable).resolve()
     managed_executables = {paths["python"].resolve(), paths["python_gui"].resolve()}
     if current in managed_executables and all(
-        proc.managed_module_available(paths["python"], module)
+        importlib.util.find_spec(module) is not None
         for module in cfg.LIBRARY_REQUIRED_MODULES
     ):
         from yt_whisper_subs import library_app

@@ -68,6 +68,7 @@ class ChannelScopeTests(unittest.TestCase):
             db.upsert_video(meta, channel.channel_id if channel else None)
         db.set_download_error("bbbbbbbbbbb", "Download failed")
         self._window = library_gui.LibraryWindow(self._service)
+        self._window._media_timer.stop()
         self._window._timer.stop()
         self._window._metadata_timer.stop()
         self._window.show()

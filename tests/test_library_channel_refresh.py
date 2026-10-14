@@ -86,6 +86,8 @@ class ChannelRefreshTests(unittest.TestCase):
         self._feed.channel.side_effect = lambda url, _policy, _known: self._snapshots[url]
         self._release = threading.Event()
         self._window = library_gui.LibraryWindow(self._service)
+        self._startup_scan_scheduled = self._window._media_timer.isActive()
+        self._window._media_timer.stop()
         self._window._timer.stop()
         self._window._metadata_timer.stop()
         self._window.resize(1050, 650)
@@ -148,6 +150,37 @@ class ChannelRefreshTests(unittest.TestCase):
             channels.item(row) for row in range(channels.count())
             if channels.item(row).data(QtCore.Qt.ItemDataRole.UserRole) == ("channel", channel_id)
         )
+
+    def test_startup_scan_runs_after_window_construction_on_worker(self) -> None:
+        """Keep the window responsive while the initial local reconciliation waits.
+
+        Example: a large metadata archive cannot delay the first visible catalog.
+        """
+
+        entered = threading.Event()
+        threads = []
+
+        def scan(_report: object) -> int:
+            """Gate initial indexing without stalling the Qt event thread.
+
+            Example: emulate slow file reads while the existing catalog is browsable.
+            """
+
+            threads.append(QtCore.QThread.currentThread())
+            entered.set()
+            self._release.wait(5)
+            return 0
+
+        self.assertTrue(self._startup_scan_scheduled)
+        with mock.patch.object(self._service, "scan_local", side_effect=scan):
+            self._window._media_timer.start(0)
+            self._wait_for(entered.is_set)
+            self.assertTrue(self._window.isVisible())
+            self._window._ui.header.search.setText("News")
+            self.assertEqual(len(self._visible_ids()), 60)
+            self.assertNotEqual(threads[0], self._app.thread())
+            self._release.set()
+            self._wait_for(lambda: not self._window._media_active)
 
     def test_each_notification_follows_commit_and_precedes_next_lookup(self) -> None:
         """Expose only committed channel results before moving to another feed.

@@ -177,8 +177,9 @@ python .\yt_whisper_library.pyw
 ```
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
-`PySide6-Essentials` and `psutil` when needed, and relaunches with `pythonw.exe`. The first
-start scans existing downloads immediately. An overdue channel check and the
+`PySide6-Essentials` and `psutil` when needed, and relaunches with `pythonw.exe`.
+The window first opens the saved catalog, then scans local downloads in the
+background and refreshes the results. An overdue channel check and the
 gently paced metadata queue then run in the background without freezing the
 GUI. On Windows, background child operations run without opening or flashing a
 terminal window. mpv remains a normal visible application with a taskbar icon
@@ -757,6 +758,17 @@ directories for local changes. It coalesces notifications into one scan after
 three quiet seconds and waits for active work to finish; it does not poll the
 disk. External media deletion or subtitle repair therefore updates the table
 and Issues view while the app is open.
+
+Startup and local reconciliation read info JSON only for catalog entries and
+local media actually being reconciled. Archived metadata for unrelated historical
+videos stays unopened. Channel discovery loads an archived sidecar on demand if
+that video reappears, preserving its publication cutoff and preventing repeated
+metadata lookups. A scan or check shares each parsed sidecar within that operation;
+later operations reread requested files so external metadata edits are respected.
+Large archives therefore do not need to be decoded before the window appears.
+The launcher also probes the managed Python version and GUI dependencies in one
+child process; a launch already inside the managed environment checks its own
+module specs directly instead of spawning another interpreter for each module.
 
 Background subprocesses launched from the desktop application—including
 dependency setup, channel discovery, downloads, ffmpeg, and Whisper—use
@@ -2045,7 +2057,7 @@ High-level groups:
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
 | `yt_whisper_subs.yield_files` | Atomic staged yield replacement and durable dependency-marker paths. |
 | `yt_whisper_subs.output_lock` | Nonblocking OS locks for a single library instance and shared CLI/GUI pipeline writes. |
-| `yt_whisper_subs.library_artifacts` | File-stamped SRT-health and parsed-chapter cache for I/O-free Qt painting. |
+| `yt_whisper_subs.library_artifacts` | On-demand metadata sidecars and file-stamped SRT-health/parsed-chapter caches for I/O-free Qt painting. |
 | `yt_whisper_subs.library_feed` | Bounded adaptive yt-dlp Videos/Streams discovery, Atom timestamps, and full metadata lookup. |
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_channel_service` | Bounded channel-snapshot merging, live transitions, and automatic-download eligibility. |
@@ -2219,6 +2231,7 @@ The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.
 Bootstrap tests cover normal managed-GUI exit propagation and Ctrl+C cleanup;
+startup checks cover selective archive reads and local scanning after window creation;
 native Windows startup tests check actual window visibility and tray restoration
 when Qt's visibility state disagrees with Windows;
 the subprocess tests independently require child termination before an

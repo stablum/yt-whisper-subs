@@ -6,6 +6,7 @@ Example: `proc.run(["python", "--version"])` prints and executes a command.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import queue
 import signal
@@ -535,13 +536,16 @@ def _yt_dlp_update_due(paths: dict[str, Path]) -> bool:
     return age_seconds >= cfg.DEFAULT_YT_DLP_UPDATE_DAYS * 24 * 60 * 60
 
 
-def refresh_yt_dlp(paths: dict[str, Path], *, force: bool = False) -> None:
+def refresh_yt_dlp(
+    paths: dict[str, Path], *, force: bool = False, installed: bool | None = None,
+) -> None:
     """Install yt-dlp's default extras and periodically check for extractor fixes.
 
     Example: `refresh_yt_dlp(paths)` updates at most once per week.
     """
 
-    installed = managed_module_available(paths["python"], "yt_dlp")
+    if installed is None:
+        installed = managed_module_available(paths["python"], "yt_dlp")
     if installed and not force and not _yt_dlp_update_due(paths):
         return
 
@@ -567,6 +571,35 @@ def refresh_yt_dlp(paths: dict[str, Path], *, force: bool = False) -> None:
     print("Warning: could not refresh yt-dlp; continuing with the installed version.")
 
 
+def python_runtime(python_exe: Path, modules: tuple[str, ...]) -> tuple[str | None, frozenset[str]]:
+    """Inspect version and required modules with one interpreter startup.
+
+    Example: GUI bootstrap probes Qt, psutil, and yt-dlp in a single child.
+    """
+
+    if not python_exe.exists():
+        return None, frozenset()
+    code = (
+        "import importlib.util, json, sys\n"
+        "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
+        "'modules': [name for name in sys.argv[1:] if importlib.util.find_spec(name)]}))"
+    )
+    result = subprocess.run(
+        [str(python_exe), "-c", code, *modules],
+        **child_process_kwargs(),
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode:
+        return None, frozenset()
+    info = json.loads(result.stdout)
+    return info["version"], frozenset(info["modules"])
+
+
 def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
     """Prepare the small managed runtime used by the native library GUI.
 
@@ -574,7 +607,8 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
     """
 
     requested_minor = requested_python_minor_version(python_version)
-    current_minor = get_python_minor_version(paths["python"])
+    modules = (*cfg.LIBRARY_REQUIRED_MODULES, "yt_dlp")
+    current_minor, installed = python_runtime(paths["python"], modules)
     if current_minor != requested_minor:
         require_command("uv")
         paths["venv_dir"].parent.mkdir(parents=True, exist_ok=True)
@@ -584,7 +618,7 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
     missing_modules = [
         module
         for module in cfg.LIBRARY_REQUIRED_MODULES
-        if not managed_module_available(paths["python"], module)
+        if current_minor != requested_minor or module not in installed
     ]
     if missing_modules:
         require_command("uv")
@@ -600,7 +634,9 @@ def ensure_library_deps(paths: dict[str, Path], python_version: str) -> None:
                 *cfg.LIBRARY_PYTHON_PACKAGES,
             ]
         )
-    refresh_yt_dlp(paths, force=current_minor != requested_minor)
+    refresh_yt_dlp(
+        paths, force=current_minor != requested_minor, installed="yt_dlp" in installed,
+    )
 
 
 def check_cuda(paths: dict[str, Path]) -> bool:

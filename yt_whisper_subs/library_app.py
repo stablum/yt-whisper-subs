@@ -49,7 +49,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with output_lock.OutputLock(out_dir, "library"):
             service = library_service.LibraryService(out_dir, proc.venv_paths())
-            service.scan_local()
             window = library_gui.LibraryWindow(service)
             start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()
             if not start_in_tray:

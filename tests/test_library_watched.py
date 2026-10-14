@@ -60,6 +60,7 @@ class WatchedTests(unittest.TestCase):
             details = types.VideoDetails(duration, None, "", None, "not_live")
             self._db.upsert_video(types.VideoMeta(ident, origin, details))
         self._window = library_gui.LibraryWindow(self._service)
+        self._window._media_timer.stop()
         self._window._timer.stop()
         self._window._metadata_timer.stop()
         self._window.resize(1050, 650)

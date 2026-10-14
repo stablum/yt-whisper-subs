@@ -10,6 +10,7 @@ from datetime import datetime
 from datetime import timezone
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
 
@@ -27,7 +28,7 @@ class ChannelServiceMixin:
         self,
         channel: types.Channel,
         report: ReportFn,
-        sidecars: dict[str, types.VideoMeta],
+        sidecars: library_artifacts.MetadataSidecars,
     ) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.
 
@@ -40,7 +41,7 @@ class ChannelServiceMixin:
         snapshot = self._feed.channel(channel.url, policy, known_ids)
         snapshot = self._apply_sidecars(snapshot, sidecars, policy.published_after)
         result = self.db.store_snapshot(channel.channel_id, snapshot)
-        new_ids = [video_id for video_id in result.new_ids if video_id not in sidecars]
+        new_ids = [video_id for video_id in result.new_ids if sidecars.get(video_id) is None]
         if not snapshot.complete:
             warning = "Partial refresh: Streams could not be checked; history preserved"
             self.db.set_channel_error(channel.channel_id, warning)
@@ -70,7 +71,7 @@ class ChannelServiceMixin:
     @staticmethod
     def _apply_sidecars(
         snapshot: types.ChannelSnapshot,
-        sidecars: dict[str, types.VideoMeta],
+        sidecars: library_artifacts.MetadataSidecars,
         published_after: int | None,
     ) -> types.ChannelSnapshot:
         """Use durable metadata before deciding if flat channel rows are retained.
