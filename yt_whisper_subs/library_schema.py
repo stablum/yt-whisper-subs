@@ -6,6 +6,7 @@ Example: `LibraryDb` composes `SchemaDbMixin` during startup.
 from __future__ import annotations
 
 from yt_whisper_subs import library_job_db
+from yt_whisper_subs import vocabulary_db
 
 
 _SCHEMA = f"""
@@ -69,6 +70,8 @@ CREATE TABLE IF NOT EXISTS video_history (
 );
 
 {library_job_db.SCHEMA}
+
+{vocabulary_db.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

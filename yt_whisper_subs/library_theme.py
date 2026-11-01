@@ -105,6 +105,10 @@ QPlainTextEdit#activityTrace {
   background: #0f1217; color: #c9d2df; border: 1px solid #303744;
   selection-background-color: #294467; font-family: Consolas; font-size: 9pt;
 }
+QPlainTextEdit#vocabularyDetail {
+  background: #1c2028; color: #d8dee8; border: 1px solid #303744; padding: 8px;
+  selection-background-color: #294467;
+}
 QStatusBar { background: #11141a; color: #9ba6b4; border-top: 1px solid #2a303b; }
 QMenu { background: #222730; border: 1px solid #3a424f; padding: 5px; }
 QMenu::item { padding: 7px 26px; border-radius: 4px; }

@@ -24,6 +24,11 @@ from yt_whisper_subs import subtitle_files
 from yt_whisper_subs import whisper_local
 from yt_whisper_subs import youtube
 from yt_whisper_subs import yield_files
+from yt_whisper_subs import library_db
+from yt_whisper_subs import vocabulary
+from yt_whisper_subs import vocabulary_playback
+from yt_whisper_subs import vocabulary_translate
+from yt_whisper_subs import vocabulary_worker
 
 
 class YieldDirs(NamedTuple):
@@ -588,12 +593,28 @@ class PipelineRunner:
 
         print()
         print("Opening in mpv with subtitles...")
-        playback.play_video(
-            run_yields.video,
-            run_yields.srt_paths(),
-            playback.PlaybackPrefs.from_args(self._args),
-            playback.PlaybackSession(chapter_path=chapter_path),
-        )
+        db = library_db.LibraryDb(self._dirs.video.parent / "library" / "catalog.sqlite3")
+        db.initialize()
+        service = vocabulary_worker.VocabularyService(db, vocabulary_translate.WordTranslator(self._args))
+        source = vocabulary.Source.local(run_yields.video)
+        known = db.video(run_yields.video.stem)
+        if self._args.url:
+            video_id = youtube.youtube_video_id(self._args.url) or run_yields.video.stem
+            source = vocabulary.Source(f"youtube:{video_id}", video_id, video_id,
+                                       self._args.url, str(run_yields.video.resolve()))
+        if known:
+            identity = known.meta.identity
+            source = vocabulary.Source(f"youtube:{identity.video_id}", identity.video_id, identity.title,
+                                       identity.url, str(run_yields.video.resolve()))
+        capture = vocabulary_playback.WordCapture(service, source, self._args.language)
+        try:
+            service.resume()
+            playback.play_video(
+                run_yields.video, run_yields.srt_paths(), playback.PlaybackPrefs.from_args(self._args),
+                playback.PlaybackSession(chapter_path=chapter_path, words=capture),
+            )
+        finally:
+            service.close()
 
 
 def resolve_output_dir(out_dir: str | None) -> Path:

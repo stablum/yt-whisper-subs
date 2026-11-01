@@ -79,6 +79,8 @@ The companion library is optimized for a second workflow:
     that the pipeline is complete.
 16. Announce new pinned-channel discoveries in one dismissible tray balloon,
     with every title grouped under its channel and configurable delivery timing.
+17. Click subtitle words inside mpv, preserve every selection in SQLite, and
+    review contextual English meanings, repeated clicks, and distinct-video counts.
 
 ## Important Defaults
 
@@ -139,6 +141,10 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
+| mpv word capture | clickable text tracks; committed selections turn green and underlined |
+| Vocabulary review | Library → Vocabulary; `Ctrl+Shift+W` in the library |
+| Word translation | on-demand contextual OpenAI lookup; English meaning and source dictionary form |
+| Vocabulary persistence | every intentional click, including repeats; same catalog SQLite file |
 | Library watched rule | configurable threshold, default more than `95%`; confirmed mpv end-of-file or manual marking also completes |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | clickable Pinned and Other channels groups; right-click or `Alt+P` to pin |
@@ -1294,9 +1300,9 @@ progress updates its table row without replacing the active pipeline stage in
 the status bar.
 Explicit application shutdown sends launch-scoped IPC Quit commands to every
 library-owned mpv window before Qt exits; unrelated mpv processes are untouched.
-Library-launched playback additionally enables one ephemeral IPC endpoint so
-the Watched bar updates live. Direct CLI playback keeps its established command
-shape and terminal interaction unchanged.
+Library-launched playback enables one ephemeral IPC endpoint for watched progress
+and interactive word capture. CLI playback uses the same word-capture script and
+launch-scoped IPC, without recording library watched progress.
 When only a Dutch SRT exists, that sole track is explicitly enabled as `sid=1`
 and receives the normal primary styling, overriding an mpv subtitles-off
 preference for that launch. Invalid SRT files are not passed to mpv.
@@ -1719,10 +1725,10 @@ Playback command shape:
 mpv --sub-auto=no --sub-file=<primary> --sub-file=<secondary> <video>
 ```
 
-The desktop library inserts a unique
+Word-enabled CLI playback and the desktop library insert a unique
 `--input-ipc-server=yt-whisper-subs-<random-id>` option before the video. It is
-launch-scoped and does not alter persistent mpv configuration. Direct CLI
-playback omits this option.
+launch-scoped and does not alter persistent mpv configuration. The word script
+is loaded explicitly with `--script`; it is not installed globally in mpv.
 
 If dual subtitles are enabled and at least two subtitle files exist, the script
 does more:
@@ -1779,6 +1785,92 @@ python .\yt_whisper_subs.py `
   --dual-sub-secondary-font-size 90 `
   "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
+
+### Clickable Subtitle Words And Vocabulary
+
+Launch a video from the library or project CLI with mpv 0.41 or newer, then
+click a word in either prepared subtitle track to save it. Hovering makes the
+word white and underlined; after the local database
+commits the selection, it becomes green and underlined. Previously selected
+occurrences retain that appearance when you reopen the same source and cue.
+Repeated intentional clicks are all recorded, including double-clicks. Transport
+replays are idempotent and do not create accidental duplicates. Clicking does
+not pause playback.
+
+This is an in-player Lua OSD, with no separate overlay application or browser.
+mpv still loads and times the subtitle tracks. The script replaces the display
+of supported selected tracks, measures word rectangles through mpv/libass, and
+handles word clicks inside the same window. Unsupported tracks continue using
+mpv's native display. Clicks outside words retain normal mpv behavior.
+`v` and `Alt+v` toggle the primary and secondary display; `Ctrl+Shift+v` switches
+between clickable and normal subtitles. Full ASS effects are not reproduced:
+the interactive renderer uses plain text, centered word wrapping, the configured
+colors and font sizes, and the existing top/bottom subtitle positions.
+Renderer measurements are cached and rebuilt when text, font, or window size
+changes. mpv's `compute_bounds` API is experimental, so keeping the tested mpv
+version is advisable when investigating layout problems.
+
+The mpv feedback first confirms the local save and then shows the contextual
+translation when available. Translation uses the existing `.env` OpenAI key
+and the configured subtitle translation model/reasoning defaults. CLI
+`--openai-translation-model`, `--openai-reasoning-effort`, and `--openai-env-file`
+also apply to word lookups. A lookup sends only the selected word and exact
+source span, its subtitle sentence, up to two neighboring cues on either side,
+and overlapping English subtitle text as a supplementary hint. The source
+language is authoritative. English selections receive a plain-English gloss.
+Results include the meaning here, source dictionary form, dictionary meaning,
+part of speech, a short grammatical note, an applicable expression or separable
+verb, and an ambiguity flag. Requests use strict structured output and
+`store=false`. Word lookups require internet access and incur normal API costs.
+
+Saving and translation use separate background lanes, independent of the heavy
+video pipeline. Every selection is committed before mpv acknowledges it;
+translation failures never remove captured events. A lookup has a 30-second
+network timeout. Failed lookups remain visible for manual retry, while pending
+or interrupted work resumes when the library next opens or CLI playback starts.
+An interrupted in-flight lease can take up to two minutes to expire. A database
+lease prevents GUI and CLI processes from translating the same context concurrently. Cached
+results include sentence/span/context, language, model, reasoning, and prompt
+version in their identity; a spelling alone is never a translation-cache key.
+
+Choose **Library → Vocabulary…** (`Ctrl+Shift+W`) to search captured words,
+inspect **Clicks** and **Videos** separately, optionally group inflections by
+their dictionary form, and see every occurrence with its local click date,
+source video, original sentence, and contextual translation. Double-click an
+occurrence or choose **Play occurrence** to seek/open its video at the cue start.
+**Open source** opens the original video URL or local input file. Use
+**Retry failed translations** after restoring internet access or credentials.
+The dialog updates when background translations complete.
+
+Vocabulary lives in `<output root>/library/catalog.sqlite3`, including CLI
+captures. Four related tables separate durable source references (`vocab_sources`),
+case/Unicode-normalized word identities (`vocab_words`), contextual requests and
+translations (`vocab_lookups`), and independently timestamped click events
+(`vocab_clicks`). Foreign keys, unique transport event IDs, transactions, and
+indexes protect consistency. Counts are derived from events rather than stored
+as mutable counters. Source snapshots and sentences survive download removal,
+subscription pruning, and subtitle regeneration. The records store both the
+subtitle cue interval and playback position when clicked; exact spoken word
+onset is not inferred from sentence-level SRT timing.
+
+### Word Capture Verification
+
+The regular tests cover Unicode token spans, repeated events and video counts,
+contextual cache isolation, leases, retries, nonblocking saves, shutdown draining,
+structured response validation, and the native vocabulary dialog. Run the
+opt-in real-mpv test with synthetic media and a fake translation provider:
+
+```powershell
+$env:YTW_TEST_MPV = "1"
+python -m unittest tests.test_vocabulary_mpv -v
+```
+
+It validates actual Lua rendering, hover/click input, double-click capture,
+outside-click rejection, resizing, fullscreen, seeking, subtitle visibility keys,
+IPC acknowledgements, SQLite writes, and restoration of native subtitles.
+Windows named-pipe access must be available
+to both test processes. The transport uses overlapped reads/writes so replies
+and seeks remain responsive even while a paused player emits no events.
 
 ## Command Line Reference
 
@@ -2101,7 +2193,14 @@ High-level groups:
 | `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
 | `yt_whisper_subs.playback` | ASS secondary subtitles, launch-scoped mpv policy, and thread-safe ownership of the active library player. |
-| `yt_whisper_subs.mpv_ipc` | Duplex ephemeral named-pipe connection, queued exact seeks, paced property observation, and EOF handling. |
+| `yt_whisper_subs.mpv_ipc` | Launch-scoped duplex IPC, queued seeks, script messages, paced progress, and EOF handling. |
+| `yt_whisper_subs.mpv_pipe` | Cancellable overlapped Windows pipe reads/writes without reader/writer stalls. |
+| `yt_whisper_subs.vocabulary` | Source snapshots, Unicode token spans, occurrence context, and structured word meanings. |
+| `yt_whisper_subs.vocabulary_db` | Relational click history, context caches, leased requests, and derived word/video counts. |
+| `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
+| `yt_whisper_subs.vocabulary_worker` | Independent durable-save and translation lanes with restart recovery. |
+| `yt_whisper_subs.vocabulary_playback` | Launch-bound word selection validation and Lua/SQLite acknowledgements. |
+| `yt_whisper_subs.library_vocabulary` | Native searchable vocabulary, grouping, complete occurrence history, and replay. |
 | `yt_whisper_subs.playback_progress` | Typed playback updates, configurable watched policy, worker-signal encoding that preserves completion, and observed-position fraction math. |
 | `yt_whisper_subs.pipeline` | `PipelineRunner`, yield directory/path objects, skip logic, generation routing, and playback handoff. |
 | `yt_whisper_subs.pipeline_progress` | Opt-in structured phase protocol, stage weights, overall progress math, and yt-dlp/Whisper percentage recognition. |

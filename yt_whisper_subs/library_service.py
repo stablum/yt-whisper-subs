@@ -29,6 +29,9 @@ from yt_whisper_subs import output_lock
 from yt_whisper_subs import proc
 from yt_whisper_subs import task_cancel
 from yt_whisper_subs import youtube
+from yt_whisper_subs import vocabulary
+from yt_whisper_subs import vocabulary_playback
+from yt_whisper_subs import vocabulary_worker
 
 
 ReportFn = Callable[[str], None]
@@ -86,6 +89,7 @@ class LibraryService(
         )
         self._playback = playback.PlaybackControl()
         self._artifacts = library_artifacts.ArtifactCache(self.out_dir)
+        self.vocabulary = vocabulary_worker.VocabularyService(self.db)
 
     def catalog(self) -> library_artifacts.CatalogState:
         """Load one catalog snapshot with filesystem-derived state precomputed.
@@ -564,6 +568,11 @@ class LibraryService(
             chapter_path=chapter_path,
             start_seconds=start_seconds,
             control=self._playback,
+            words=vocabulary_playback.WordCapture(
+                self.vocabulary,
+                vocabulary.Source(f"youtube:{video_id}", video_id, record.meta.identity.title,
+                                  record.meta.identity.url, str(record.local.path.resolve())),
+            ),
         )
         playback.play_video(
             record.local.path,
@@ -585,6 +594,25 @@ class LibraryService(
         except output_lock.OutputBusyError:
             return files.mpv if files.ready() and files.mpv.is_file() else None
 
+    def play_occurrence(self, event: dict, report: ReportFn = _ignore_report) -> None:
+        """Replay a captured source even outside the catalog; e.g. a local CLI video."""
+
+        start = event["cue_start_ms"] / 1000
+        video_id = event["video_id"]
+        if (video_id and self._playback.seek(video_id, start)) or self._playback.seek(event["source_key"], start):
+            return
+        record = self.db.video(video_id) if video_id else None
+        if record and record.downloaded:
+            self.play(video_id, report, start_seconds=start)
+            return
+        path = Path(event["path"])
+        if not path.is_file():
+            raise RuntimeError("This video file was removed. Use Open source to find the original video.")
+        source = vocabulary.Source(event["source_key"], video_id, event["title"], event["url"], str(path))
+        capture = vocabulary_playback.WordCapture(self.vocabulary, source, event["language"])
+        session = playback.PlaybackSession(start_seconds=start, control=self._playback, words=capture)
+        playback.play_video(path, playback.sidecar_subtitles(path), playback.PlaybackPrefs.defaults(), session)
+
     def seek(self, video_id: str, seconds: float) -> bool:
         """Seek the matching library-owned mpv process when it is active.
 
@@ -599,7 +627,9 @@ class LibraryService(
         Example: app shutdown calls `service.stop_playback()` before Qt exits.
         """
 
-        return self._playback.quit()
+        result = self._playback.quit()
+        self.vocabulary.close()
+        return result
 
     def _write_metadata(self, info: types.VideoInfo) -> None:
         """Keep the complete extractor sidecar for GUI-backfilled videos.

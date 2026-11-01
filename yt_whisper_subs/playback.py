@@ -17,6 +17,7 @@ from yt_whisper_subs import mpv_ipc
 from yt_whisper_subs import playback_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
+from yt_whisper_subs import vocabulary_playback
 
 
 class SubtitleStyle(NamedTuple):
@@ -163,6 +164,7 @@ class PlaybackSession(NamedTuple):
     chapter_path: Path | None = None
     start_seconds: float | None = None
     control: PlaybackControl | None = None
+    words: vocabulary_playback.WordCapture | None = None
 
 
 def parse_css_color(value: str) -> tuple[int, int, int, int]:
@@ -375,7 +377,9 @@ def play_video(
 
     session = session or PlaybackSession()
     cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
-    monitor = mpv_ipc.MpvMonitor(session.observer) if session.observer else None
+    monitor = None
+    if session.observer or session.words:
+        monitor = mpv_ipc.MpvMonitor(session.observer, client=session.words)
     if monitor:
         cmd.append(monitor.mpv_option)
     if session.chapter_path and session.chapter_path.exists():
@@ -393,6 +397,10 @@ def play_video(
         else:
             subtitle_paths = existing_srt_paths
 
+        if session.words and subtitle_paths:
+            script = session.words.prepare(existing_srt_paths, subtitle_paths, prefs)
+            cmd.append(f"--script={script}")
+
         for subtitle_path in subtitle_paths:
             cmd.append(f"--sub-file={subtitle_path}")
 
@@ -408,8 +416,9 @@ def play_video(
 
         cmd.append(video_path)
         if monitor:
-            if session.control and session.observer:
-                session.control.activate(session.observer.video_id, monitor)
+            if session.control:
+                video_key = session.observer.video_id if session.observer else session.words.source_key
+                session.control.activate(video_key, monitor)
             try:
                 with monitor:
                     proc.run(cmd, silence_seconds=None, window=proc.ChildWindow.VISIBLE)

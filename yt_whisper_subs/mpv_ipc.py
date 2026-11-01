@@ -14,11 +14,31 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
-from typing import BinaryIO, NamedTuple
+from typing import BinaryIO, NamedTuple, Protocol
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import playback_progress as progress
+
+
+MessageSender = Callable[[str, str, dict], bool]
+
+
+class ScriptClient(Protocol):
+    """Separate script messaging from playback tracking; e.g. a vocabulary client."""
+
+    def connected(self, send: MessageSender) -> None:
+        """Publish a per-session sender; e.g. transmit subtitle configuration."""
+        ...
+
+    def receive(self, args: list[str]) -> None:
+        """Handle one client message; e.g. validate a word-selection payload."""
+        ...
+
+    def disconnected(self) -> None:
+        """Release the sender after player exit; e.g. ignore late translation callbacks."""
+        ...
 
 
 class IpcEndpoint(NamedTuple):
@@ -136,8 +156,11 @@ class MpvMonitor:
     Example: `with MpvMonitor(observer) as monitor: run(monitor.mpv_option)`.
     """
 
-    def __init__(self, observer: progress.Observer) -> None:
+    def __init__(self, observer: progress.Observer | None = None, *, client: ScriptClient | None = None) -> None:
+        """Observe one launch with independent script messages; e.g. watched progress and word clicks."""
+
         self._observer = observer
+        self._client = client
         self._endpoint = _new_endpoint()
         self._stop = threading.Event()
         self._closed = threading.Event()
@@ -147,7 +170,7 @@ class MpvMonitor:
         self._thread = threading.Thread(
             target=self._listen,
             daemon=True,
-            name=f"mpv-progress-{observer.video_id}",
+            name=f"mpv-{observer.video_id if observer else 'subtitles'}",
         )
 
     @property
@@ -205,6 +228,12 @@ class MpvMonitor:
 
         return self._send({"command": ["quit"]})
 
+    def message(self, script: str, name: str, document: dict) -> bool:
+        """Send structured data to a specific in-player script; e.g. acknowledge a saved word."""
+
+        data = json.dumps(document, ensure_ascii=False)
+        return self._send({"command": ["script-message-to", script, name, data]})
+
     def _send(self, command: dict[str, object]) -> bool:
         """Write one JSON command safely or retain it until connection startup.
 
@@ -231,7 +260,7 @@ class MpvMonitor:
         Example: this method runs only in the monitor's daemon thread.
         """
 
-        tracker = MpvEventTracker(self._observer)
+        tracker = MpvEventTracker(self._observer) if self._observer else None
         stream = self._connect()
         if stream is None:
             self._closed.set()
@@ -245,8 +274,11 @@ class MpvMonitor:
                     except (UnicodeDecodeError, json.JSONDecodeError):
                         continue
                     if isinstance(payload, dict):
-                        tracker.ingest(payload)
-                        if tracker.finished:
+                        if self._client and payload.get("event") == "client-message":
+                            self._client.receive(payload.get("args", []))
+                        if tracker:
+                            tracker.ingest(payload)
+                        if payload.get("event") == "end-file":
                             break
         except OSError as exc:
             if not self._stop.is_set():
@@ -255,7 +287,10 @@ class MpvMonitor:
             with self._write_lock:
                 self._stream = None
             self._closed.set()
-            tracker.finish()
+            if tracker:
+                tracker.finish()
+            if self._client:
+                self._client.disconnected()
 
     def _initialize_stream(self, stream: BinaryIO) -> None:
         """Publish observed properties, then flush commands queued at launch.
@@ -277,6 +312,8 @@ class MpvMonitor:
                 stream.write(message)
             self._pending.clear()
             stream.flush()
+        if self._client:
+            self._client.connected(self.message)
 
     def _connect(self) -> BinaryIO | None:
         """Retry briefly while mpv creates its local pipe or socket.
@@ -289,7 +326,9 @@ class MpvMonitor:
         while not self._stop.is_set() and time.monotonic() < deadline:
             try:
                 if os.name == "nt":
-                    return open(self._endpoint.client_address, "r+b", buffering=0)
+                    from yt_whisper_subs import mpv_pipe
+
+                    return mpv_pipe.Pipe(self._endpoint.client_address, self._stop)
                 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 try:
                     client.connect(self._endpoint.client_address)

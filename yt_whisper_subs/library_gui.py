@@ -30,6 +30,7 @@ from yt_whisper_subs import library_window_support
 from yt_whisper_subs import library_window_actions
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import library_vocabulary
 from yt_whisper_subs import pipeline_progress as progress
 
 
@@ -148,6 +149,7 @@ class LibraryWindow(
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
+        self._vocabulary_dialog: library_vocabulary.VocabularyDialog | None = None
         self._ui = self._build_ui()
         self._layout_timer = QtCore.QTimer(self)
         self._layout_timer.setSingleShot(True)
@@ -172,6 +174,8 @@ class LibraryWindow(
         self._schedule_next(initial=True)
         self._schedule_metadata_backfill()
         self._media_timer.start(0)
+        self.destroyed.connect(self._service.vocabulary.close)
+        self._service.vocabulary.resume()
 
     def _watch_local_paths(self) -> None:
         """Watch a few output directories for local edits without disk polling.
@@ -393,6 +397,8 @@ class LibraryWindow(
         file_menu = self.menuBar().addMenu("Library")
         settings = file_menu.addAction("Settings…")
         settings.triggered.connect(self._edit_settings)
+        vocabulary = file_menu.addAction("Vocabulary…", self._show_vocabulary)
+        vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self._quit)
@@ -448,6 +454,27 @@ class LibraryWindow(
         trace_action.setText("Activity trace")
         trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
         view_menu.addAction(trace_action)
+
+    def _show_vocabulary(self) -> None:
+        """Reuse one native vocabulary window; e.g. inspect repeated words during playback."""
+
+        if self._vocabulary_dialog is None:
+            self._vocabulary_dialog = library_vocabulary.VocabularyDialog(self._service, self)
+            self._vocabulary_dialog.play_requested.connect(self._play_word)
+            self._vocabulary_dialog.destroyed.connect(lambda: setattr(self, "_vocabulary_dialog", None))
+        self._vocabulary_dialog.show()
+        self._vocabulary_dialog.raise_()
+        self._vocabulary_dialog.activateWindow()
+
+    def _play_word(self, event: dict) -> None:
+        """Replay the captured event independently of table selection; e.g. from another video."""
+
+        def play(report) -> None:
+            """Bind the immutable event into the existing playback lane; e.g. seek its cue."""
+
+            self._service.play_occurrence(event, report)
+
+        self._run_playback("Opening saved word in mpv…", play, lambda _: self.refresh())
 
     def _store_trace_visibility(self, visible: bool) -> None:
         """Remember whether the optional activity trace was left open.
