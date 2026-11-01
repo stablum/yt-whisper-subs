@@ -77,10 +77,12 @@ The companion library is optimized for a second workflow:
 15. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
     the exact reason as an Issue, and offer one-click Repair instead of claiming
     that the pipeline is complete.
+16. Announce new pinned-channel discoveries in one dismissible tray balloon,
+    with every title grouped under its channel and configurable delivery timing.
 
 ## Important Defaults
 
-These defaults are hard-coded near the top of the script:
+These defaults live in `cfg.py` and the preference types that own each feature:
 
 | Area | Default |
 | --- | --- |
@@ -140,6 +142,10 @@ These defaults are hard-coded near the top of the script:
 | Library watched rule | configurable threshold, default more than `95%`; confirmed mpv end-of-file or manual marking also completes |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | clickable Pinned and Other channels groups; right-click or `Alt+P` to pin |
+| Pinned-channel notifications | enabled; one scrollable tray balloon per discovery batch |
+| Notification grouping delay | `30` seconds after channel discovery; adjustable from `0` to `3,600` |
+| Notification dismissal | `20` seconds, paused while hovering; `0` keeps it open until dismissed |
+| Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -704,7 +710,9 @@ It contains:
   and exact-yield removal actions;
 - configurable browser cookies, check interval, and current-user Windows login start;
 - an optional timestamped activity trace for live pipeline and subprocess output;
-- a system tray so periodic checks continue when the main window is closed.
+- a system tray so periodic checks continue when the main window is closed;
+- aggregated, dismissible new-video balloons for pinned channels, with a full
+  scrollable list and configurable grouping, dismissal, and visibility.
 
 The native title bar includes the current application version. That value comes
 directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
@@ -731,6 +739,55 @@ Search, sorting, smart views, and their counts apply within either combined
 scope, just as they do for an individual channel. **Clear** keeps the selected
 channel group. Both lists follow pin changes and catalog refreshes; if the
 selected group becomes empty, the sidebar returns to **All videos**.
+
+### New-Video Tray Notifications
+
+After a manual or scheduled channel check discovers new videos from **Pinned**
+channels, one nonmodal balloon appears beside the tray icon. It lists each
+channel and all its new video titles; large batches scroll instead of cutting
+off titles. The balloon appears without taking focus away from your current
+application. If Windows cannot provide the icon's position, it uses a corner
+of the library window's monitor.
+
+All channels in a check are collected before notification delivery starts,
+and the default **30-second** grouping interval also combines nearby completed
+checks. The interval starts with the first completed batch and is not extended
+by more arrivals. If a balloon is already visible, new titles update that same
+balloon. Duplicate video IDs appear once. Initial subscription history, repeat
+checks with no discoveries, and videos already known through archived metadata
+remain quiet. Pinning an existing channel does not announce its existing rows.
+Current pin and subscription membership are checked again before delivery.
+
+Notifications describe catalog additions, independently of automatic downloads
+or subtitle generation. The grouping timer starts after discovery without
+waiting for auto-downloads to finish; a failed or cancelled download does not
+erase the discovery. If a channel
+check is cancelled or fails after earlier channels were saved, those committed
+discoveries still form one batch. The old separate auto-download-attempt tray
+message has been removed.
+
+Dismiss with **×**, or press **Escape** when the balloon has keyboard focus.
+It closes automatically after **20 seconds** by default; hovering pauses that
+timer, and leaving gives you the full reading time again. Click a title to
+restore the library, clear search and smart-view filters, and select that video
+in **Pinned**. This does not start playback or a download. **Open library**
+opens the Pinned list, and **Settings…** opens the same library settings dialog.
+
+Under **Library → Settings → Pinned-channel notifications**, configure:
+
+- **Notify me about new videos**: enable or deactivate the feature. Turning it
+  off immediately closes the balloon and discards queued alerts; enabling it
+  later does not replay those alerts.
+- **Group arrivals for**: `0`–`3,600` seconds; `0` delivers as soon as all
+  channels in the check have been scanned.
+- **Dismiss after**: `0`–`600` seconds; `0` means **Until dismissed**.
+- **Only while hidden or minimized**: suppress delivery while browsing the
+  visible library. Suppressed batches are consumed, rather than replayed on hide.
+
+Changes take effect on Save and persist per output root in SQLite. Pending
+balloons are session-scoped. Settings uses a scrollable form so Save and Cancel
+remain reachable on smaller screens. These are application-owned Qt balloons,
+so Windows notification-center history and Focus Assist do not manage them.
 
 ### Responsiveness And Derived-State Safety
 
@@ -2062,6 +2119,7 @@ High-level groups:
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_channel_service` | Bounded channel-snapshot merging, live transitions, and automatic-download eligibility. |
 | `yt_whisper_subs.library_channels` | Sidebar subscription presentation and transient per-channel check animation. |
+| `yt_whisper_subs.library_notifications` | Persisted notification controls, pinned-discovery aggregation, tray positioning, and one dismissible scrollable balloon. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
@@ -2184,6 +2242,8 @@ Start by preserving these invariants:
     recover only work whose process owner is gone.
 41. Enforce one native-library instance and one yield writer per output root;
     release write ownership before independent playback.
+42. Notify only post-baseline discoveries from currently pinned subscriptions;
+    batch all channels before downloads and retain committed results on cancellation.
 
 When changing the project, useful verification commands are:
 
@@ -2227,6 +2287,11 @@ single-video and filtered removal isolation, composed channel/search/watched
 scope, stale/foreign manifests, writer ownership, protected playback and jobs,
 one-pass directory inventory, junction rejection, and partial-batch cancellation
 and file-error reconciliation; and active process-tree cancellation.
+Notification tests cover grouped worker delivery on the GUI thread before
+auto-downloads, baseline/archive/repeat suppression, cancellation after commit,
+fixed-delay ID deduplication, current pin membership, immediate deactivation,
+hidden-only delivery, dismissal and hover timers, exact title navigation,
+persisted settings, large scrollable batches, and multi-monitor tray positioning.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

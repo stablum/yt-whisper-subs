@@ -18,6 +18,7 @@ from yt_whisper_subs import library_channels
 from yt_whisper_subs import library_layout
 from yt_whisper_subs import library_metadata_db
 from yt_whisper_subs import library_model
+from yt_whisper_subs import library_notifications
 from yt_whisper_subs import library_progress
 from yt_whisper_subs import library_removal_actions
 from yt_whisper_subs import library_service
@@ -160,6 +161,10 @@ class LibraryWindow(
         self._ui.catalog.filters.set_view(saved_view)
         self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
         self._tray = self._build_tray()
+        self._notifications = library_notifications.TrayNotifications(service.db, self._tray)
+        self._notifications.video_requested.connect(self._notification_video)
+        self._notifications.settings_requested.connect(self._notification_settings)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self._notifications.stop)
         self._connect_actions()
         self._build_menus()
         self.refresh()

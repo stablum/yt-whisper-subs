@@ -16,6 +16,7 @@ from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_model
+from yt_whisper_subs import library_notifications
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
 from yt_whisper_subs import openai_chapters
@@ -37,6 +38,7 @@ class SettingsValues(NamedTuple):
     channel_published_after: str
     download: download_prefs.VideoPrefs = download_prefs.VideoPrefs()
     watch: playback_progress.WatchPolicy = playback_progress.WatchPolicy()
+    notifications: library_notifications.NotificationPrefs = library_notifications.NotificationPrefs()
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -525,6 +527,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Published since", self._cutoff)
         form.addRow("Background", self._tray)
         form.addRow("Windows", self._startup)
+        self._notifications = library_notifications.NotificationSettings(values.notifications)
+        form.addRow(self._notifications)
         note = QtWidgets.QLabel(
             "Scheduled checks run while the app is open or living in the system tray. "
             "Start with Windows is per-user and needs no administrator rights. "
@@ -540,9 +544,18 @@ class SettingsDialog(QtWidgets.QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(heading)
-        layout.addLayout(form)
+        fields = QtWidgets.QWidget()
+        fields.setObjectName("settingsFields")
+        fields.setLayout(form)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setObjectName("settingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        scroll.setWidget(fields)
+        layout.addWidget(scroll, 1)
         layout.addWidget(note)
         layout.addWidget(buttons)
+        self.resize(640, min(740, self.screen().availableGeometry().height() - 80))
 
     def values(self) -> SettingsValues:
         """Return all edited settings as one compositional value.
@@ -563,4 +576,5 @@ class SettingsDialog(QtWidgets.QDialog):
             published_after,
             download_prefs.VideoPrefs(self._resolution.currentData(), self._higher.isChecked()),
             playback_progress.WatchPolicy(self._watched.value()),
+            self._notifications.values(),
         )

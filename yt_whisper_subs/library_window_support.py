@@ -56,10 +56,11 @@ class WindowRuntimeMixin:
 
         task = library_workers.ChannelCheckTask(self._service)
         task.signals.channel_checking.connect(self._ui.catalog.channels.set_checking)
+        task.signals.videos_discovered.connect(self._notifications.add, QtCore.Qt.ConnectionType.QueuedConnection)
         self._run_task("Checking channels…", task, self._check_finished)
 
     def _check_finished(self, new_count: object) -> None:
-        """Refresh, reschedule, and optionally notify after a library check.
+        """Refresh and reschedule after downloads finish; discoveries notify earlier.
 
         Example: background completion invokes `_check_finished(result)`.
         """
@@ -68,8 +69,6 @@ class WindowRuntimeMixin:
         self._schedule_next()
         count = int(new_count or 0)
         self.statusBar().showMessage(f"Check complete · {count} auto-download attempt(s)", 8000)
-        if not self.isVisible() and count:
-            self._tray.showMessage("YouTube Library updated", f"Attempted {count} auto-download(s).")
 
     def _scheduled_check(self) -> None:
         """Run an overdue check or defer briefly when another task is active.
@@ -646,6 +645,7 @@ class WindowRuntimeMixin:
         if self._quitting:
             return
         self._quitting = True
+        self._notifications.stop()
         self._timer.stop()
         self._metadata_timer.stop()
         self._media_timer.stop()

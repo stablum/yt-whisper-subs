@@ -1164,12 +1164,14 @@ class TrayLifetimeTests(unittest.TestCase):
             _metadata_timer=mock.Mock(),
             _media_timer=mock.Mock(),
             _tray=mock.Mock(),
+            _notifications=mock.Mock(),
             _stop_workers=mock.Mock(),
         )
 
         library_window_support.WindowRuntimeMixin._quit(window)
 
         self.assertTrue(window._quitting)
+        window._notifications.stop.assert_called_once_with()
         window._tray.hide.assert_called_once_with()
         window._stop_workers.assert_called_once_with()
         quit_app.assert_called_once_with()

@@ -5,6 +5,14 @@ Example: `window.setStyleSheet(library_theme.STYLE)`.
 
 STYLE = """
 QMainWindow, QDialog { background: #171a21; color: #eef2f7; }
+QDialog#videoBalloon { border: 1px solid #4b617c; border-radius: 10px; }
+QLabel#notificationHeading { color: #ffffff; font-size: 11pt; font-weight: 600; }
+QTextBrowser#notificationVideos { background: transparent; border: 0; }
+QToolButton#dismissNotification { border: 0; padding: 2px 8px; font-size: 18pt; }
+QToolButton#dismissNotification:hover { background: #49292d; border-radius: 5px; }
+QScrollArea#settingsScroll, QWidget#settingsFields { background: #171a21; border: 0; }
+QGroupBox#notificationSettings { border: 1px solid #343b47; border-radius: 7px; margin-top: 12px; padding: 12px 8px 8px; }
+QGroupBox#notificationSettings::title { subcontrol-origin: margin; left: 10px; color: #f1c75b; }
 QWidget { color: #eef2f7; font-family: "Segoe UI"; font-size: 10pt; }
 QFrame#sidebar { background: #11141a; border-right: 1px solid #2a303b; }
 QLabel#appTitle { font-size: 18pt; font-weight: 700; color: #ffffff; }
@@ -12,10 +20,10 @@ QLabel#appSubtitle, QLabel#statLabel, QLabel#settingsNote { color: #8f9aaa; }
 QListWidget { background: transparent; border: 0; outline: 0; padding: 4px; }
 QListWidget::item { padding: 9px 10px; margin: 2px 0; border-radius: 6px; }
 QListWidget::item:selected { background: #26364d; color: #8fc7ff; }
-QLineEdit, QComboBox, QDoubleSpinBox {
+QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {
   background: #222730; border: 1px solid #343b47; border-radius: 7px; padding: 7px 9px;
 }
-QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus { border-color: #4ea1f3; }
+QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border-color: #4ea1f3; }
 QPushButton, QToolButton#dangerButton, QToolButton#watchedButton { background: #2b313c; border: 1px solid #3a424f; border-radius: 7px; padding: 7px 13px; }
 QPushButton:hover, QToolButton#dangerButton:hover, QToolButton#watchedButton:hover { background: #353d49; }
 QPushButton:disabled, QToolButton#dangerButton:disabled, QToolButton#watchedButton:disabled { color: #697381; background: #22262d; }
@@ -60,17 +68,24 @@ QMessageBox QTextEdit {
   background: #1c2028; color: #d8dee8; border: 1px solid #363e4a;
   selection-background-color: #294467;
 }
-QTextEdit#detailDescription QScrollBar:vertical {
+QTextEdit#detailDescription QScrollBar:vertical,
+QTextBrowser#notificationVideos QScrollBar:vertical {
   background: #1b2028; width: 9px; margin: 0;
 }
-QTextEdit#detailDescription QScrollBar::handle:vertical {
+QTextEdit#detailDescription QScrollBar::handle:vertical,
+QTextBrowser#notificationVideos QScrollBar::handle:vertical {
   background: #485567; border-radius: 4px; min-height: 28px;
 }
-QTextEdit#detailDescription QScrollBar::handle:vertical:hover { background: #5e7188; }
+QTextEdit#detailDescription QScrollBar::handle:vertical:hover,
+QTextBrowser#notificationVideos QScrollBar::handle:vertical:hover { background: #5e7188; }
 QTextEdit#detailDescription QScrollBar::add-line:vertical,
-QTextEdit#detailDescription QScrollBar::sub-line:vertical { height: 0; }
+QTextEdit#detailDescription QScrollBar::sub-line:vertical,
+QTextBrowser#notificationVideos QScrollBar::add-line:vertical,
+QTextBrowser#notificationVideos QScrollBar::sub-line:vertical { height: 0; }
 QTextEdit#detailDescription QScrollBar::add-page:vertical,
-QTextEdit#detailDescription QScrollBar::sub-page:vertical { background: transparent; }
+QTextEdit#detailDescription QScrollBar::sub-page:vertical,
+QTextBrowser#notificationVideos QScrollBar::add-page:vertical,
+QTextBrowser#notificationVideos QScrollBar::sub-page:vertical { background: transparent; }
 QSplitter#catalogSplitter::handle {
   background: #171a21; border-top: 1px solid #303844; border-bottom: 1px solid #303844;
 }

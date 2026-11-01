@@ -29,6 +29,7 @@ class ChannelServiceMixin:
         channel: types.Channel,
         report: ReportFn,
         sidecars: library_artifacts.MetadataSidecars,
+        discovered: Callable[[list[types.VideoMeta]], None] | None = None,
     ) -> list[str]:
         """Persist one snapshot and select safe future auto-download candidates.
 
@@ -42,6 +43,14 @@ class ChannelServiceMixin:
         snapshot = self._apply_sidecars(snapshot, sidecars, policy.published_after)
         result = self.db.store_snapshot(channel.channel_id, snapshot)
         new_ids = [video_id for video_id in result.new_ids if sidecars.get(video_id) is None]
+        if not initial_check and discovered:
+            new_set = set(new_ids)
+            videos = [
+                meta._replace(origin=meta.origin._replace(channel=snapshot.title))
+                for meta in snapshot.videos if meta.identity.video_id in new_set
+            ]
+            # Publish committed discoveries before report() can observe cancellation.
+            discovered(videos)
         if not snapshot.complete:
             warning = "Partial refresh: Streams could not be checked; history preserved"
             self.db.set_channel_error(channel.channel_id, warning)

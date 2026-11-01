@@ -294,6 +294,7 @@ class LibraryService(
         *,
         channel_checked: Callable[[], None] | None = None,
         channel_started: Callable[[int], None] | None = None,
+        videos_discovered: Callable[[list[types.VideoMeta]], None] | None = None,
     ) -> int:
         """Publish each saved channel before auto-downloading later discoveries.
 
@@ -304,19 +305,25 @@ class LibraryService(
         self._scan_local(sidecars, report)
         auto_ids: list[str] = []
         channels = self.db.channels()
-        for idx, channel in enumerate(channels, start=1):
-            report(f"Checking channel {idx}/{len(channels)} · {channel.title}")
-            if channel_started:
-                channel_started(channel.channel_id)
-            try:
-                auto_ids.extend(self._check_channel(channel, report, sidecars))
-            except task_cancel.CancelledError:
-                raise
-            except Exception as exc:
-                self.db.set_channel_error(channel.channel_id, str(exc))
-                report(f"Could not check {channel.title}: {exc}")
-            if channel_checked:
-                channel_checked()
+        discoveries: list[types.VideoMeta] = []
+        try:
+            for idx, channel in enumerate(channels, start=1):
+                report(f"Checking channel {idx}/{len(channels)} · {channel.title}")
+                if channel_started:
+                    channel_started(channel.channel_id)
+                try:
+                    auto_ids.extend(self._check_channel(channel, report, sidecars, discoveries.extend))
+                except task_cancel.CancelledError:
+                    raise
+                except Exception as exc:
+                    self.db.set_channel_error(channel.channel_id, str(exc))
+                    report(f"Could not check {channel.title}: {exc}")
+                if channel_checked:
+                    channel_checked()
+        finally:
+            # One batch precedes expensive downloads, even if a later feed was cancelled.
+            if discoveries and videos_discovered:
+                videos_discovered(discoveries)
 
         eligible = []
         for video_id in dict.fromkeys(auto_ids):

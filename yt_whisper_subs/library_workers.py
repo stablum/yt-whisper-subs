@@ -28,6 +28,7 @@ class TaskSignals(QtCore.QObject):
     progress = QtCore.Signal(str)
     catalog_changed = QtCore.Signal()
     channel_checking = QtCore.Signal(object)
+    videos_discovered = QtCore.Signal(object)
     finished = QtCore.Signal(object)
     failed = QtCore.Signal(str, str)
     cancelled = QtCore.Signal()
@@ -148,6 +149,7 @@ class ChannelCheckTask(BackgroundTask):
                 report,
                 channel_checked=self._channel_checked,
                 channel_started=self.signals.channel_checking.emit,
+                videos_discovered=self.signals.videos_discovered.emit,
             )
         finally:
             self.signals.channel_checking.emit(None)

@@ -13,6 +13,7 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
+from yt_whisper_subs import library_notifications
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import windows_startup
@@ -127,6 +128,7 @@ class WindowActionsMixin:
             self._service.db.setting("channel_published_after", ""),
             self._service.video_prefs(),
             self._service.db.watch_policy(),
+            library_notifications.NotificationPrefs.load(self._service.db),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -153,6 +155,8 @@ class WindowActionsMixin:
         self._service.db.set_setting("allow_higher_resolution", int(values.download.allow_higher))
         self._service.reload_clients()
         self._service.db.set_watch_policy(values.watch)
+        values.notifications.save(self._service.db)
+        self._notifications.configure(values.notifications)
         self.refresh()
         if cookies_changed:
             released = self._service.db.reset_metadata_attempts()
@@ -166,6 +170,30 @@ class WindowActionsMixin:
             self._ui.trace.append_message(f"Retention · Removed {pruned:,} dated remote-only video(s)")
             self.refresh()
         self._schedule_next()
+
+    @QtCore.Slot(str)
+    def _notification_video(self, video_id: str) -> None:
+        """Reveal a notified title without triggering a download or playback.
+
+        Example: clicking a balloon title clears stale filters and selects it.
+        """
+
+        self._show_window()
+        self._filter_key = ("pinned", None)
+        self._clear_filters()
+        self.refresh()
+        if video_id:
+            self._restore_video_selection(video_id)
+
+    @QtCore.Slot()
+    def _notification_settings(self) -> None:
+        """Bring settings forward when requested from a tray balloon.
+
+        Example: Settings remains accessible while the library is hidden.
+        """
+
+        self._show_window()
+        self._edit_settings()
 
     def _open_selected_url(self) -> None:
         """Open the selected video's canonical YouTube page externally.
