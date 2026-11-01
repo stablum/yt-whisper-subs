@@ -4,6 +4,12 @@ local utils = require 'mp.utils'
 local state, deadline = 0, mp.get_time() + 12
 local pending_click = false
 
+-- Report an observable player failure; e.g. counts disappear after an asynchronous translation.
+local function fail(reason)
+    mp.commandv('script-message', 'vocab-test-result', utils.format_json({state = state, error = reason}))
+    mp.commandv('quit', 1)
+end
+
 -- Read the production renderer's inspectable hitboxes; e.g. after resize or seek.
 local function box(cue, token)
     for _, item in ipairs(mp.get_property_native('user-data/yt-whisper-subs/word-boxes', {})) do
@@ -20,14 +26,22 @@ local function click(cue, token, mode)
     mp.commandv('keypress', 'MOUSE_ENTER')
     mp.commandv('mouse', x, y)
     mp.add_timeout(0.12, function()
-        mp.commandv('mouse', x, y, 0, mode or 'single')
         pending_click = false
+        local current = box(cue, token)
+        if not current then return end
+        -- A fullscreen transition can still be resizing; move again before clicking its new hitbox.
+        if current.x0 ~= item.x0 or current.y0 ~= item.y0 or current.x1 ~= item.x1 then
+            click(cue, token, mode)
+            return
+        end
+        mp.commandv('mouse', x, y, 0, mode or 'single')
     end)
 end
 
 -- Drive stages only after durable acknowledgements; e.g. no timing-only pass conditions.
 mp.add_periodic_timer(0.1, function()
     local saved = mp.get_property_native('user-data/yt-whisper-subs/last-save', {})
+    local feedback = mp.get_property_native('user-data/yt-whisper-subs/word-feedback', {})
     if mp.get_time() > deadline then
         mp.commandv('script-message', 'vocab-test-result', utils.format_json({state = state, timeout = true,
             mouse = mp.get_property_native('mouse-pos'), saved = saved,
@@ -37,9 +51,20 @@ mp.add_periodic_timer(0.1, function()
         click(1, 3)
         state = 1
     elseif state == 1 and saved.request == 1 and saved.saved then
+        if feedback.text ~= '1/1 · ...' or feedback.meaning ~= '' then
+            return fail('pending feedback must show compact counts and dots')
+        end
         click(1, 3, 'double')
         state = 2
     elseif state == 2 and saved.request == 2 and saved.saved then
+        if feedback.text ~= '2/1 · ...' then return fail('repeated clicks must update pending counts') end
+        mp.commandv('script-message', 'vocab-test-release')
+        state = 2.5
+    elseif state == 2.5 and saved.request == 2 and saved.state == 'ready' then
+        if feedback.text ~= '2/1' or feedback.meaning ~= 'interested'
+            or feedback.note ~= 'Adjective describing interest.' then
+            return fail('completed feedback must retain counts and separate translation from its note')
+        end
         if os.getenv('YTW_MPV_PREVIEW') then
             mp.commandv('screenshot-to-file', os.getenv('YTW_MPV_PREVIEW'), 'window')
         end

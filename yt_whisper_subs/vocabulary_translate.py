@@ -14,7 +14,7 @@ from yt_whisper_subs import openai_client
 from yt_whisper_subs import vocabulary as words
 
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 
 class WordTranslator:
@@ -59,6 +59,9 @@ class WordTranslator:
             "Return meaning (the inflected meaning HERE), lemma (source dictionary form), "
             "lemma_meaning (English dictionary gloss), part_of_speech, a brief optional grammatical note, "
             "and expression (the relevant source idiom or separable verb, otherwise empty). "
+            "Meaning is displayed as the highlighted translation: include only the translated word or phrase, "
+            "never repeat the selected source word or add commentary, labels, or grammatical explanations. "
+            "Put any useful context explanation in note; e.g. meaning='walked', note='Past tense of lopen'. "
             "For an English source, provide a short plain-English explanation. "
             "For a separable verb the lemma MUST be the complete infinitive including the separated "
             "particle: 'Ik bel je op' has lemma 'opbellen', not 'bellen' or 'op'. "

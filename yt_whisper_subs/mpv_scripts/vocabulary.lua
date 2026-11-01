@@ -7,7 +7,7 @@ measure.hidden, measure.compute_bounds = true, true
 local config, tracks, requests, marks, metrics = nil, {}, {}, {}, {}
 local enabled, bound, pending_render = true, false, false
 local boxes, hovered, serial, last_request = {}, nil, 0, 0
-local message, message_until = '', 0
+local message, message_until = {}, 0
 local routes = {
     {prefix = '', sid = 'sid', visible = 'sub-visibility', wanted = true},
     {prefix = 'secondary-', sid = 'secondary-sid', visible = 'secondary-sub-visibility', wanted = true},
@@ -155,10 +155,28 @@ local function layout(track_idx, cue_idx, w, h)
 end
 
 -- Display feedback within the same mpv surface; e.g. an API failure never removes a saved mark.
-local function toast(text)
-    message, message_until = text, mp.get_time() + 6
+local function toast(text, meaning)
+    message = {text = text, meaning = meaning and plain(meaning.meaning) or '',
+               note = meaning and plain(meaning.note) or '',
+               font = message.font or 'Segoe UI', scale = message.scale or 0.04}
+    message_until = mp.get_time() + 6
+    mp.set_property_native('user-data/yt-whisper-subs/word-feedback', message)
     schedule()
     mp.add_timeout(6.1, schedule)
+end
+
+-- Separate the gloss from supporting text; e.g. gold "walked" above a muted tense note.
+local function feedback(w, h)
+    local size = h * message.scale
+    local text = escape(message.text)
+    if message.meaning ~= '' then
+        text = text .. ' · {\\1c&H' .. color('#FFD166') .. '&\\b1}' .. escape(message.meaning)
+    end
+    if message.note ~= '' then
+        text = text .. '{\\1c&H' .. color('#C5CBD4') .. '&\\b0}\\N' .. escape(message.note)
+    end
+    return string.format('{\\an8\\pos(%.1f,%.1f)\\fn%s\\fs%.3f\\bord1.5\\shad0\\1c&H%s&}%s',
+        w / 2, h * 0.48, message.font, size, color('#C5CBD4'), text)
 end
 
 -- Capture mouse-down once, including double-clicks; e.g. two intentional clicks add two entries.
@@ -166,13 +184,16 @@ local function click(e)
     if e and e.event ~= 'down' and e.event ~= 'press' then return end
     update_hover()
     if not hovered or not config then return end
+    local _, h = mp.get_osd_size()
+    -- Match the clicked subtitle even after resizing; e.g. the large Dutch secondary track.
+    message.font, message.scale = hovered.font, hovered.size / h
     serial, last_request = serial + 1, serial + 1
     local key = mark_key(hovered.track, hovered.cue, hovered.token)
-    requests[serial] = {key = key, display = hovered.display}
+    requests[serial] = {key = key}
     mp.commandv('script-message', 'vocab-click', utils.format_json({request = serial,
         track = hovered.track, cue = hovered.cue, token = hovered.token,
         position = mp.get_property_number('time-pos', 0)}))
-    toast('Saving “' .. hovered.display .. '”…')
+    toast('...')
 end
 
 -- Bind the mouse only over a word; e.g. the normal seekbar and window dragging keep working.
@@ -231,8 +252,7 @@ render = function()
         end
     end
     if message_until > mp.get_time() then
-        events[#events + 1] = string.format('{\\an8\\pos(%.1f,%.1f)\\fnSegoe UI\\fs%.1f\\bord1.5}%s',
-            w / 2, h * 0.48, math.max(18, h * 0.04), escape(message))
+        events[#events + 1] = feedback(w, h)
     end
     overlay.data = table.concat(events, '\n')
     overlay:update()
@@ -268,13 +288,14 @@ mp.register_script_message('vocab-result', function(document)
         mp.set_property_native('user-data/yt-whisper-subs/last-save', result)
     end
     if result.saved then marks[request.key] = true end
+    -- Completion messages omit counts; retain the durable save's snapshot for this click.
+    request.clicks, request.videos = result.clicks or request.clicks, result.videos or request.videos
+    local counts = string.format('%s/%s', request.clicks or '?', request.videos or '?')
     if result.request == last_request then
         if not result.saved then toast('Could not save word: ' .. (result.error or 'storage error'))
-        elseif result.state == 'ready' then toast(request.display .. ' → ' .. (result.meaning or ''))
-        elseif result.state == 'failed' then toast('Saved “' .. request.display .. '” · translation needs retry in Vocabulary')
-        else
-            toast(string.format('Saved “%s” · %s clicks / %s videos · translating…',
-                request.display, result.clicks or '?', result.videos or '?'))
+        elseif result.state == 'ready' then toast(counts, result)
+        elseif result.state == 'failed' then toast(counts .. ' · retry in Vocabulary')
+        else toast(counts .. ' · ...')
         end
     end
     if result.state == 'ready' or result.state == 'failed' or not result.saved then requests[result.request] = nil end

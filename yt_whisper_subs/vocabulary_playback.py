@@ -104,5 +104,5 @@ class WordCapture:
 
         sender = self._send
         if sender:
-            fields = {key: result.get(key) for key in ("saved", "state", "meaning", "lemma", "error", "clicks", "videos")}
+            fields = {key: result.get(key) for key in ("saved", "state", "meaning", "note", "error", "clicks", "videos")}
             sender("vocabulary", "vocab-result", {"request": request, **fields})

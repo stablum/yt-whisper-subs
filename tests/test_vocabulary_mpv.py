@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -25,17 +26,30 @@ from yt_whisper_subs import vocabulary_worker
 class FakeTranslator(vocabulary_translate.WordTranslator):
     """Return deterministic meanings without network; e.g. validate the player and database together."""
 
-    def translate(self, document: dict) -> words.Meaning:
-        """Preserve the selected token in the result; e.g. verify no cue-index shift."""
+    def __init__(self, gate: threading.Event) -> None:
+        """Hold translation until mpv checks pending feedback; e.g. two clicks during one lookup."""
 
-        return words.Meaning(f"Meaning of {document['word']}", document["word"], "test gloss", "test", "", "", False)
+        super().__init__()
+        self._gate = gate
+
+    def translate(self, document: dict) -> words.Meaning:
+        """Keep the gloss and explanation distinct; e.g. visually inspect accented subtitle clicks."""
+
+        if not self._gate.wait(5):
+            raise TimeoutError("mpv did not release the test translation")
+        gloss = {"geïnteresseerd": "interested", "in": "in", "liep": "walked"}[document["word"]]
+        note = "Adjective describing interest." if gloss == "interested" else ""
+        return words.Meaning(gloss, document["word"], "test gloss", "test", note, "", False)
 
 
 class ProbeClient:
     """Capture test outcomes while using the real application message client."""
 
-    def __init__(self, capture: vocabulary_playback.WordCapture) -> None:
+    def __init__(self, capture: vocabulary_playback.WordCapture, gate: threading.Event) -> None:
+        """Coordinate actual player events with the delayed provider; e.g. inspect pending feedback."""
+
         self.capture = capture
+        self._gate = gate
         self.results = []
         self.clicks = []
 
@@ -54,6 +68,8 @@ class ProbeClient:
 
         if args and args[0] == "vocab-test-result":
             self.results.append(json.loads(args[1]))
+        elif args == ["vocab-test-release"]:
+            self._gate.set()
         else:
             if args and args[0] == "vocab-click":
                 self.clicks.append(json.loads(args[1]))
@@ -84,10 +100,11 @@ class MpvVocabularyTests(unittest.TestCase):
             loaded = playback.dual_subtitle_playback_paths([en, nl], prefs, root)
             db = library_db.LibraryDb(root / "catalog.sqlite3")
             db.initialize()
-            service = vocabulary_worker.VocabularyService(db, FakeTranslator())
+            gate = threading.Event()
+            service = vocabulary_worker.VocabularyService(db, FakeTranslator(gate))
             capture = vocabulary_playback.WordCapture(service, words.Source.local(video))
             script = capture.prepare([en, nl], loaded, prefs)
-            client = ProbeClient(capture)
+            client = ProbeClient(capture, gate)
             log = root / "mpv.log"
             driver = Path(__file__).parent / "fixtures" / "vocabulary_driver.lua"
             try:
@@ -112,6 +129,7 @@ class MpvVocabularyTests(unittest.TestCase):
                 self.assertEqual(history[0]["cue_start_ms"], 6000)
                 self.assertAlmostEqual(history[0]["position_seconds"], 7, delta=0.25)
             finally:
+                gate.set()
                 service.close()
                 if service._threads:
                     service._threads[1].join(3)

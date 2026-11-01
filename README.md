@@ -1819,8 +1819,13 @@ Renderer measurements are cached and rebuilt when text, font, or window size
 changes. mpv's `compute_bounds` API is experimental, so keeping the tested mpv
 version is advisable when investigating layout problems.
 
-The mpv feedback first confirms the local save and then shows the contextual
-translation when available. Translation uses the existing `.env` OpenAI key
+The mpv feedback shows `x/y · ...` after the local save, where `x` is the number
+of clicks on that word and `y` is the number of distinct videos. When ready,
+`...` becomes the contextual translation in bold gold, with any brief context
+or grammar explanation on a muted line underneath. The feedback matches the
+clicked subtitle's font and size, including when resizing the player. The clicked
+word stays highlighted in the subtitle and is not repeated in the feedback.
+Translation uses the existing `.env` OpenAI key
 and the configured subtitle translation model/reasoning defaults. CLI
 `--openai-translation-model`, `--openai-reasoning-effort`, and `--openai-env-file`
 also apply to word lookups. A lookup sends only the selected word and exact
@@ -1877,6 +1882,8 @@ python -m unittest tests.test_vocabulary_mpv -v
 It validates actual Lua rendering, hover/click input, double-click capture,
 outside-click rejection, resizing, fullscreen, seeking, subtitle visibility keys,
 IPC acknowledgements, SQLite writes, and restoration of native subtitles.
+It also holds a translation open to check compact pending counts, then verifies
+that completion retains those counts and separates the gloss from its explanation.
 Windows named-pipe access must be available
 to both test processes. The transport uses overlapped reads/writes so replies
 and seeks remain responsive even while a paused player emits no events.
