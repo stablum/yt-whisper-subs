@@ -102,7 +102,7 @@ class WindowActionsMixin:
                 self._download_selected()
 
     def _edit_settings(self) -> None:
-        """Persist scheduling, retention, browser, tray, and login settings.
+        """Persist playback, scheduling, retention, browser, tray, and login settings.
 
         Example: Library -> Settings invokes `_edit_settings()`.
         """
@@ -129,6 +129,7 @@ class WindowActionsMixin:
             self._service.video_prefs(),
             self._service.db.watch_policy(),
             library_notifications.NotificationPrefs.load(self._service.db),
+            playback=self._service.playback_prefs(),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -153,6 +154,7 @@ class WindowActionsMixin:
         self._service.db.set_setting("channel_published_after", values.channel_published_after)
         self._service.db.set_setting("video_resolution", values.download.resolution)
         self._service.db.set_setting("allow_higher_resolution", int(values.download.allow_higher))
+        self._service.db.set_setting("mpv_seek_seconds", values.playback.seek_seconds)
         self._service.reload_clients()
         self._service.db.set_watch_policy(values.watch)
         values.notifications.save(self._service.db)

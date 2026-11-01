@@ -40,6 +40,7 @@ class PlaybackPrefs(NamedTuple):
     dual_subs: bool
     primary: SubtitleStyle
     secondary: SubtitleStyle
+    seek_seconds: float = cfg.DEFAULT_MPV_SEEK_SECONDS
 
     @classmethod
     def defaults(cls) -> PlaybackPrefs:
@@ -76,6 +77,7 @@ class PlaybackPrefs(NamedTuple):
         secondary_size = args.dual_sub_secondary_font_size or args.dual_sub_font_size
         return cls(
             dual_subs=args.dual_subs,
+            seek_seconds=args.mpv_seek_seconds,
             primary=SubtitleStyle(
                 args.dual_sub_primary_color,
                 args.dual_sub_primary_pos,
@@ -377,7 +379,10 @@ def play_video(
 
     session = session or PlaybackSession()
     seek_script = Path(__file__).parent / "mpv_scripts" / "seek.lua"
-    cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no", f"--script={seek_script}"]
+    cmd: list[str | os.PathLike[str]] = [
+        "mpv", "--sub-auto=no", f"--script={seek_script}",
+        f"--script-opts-append=ytw_seek-seconds={prefs.seek_seconds:g}",
+    ]
     monitor = None
     if session.observer or session.words:
         monitor = mpv_ipc.MpvMonitor(session.observer, client=session.words)

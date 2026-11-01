@@ -135,6 +135,20 @@ class LibraryService(
         ) in {"1", "True", "true"}
         return download_prefs.VideoPrefs(resolution, allow_higher)
 
+    def playback_prefs(self) -> playback.PlaybackPrefs:
+        """Read the durable seek step for new players; e.g. retain 2.5 seconds after restart."""
+
+        prefs = playback.PlaybackPrefs.defaults()
+        raw = self.db.setting("mpv_seek_seconds", str(prefs.seek_seconds))
+        try:
+            seconds = float(raw)
+        except ValueError:
+            return prefs
+        min_seek, max_seek = cfg.MPV_SEEK_SECONDS_RANGE
+        if not min_seek <= seconds <= max_seek:
+            return prefs
+        return prefs._replace(seek_seconds=seconds)
+
     def cookies_from_browser(self) -> str | None:
         """Read the optional yt-dlp browser cookie source.
 
@@ -577,7 +591,7 @@ class LibraryService(
         playback.play_video(
             record.local.path,
             srts,
-            playback.PlaybackPrefs.defaults(),
+            self.playback_prefs(),
             session,
         )
 
@@ -611,7 +625,7 @@ class LibraryService(
         source = vocabulary.Source(event["source_key"], video_id, event["title"], event["url"], str(path))
         capture = vocabulary_playback.WordCapture(self.vocabulary, source, event["language"])
         session = playback.PlaybackSession(start_seconds=start, control=self._playback, words=capture)
-        playback.play_video(path, playback.sidecar_subtitles(path), playback.PlaybackPrefs.defaults(), session)
+        playback.play_video(path, playback.sidecar_subtitles(path), self.playback_prefs(), session)
 
     def seek(self, video_id: str, seconds: float) -> bool:
         """Seek the matching library-owned mpv process when it is active.

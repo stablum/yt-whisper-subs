@@ -221,6 +221,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-play", action="store_true", help="Only create subtitles; do not open mpv.")
     parser.add_argument(
+        "--mpv-seek-seconds",
+        type=float,
+        default=cfg.DEFAULT_MPV_SEEK_SECONDS,
+        help=(
+            "Exact backward/forward step for mpv's Left/Right arrows, in seconds. "
+            f"Default: {cfg.DEFAULT_MPV_SEEK_SECONDS}."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Re-download URL videos and regenerate subtitles even if yields already exist.",
@@ -404,6 +413,9 @@ def parse_args() -> argparse.Namespace:
         parser.error("--openai-translation-context-cues must be 0 or greater")
     if args.chapter_minutes <= 0:
         parser.error("--chapter-minutes must be greater than 0")
+    min_seek, max_seek = cfg.MPV_SEEK_SECONDS_RANGE
+    if not min_seek <= args.mpv_seek_seconds <= max_seek:
+        parser.error(f"--mpv-seek-seconds must be a finite number from {min_seek:g} to {max_seek:g}")
     if args.min_video_duration is not None and (
         not math.isfinite(args.min_video_duration) or args.min_video_duration <= 0
     ):

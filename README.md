@@ -141,7 +141,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
-| mpv Left / Right arrows | exact relative seeks of `−1.5` / `+1.5` seconds, scoped to project launches |
+| mpv Left / Right arrows | exact `−1.5` / `+1.5` second seeks; configurable in Library Settings and with `--mpv-seek-seconds` |
 | mpv word capture | clickable text tracks; committed selections turn green and underlined |
 | Vocabulary review | Library → Vocabulary; `Ctrl+Shift+W` in the library |
 | Word translation | on-demand contextual OpenAI lookup; English meaning and source dictionary form |
@@ -1723,16 +1723,30 @@ By default the script opens `mpv` after producing or verifying yields.
 Playback command shape:
 
 ```text
-mpv --sub-auto=no --script=<project>/yt_whisper_subs/mpv_scripts/seek.lua --sub-file=<primary> --sub-file=<secondary> <video>
+mpv --sub-auto=no --script=<project>/yt_whisper_subs/mpv_scripts/seek.lua --script-opts-append=ytw_seek-seconds=1.5 --sub-file=<primary> --sub-file=<secondary> <video>
 ```
 
 Both the CLI and desktop library load the project-local `seek.lua` script on
 every launch, including playback without subtitles. **Left** seeks backward
-`1.5` seconds and **Right** seeks forward `1.5` seconds. Seeking is exact rather
-than snapping to nearby keyframes; holding either key repeats the same step.
+and **Right** seeks forward by the configured step, defaulting to `1.5` seconds.
+Seeking is exact rather than snapping to nearby keyframes; holding either key
+repeats the same step.
 These two bindings override the corresponding user bindings only in this
 project's player processes. Other keys and persistent mpv configuration are
-unchanged. Reopen a video to apply the bindings to a new player process.
+unchanged.
+
+Set **Library → Settings → mpv seek step** to change the library's step in
+seconds. It is saved per output root and applies to newly opened players,
+including playback from vocabulary occurrences; reopen a video after saving.
+The CLI uses `--mpv-seek-seconds`, independently of the library's saved value:
+
+```powershell
+python .\yt_whisper_subs.py --mpv-seek-seconds 2.5 --video-file "C:\path\to\video.mkv"
+```
+
+Both controls accept finite values from `0.05` to `3600` seconds. The selected
+value is passed only to that mpv process through a script option; no global mpv
+configuration is written.
 
 Word-enabled CLI playback and the desktop library insert a unique
 `--input-ipc-server=yt-whisper-subs-<random-id>` option before the video. It is
@@ -1977,6 +1991,7 @@ rejects `none` and `xhigh` for `gpt-5-mini`.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--no-play` | off | Do not open mpv. |
+| `--mpv-seek-seconds SECONDS` | `1.5` | Exact Left/Right arrow seek step; `0.05`–`3600` seconds. |
 | `--no-dual-subs` | off | Load multiple subtitle tracks but do not display both at once. |
 | `--dual-sub-primary-color COLOR` | `#FFE066` | Primary subtitle color. |
 | `--dual-sub-secondary-color COLOR` | `#66D9EF` | Secondary subtitle color. |
@@ -2376,7 +2391,8 @@ repair, and checkpoint cleanup; bilingual chapter density, stateless payloads,
 validation repair, exact timestamp mapping, persistence, and mpv sidecars;
 `SubtitlePair` archive hydration, syncing,
 compaction, and backup behavior; metadata-preserving yt-dlp commands; shared
-playback policy; channel normalization and timestamp mapping; SQLite catalog
+playback policy, CLI seek-step validation, native seek-step save/reload, and
+propagation to normal and vocabulary playback; channel normalization and timestamp mapping; SQLite catalog
 semantics; playback IPC event handling; the strict configurable watched boundary,
 settings persistence and active-session changes, manual completion without fake progress, saved
 progress classification, accurate watched percentages (including removed entries

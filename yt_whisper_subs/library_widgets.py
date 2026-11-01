@@ -20,12 +20,13 @@ from yt_whisper_subs import library_notifications
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
 from yt_whisper_subs import openai_chapters
+from yt_whisper_subs import playback
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import windows_startup
 
 
 class SettingsValues(NamedTuple):
-    """Return scheduler, retention, and yt-dlp preferences cohesively.
+    """Compose playback, download, and background policies for the settings dialog.
 
     Example: `SettingsValues(4, "firefox", True, False, 50, "2026-04-01")`.
     """
@@ -39,6 +40,7 @@ class SettingsValues(NamedTuple):
     download: download_prefs.VideoPrefs = download_prefs.VideoPrefs()
     watch: playback_progress.WatchPolicy = playback_progress.WatchPolicy()
     notifications: library_notifications.NotificationPrefs = library_notifications.NotificationPrefs()
+    playback: playback.PlaybackPrefs = playback.PlaybackPrefs.defaults()
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -444,13 +446,14 @@ class AddChannelDialog(QtWidgets.QDialog):
 
 
 class SettingsDialog(QtWidgets.QDialog):
-    """Edit download, scheduling, retention, browser, tray, and login preferences.
+    """Edit playback, downloads, scheduling, retention, browser, tray, and login preferences.
 
     Example: `dialog.values()` supplies durable settings after acceptance.
     """
 
     def __init__(self, values: SettingsValues, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        self._playback = values.playback
         self.setWindowTitle("Library settings")
         self.setMinimumWidth(460)
         layout = QtWidgets.QVBoxLayout(self)
@@ -471,6 +474,16 @@ class SettingsDialog(QtWidgets.QDialog):
         self._watched.setToolTip(
             "Mark watched after more than this percentage is reached, or at the end of the video. "
             "Already watched entries keep their status."
+        )
+        self._seek = QtWidgets.QDoubleSpinBox()
+        self._seek.setObjectName("mpvSeekSeconds")
+        self._seek.setRange(*cfg.MPV_SEEK_SECONDS_RANGE)
+        self._seek.setDecimals(2)
+        self._seek.setSingleStep(0.25)
+        self._seek.setSuffix(" s")
+        self._seek.setValue(values.playback.seek_seconds)
+        self._seek.setToolTip(
+            "Seconds to seek backward/forward with mpv's Left/Right arrows. Applies to newly opened players."
         )
         self._cookies = QtWidgets.QComboBox()
         self._cookies.setEditable(True)
@@ -520,6 +533,7 @@ class SettingsDialog(QtWidgets.QDialog):
             self._startup.setToolTip("Available only on Windows")
         form.addRow("Check every", self._hours)
         form.addRow("Watched threshold", self._watched)
+        form.addRow("mpv seek step", self._seek)
         form.addRow("Cookies from browser", self._cookies)
         form.addRow("Preferred video resolution", self._resolution)
         form.addRow("Resolution fallback", self._higher)
@@ -577,4 +591,5 @@ class SettingsDialog(QtWidgets.QDialog):
             download_prefs.VideoPrefs(self._resolution.currentData(), self._higher.isChecked()),
             playback_progress.WatchPolicy(self._watched.value()),
             self._notifications.values(),
+            playback=self._playback._replace(seek_seconds=self._seek.value()),
         )
