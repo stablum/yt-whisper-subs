@@ -376,7 +376,8 @@ def play_video(
     """
 
     session = session or PlaybackSession()
-    cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no"]
+    seek_script = Path(__file__).parent / "mpv_scripts" / "seek.lua"
+    cmd: list[str | os.PathLike[str]] = ["mpv", "--sub-auto=no", f"--script={seek_script}"]
     monitor = None
     if session.observer or session.words:
         monitor = mpv_ipc.MpvMonitor(session.observer, client=session.words)

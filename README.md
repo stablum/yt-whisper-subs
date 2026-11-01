@@ -141,6 +141,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
 | Library watched-progress sample | every `5` seconds during mpv playback |
+| mpv Left / Right arrows | exact relative seeks of `−1.5` / `+1.5` seconds, scoped to project launches |
 | mpv word capture | clickable text tracks; committed selections turn green and underlined |
 | Vocabulary review | Library → Vocabulary; `Ctrl+Shift+W` in the library |
 | Word translation | on-demand contextual OpenAI lookup; English meaning and source dictionary form |
@@ -1722,8 +1723,16 @@ By default the script opens `mpv` after producing or verifying yields.
 Playback command shape:
 
 ```text
-mpv --sub-auto=no --sub-file=<primary> --sub-file=<secondary> <video>
+mpv --sub-auto=no --script=<project>/yt_whisper_subs/mpv_scripts/seek.lua --sub-file=<primary> --sub-file=<secondary> <video>
 ```
+
+Both the CLI and desktop library load the project-local `seek.lua` script on
+every launch, including playback without subtitles. **Left** seeks backward
+`1.5` seconds and **Right** seeks forward `1.5` seconds. Seeking is exact rather
+than snapping to nearby keyframes; holding either key repeats the same step.
+These two bindings override the corresponding user bindings only in this
+project's player processes. Other keys and persistent mpv configuration are
+unchanged. Reopen a video to apply the bindings to a new player process.
 
 Word-enabled CLI playback and the desktop library insert a unique
 `--input-ipc-server=yt-whisper-subs-<random-id>` option before the video. It is
