@@ -125,6 +125,10 @@ class OpenAITranslateTests(unittest.TestCase):
                 Example: invoked by `openai_translate`.
                 """
 
+                if payload["text"]["format"]["name"] == "srt_semantic_review":
+                    pairs = json.loads(payload["input"])["review"]
+                    review = {"reviewed_indexes": [pair["index"] for pair in pairs], "issues": []}
+                    return {"output_text": json.dumps(review)}
                 prompt = str(payload["input"])
                 source_json = prompt.split("```json\n", 1)[1].split("\n```", 1)[0]
                 observed_indexes.extend(item["index"] for item in json.loads(source_json))
@@ -173,6 +177,10 @@ class OpenAITranslateTests(unittest.TestCase):
             Example: invoked by `openai_translate`.
             """
 
+            if payload["text"]["format"]["name"] == "srt_semantic_review":
+                pairs = json.loads(payload["input"])["review"]
+                review = {"reviewed_indexes": [pair["index"] for pair in pairs], "issues": []}
+                return {"output_text": json.dumps(review)}
             self.assertIn("SOURCE CUES JSON", payload["input"])
             self.assertTrue(queued)
             return {"output_text": json.dumps({"translations": queued.pop(0)})}

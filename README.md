@@ -97,8 +97,9 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Primary Whisper model | `turbo` |
 | Whisper anti-loop decoding | previous-text conditioning off; word timestamps and hallucination silence skipping on |
 | English translation provider | `openai` |
-| OpenAI translation model | `gpt-5-mini` |
-| OpenAI reasoning effort | `low` |
+| OpenAI translation model | `gpt-6-luna` |
+| OpenAI reasoning effort | `medium` |
+| Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -1456,9 +1457,11 @@ The contract is:
    shift subsequent translations by one.
 7. Each chunk includes a small amount of neighboring text as context, but the
    model is asked to translate only the current chunk.
-8. Completed chunks are saved to a temporary `.en.partial.json` checkpoint next
+8. Semantically reviewed chunks are saved to a temporary `.en.partial.json` checkpoint next
    to the English sidecar, so an interrupted or failed run can resume without
-   paying for already translated chunks again.
+   paying for already reviewed chunks again. Checkpoint identity includes the
+   source hash, model, reasoning, chunk/context settings, and review policy
+   version. Older unreviewed checkpoints are rejected.
 9. If a chunk response is valid JSON but incomplete, for example 91 usable
    translations for 92 source cues, the script keeps the usable indexed
    translations and sends a small repair request for only the missing cues.
@@ -1480,7 +1483,21 @@ The contract is:
    - `translations` is a list,
    - every expected 1-based cue index has exactly one usable translation,
    - each text value is a non-empty string.
-12. The script renders a new English SRT by pairing each translated text with the
+12. A fresh stateless semantic review checks every translated cue against its
+    own Dutch source, in chronological batches of at most 40 pairs with nearby
+    context. It checks substantive omissions, unsupported additions, changed
+    meaning, dates/numbers/tense/negation, and content assigned to the wrong cue.
+    The review must explicitly cover every requested index. Ordinary fragments,
+    synonymous wording and plausible interpretations of uncertain transcription
+    are accepted; this is not a style-polishing pass.
+13. Flagged cues and one immediate neighbor on either side are corrected together
+    to repair both sides of a crossed boundary. Only those spans can change.
+    Their new texts and an unchanged guard cue on either side are reviewed again;
+    the other texts retain their original review. There are at most two correction
+    rounds per translation chunk. Unresolved errors or malformed/unavailable
+    reviews stop the run before replacing the English SRT. Passed chunks remain
+    reusable and the run log identifies unresolved local indexes and reasons.
+14. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
 This gives the English file the same cue count and cue timings as the compacted
@@ -1496,10 +1513,10 @@ with:
 
 ```json
 {
-  "model": "gpt-5-mini",
+  "model": "gpt-6-luna",
   "input": "...prompt and current indexed cue JSON chunk...",
   "reasoning": {
-    "effort": "low"
+    "effort": "medium"
   },
   "text": {
     "format": {
@@ -1520,16 +1537,17 @@ errors still fail immediately or after the API returns a final non-retryable
 response. Incomplete but parseable translation chunks are handled separately by
 the missing-cue repair request described above.
 
-Set `--openai-translation-chunk-cues 0` to use one full cue-list request. The
-chunked default is more resilient for longer videos and avoids connection
+Set `--openai-translation-chunk-cues 0` to translate the full cue list together.
+Semantic review still uses bounded batches, and whole-file mode is checkpointed.
+The chunked default is more resilient for longer videos and avoids connection
 resets seen with large JSON responses.
 
 The exact default model and effort are configurable:
 
 ```powershell
 python .\yt_whisper_subs.py `
-  --openai-translation-model gpt-5-mini `
-  --openai-reasoning-effort low `
+  --openai-translation-model gpt-6-luna `
+  --openai-reasoning-effort medium `
   "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
@@ -1554,22 +1572,31 @@ Privacy note: this mode sends the compacted subtitle text to OpenAI. That is
 deliberate for translation quality, but it is still a cloud API call containing
 the transcript.
 
-Cost note: long videos may require multiple OpenAI requests because the script
-now chunks translation work by cue count. This avoids oversized responses but
-can still be expensive for long transcripts. A malformed or incomplete chunk may
-add a small repair request for only the missing cues.
+Cost note: generation, semantic review, and any correction/review retries are
+separate API requests. This costs more and takes longer than translation alone.
+Incomplete responses may also add a small missing-cue repair request. Token
+usage for each operation is printed separately in the activity trace/run log.
 
 Cost controls are intentionally conservative by default:
 
-- `gpt-5-mini` is used instead of frontier models such as `gpt-5.5`.
-- reasoning effort defaults to `low`, which is accepted by the default
-  `gpt-5-mini` model and gives translation a little more room than `minimal`.
+- `gpt-6-luna` with `medium` reasoning handles translation, review, and correction.
+- review batches contain at most 40 pairs, and correction is bounded to two rounds.
 - only three neighboring cues are sent as context around each chunk.
 - token usage is printed after each successful OpenAI response when the API
   returns usage metadata.
 
 Raise the model, reasoning effort, or context window only when quality demands
 it for a specific source.
+
+The same shared model/effort defaults also apply to word lookups and chapter
+generation; Practice retains its separate Luna policy. Existing finished English
+subtitles are reused as before. Restart the library to load new defaults; use
+`--force-english` to apply translation and semantic review to an existing video.
+No bulk regeneration runs automatically.
+
+Semantic review is an AI-assisted quality check, not a proof of accuracy. It can
+miss errors or raise a false alarm, particularly with fragmented or uncertain
+Whisper text. Matching timestamps alone also does not prove correct meaning.
 
 ### Bilingual AI Chapters
 
@@ -2063,23 +2090,24 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--no-english-for-dutch` | off | Disable automatic English subtitles for Dutch input. |
 | `--english-translation-provider openai|whisper` | `openai` | Select OpenAI SRT translation or Whisper audio translation. |
 | `--english-model MODEL` | conditional | Whisper model for the `whisper` provider only. |
-| `--openai-translation-model MODEL` | `gpt-5-mini` | Model shared by OpenAI SRT translation and chapter generation. |
-| `--openai-reasoning-effort EFFORT` | `low` | Reasoning effort shared by OpenAI translation and chapters. |
+| `--openai-translation-model MODEL` | `gpt-6-luna` | Model shared by OpenAI SRT translation/review, word lookups and chapter generation. |
+| `--openai-reasoning-effort EFFORT` | `medium` | Reasoning effort shared by translation/review, word lookups and chapters. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
-| `--openai-translation-chunk-cues INT` | `120` | Maximum cues per OpenAI translation request; `0` means one full cue-list request. |
+| `--openai-translation-chunk-cues INT` | `120` | Maximum cues per generation request; `0` means the full cue list. Semantic review remains bounded to 40 pairs. |
 | `--openai-translation-context-cues INT` | `3` | Neighboring cues sent as context around each chunk. |
 | `--openai-env-file PATH` | `.env` beside script | Env file to load for `OPENAI_API_KEY`. |
 
 OpenAI reasoning effort choices:
 
 ```text
-none, minimal, low, medium, high, xhigh
+none, minimal, low, medium, high, xhigh, max
 ```
 
-The default `gpt-5-mini` model accepts `minimal`, `low`, `medium`, and `high`.
-The script validates that combination before sending a request, because the API
-rejects `none` and `xhigh` for `gpt-5-mini`.
+The default `gpt-6-luna` model accepts `none`, `low`, `medium`, `high`, `xhigh`,
+and `max`; `minimal` is rejected locally. An explicit `gpt-5-mini` override accepts
+`minimal`, `low`, `medium`, and `high`. Known model/effort combinations are
+validated before sending a request.
 
 ### Chapters
 
@@ -2185,6 +2213,10 @@ The split is intentionally responsibility-oriented:
   and response text extraction.
 - `openai_translate.py` owns the indexed-cue translation strategy through
   `OpenAISrtTranslator`, `TranslationChunk`, and `TranslationCheckpoint`.
+- `translation_response.py` owns the shared indexed response schema, parsing,
+  and stateless request policy for translation and correction.
+- `translation_review.py` owns bounded semantic review, coverage validation,
+  targeted span correction, and the correction/review budget.
 - `subtitle_files.py` owns sidecar/archive repair, compaction backups, timing
   alignment, and pair finalization through `SubtitlePair`.
 - `yield_files.py` owns shared atomic yield writes/copies and stale-marker paths.
@@ -2276,9 +2308,11 @@ is the resilient version of the original whole-document architecture:
   chunk. This keeps neighboring source cues away from each other in the prompt
   while preserving the numeric indexes used to reconstruct the final SRT.
 
-The script then validates the structured output and applies translations to the
-original compacted and gap-extended cue timings itself. The model is not trusted
-to output final SRT timestamps.
+The script validates structured output and reviews cue-local meaning before
+checkpointing each chunk. Targeted span corrections are reviewed again with
+boundary guards. Only reviewed chunks are reusable, and unresolved findings stop
+publication. The script applies accepted translations to the original compacted
+and gap-extended cue timings itself; timestamps always come from the Dutch SRT.
 
 ### Compact Before Translating
 
@@ -2559,14 +2593,16 @@ playback. Ownership tests exercise real cross-process exclusion, abrupt owner
 death, PID reuse, live/paused owner protection, old-schema migration, and all
 three pruning paths while an unfinished job exists.
 
-Mock the OpenAI translation path without making an API call:
+Exercise translation, review and correction without making an API call:
 
 ```powershell
-python -c "import argparse, tempfile, json; from pathlib import Path; from yt_whisper_subs import openai_client, openai_translate; d=Path(tempfile.mkdtemp()); src=d/'nl.srt'; dst=d/'en.srt'; src.write_text('1\n00:00:00,000 --> 00:00:01,200\nGoedemiddag allemaal.\n\n2\n00:00:01,200 --> 00:00:02,800\nWelkom bij de persconferentie.\n', encoding='utf-8'); openai_client.responses_api_request=lambda args,payload: {'output_text': json.dumps({'translations':[{'index':1,'text':'Good afternoon, everyone.'},{'index':2,'text':'Welcome to the press conference.'}]})}; args=argparse.Namespace(openai_translation_model='mock', openai_reasoning_effort='low', openai_translation_chunk_cues=120, openai_translation_context_cues=3, compact_line_width=50); openai_translate.translate_srt_with_openai(src,dst,args); print(dst.read_text(encoding='utf-8'))"
+.\.venv\Scripts\python.exe -m unittest tests.test_openai_translate tests.test_translation_review -v
 ```
 
-Expected property: the English output should retain the exact two timestamp
-ranges from the input.
+The mocked tests exercise exact source timestamps, missing/duplicate translation
+repair, cue swaps, sparse correction spans, review coverage, bounded failure,
+whole-file mode, and resuming only reviewed checkpoints. They also check the
+Luna defaults and model-specific reasoning validation.
 
 Check compaction routing for default OpenAI mode:
 
@@ -2623,10 +2659,10 @@ python .\yt_whisper_subs.py --openai-translation-model MODEL <source>
 or update `DEFAULT_OPENAI_TRANSLATION_MODEL`.
 
 If the API reports that a reasoning effort is unsupported, pass a supported
-effort explicitly. For the default `gpt-5-mini` model, use one of:
+effort explicitly. For the default `gpt-6-luna` model, use one of:
 
 ```text
-minimal, low, medium, high
+none, low, medium, high, xhigh, max
 ```
 
 ### OpenAI connection reset or timeout
@@ -2655,6 +2691,14 @@ keeps the valid indexed translations and automatically asks OpenAI to repair
 only the missing cue indexes. If that repair request also fails validation,
 rerunning normally should reuse any previously checkpointed chunks and retry the
 incomplete chunk.
+
+Semantic review is mandatory for newly generated English subtitles. Clear
+meaning/omission/alignment findings trigger correction of the affected spans,
+followed by another review. After two unsuccessful correction rounds, the run
+fails with cue indexes and details in the log; it preserves any existing English
+SRT and checkpoints only chunks that passed review. A failed or malformed review
+also stops publication. Retry normally to reuse passed chunks. Old finished
+English files require explicit regeneration to receive this check.
 
 If the failure happened after the primary SRT was generated, rerunning normally
 should reuse the downloaded video and primary subtitles, then retry only the

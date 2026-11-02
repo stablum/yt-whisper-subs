@@ -17,43 +17,9 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import openai_client
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import srt
+from yt_whisper_subs import translation_response
+from yt_whisper_subs import translation_review
 from yt_whisper_subs import yield_files
-
-
-class OpenAITranslationParseResult(NamedTuple):
-    """Partial parse result that lets incomplete chunks be repaired cheaply.
-
-    Example: `OpenAITranslationParseResult([None], ["missing"])`.
-    """
-
-    texts: list[str | None]
-    errors: list[str]
-
-    @property
-    def missing_indexes(self) -> list[int]:
-        """Return one-based indexes that still lack usable translations.
-
-        Example: `result.missing_indexes`.
-        """
-
-        return [index + 1 for index, text in enumerate(self.texts) if text is None]
-
-    @property
-    def complete(self) -> bool:
-        """Report whether every source cue has exactly one translation.
-
-        Example: `if result.complete: ...`.
-        """
-
-        return not self.missing_indexes
-
-    def complete_texts(self) -> list[str]:
-        """Return non-empty translations after the caller has verified completeness.
-
-        Example: `texts = result.complete_texts()`.
-        """
-
-        return [text for text in self.texts if text is not None]
 
 
 class TranslationChunk(NamedTuple):
@@ -138,8 +104,9 @@ class TranslationCheckpoint(NamedTuple):
             getattr(args, "openai_translation_context_cues", cfg.DEFAULT_OPENAI_TRANSLATION_CONTEXT_CUES)
         )
         metadata = {
-            "schema": 2,
+            "schema": 3,
             "source_format": "cue_json_v1",
+            "semantic_review": translation_review.PROMPT_VERSION,
             "source_sha256": text_sha256(source_srt),
             "cue_count": len(source_cues),
             "model": getattr(args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
@@ -202,23 +169,20 @@ class OpenAISrtTranslator:
         english_srt_path: Path,
         args: argparse.Namespace,
     ) -> None:
+        """Retain one translation run's source and output; e.g. resume its reviewed checkpoint."""
+
         self._source_srt = source_srt
         self._source_cues = source_cues
         self._english_srt_path = english_srt_path
         self._args = args
 
     def translate_texts(self) -> list[str]:
-        """Translate all source cues using whole-file or checkpointed chunk mode.
+        """Translate and review every chunk, including whole-file mode, before publication.
 
         Example: `translator.translate_texts()`.
         """
 
         chunk_size = openai_translation_chunk_size(self._args, len(self._source_cues))
-        if chunk_size >= len(self._source_cues):
-            progress.emit(progress.Stage.TRANSLATING, 0.0, "Translating subtitles · request 1/1")
-            translated = self._translate_chunk(self._source_cues)
-            progress.emit(progress.Stage.TRANSLATING, 1.0, "Translation complete")
-            return translated
         return self._translate_checkpointed(chunk_size)
 
     @property
@@ -271,14 +235,7 @@ class OpenAISrtTranslator:
                 )
                 continue
 
-            print(f"Translating OpenAI subtitle {chunk.label}...")
-            chunk_translations = self._translate_chunk(
-                chunk.cue_slice(self._source_cues),
-                chunk_label=chunk.label,
-                previous_context=chunk.previous_context(self._source_cues, context_cues),
-                next_context=chunk.next_context(self._source_cues, context_cues),
-            )
-            translated_texts[chunk.start : chunk.end] = chunk_translations
+            translated_texts[chunk.start : chunk.end] = self._translate_reviewed(chunk, context_cues)
             checkpoint.save(translated_texts)
             progress.emit(
                 progress.Stage.TRANSLATING,
@@ -291,6 +248,26 @@ class OpenAISrtTranslator:
             raise RuntimeError(f"OpenAI translation checkpoint is incomplete at cues: {missing_indexes[:10]}")
 
         return [text for text in translated_texts if text is not None]
+
+    def _translate_reviewed(self, chunk: TranslationChunk, context_cues: int) -> list[str]:
+        """Finish structural and semantic checks before exposing chunk text; e.g. a checkpoint save."""
+
+        print(f"Translating OpenAI subtitle {chunk.label}...")
+        source_cues = chunk.cue_slice(self._source_cues)
+        context = (
+            chunk.previous_context(self._source_cues, context_cues),
+            chunk.next_context(self._source_cues, context_cues),
+        )
+        texts = self._translate_chunk(
+            source_cues, chunk_label=chunk.label,
+            previous_context=context[0], next_context=context[1],
+        )
+        progress.emit(
+            progress.Stage.TRANSLATING, (chunk.number - 1) / chunk.total,
+            f"Checking translation · chunk {chunk.number}/{chunk.total}",
+        )
+        reviewer = translation_review.TranslationReview(self._args)
+        return reviewer.check_and_repair(source_cues, texts, context=context, label=chunk.label)
 
     def _chunks(self, chunk_size: int) -> list[TranslationChunk]:
         """Split source cues into logged, one-based numbered chunks.
@@ -323,7 +300,7 @@ class OpenAISrtTranslator:
 
         cue_order = srt.interleaved_cue_order(len(source_cues))
         source_cues_json = srt.openai_source_cues_json(source_cues, order=cue_order)
-        payload = openai_translation_payload(
+        payload = translation_response.payload(
             self._args,
             openai_translation_prompt(
                 source_cues_json,
@@ -335,8 +312,10 @@ class OpenAISrtTranslator:
         )
         response = openai_client.responses_api_request(self._args, payload)
         openai_client.print_usage(response, label=chunk_label)
-        parse_result = collect_openai_translations(openai_client.response_output_text(response), len(source_cues))
+        parse_result = translation_response.collect(openai_client.response_output_text(response), len(source_cues))
         if parse_result.complete:
+            if parse_result.errors:
+                raise RuntimeError("; ".join(parse_result.errors))
             return parse_result.complete_texts()
         return self._repair_chunk(
             source_cues,
@@ -349,7 +328,7 @@ class OpenAISrtTranslator:
     def _repair_chunk(
         self,
         source_cues: list[srt.SubtitleCue],
-        parse_result: OpenAITranslationParseResult,
+        parse_result: translation_response.ParseResult,
         *,
         chunk_label: str | None = None,
         previous_context: str = "",
@@ -374,7 +353,7 @@ class OpenAISrtTranslator:
         repair_order = srt.interleaved_cue_order(len(missing_cues))
         repair_source_cues = srt.openai_source_cues_json(missing_cues, order=repair_order)
         repair_label = f"{chunk_label} repair" if chunk_label else "repair"
-        payload = openai_translation_payload(
+        payload = translation_response.payload(
             self._args,
             openai_translation_repair_prompt(
                 repair_source_cues,
@@ -387,7 +366,7 @@ class OpenAISrtTranslator:
         )
         response = openai_client.responses_api_request(self._args, payload)
         openai_client.print_usage(response, label=repair_label)
-        repaired_texts = parse_openai_translations(openai_client.response_output_text(response), len(missing_cues))
+        repaired_texts = translation_response.parse(openai_client.response_output_text(response), len(missing_cues))
 
         texts = list(parse_result.texts)
         for missing_index, repaired_text in zip(missing_indexes, repaired_texts):
@@ -401,38 +380,6 @@ class OpenAISrtTranslator:
             )
 
         return [text for text in texts if text is not None]
-
-
-def openai_translation_response_format() -> dict[str, object]:
-    """Return the strict JSON schema requested from the Responses API.
-
-    Example: `openai_translation_response_format()`.
-    """
-
-    return {
-        "type": "json_schema",
-        "name": "srt_translation",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["translations"],
-            "properties": {
-                "translations": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["index", "text"],
-                        "properties": {
-                            "index": {"type": "integer"},
-                            "text": {"type": "string"},
-                        },
-                    },
-                }
-            },
-        },
-    }
 
 
 def openai_translation_prompt(
@@ -588,90 +535,6 @@ def openai_translation_chunk_size(args: argparse.Namespace, cue_count: int) -> i
     return max(1, requested)
 
 
-def openai_translation_payload(args: argparse.Namespace, prompt: str) -> dict[str, object]:
-    """Build a Responses API payload for one translation request.
-
-    Example: `openai_translation_payload(args, prompt)`.
-    """
-
-    return {
-        "model": getattr(args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
-        "input": prompt,
-        "reasoning": {"effort": getattr(args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING)},
-        "text": {"format": openai_translation_response_format()},
-        "store": False,
-    }
-
-
-def collect_openai_translations(output_text: str, expected_count: int) -> OpenAITranslationParseResult:
-    """Validate translated cue JSON while retaining partial valid entries.
-
-    Example: `collect_openai_translations(json_text, 10)`.
-    """
-
-    try:
-        payload = json.loads(openai_client.strip_json_code_fence(output_text))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"OpenAI returned invalid translation JSON: {exc}") from exc
-
-    translations = payload.get("translations") if isinstance(payload, dict) else None
-    if not isinstance(translations, list):
-        raise RuntimeError("OpenAI translation JSON is missing a translations list.")
-
-    texts: list[str | None] = [None] * expected_count
-    errors: list[str] = []
-    if len(translations) != expected_count:
-        errors.append(
-            f"OpenAI returned {len(translations)} translations for {expected_count} subtitle cues."
-        )
-
-    for response_index, item in enumerate(translations, start=1):
-        if not isinstance(item, dict):
-            errors.append(f"OpenAI translation response item #{response_index} is not an object.")
-            continue
-        index = item.get("index")
-        text = item.get("text")
-        if not isinstance(index, int) or isinstance(index, bool):
-            errors.append(f"OpenAI translation response item #{response_index} has non-integer index {index!r}.")
-            continue
-        if index < 1 or index > expected_count:
-            errors.append(
-                f"OpenAI translation response item #{response_index} has out-of-range index {index!r}."
-            )
-            continue
-        if not isinstance(text, str):
-            errors.append(f"OpenAI translation #{index} text is not a string.")
-            continue
-        text = srt.normalize_subtitle_text(text.splitlines())
-        if not text:
-            errors.append(f"OpenAI translation #{index} is empty.")
-            continue
-        if texts[index - 1] is not None:
-            errors.append(f"OpenAI returned duplicate translation index {index}.")
-            continue
-        texts[index - 1] = text
-
-    return OpenAITranslationParseResult(texts=texts, errors=errors)
-
-
-def parse_openai_translations(output_text: str, expected_count: int) -> list[str]:
-    """Require complete translated cue JSON and return ordered text only.
-
-    Example: `parse_openai_translations(json_text, 2)`.
-    """
-
-    result = collect_openai_translations(output_text, expected_count)
-    if not result.complete:
-        message = "; ".join(result.errors) if result.errors else "OpenAI returned incomplete translations."
-        raise RuntimeError(
-            f"{message} Missing cue(s): {format_index_list(result.missing_indexes)}."
-        )
-    texts = result.complete_texts()
-    if len(texts) != expected_count:
-        raise RuntimeError(f"OpenAI returned {len(texts)} usable translations for {expected_count} subtitle cues.")
-    return texts
-
-
 def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, args: argparse.Namespace) -> None:
     """Translate a primary SRT while preserving its cue count and timings.
 
@@ -687,7 +550,7 @@ def translate_srt_with_openai(primary_srt_path: Path, english_srt_path: Path, ar
     translated_texts = translator.translate_texts()
     translated_cues = [
         srt.SubtitleCue(cue.start_ms, cue.end_ms, translated_text)
-        for cue, translated_text in zip(source_cues, translated_texts)
+        for cue, translated_text in zip(source_cues, translated_texts, strict=True)
     ]
 
     english_srt_path.parent.mkdir(parents=True, exist_ok=True)

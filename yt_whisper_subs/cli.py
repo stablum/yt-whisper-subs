@@ -75,16 +75,16 @@ def parse_args() -> argparse.Namespace:
         "--openai-translation-model",
         default=cfg.DEFAULT_OPENAI_TRANSLATION_MODEL,
         help=(
-            "OpenAI model used for SRT English translation and chapter generation. "
+            "OpenAI model for subtitle translation/review, word lookups and chapters. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_MODEL}."
         ),
     )
     parser.add_argument(
         "--openai-reasoning-effort",
-        choices=("none", "minimal", "low", "medium", "high", "xhigh"),
+        choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
         default=cfg.DEFAULT_OPENAI_TRANSLATION_REASONING,
         help=(
-            "OpenAI reasoning effort for SRT English translation and chapter generation. "
+            "OpenAI reasoning effort for subtitle translation/review, word lookups and chapters. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_REASONING}."
         ),
     )
@@ -108,7 +108,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=cfg.DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES,
         help=(
-            "Maximum subtitle cues per OpenAI translation request. Use 0 for one full cue-list request. "
+            "Maximum cues per translation generation request. Use 0 for the full cue list; "
+            "semantic review remains batched separately. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_CHUNK_CUES}."
         ),
     )
@@ -422,14 +423,16 @@ def parse_args() -> argparse.Namespace:
         parser.error("--min-video-duration must be a finite number greater than 0")
     if args.subtitle_gap_extension < 0:
         parser.error("--subtitle-gap-extension must be 0 or greater")
-    if (
-        args.openai_translation_model == "gpt-5-mini"
-        and args.openai_reasoning_effort not in cfg.GPT_5_MINI_REASONING_EFFORTS
-    ):
-        allowed = ", ".join(cfg.GPT_5_MINI_REASONING_EFFORTS)
+    model_efforts = {
+        "gpt-5-mini": cfg.GPT_5_MINI_REASONING_EFFORTS,
+        "gpt-6-luna": cfg.GPT_6_LUNA_REASONING_EFFORTS,
+    }
+    allowed_efforts = model_efforts.get(args.openai_translation_model)
+    if allowed_efforts and args.openai_reasoning_effort not in allowed_efforts:
+        allowed = ", ".join(allowed_efforts)
         parser.error(
             "--openai-reasoning-effort must be one of "
-            f"{allowed} when --openai-translation-model is gpt-5-mini"
+            f"{allowed} when --openai-translation-model is {args.openai_translation_model}"
         )
 
     if args.source:
