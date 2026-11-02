@@ -150,6 +150,7 @@ class LibraryWindow(
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
         self._vocabulary_dialog: library_vocabulary.VocabularyDialog | None = None
+        self._practice_dialog: QtWidgets.QDialog | None = None
         self._ui = self._build_ui()
         self._layout_timer = QtCore.QTimer(self)
         self._layout_timer.setSingleShot(True)
@@ -399,6 +400,8 @@ class LibraryWindow(
         settings.triggered.connect(self._edit_settings)
         vocabulary = file_menu.addAction("Vocabulary…", self._show_vocabulary)
         vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
+        practice_action = file_menu.addAction("Practice…", self._show_practice)
+        practice_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+R"))
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self._quit)
@@ -461,10 +464,24 @@ class LibraryWindow(
         if self._vocabulary_dialog is None:
             self._vocabulary_dialog = library_vocabulary.VocabularyDialog(self._service, self)
             self._vocabulary_dialog.play_requested.connect(self._play_word)
+            self._vocabulary_dialog.practice_requested.connect(self._show_practice)
             self._vocabulary_dialog.destroyed.connect(lambda: setattr(self, "_vocabulary_dialog", None))
         self._vocabulary_dialog.show()
         self._vocabulary_dialog.raise_()
         self._vocabulary_dialog.activateWindow()
+
+    def _show_practice(self) -> None:
+        """Reuse one adaptive practice window; e.g. open it from Vocabulary or the Library menu."""
+
+        # Load scheduling, validation and analytics only when the learner opens Practice.
+        from yt_whisper_subs import library_practice
+
+        if self._practice_dialog is None:
+            self._practice_dialog = library_practice.PracticeDialog(self._service, self)
+            self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
+        self._practice_dialog.show()
+        self._practice_dialog.raise_()
+        self._practice_dialog.activateWindow()
 
     def _play_word(self, event: dict) -> None:
         """Replay the captured event independently of table selection; e.g. from another video."""

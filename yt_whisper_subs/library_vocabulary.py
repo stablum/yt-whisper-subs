@@ -32,6 +32,7 @@ class VocabularyDialog(QtWidgets.QDialog):
     """Keep derived counts and immutable history in one review surface; e.g. repeated `liep`."""
 
     play_requested = QtCore.Signal(object)
+    practice_requested = QtCore.Signal()
 
     def __init__(self, service: library_service.LibraryService, parent: QtWidgets.QWidget | None = None) -> None:
         """Bind the review window to one output root; e.g. the currently open library."""
@@ -72,12 +73,14 @@ class VocabularyDialog(QtWidgets.QDialog):
         play = QtWidgets.QPushButton("Play occurrence")
         source = QtWidgets.QPushButton("Open source")
         close = QtWidgets.QPushButton("Close")
+        practice = QtWidgets.QPushButton("Practice…")
+        practice.setObjectName("primaryButton")
         self._play, self._source = play, source
         top = QtWidgets.QHBoxLayout()
         top.addWidget(self._search, 1)
         top.addWidget(self._group)
         actions = QtWidgets.QHBoxLayout()
-        for button in (play, source, retry):
+        for button in (practice, play, source, retry):
             actions.addWidget(button)
         actions.addStretch()
         actions.addWidget(close)
@@ -99,6 +102,7 @@ class VocabularyDialog(QtWidgets.QDialog):
         source.clicked.connect(self._open_source)
         retry.clicked.connect(self._retry)
         close.clicked.connect(self.close)
+        practice.clicked.connect(self.practice_requested)
 
     @staticmethod
     def _table(labels: list[str]) -> QtWidgets.QTableWidget:

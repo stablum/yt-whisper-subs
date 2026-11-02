@@ -81,6 +81,8 @@ The companion library is optimized for a second workflow:
     with every title grouped under its channel and configurable delivery timing.
 17. Click subtitle words inside mpv, preserve every selection in SQLite, and
     review contextual English meanings, repeated clicks, and distinct-video counts.
+18. Practice saved Dutch vocabulary in either translation direction with challenging
+    three-choice rounds, adaptive spaced review, and a native progress dashboard.
 
 ## Important Defaults
 
@@ -190,7 +192,8 @@ python .\yt_whisper_library.pyw
 ```
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
-`PySide6-Essentials` and `psutil` when needed, and relaunches with `pythonw.exe`.
+`PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS,
+and Polars) when needed, and relaunches with `pythonw.exe`.
 The window first opens the saved catalog, then scans local downloads in the
 background and refreshes the results. An overdue channel check and the
 gently paced metadata queue then run in the background without freezing the
@@ -527,6 +530,8 @@ The script expects to run on Windows. It uses:
 - `mpv`
 - `PySide6-Essentials` for the native library GUI
 - `psutil` for pausing and resuming the complete owned pipeline process tree
+- `pydantic`, `fsrs`, and `polars` for validated practice content, spaced review,
+  and progress analytics in the native library
   and distinguishing live pipeline owners from crashed or reused process IDs
 
 Python dependencies are installed into `.venv` beside the script. This choice
@@ -535,7 +540,7 @@ folder and should not depend on whichever Python packages happen to be installed
 globally.
 
 The `.pyw` library launcher bootstraps only `yt-dlp[default]`,
-`PySide6-Essentials`, and `psutil`, keeping a first GUI start much smaller than a Whisper/CUDA
+`PySide6-Essentials`, `psutil`, Pydantic, FSRS, and Polars, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
 Whisper and Torch exactly as a direct CLI run would.
@@ -1880,6 +1885,110 @@ as mutable counters. Source snapshots and sentences survive download removal,
 subscription pruning, and subtitle regeneration. The records store both the
 subtitle cue interval and playback position when clicked; exact spoken word
 onset is not inferred from sentence-level SRT timing.
+
+### Adaptive Vocabulary Practice
+
+Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
+window. **Practice** is a learning exercise with feedback, rather than a timed
+exam or a proficiency score. Choose **Dutch → English** or **English → Dutch**
+and a round length of **1–50 distinct terms** (default 10). Each question offers
+three large buttons; `1`, `2`, and `3` provide the same keyboard access. The
+original Dutch sentence anchors the intended sense. In the reverse direction,
+the selected Dutch word is blanked everywhere in that sentence so it cannot
+reveal the answer. Correct answers always come from captured vocabulary.
+Only translated, non-ambiguous Dutch selections are eligible. If fewer due/new
+terms or independently approved questions are available than requested, the
+round announces the actual count. English subtitle clicks remain reviewable in
+Vocabulary but are not Dutch practice targets.
+
+OpenAI generates two challenging incorrect choices: false friends, close but
+distinct meanings, or confusable grammatical forms. It also explains each
+distinction. A separate review call checks the stored correct answer and rejects
+questions with valid synonyms, overlapping meanings, misleading explanations,
+or otherwise ambiguous choices. This is a quality filter, not a guarantee of
+linguistic correctness. **Report unclear question** works before or after an
+answer: it quarantines that question, excludes all its uses from grading, and
+rebuilds the affected word's schedule from the remaining valid answers. Original
+answer evidence is retained. Unseen planned uses of that question are excluded too.
+
+Question generation reuses the existing `.env` key and default translation
+model/reasoning settings. It sends the selected Dutch term, saved English meaning,
+subtitle context, and explanatory note; it does not send video paths, URLs, or
+your review history. Requests use validated strict structured output and
+`store=false`. Preparation runs in the background in batches of at most six
+terms, with a 90-second timeout per request and no automatic HTTP retries. It
+requires internet and incurs normal API costs. There are two requests per new
+batch: generation and independent review. Approved variants are cached; repeated
+practice gradually builds a pool of up to three variants per context/direction,
+then rotates the least-used variant and reshuffles button order. If a new variant
+cannot be generated, existing approved cached content can still be used offline.
+An uncached term cannot silently fall back to an unchecked question.
+
+Spacing uses the maintained [FSRS Python library](https://github.com/open-spaced-repetition/py-fsrs)
+with its default parameters and 90% target retention, deterministic intervals,
+and separate state for each captured word **and direction**. Mistakes receive
+**Again**; correct but uncertain answers (**I'm unsure / guessing**) receive
+**Hard**; other correct answers receive **Good**. Response speed never upgrades
+or downgrades a rating, and there is no automatic **Easy** grade for multiple-choice
+recognition. Due reviews are ordered by estimated recall, with one slot in five
+reserved for new terms while any remain. Frequently clicked new words,
+especially across videos, are introduced first. Successful words move farther into the
+future; failed words return sooner. Future reviews stay out of ordinary rounds
+unless **Include words not due yet** is enabled. Model predictions are estimates
+for this recognition exercise, not measured language fluency. FSRS uses its
+standard parameters; this release does not fit personalized model weights.
+
+Answers are committed immediately. Closing Practice leaves the round resumable
+with identical choices and no extra presentation count. **Resume round** continues
+it; **Start round** replaces an unfinished round while preserving all its history.
+**End round** stores partial results without treating unanswered questions as
+failures. Cancelling preparation waits cooperatively for the current API call;
+closing the window remains immediate. A failed preparation does not create a
+partial round, though already approved question content remains cached.
+
+The **Progress** tab shows daily accuracy separately for both directions,
+cumulative distinct words encountered, actual presentation and answer counts,
+correct/incorrect totals, median response time, due reviews, and a study-day
+streak. Hover chart points for dates and sample sizes. The sortable per-word
+table keeps the two directions separate and includes the next review date.
+The **Rounds** table retains completed, stopped, and resumable round results,
+including direction, actual presentations, correct/wrong totals, accuracy,
+answer time, and start date.
+**Established** means at least three valid correct answers, a correct latest
+answer, and FSRS stability of at least 21 days; it is a descriptive threshold,
+not proof of mastery. Accuracy can fall when practice selects harder words.
+Dates use local time; timestamps are stored as UTC instants. Timings describe
+the current display segment (reset on resume), can include interruptions, and
+do not affect scheduling. Cumulative coverage carries forward on inactive days;
+daily accuracy is plotted only on days with graded answers.
+
+Practice shares `<output root>/library/catalog.sqlite3`. `practice_questions`
+holds approved variants, source-lookup references, model/prompt provenance, and
+quality verdicts. `practice_sessions` holds round options and exact serialized
+scheduler parameters. `practice_presentations` stores the ordered choices actually
+shown, display/answer timestamps, selected answer, correctness, uncertainty,
+elapsed milliseconds, rating, estimated recall, due date, and before/after FSRS
+state plus its review log. `practice_states` is a rebuildable per-word/direction
+schedule cache. Counts are derived from presentation history, not mutable counters.
+Foreign keys and transactions bind answers to their scheduling updates; repeat
+activation is idempotent. Immutable JSON snapshots preserve the exact linguistic
+content, option order, and external scheduler state inside otherwise relational
+records. Analytics use Polars; charts render natively with Qt painting, without
+requiring QtCharts, a browser, or a server. The native launcher installs Pydantic,
+FSRS, and Polars into its managed environment automatically. These feature
+modules load on demand so library startup and the CLI stay lean.
+
+Run the deterministic practice tests (no OpenAI calls):
+
+```powershell
+python -m unittest tests.test_practice tests.test_library_practice -v
+```
+
+They exercise independent directions, due/new selection, lapse/uncertainty
+ratings, cached offline rounds, semantic rejection, atomic/idempotent answers,
+reporting and schedule replay, interruption/resume, native buttons, and multi-day
+analytics. Generation uses the existing Responses client and follows
+[OpenAI's structured output contract](https://developers.openai.com/api/docs/guides/structured-outputs).
 
 ### Word Capture Verification
 
