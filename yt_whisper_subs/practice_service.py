@@ -52,8 +52,10 @@ class PracticeService:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
+        policy = {"model": self._generator.model, "reasoning": self._generator.reasoning,
+                  "prompt_version": practice_generate.PROMPT_VERSION}
         for row in selected:
-            variants = self._db.practice_cached(row["lookup_id"], direction.value, practice_generate.PROMPT_VERSION)
+            variants = self._db.practice_cached(row["lookup_id"], direction.value, policy)
             if variants:
                 cached[row["lookup_id"]] = variants[0]
             # Build a small rotating pool, then use the least-seen variant with new button ordering.
@@ -80,8 +82,7 @@ class PracticeService:
                 item = {"lookup_id": row["lookup_id"], "direction": direction.value,
                         "body_json": json.dumps(body, ensure_ascii=False),
                         "validation_json": json.dumps(result["verdict"], ensure_ascii=False),
-                        "model": self._generator.model, "reasoning": self._generator.reasoning,
-                        "prompt_version": practice_generate.PROMPT_VERSION}
+                        **policy}
                 cached[row["lookup_id"]] = self._db.practice_cache(item)
         return cached
 

@@ -33,13 +33,13 @@ class QuestionGenerator:
     """Treat vocabulary as authoritative data and reject ambiguous choices in a second pass."""
 
     def __init__(self, args: argparse.Namespace | None = None) -> None:
-        """Reuse existing credentials and model settings; e.g. practice needs no separate API key."""
+        """Use a dedicated practice policy with shared credentials; e.g. changing Practice never changes subtitle translation."""
 
         self._args = argparse.Namespace(**vars(args or argparse.Namespace()))
         self._args.openai_timeout = 90.0
         self._args.openai_max_retries = 0
-        self.model = getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL)
-        self.reasoning = getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING)
+        self.model = getattr(self._args, "openai_practice_model", cfg.DEFAULT_PRACTICE_MODEL)
+        self.reasoning = getattr(self._args, "openai_practice_reasoning", cfg.DEFAULT_PRACTICE_REASONING)
 
     def _request[T: practice.Content](self, model: type[T], prompt: str, document: dict) -> T:
         """Validate structured output after the shared HTTP client; e.g. reject incomplete question batches."""

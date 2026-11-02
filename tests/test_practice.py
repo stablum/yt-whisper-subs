@@ -6,6 +6,7 @@ Example: `python -m unittest tests.test_practice` uses real SQLite and FSRS with
 from __future__ import annotations
 
 import json
+import argparse
 import tempfile
 import time
 import unittest
@@ -114,7 +115,9 @@ class PracticeTests(unittest.TestCase):
         actual_card, expected_card = json.loads(state["card_json"]), json.loads(expected["after_json"])
         self.assertAlmostEqual(actual_card["stability"], expected_card["stability"])
         self.assertEqual(state["due_at"], expected["due_at"])
-        self.assertNotIn(first["question_id"], [q["id"] for q in self.db.practice_cached(first["lookup_id"], "nl_en", 1)])
+        policy = {"model": self.generator.model, "reasoning": self.generator.reasoning,
+                  "prompt_version": practice_generate.PROMPT_VERSION}
+        self.assertNotIn(first["question_id"], [q["id"] for q in self.db.practice_cached(first["lookup_id"], "nl_en", policy)])
 
     def test_due_selection_excludes_boring_early_words_and_reserves_new_slots(self) -> None:
         """Spacing controls exposure rather than lifetime failure counts; e.g. well-learned terms wait until due."""
@@ -174,10 +177,13 @@ class PracticeTests(unittest.TestCase):
         draft = self.generator.generate(rows, practice.Direction.NL_EN)[0]
         request.side_effect = [{"output_text": json.dumps({"questions": [draft["draft"]]})},
                                {"output_text": json.dumps({"verdicts": [draft["verdict"]]})}]
-        actual = practice_generate.QuestionGenerator().generate(rows, practice.Direction.NL_EN)
+        args = argparse.Namespace(openai_translation_model="subtitle-model", openai_reasoning_effort="high")
+        actual = practice_generate.QuestionGenerator(args).generate(rows, practice.Direction.NL_EN)
         self.assertTrue(actual[0]["verdict"]["valid"])
         self.assertEqual(request.call_count, 2)
         for call in request.call_args_list:
+            self.assertEqual(call.args[1]["model"], "gpt-6-luna")
+            self.assertEqual(call.args[1]["reasoning"], {"effort": "medium"})
             self.assertTrue(call.args[1]["text"]["format"]["strict"])
             self.assertFalse(call.args[1]["store"])
             self.assertNotIn("video.mkv", call.args[1]["input"])
@@ -221,3 +227,35 @@ class PracticeTests(unittest.TestCase):
             self._round()
         self.assertIsNone(self.db.practice_active())
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 0)
+
+    def test_model_and_reasoning_changes_get_fresh_content_without_losing_history(self) -> None:
+        """Cached choices must reflect the requested policy; e.g. upgrading from Mini to Luna never reuses unseen Mini drafts."""
+
+        self.generator.model, self.generator.reasoning = "gpt-5-mini", "low"
+        session = self._round()
+        shown = self.db.practice_current(session)
+        self.db.practice_answer(shown["id"], shown["correct_idx"], False, 700)
+        for model, effort in (("gpt-6-luna", "medium"), ("gpt-6-luna", "high")):
+            self.generator.model, self.generator.reasoning = model, effort
+            fresh = self._round()
+            with self.db._connect() as conn:
+                policies = conn.execute("SELECT DISTINCT q.model,q.reasoning FROM practice_presentations p "
+                                        "JOIN practice_questions q ON q.id=p.question_id WHERE p.session_id=?", (fresh,)).fetchall()
+            self.assertEqual([tuple(row) for row in policies], [(model, effort)])
+        data = practice_stats.snapshot(self.db)
+        self.assertEqual((data["totals"]["shown"], data["totals"]["correct"]), (1, 1))
+        with self.db._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM practice_questions").fetchone()[0], 12)
+
+    def test_new_model_cannot_fall_back_to_old_model_cache_when_offline(self) -> None:
+        """An unavailable requested model must fail visibly; e.g. preserve an old active round instead of silently downgrading."""
+
+        self.generator.model, self.generator.reasoning = "gpt-5-mini", "low"
+        original = self._round()
+        shown = self.db.practice_current(original)
+        self.generator.model, self.generator.reasoning = "gpt-6-luna", "medium"
+        self.generator.available = False
+        with self.assertRaises(ConnectionError):
+            self._round()
+        self.assertEqual(self.db.practice_active(), original)
+        self.assertEqual(self.db.practice_current(original)["choices"], shown["choices"])

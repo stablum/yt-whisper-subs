@@ -95,14 +95,16 @@ class PracticeDbMixin:
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql, (direction,))]
 
-    def practice_cached(self, lookup_id: int, direction: str, version: int) -> list[dict]:
-        """Choose the least-used approved variant; e.g. reuse cached rounds offline with shuffled options."""
+    def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:
+        """Reuse only the requested generation policy; e.g. a model upgrade cannot silently serve older choices."""
 
+        params = {"lookup_id": lookup_id, "direction": direction, **policy}
         with self._connect() as conn:
             rows = conn.execute("SELECT q.*,COUNT(p.shown_at) AS uses FROM practice_questions q "
                                 "LEFT JOIN practice_presentations p ON p.question_id=q.id "
-                                "WHERE q.lookup_id=? AND q.direction=? AND q.prompt_version=? AND q.flagged_at IS NULL "
-                                "GROUP BY q.id ORDER BY uses,q.id DESC", (lookup_id, direction, version))
+                                "WHERE q.lookup_id=:lookup_id AND q.direction=:direction AND q.prompt_version=:prompt_version "
+                                "AND q.model=:model AND q.reasoning=:reasoning AND q.flagged_at IS NULL "
+                                "GROUP BY q.id ORDER BY uses,q.id DESC", params)
             return [dict(row) for row in rows]
 
     def practice_cache(self, item: dict) -> dict:

@@ -99,6 +99,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | English translation provider | `openai` |
 | OpenAI translation model | `gpt-5-mini` |
 | OpenAI reasoning effort | `low` |
+| Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -1911,18 +1912,24 @@ answer: it quarantines that question, excludes all its uses from grading, and
 rebuilds the affected word's schedule from the remaining valid answers. Original
 answer evidence is retained. Unseen planned uses of that question are excluded too.
 
-Question generation reuses the existing `.env` key and default translation
-model/reasoning settings. It sends the selected Dutch term, saved English meaning,
+Question generation and its separate quality review use **`gpt-6-luna` with
+`medium` reasoning**, sharing the existing `.env` key. Practice has its own
+`DEFAULT_PRACTICE_MODEL` and `DEFAULT_PRACTICE_REASONING` defaults in `cfg.py`.
+It sends the selected Dutch term, saved English meaning,
 subtitle context, and explanatory note; it does not send video paths, URLs, or
 your review history. Requests use validated strict structured output and
 `store=false`. Preparation runs in the background in batches of at most six
 terms, with a 90-second timeout per request and no automatic HTTP retries. It
 requires internet and incurs normal API costs. There are two requests per new
 batch: generation and independent review. Approved variants are cached; repeated
-practice gradually builds a pool of up to three variants per context/direction,
-then rotates the least-used variant and reshuffles button order. If a new variant
+practice gradually builds a pool of up to three variants per context/direction
+and generation policy (model, reasoning, prompt version), then rotates the
+least-used variant and reshuffles button order. If a new variant
 cannot be generated, existing approved cached content can still be used offline.
-An uncached term cannot silently fall back to an unchecked question.
+An uncached term cannot silently fall back to an unchecked question or content
+from another model/reasoning policy. Previously generated questions and answer
+history remain stored; an existing round resumes its original questions, while
+new rounds use the current generation policy.
 
 Spacing uses the maintained [FSRS Python library](https://github.com/open-spaced-repetition/py-fsrs)
 with its default parameters and 90% target retention, deterministic intervals,
@@ -1989,6 +1996,8 @@ ratings, cached offline rounds, semantic rejection, atomic/idempotent answers,
 reporting and schedule replay, interruption/resume, native buttons, and multi-day
 analytics. Generation uses the existing Responses client and follows
 [OpenAI's structured output contract](https://developers.openai.com/api/docs/guides/structured-outputs).
+Cache-policy tests also verify that model/reasoning changes generate fresh
+questions without losing prior answers or silently falling back to another policy.
 
 ### Word Capture Verification
 
