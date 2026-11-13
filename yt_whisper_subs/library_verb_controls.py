@@ -45,6 +45,9 @@ class VerbOptions(QtWidgets.QWidget):
             self._focus.addItem(label, value)
         self._subject = QtWidgets.QComboBox()
         self._structure = QtWidgets.QComboBox()
+        self._source = QtWidgets.QComboBox()
+        for value, label in verbs.SOURCES.items():
+            self._source.addItem(label, value)
         for combo, choices in ((self._subject, verbs.SUBJECTS), (self._structure, verbs.STRUCTURES)):
             combo.addItem("All · adaptive", "all")
             for value, label in choices.items():
@@ -58,11 +61,12 @@ class VerbOptions(QtWidgets.QWidget):
             opts = verbs.Options()
         self._count.setValue(opts.count)
         self._early.setChecked(opts.include_early)
-        for combo, value in ((self._focus, opts.focus), (self._subject, opts.subject), (self._structure, opts.structure)):
+        for combo, value in ((self._focus, opts.focus), (self._subject, opts.subject),
+                             (self._structure, opts.structure), (self._source, opts.source)):
             combo.setCurrentIndex(combo.findData(value))
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        for label, widget in (("Focus", self._focus), ("Subject", self._subject), ("Situation", self._structure),
+        for label, widget in (("Verbs", self._source), ("Focus", self._focus), ("Subject", self._subject), ("Situation", self._structure),
                               ("Exercises", self._count)):
             form.addRow(label, widget)
         form.addRow(self._early)
@@ -101,12 +105,84 @@ class VerbOptions(QtWidgets.QWidget):
         """Read the domain contract from controls; e.g. early review is an explicit preference."""
 
         return verbs.Options(count=self._count.value(), focus=self._focus.currentData(), subject=self._subject.currentData(),
-                             structure=self._structure.currentData(), include_early=self._early.isChecked())
+                             structure=self._structure.currentData(), source=self._source.currentData(),
+                             include_early=self._early.isChecked())
 
     def set_active(self, active: bool) -> None:
         """Offer ending only for a live round; e.g. statistics alone does not create a round."""
 
         self._finish.setEnabled(active)
+
+
+class SentenceMeaning(QtWidgets.QWidget):
+    """Reveal cached source English in one action; e.g. the transformation answer stays hidden until submission."""
+
+    requested = QtCore.Signal()
+
+    def __init__(self) -> None:
+        """Keep a quiet inline disclosure beneath the source; e.g. keyboard and mouse share the same toggle."""
+
+        super().__init__()
+        self._text: str | None = None
+        self._button = QtWidgets.QToolButton()
+        self._button.setText("Show English · Alt+E")
+        self._button.setCheckable(True)
+        self._button.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
+        self._button.setAutoRepeat(False)
+        self._button.toggled.connect(self._toggle)
+        self._label = QtWidgets.QLabel()
+        self._label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        self._label.setWordWrap(True)
+        self._label.setStyleSheet("font-size: 15pt; color: #91d9ef;")
+        self._label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._button, 0, QtCore.Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self._label)
+        self.reset(None)
+
+    def reset(self, text: str | None) -> None:
+        """Hide meanings on every new task; e.g. the previous sentence's translation cannot leak into the next."""
+
+        self._text = text
+        self._button.setEnabled(True)
+        self._button.setChecked(False)
+        self._button.setText("Show English · Alt+E")
+        self._label.clear()
+        self._label.hide()
+
+    def toggle(self) -> None:
+        """Support a scoped keyboard shortcut without consuming typed letters; e.g. ordinary e stays in the answer."""
+
+        if self.isVisible() and self._button.isEnabled() and QtWidgets.QApplication.activePopupWidget() is None:
+            self._button.toggle()
+
+    def _toggle(self, shown: bool) -> None:
+        """Reveal immediately when available; e.g. newly prepared exercises need no extra API call."""
+
+        self._button.setText("Hide English · Alt+E" if shown else "Show English · Alt+E")
+        self._label.setVisible(shown)
+        if shown:
+            self._label.setText(self._text or "Translating…")
+            if not self._text:
+                self._button.setEnabled(False)
+                self.requested.emit()
+
+    def translated(self, text: str) -> None:
+        """Complete help without changing answer focus; e.g. a source translation can arrive during typing."""
+
+        self._text = text
+        self._button.setEnabled(True)
+        self._label.setText(text)
+
+    def failed(self, message: str) -> None:
+        """Offer a retry without losing typed input; e.g. failed sentence help cannot count as a wrong answer."""
+
+        self._button.setChecked(False)
+        self._button.setEnabled(True)
+        self._button.setText("Retry English · Alt+E")
+        self._label.setText(f"Could not translate: {message}")
+        self._label.show()
 
 
 class SentenceCard(controls.ContinueSurface):
@@ -120,6 +196,7 @@ class SentenceCard(controls.ContinueSurface):
         super().__init__()
         self._source = QtWidgets.QLabel()
         self._source.setStyleSheet("font-size: 23pt; font-weight: 600; color: #ffd166; padding: 12px 0;")
+        self.meaning = SentenceMeaning()
         self._target = QtWidgets.QLabel()
         self._target.setStyleSheet("font-size: 13pt; color: #c4a1ff;")
         self._instruction = QtWidgets.QLabel()
@@ -136,16 +213,19 @@ class SentenceCard(controls.ContinueSurface):
         self._verdict.setStyleSheet("font-size: 14pt; font-weight: 600;")
         self._correction = QtWidgets.QLabel()
         self._correction.setStyleSheet("font-size: 20pt; font-weight: 600; color: #83e5af;")
+        self._answer_english = QtWidgets.QLabel()
+        self._answer_english.setStyleSheet("font-size: 15pt; color: #91d9ef;")
         self._details = QtWidgets.QLabel()
         self._details.setStyleSheet("font-size: 12pt; color: #c4d5e9;")
         body = QtWidgets.QVBoxLayout(self)
         body.setContentsMargins(12, 12, 12, 12)
         body.setSpacing(16)
-        for label in (self._source, self._target, self._instruction, self._verdict, self._correction, self._details):
+        for label in (self._source, self._target, self._instruction, self._verdict, self._correction, self._answer_english, self._details):
             label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        for widget in (self._source, self._target, self._instruction, self.editor, self._verdict, self._correction, self._details):
+        for widget in (self._source, self.meaning, self._target, self._instruction, self.editor,
+                       self._verdict, self._correction, self._answer_english, self._details):
             body.addWidget(widget)
         body.addStretch()
 
@@ -154,11 +234,14 @@ class SentenceCard(controls.ContinueSurface):
 
         self.reset()
         self._source.setText(title)
+        self.meaning.hide()
+        self.meaning.reset(None)
         self._target.clear()
         self._instruction.setText(message)
         self.editor.hide()
         self._verdict.clear()
         self._correction.clear()
+        self._answer_english.clear()
         self._details.clear()
 
     def present(self, row: dict) -> None:
@@ -166,6 +249,8 @@ class SentenceCard(controls.ContinueSurface):
 
         self.reset()
         self._source.setText(row["content"]["source"])
+        self.meaning.reset(row["content"].get("source_english"))
+        self.meaning.show()
         self._target.setText(f"{row['lemma']}  ·  {verbs.target_label(row)}")
         self._instruction.setText(row["content"]["instruction"])
         self.editor.setPlainText(row["answer_text"] or "")
@@ -173,6 +258,7 @@ class SentenceCard(controls.ContinueSurface):
         self.editor.show()
         self._verdict.clear()
         self._correction.clear()
+        self._answer_english.clear()
         self._details.clear()
         if row["answer_text"] is None:
             self.editor.setFocus()
@@ -184,6 +270,7 @@ class SentenceCard(controls.ContinueSurface):
         grade = row["grade"]
         self._verdict.setText("Correct" if grade["correct"] else "Not quite · here is the correction")
         self._correction.setText(grade["corrected"])
+        self._answer_english.setText(grade["corrected_english"])
         details = [grade["explanation"]]
         for error in grade["errors"]:
             evidence = error["evidence"] or "missing text"
@@ -215,6 +302,10 @@ class VerbView(QtWidgets.QWidget):
         self.bar.setFixedHeight(6)
         self.bar.setTextVisible(False)
         self.card = SentenceCard()
+        self._english_key = QtGui.QShortcut(QtGui.QKeySequence("Alt+E"), self)
+        self._english_key.setContext(QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._english_key.setAutoRepeat(False)
+        self._english_key.activated.connect(self.card.meaning.toggle)
         self.action = controls.ContinueButton("Check sentence")
         self.action.setObjectName("primaryButton")
         self.action.setMinimumSize(220, 44)

@@ -216,7 +216,8 @@ class VerbTests(unittest.TestCase):
     def test_all_forms_include_conditionals_and_only_real_subjunctive_targets(self) -> None:
         """Constrain rare moods grammatically; e.g. there is no invented past subjunctive of lopen."""
 
-        catalog = [{"id": idx, "lemma": lemma, "family": family, "transitive": transitive}
+        catalog = [{"id": idx, "lemma": lemma, "family": family, "transitive": transitive,
+                    "starter": True, "lookups": 0, "clicks": 0, "videos": 0}
                    for idx, (lemma, family, transitive) in enumerate(verb_syllabus.CATALOG, 1)]
         rows = verb_syllabus.candidates(catalog, [], verbs.Options())
         self.assertEqual({row["tense"] for row in rows}, {tense.value for tense in verbs.Tense})

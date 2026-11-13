@@ -13,7 +13,6 @@ from PySide6 import QtCore
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_verb_controls as controls
-from yt_whisper_subs import library_verb_progress
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import verb_practice as verbs
@@ -46,20 +45,17 @@ class VerbPanel(QtWidgets.QWidget):
         self._engine = engine or verb_service.VerbService(db)
         self._run = _Run(session=db.verb_active())
         self._task: library_workers.BackgroundTask | None = None
+        self._help_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._view = controls.VerbView(db.setting("verb_options", ""))
-        self._progress = library_verb_progress.VerbProgress(db)
-        self._tabs = QtWidgets.QTabWidget()
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self._view)
-        self._tabs.addTab(scroll, "Rewrite sentences")
-        self._tabs.addTab(self._progress, "Verb insights")
-        self._tabs.currentChanged.connect(self._tab_changed)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._tabs)
+        layout.addWidget(scroll)
         self._view.action.clicked.connect(self._action)
         self._view.card.submitted.connect(self._submit)
+        self._view.card.meaning.requested.connect(self._english)
         self._view.card.editor.textChanged.connect(self._input_changed)
         self._view.card.continued.connect(lambda: self._advance(guard=True))
         self._view.flag.clicked.connect(self._report)
@@ -74,7 +70,7 @@ class VerbPanel(QtWidgets.QWidget):
     def _active(self) -> bool:
         """Protect against hidden question exposure; e.g. preparation may finish while viewing the calendar."""
 
-        return not self._run.closed and self.isVisible() and self._tabs.currentIndex() == 0
+        return not self._run.closed and self.isVisible()
 
     def activate(self) -> None:
         """Automatically open the first visible question once; e.g. switching tabs needs no Start round click."""
@@ -171,7 +167,7 @@ class VerbPanel(QtWidgets.QWidget):
             return
         self._run.session = result
         self._run.pending = True
-        self._idle("Your verb round is ready", "Return to Rewrite sentences to continue.", "Continue round")
+        self._idle("Your verb round is ready", "Return to Verbs to continue.", "Continue round")
         self.activate()
 
     def _advance(self, *, guard: bool = False) -> None:
@@ -179,6 +175,9 @@ class VerbPanel(QtWidgets.QWidget):
 
         if not self._active or not self._run.session or self._task:
             return
+        for task in self._help_tasks.values():
+            task.cancel()
+        self._help_tasks.clear()
         row = self._db.verb_current(self._run.session)
         if row is None:
             self._finish()
@@ -209,6 +208,40 @@ class VerbPanel(QtWidgets.QWidget):
 
         text = self._view.card.editor.toPlainText()
         self._view.action.setEnabled(not self._task and bool(text.strip()) and len(text) <= 2000)
+
+    def _english(self) -> None:
+        """Fetch supplemental help only for the source sentence; e.g. an older resumable round remains usable."""
+
+        if not self._active or not self._run.row:
+            return
+        question_id = self._run.row["question_id"]
+        if question_id in self._help_tasks:
+            return
+
+        def translate(report):
+            """Tag every result with its question; e.g. a late translation cannot overwrite the next sentence."""
+
+            try:
+                return {"question_id": question_id, "english": self._engine.english(question_id, report)}
+            except Exception as exc:
+                return {"question_id": question_id, "error": str(exc)}
+
+        task = library_workers.BackgroundTask(translate)
+        self._help_tasks[question_id] = task
+        task.signals.finished.connect(self._english_ready)
+        QtCore.QThreadPool.globalInstance().start(task)
+
+    def _english_ready(self, result: dict) -> None:
+        """Apply help without grading or extra exposure; e.g. hiding the tab while translating preserves the same attempt."""
+
+        self._help_tasks.pop(result["question_id"], None)
+        row = self._run.row
+        if self._run.closed or not row or row["question_id"] != result["question_id"]:
+            return
+        if "error" in result:
+            self._view.card.meaning.failed(result["error"])
+        else:
+            self._view.card.meaning.translated(result["english"])
 
     def _submit(self) -> None:
         """Persist a first attempt before starting correction; e.g. repeated Enter signals cannot duplicate activity."""
@@ -333,27 +366,12 @@ class VerbPanel(QtWidgets.QWidget):
         message = f"{result['correct']} correct · {result['wrong']} to revisit · {result['submitted']} submitted"
         self._idle("Verb round complete" if complete else "Verb round saved", message, "Another verb round")
 
-    def _tab_changed(self, idx: int) -> None:
-        """Keep diagnostics read-only and exposure visible; e.g. insights can open while generation runs."""
-
-        self._view.action.setDefault(False)
-        if idx == 1:
-            self._progress.refresh()
-        else:
-            self.activate()
-
     def _editing(self, editing: bool) -> None:
         """Suspend dialog action keys during setup; e.g. Enter in round length cannot advance an answered sentence."""
 
         self._view.action.setDefault(False)
         if not editing:
             QtCore.QTimer.singleShot(0, self, self.activate)
-
-    def show_practice(self) -> None:
-        """Route an explicit Practice action back to exercises; e.g. a reminder should not leave the learner on Insights."""
-
-        self._tabs.setCurrentIndex(0)
-        self.activate()
 
     def showEvent(self, event) -> None:
         """Paint before automatic preparation; e.g. hidden construction does not initiate API work."""
@@ -371,5 +389,8 @@ class VerbPanel(QtWidgets.QWidget):
         """Cancel cooperatively without awaiting HTTP; e.g. Escape closes immediately with the typed attempt durable."""
 
         self._run.closed = True
+        for task in self._help_tasks.values():
+            task.cancel()
+        self._help_tasks.clear()
         if self._task:
             self._task.cancel()

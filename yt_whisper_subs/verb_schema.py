@@ -10,6 +10,17 @@ CREATE TABLE IF NOT EXISTS verb_lemmas (
     family TEXT NOT NULL,
     transitive INTEGER NOT NULL CHECK(transitive IN (0,1))
 );
+CREATE TABLE IF NOT EXISTS verb_vocab_links (
+    lookup_id INTEGER PRIMARY KEY REFERENCES vocab_lookups(id),
+    verb_id INTEGER REFERENCES verb_lemmas(id),
+    source_stamp REAL NOT NULL,
+    model TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    prompt_version INTEGER NOT NULL,
+    evidence_json TEXT NOT NULL,
+    checked_at REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_verb_vocab_links ON verb_vocab_links(verb_id);
 CREATE TABLE IF NOT EXISTS verb_targets (
     id INTEGER PRIMARY KEY,
     verb_id INTEGER NOT NULL REFERENCES verb_lemmas(id),
@@ -30,6 +41,15 @@ CREATE TABLE IF NOT EXISTS verb_questions (
     flagged_at REAL
 );
 CREATE INDEX IF NOT EXISTS idx_verb_questions ON verb_questions(target_id,model,reasoning,prompt_version,flagged_at);
+CREATE TABLE IF NOT EXISTS verb_source_translations (
+    question_id INTEGER NOT NULL REFERENCES verb_questions(id),
+    model TEXT NOT NULL,
+    reasoning TEXT NOT NULL,
+    prompt_version INTEGER NOT NULL,
+    english TEXT NOT NULL CHECK(LENGTH(TRIM(english))>0),
+    created_at REAL NOT NULL,
+    PRIMARY KEY(question_id,model,reasoning,prompt_version)
+);
 CREATE TABLE IF NOT EXISTS verb_sessions (
     id TEXT PRIMARY KEY,
     options_json TEXT NOT NULL,

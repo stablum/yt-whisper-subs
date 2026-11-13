@@ -5,7 +5,6 @@ Example: `VerbService(db).start(Options(), report)` prepares a round without exp
 
 from __future__ import annotations
 
-import json
 import time
 
 from yt_whisper_subs import practice
@@ -14,6 +13,7 @@ from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_stats
 from yt_whisper_subs import verb_syllabus
+from yt_whisper_subs import verb_vocabulary
 
 
 class VerbService:
@@ -29,9 +29,13 @@ class VerbService:
         """Build the whole approved round before replacing another; e.g. failures preserve existing practice."""
 
         policy = practice.ReviewPolicy()
+        if opts.source != "starter":
+            verb_vocabulary.VocabularySync(self._db, self._provider).sync(report)
         candidates = verb_syllabus.candidates(self._db.verb_catalog(), self._db.verb_targets(), opts)
         if not candidates:
-            raise practice_service.NothingToPractice("no_questions", "These filters have no valid Dutch forms. Change the round options.")
+            message = ("No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
+                       if opts.source == "vocabulary" else "These filters have no valid Dutch forms. Change the round options.")
+            raise practice_service.NothingToPractice("no_questions", message)
         selected = verb_syllabus.Selector(policy).select(candidates, verb_stats.metrics(self._db), opts, time.time())
         if not selected:
             raise practice_service.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
@@ -110,6 +114,7 @@ class VerbService:
         report("Checking your sentence…")
         if exact:
             grade = verbs.Grade(confident=True, correct=True, corrected=row["answer_text"],
+                                corrected_english=content.get("answer_english") or self._provider.translate_sentence(row["answer_text"]),
                                 explanation=content["explanation"], errors=[],
                                 axes=[verbs.Axis(axis=axis, correct=True) for axis in verbs.AXES])
         else:
@@ -120,3 +125,19 @@ class VerbService:
         provenance = {"model": "approved_exact_match" if exact else self._provider.model,
                       "reasoning": "none" if exact else self._provider.reasoning, "grade_version": verb_generate.GRADE_VERSION}
         return self._db.verb_grade(presentation_id, grade, provenance)
+
+    def english(self, question_id: int, report) -> str:
+        """Reveal only an original sentence meaning, with persistent caching; e.g. an unfinished older round gets the same help."""
+
+        content = self._db.verb_question(question_id)
+        if text := content.get("source_english"):
+            return text
+        policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
+                  "prompt_version": verb_generate.TRANSLATION_VERSION}
+        if text := self._db.verb_translation(question_id, policy):
+            return text
+        report("Translating the original sentence…")
+        text = self._provider.translate_sentence(content["source"])
+        report("Saving sentence translation…")
+        self._db.verb_translation_save(question_id, text, policy)
+        return text

@@ -4,6 +4,7 @@ Example: `python -m unittest tests.test_library_verbs` sends real Qt events with
 """
 
 import os
+import json
 import tempfile
 import threading
 import time
@@ -192,10 +193,11 @@ class VerbFlowTests(unittest.TestCase):
         self._wait(lambda: self.panel._run.row is not None)
         self._answer(wrong=True)
         self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
-        self.panel._tabs.setCurrentIndex(1)
-        self.assertEqual(self.panel._progress._tables["Forms"].rowCount(), 4)
-        self.assertEqual(self.panel._progress._tables["Mistakes"].rowCount(), 1)
-        self.assertEqual(len(self.panel._progress._accuracy._series[0]["points"]), 1)
+        self.dialog._tabs.setCurrentIndex(1)
+        self.assertEqual(self.dialog._progress_tabs.currentIndex(), 1)
+        self.assertEqual(self.dialog._verb_progress._tables["Forms"].rowCount(), 4)
+        self.assertEqual(self.dialog._verb_progress._tables["Mistakes"].rowCount(), 1)
+        self.assertEqual(len(self.dialog._verb_progress._accuracy._series[0]["points"]), 1)
         self.dialog._tabs.setCurrentIndex(2)
         self.assertEqual(self.dialog._activity._data.answers, 1)
 
@@ -205,11 +207,11 @@ class VerbFlowTests(unittest.TestCase):
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
         first = self.panel._run.row["id"]
-        self.panel._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._progress_tabs.setCurrentIndex(1)
         self.dialog.show_page(True)
         self.dialog.show_page(False)
         self.assertEqual(self.dialog._tabs.currentIndex(), 3)
-        self.assertEqual(self.panel._tabs.currentIndex(), 0)
         self.assertEqual(self.panel._run.row["id"], first)
 
     def test_options_enter_cannot_continue_feedback(self) -> None:
@@ -259,6 +261,120 @@ class VerbFlowTests(unittest.TestCase):
         self.assertIsNotNone(saved["answer_text"])
         self.assertIsNone(saved["outcome"])
         self.assertEqual(practice_activity.read(self.db).answers, 1)
+
+    def test_source_english_reveal_is_instant_scoped_and_preserves_typing(self) -> None:
+        """Use cached English without revealing the transformed answer; e.g. Alt+E never consumes ordinary typed e."""
+
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        card = self.panel._view.card
+        card.editor.setPlainText("My draft")
+        card.editor.setFocus()
+        self.dialog.activateWindow()
+        self.app.processEvents()
+        QtTest.QTest.keyClick(card.editor, QtCore.Qt.Key.Key_E, QtCore.Qt.KeyboardModifier.AltModifier)
+        self.assertTrue(card.meaning._button.isChecked())
+        self.assertEqual(card.meaning._label.text(), self.panel._run.row["content"]["source_english"])
+        self.assertEqual(card.editor.toPlainText(), "My draft")
+        self.assertTrue(card.editor.hasFocus())
+        self.assertEqual(card._answer_english.text(), "")
+        self.assertEqual(card._correction.text(), "")
+        self.assertEqual(self.provider.translated, [])
+        self.assertEqual(practice_activity.read(self.db).answers, 0)
+        self.dialog._tabs.setCurrentIndex(2)
+        QtTest.QTest.keyClick(self.dialog, QtCore.Qt.Key.Key_E, QtCore.Qt.KeyboardModifier.AltModifier)
+        self.assertTrue(card.meaning._button.isChecked())
+
+    def test_feedback_includes_transformed_english_and_help_never_advances(self) -> None:
+        """Translate the corrected form after submission; e.g. showing the original meaning is independent of Continue."""
+
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
+        self._answer(wrong=True)
+        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        card = self.panel._view.card
+        self.assertEqual(card._answer_english.text(), self.panel._run.row["grade"]["corrected_english"])
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
+        card.meaning._button.click()
+        card.meaning._button.click()
+        self.assertEqual(self.panel._run.row["id"], first)
+        self.panel._view.action.click()
+        self.assertNotEqual(self.panel._run.row["id"], first)
+        self.assertFalse(card.meaning._button.isChecked())
+        self.assertEqual(card._answer_english.text(), "")
+
+    def test_existing_round_can_retry_source_translation_without_grading(self) -> None:
+        """Keep old immutable questions usable; e.g. a failed on-demand source translation leaves draft text intact."""
+
+        session = self.engine.start(verb_fixtures.options(1), lambda _: None)
+        row = self.db.verb_current(session)
+        content = row["content"].copy()
+        content.pop("source_english")
+        with self.db._connect() as conn:
+            conn.execute("UPDATE verb_questions SET body_json=? WHERE id=?", (json.dumps(content), row["question_id"]))
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        card = self.panel._view.card
+        card.editor.setPlainText("My unfinished sentence")
+        self.provider.available = False
+        card.meaning._button.click()
+        self._wait(lambda: not self.panel._help_tasks)
+        self.assertIn("Retry English", card.meaning._button.text())
+        self.assertEqual(card.editor.toPlainText(), "My unfinished sentence")
+        self.assertEqual(practice_activity.read(self.db).answers, 0)
+        self.provider.available = True
+        card.meaning._button.click()
+        self._wait(lambda: not self.panel._help_tasks)
+        self.assertEqual(card.meaning._label.text(), self.engine.english(row["question_id"], lambda _: None))
+        self.assertEqual(self.provider.translated, [content["source"], content["source"]])
+
+    def test_main_progress_offers_verbs_without_starting_an_exercise(self) -> None:
+        """Expose verb statistics at the normal Progress entry point; e.g. inspecting empty verb history costs no API request."""
+
+        self._open(activity=True)
+        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._progress_tabs.setCurrentIndex(1)
+        self.assertEqual(self.dialog._progress_tabs.tabText(1), "Verbs")
+        self.assertIn("0 submitted", self.dialog._verb_progress._totals.text())
+        self.assertEqual(self.provider.generated, 0)
+        self.assertIsNone(self.db.verb_active())
+
+    def test_late_source_english_cannot_overwrite_the_next_question(self) -> None:
+        """Tag and cancel background help at question boundaries; e.g. a slow translation is never shown beneath another sentence."""
+
+        session = self.engine.start(verb_fixtures.options(), lambda _: None)
+        row = self.db.verb_current(session)
+        content = row["content"].copy()
+        content.pop("source_english")
+        with self.db._connect() as conn:
+            conn.execute("UPDATE verb_questions SET body_json=? WHERE id=?", (json.dumps(content), row["question_id"]))
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def slow(_sentence):
+            """Hold one source translation; e.g. the learner submits and continues before it completes."""
+
+            entered.set()
+            release.wait(5)
+            return "Old sentence meaning"
+
+        self.provider.translate_sentence = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        self.panel._view.card.meaning._button.click()
+        self._wait(entered.is_set)
+        first = self.panel._run.row["id"]
+        self._answer()
+        self._wait(lambda: self.panel._run.row["outcome"] == "correct")
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
+        self.panel._view.action.click()
+        self.assertNotEqual(self.panel._run.row["id"], first)
+        release.set()
+        self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(5000))
+        self.app.processEvents()
+        self.assertFalse(self.panel._view.card.meaning._button.isChecked())
+        self.assertNotEqual(self.panel._view.card.meaning._label.text(), "Old sentence meaning")
 
 
 if __name__ == "__main__":

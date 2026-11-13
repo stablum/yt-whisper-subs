@@ -31,7 +31,7 @@ class VerbProgress(QtWidgets.QWidget):
         tabs = QtWidgets.QTabWidget()
         columns = {
             "Forms": ["Dimension", "Form", "Assessed", "Correct", "Mistakes", "Accuracy %"],
-            "Verbs": ["Verb", "Shown", "Submitted", "Graded", "Correct", "Mistakes", "Accuracy %", "Median seconds"],
+            "Verbs": ["Verb", "Source", "Saved clicks", "Videos", "Shown", "Submitted", "Graded", "Correct", "Mistakes", "Accuracy %", "Median seconds"],
             "Error types": ["Error", "Affected answers", "Occurrences"],
             "Mistakes": ["Date", "Verb", "Tense", "Subject", "Error", "Your text", "Correction", "Explanation"],
             "Rounds": ["Started", "Status", "Planned", "Submitted", "Correct", "To revisit"],
@@ -74,7 +74,8 @@ class VerbProgress(QtWidgets.QWidget):
         self._accuracy.set_series([{"label": "Full sentence", "color": "#c4a1ff", "points": points}])
         points = [(row["day"], row["attempts"], f"{row['attempts']} checked answers") for row in data["daily"]]
         self._activity.set_series([{"label": "Checked answers", "color": "#66d9ef", "points": points}])
-        names = {str(row["id"]): row["lemma"] for row in self._db.verb_catalog()}
+        catalog = {row["lemma"]: row for row in self._db.verb_catalog()}
+        names = {str(row["id"]): row["lemma"] for row in catalog.values()}
         labels = {"tense": verbs.TENSE_LABELS, "subject": verbs.SUBJECTS, "structure": verbs.STRUCTURES, "verb": names}
         forms = []
         for row in data["metrics"]:
@@ -82,10 +83,17 @@ class VerbProgress(QtWidgets.QWidget):
             forms.append([row["axis"].title(), label, row["attempts"], row["attempts"] - row["failures"],
                           row["failures"], round(row["accuracy"] * 100, 1)])
         self._fill("Forms", forms)
-        self._fill("Verbs", [[row["lemma"], row["shown"], row["submitted"], row["attempts"], row["correct"], row["attempts"] - row["correct"],
-                              round(row["correct"] / row["attempts"] * 100, 1) if row["attempts"] else "—",
-                              round(row["median_ms"] / 1000, 1) if row["median_ms"] is not None else "—"]
-                             for row in data["terms"]])
+        terms = []
+        for row in data["terms"]:
+            entry = catalog[row["lemma"]]
+            origin = "My vocabulary" if entry["lookups"] else ("Starter" if entry["starter"] else "Previous vocabulary")
+            if entry["starter"] and entry["lookups"]:
+                origin += " + starter"
+            accuracy = round(row["correct"] / row["attempts"] * 100, 1) if row["attempts"] else "—"
+            seconds = round(row["median_ms"] / 1000, 1) if row["median_ms"] is not None else "—"
+            terms.append([row["lemma"], origin, entry["clicks"], entry["videos"], row["shown"], row["submitted"],
+                          row["attempts"], row["correct"], row["attempts"] - row["correct"], accuracy, seconds])
+        self._fill("Verbs", terms)
         self._fill("Error types", [[row["kind"].replace("_", " "), row["answers"], row["errors"]] for row in data["kinds"]])
         self._fill("Mistakes", [[(datetime.fromtimestamp(row["answered_at"]).strftime("%d %b %Y %H:%M"), row["answered_at"]), row["lemma"],
                                  verbs.TENSE_LABELS[row["tense"]], verbs.SUBJECTS[row["subject"]], row["kind"],

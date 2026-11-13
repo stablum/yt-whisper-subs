@@ -32,16 +32,6 @@ class VerbDbMixin:
         with self._connect() as conn:
             return bool(conn.execute("SELECT EXISTS(SELECT 1 FROM verb_sessions)").fetchone()[0])
 
-    def verb_catalog(self) -> list[dict]:
-        """Seed the curated syllabus idempotently; e.g. verbs are usable before any subtitle words are captured."""
-
-        from yt_whisper_subs import verb_syllabus
-
-        with self._connect() as conn:
-            conn.executemany("INSERT OR IGNORE INTO verb_lemmas(lemma,family,transitive) VALUES(?,?,?)",
-                             verb_syllabus.CATALOG)
-            return [dict(row) for row in conn.execute("SELECT * FROM verb_lemmas ORDER BY id")]
-
     def verb_targets(self) -> list[dict]:
         """Load only targets encountered so far; e.g. do not materialize the entire grammar cross-product in SQL."""
 
@@ -70,6 +60,34 @@ class VerbDbMixin:
                 "AND q.model=:model AND q.reasoning=:reasoning AND q.prompt_version=:prompt_version "
                 "AND q.flagged_at IS NULL GROUP BY q.id ORDER BY uses,q.id DESC", {"target_id": target_id, **policy})
             return [dict(row) for row in rows]
+
+    def verb_question(self, question_id: int) -> dict:
+        """Read immutable question text for language help; e.g. never send the transformed answer to source translation."""
+
+        with self._connect() as conn:
+            row = conn.execute("SELECT body_json FROM verb_questions WHERE id=?", (question_id,)).fetchone()
+        if row is None:
+            raise ValueError("Unknown verb question")
+        return json.loads(row[0])
+
+    def verb_translation(self, question_id: int, policy: dict) -> str | None:
+        """Reuse an exact question/policy translation; e.g. repeated help does not spend another API request."""
+
+        with self._connect() as conn:
+            row = conn.execute("SELECT english FROM verb_source_translations WHERE question_id=:question_id "
+                               "AND model=:model AND reasoning=:reasoning AND prompt_version=:prompt_version",
+                               {"question_id": question_id, **policy}).fetchone()
+        return row[0] if row else None
+
+    def verb_translation_save(self, question_id: int, english: str, policy: dict) -> None:
+        """Keep supplemental help outside the immutable exercise snapshot; e.g. add a translation to an existing round."""
+
+        from yt_whisper_subs import verb_practice as verbs
+
+        english = verbs.SourceEnglish(english=english).english
+        with self._connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO verb_source_translations VALUES(?,?,?,?,?,?)",
+                         (question_id, policy["model"], policy["reasoning"], policy["prompt_version"], english, time.time()))
 
     def verb_cache(self, draft: verbs.Draft, verdict: verbs.Verdict, policy: dict) -> dict:
         """Store independently approved content and provenance; e.g. rejected questions never become playable."""

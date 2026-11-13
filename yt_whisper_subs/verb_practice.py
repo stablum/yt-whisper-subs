@@ -64,6 +64,7 @@ FOCUSES = {"all": "All forms · adaptive", "everyday": "Everyday tenses",
            "conditionals": "Conditionals · present and perfect",
            "subjunctives": "Subjunctives · present and past",
            "imperatives": "Imperatives"}
+SOURCES = {"all": "My vocabulary + starter verbs", "vocabulary": "My vocabulary only", "starter": "Starter verbs only"}
 AXES = ("tense", "subject", "structure", "verb")
 AxisName = Literal["tense", "subject", "structure", "verb"]
 ErrorKind = Literal["tense", "agreement", "verb_spelling", "auxiliary", "participle", "infinitive",
@@ -78,6 +79,7 @@ class Options(pd.BaseModel):
     focus: str = "all"
     subject: str = "all"
     structure: str = "all"
+    source: str = "all"
     include_early: bool = False
 
     @pd.model_validator(mode="after")
@@ -88,6 +90,8 @@ class Options(pd.BaseModel):
             raise ValueError("Unknown verb focus or subject")
         if self.structure not in {"all", *STRUCTURES}:
             raise ValueError("Unknown sentence structure")
+        if self.source not in SOURCES:
+            raise ValueError("Unknown verb source")
         return self
 
 
@@ -96,8 +100,10 @@ class Draft(practice.Content):
 
     target_id: int
     source: str = pd.Field(min_length=3, max_length=500)
+    source_english: str = pd.Field(min_length=3, max_length=700)
     instruction: str = pd.Field(min_length=5, max_length=700)
     answer: str = pd.Field(min_length=3, max_length=500)
+    answer_english: str = pd.Field(min_length=3, max_length=700)
     alternatives: list[str] = pd.Field(max_length=8)
     explanation: str = pd.Field(min_length=5, max_length=1000)
 
@@ -132,6 +138,59 @@ class Verdicts(practice.Content):
     verdicts: list[Verdict]
 
 
+class Lexeme(practice.Content):
+    """Normalize a saved occurrence into validated lexical facts; e.g. vergiste becomes zich vergissen."""
+
+    lookup_id: int
+    is_verb: bool
+    lemma: str = pd.Field(max_length=120)
+    family: Literal["regular", "strong", "irregular", "separable", "reflexive", "modal"] | None
+    transitive: bool | None
+    reason: str = pd.Field(min_length=3, max_length=700)
+
+    @pd.model_validator(mode="after")
+    def check(self) -> Lexeme:
+        """Require one usable infinitive for an accepted verb; e.g. noun homonyms remain excluded."""
+
+        self.lemma = " ".join(unicodedata.normalize("NFC", self.lemma).casefold().split())
+        words = self.lemma.split()
+        if self.is_verb:
+            valid = len(words) == 1 or (len(words) == 2 and words[0] == "zich")
+            if not valid or not any(char.isalpha() for char in self.lemma) or self.family is None or self.transitive is None:
+                raise ValueError("An accepted verb needs a dictionary infinitive and lexical metadata")
+            if self.family == "reflexive" and not self.lemma.startswith("zich "):
+                raise ValueError("Reflexive lemmas must include zich")
+        elif self.lemma or self.family is not None or self.transitive is not None:
+            raise ValueError("Rejected occurrences cannot supply a verb")
+        return self
+
+
+class Lexemes(practice.Content):
+    """Keep extraction batches bounded and ID-addressed; e.g. several clicked forms may identify one infinitive."""
+
+    verbs: list[Lexeme]
+
+
+class LexemeCheck(practice.Content):
+    """Independently audit lexical mapping and metadata; e.g. a noun reading cannot seed verb practice."""
+
+    lookup_id: int
+    valid: bool
+    reason: str = pd.Field(min_length=3, max_length=700)
+
+
+class LexemeChecks(practice.Content):
+    """Require a quality decision for every occurrence; e.g. missing audits are never treated as approval."""
+
+    verdicts: list[LexemeCheck]
+
+
+class SourceEnglish(practice.Content):
+    """Translate only the original source sentence; e.g. help never reveals the requested transformed answer."""
+
+    english: str = pd.Field(min_length=3, max_length=1000)
+
+
 class Axis(practice.Content):
     """Assess each tested dimension independently; e.g. a spelling error need not be a tense error."""
 
@@ -155,6 +214,7 @@ class Grade(practice.Content):
     confident: bool
     correct: bool
     corrected: str = pd.Field(min_length=3, max_length=500)
+    corrected_english: str = pd.Field(min_length=3, max_length=1000)
     explanation: str = pd.Field(min_length=3, max_length=1200)
     axes: list[Axis] = pd.Field(min_length=4, max_length=4)
     errors: list[Error] = pd.Field(max_length=12)

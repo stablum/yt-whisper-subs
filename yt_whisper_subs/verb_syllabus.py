@@ -38,6 +38,12 @@ def candidates(catalog: list[dict], states: list[dict], opts: verbs.Options) -> 
     saved = {(row["verb_id"], row["tense"], row["subject"], row["structure"]): row for row in states}
     result = []
     for verb in catalog:
+        if opts.source == "vocabulary" and not verb["lookups"]:
+            continue
+        if opts.source == "starter" and not verb["starter"]:
+            continue
+        if not verb["starter"] and not verb["lookups"]:
+            continue
         for tense in verbs.Tense:
             if not _in_focus(tense, opts.focus):
                 continue
@@ -103,9 +109,11 @@ class Selector:
                                         for axis in verbs.AXES]) for row in rows])
         recall = np.array([self._policy.recall(row["card_json"], now) for row in rows])
         rare = np.array([0.18 if row["tense"] in {"subjunctive", "subjunctive_past", "future_perfect"} else 1.0 for row in rows])
+        # Captured verbs receive w_vocab=3 plus bounded repetition evidence; starter-only verbs keep weight one.
+        vocab = np.array([3 + min(2, np.log1p(row["clicks"] + 2 * row["videos"])) if row["lookups"] else 1 for row in rows])
         _, inverse, counts = np.unique([row["tense"] for row in rows], return_inverse=True, return_counts=True)
         # Divide by n_tau, the number of targets in tense tau, so a large paradigm cannot drown out a small mood.
-        return (1 + 5 * difficulty) * (1 + 2 * (1 - recall)) * rare / counts[inverse]
+        return (1 + 5 * difficulty) * (1 + 2 * (1 - recall)) * rare * vocab / counts[inverse]
 
     def select(self, rows: list[dict], metrics: list[dict], opts: verbs.Options, now: float) -> list[dict]:
         """Prefer due weak targets with exploration and verb variety; e.g. mastered combinations wait until due."""

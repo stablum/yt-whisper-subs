@@ -85,7 +85,8 @@ The companion library is optimized for a second workflow:
     three-choice rounds, adaptive spaced review, and a native progress dashboard.
 19. Get a daily practice reminder with a persistent snooze and seven-day activity
     chart; browse answered-question counts in the practice activity calendar.
-20. Rewrite Dutch sentences for different subjects, tenses, moods and situations;
+20. Rewrite Dutch sentences using captured vocabulary verbs plus a starter set,
+    for different subjects, tenses, moods and situations;
     learn from precise corrections and adaptive verb-form review, including
     conditionals and the Dutch subjunctive.
 
@@ -107,6 +108,8 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
+| Verb sources | saved Dutch vocabulary plus 36 starter verbs; captured verbs receive extra priority |
+| Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -2141,9 +2144,21 @@ replacement. Read it, then use a separate **Continue →** click, **Enter**, or 
 click in the card background. Double-click and held-key guards prevent accidental
 advancement. **Shift+Enter** remains available for a line break while typing.
 
+Use **Show English** or **Alt+E** to reveal/hide the original sentence's meaning
+without submitting an answer or losing the draft/focus. The requested transformed
+answer and its English meaning stay hidden until submission. Feedback shows the
+corrected Dutch sentence **and its English translation**, so a change of subject,
+tense or situation is clear in both languages. Meanings are generated and audited
+with new questions, so revealing one is immediate and needs no additional request.
+An already-saved question without a source meaning gets background translation
+on its first reveal, cached separately without rewriting the original exercise;
+a failure offers **Retry English** and leaves the answer untouched.
+
 **Verb round options** configures **1–50 exercises** (default **10**), an adaptive
 mixed syllabus or a particular tense/mood, a subject, a sentence situation, and
-optional early review. **New verb round** applies the filters; impossible
+optional early review. Its **Verbs** selector offers **My vocabulary + starter
+verbs** (default), **My vocabulary only**, or **Starter verbs only**.
+**New verb round** applies the filters; impossible
 combinations produce an inline explanation. **Conditionals** and **Subjunctives**
 are separate focus groups, each including present/simple and perfect/past forms
 where Dutch actually has them. The window remembers whether you last practised
@@ -2151,10 +2166,27 @@ vocabulary or verbs; Activity remains directly accessible without starting eithe
 An unfinished round resumes automatically. Closing pauses immediately; **End this
 verb round** saves partial results without penalizing unanswered questions.
 
-The initial syllabus contains **36 curated verbs**, covering regular, strong,
-irregular, separable, reflexive and modal constructions. It works without captured
-subtitle vocabulary. The catalog is deliberately lexical, rather than treating
-every saved Dutch noun or fragment as a verb. Its grammar targets include:
+New rounds incorporate verbs from **saved Dutch vocabulary**, retaining the
+**36 curated starter verbs**. Ready, unambiguous word translations supply their
+dictionary infinitive and part of speech: clicked **liep** and **gelopen** both
+map to **lopen**, while complete separable/reflexive infinitives are retained.
+Nouns, adjective-only readings, ambiguous translations and other source languages
+are excluded. New or mixed-tag verb occurrences receive structured extraction and
+an independent contextual audit of infinitive, conjugation family and passive
+eligibility. Known, unambiguous dictionary lemmas reuse existing lexical facts.
+One repair is allowed for failed audits; unconfirmed mappings are held out and
+can be checked again after a day or when their source/model policy changes.
+The first sync can take time when many saved verbs need checking; later rounds
+reuse unchanged decisions and inspect newly translated vocabulary incrementally.
+
+Each accepted lookup links to one deduplicated verb, preserving the clicked
+occurrence and its original video/context references. Repeated clicks and
+distinct-video evidence boost that verb's priority without creating duplicate
+review targets. Existing rounds retain their original questions; choose **New
+verb round** to apply newly imported words or a changed source filter. Sentences
+are fresh exercises using those infinitives, rather than copies of subtitle cues.
+The starter set covers regular, strong, irregular, separable, reflexive and modal
+constructions and remains usable without captured vocabulary. Grammar targets include:
 
 - Present, simple past, present perfect, past perfect, future and future perfect.
 - Conditional (`zou/zouden + infinitive`) and conditional perfect
@@ -2193,8 +2225,10 @@ including verb-cluster variation and appropriate
 [prepositional-phrase extraposition](https://e-ans.ivdnt.org/topics/pid/ans2107020201lingtopic),
 are accepted rather than requiring literal equality with one example sentence.
 Generation sends the selected verb and local grammar requirements; correction
-additionally sends that exercise and your submitted sentence. Neither sends
-video paths, source URLs, your full vocabulary or past learning history.
+additionally sends that exercise and your submitted sentence. Lexical import
+checks send only the relevant saved Dutch occurrences, linguistic context and
+dictionary evidence, in batches of at most **12**, with separate extraction and
+audit calls. Neither path sends video paths, source URLs or past learning history.
 
 Every **first submitted attempt is committed before correction starts**. A
 timeout, cancellation or uncertain/contradictory correction leaves it pending,
@@ -2218,11 +2252,17 @@ weak dimensions and lower estimated retention increase sampling weight. Thus
 agreement trouble can increase practice with that subject across different verbs
 without automatically recording a tense failure. Selection avoids repeating an
 exact target within a round and varies verbs when the eligible pool permits.
+Captured verbs receive three times the base weight plus a bounded boost from
+repeated clicks and distinct videos, within the same due/new review policy.
 These are learning estimates, not a fluency score or a fitted personal model.
 
-**Verbs → Verb insights** shows daily full-sentence accuracy and checked-answer
+The main **Progress** page contains **Vocabulary** and **Verbs** statistics.
+After verb practice, opening Progress selects Verbs automatically; either view
+can also be opened without starting exercises or spending API requests.
+**Progress → Verbs** shows daily full-sentence accuracy and checked-answer
 counts, independently assessed tense/mood, subject, structure and verb accuracy,
-per-verb exposure/submission/success totals, error-type frequencies, exact mistake
+per-verb exposure/submission/success totals, vocabulary/starter origin, saved-click
+and video counts, error-type frequencies, exact mistake
 history and round results. Tables sort numerically and retain full hover text.
 Multiple errors in one answer remain distinct; only assessed valid answers enter
 accuracy denominators. **Activity** and its calendar combine both vocabulary
@@ -2231,9 +2271,12 @@ one shared study streak. A submitted verb answer also completes today's reminder
 even if correction is pending; users practising only verbs receive reminders once
 they have started a verb round.
 
-Eight related tables share the existing catalog SQLite database: `verb_lemmas`,
+Ten related tables share the existing catalog SQLite database: `verb_lemmas`,
 `verb_targets`, `verb_questions`, `verb_sessions`, `verb_presentations`,
-`verb_assessments`, `verb_errors`, and rebuildable `verb_states`. Unique target
+`verb_assessments`, `verb_errors`, rebuildable `verb_states`, `verb_vocab_links`,
+and `verb_source_translations`. Lookup links retain source-update stamps, local
+versus model-audited provenance, extraction/quality evidence and exact model policy.
+Stale or newly ambiguous lookups cannot keep feeding new rounds. Unique target
 keys, foreign keys, immutable question/grade snapshots, first-display/submission/
 grading timestamps, elapsed time, provider/prompt provenance and before/after
 FSRS state/review logs make the history auditable. Corrections, individual error
@@ -2243,7 +2286,7 @@ handles weighted selection; Polars derives metrics; native Qt renders the UI.
 Run the deterministic verb and integration tests without API calls:
 
 ```powershell
-python -m unittest tests.test_verbs tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_verbs tests.test_verb_vocabulary tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 They cover constrained mood/voice/person combinations, weak-form preference,
@@ -2251,6 +2294,11 @@ due/new/early selection, independent strict generation/audit/grading contracts,
 exact alternatives, pending-answer recovery, idempotency, specific error axes,
 reporting with schedule replay, typed Enter/Continue gestures, read-only analytics,
 shared reminders/calendar accounting and native progress rendering.
+Vocabulary integration tests additionally cover inflected-form deduplication,
+separable/reflexive mappings, source filters, captured-verb weighting, noun and
+ambiguity exclusion, cached audits, bounded repair and cooldown, stale-lookup
+races, immediate English help, scoped keyboard input, delayed-help isolation,
+transformed-sentence English and the main Progress statistics entry point.
 
 ### Word Capture Verification
 
@@ -2637,6 +2685,7 @@ High-level groups:
 | `yt_whisper_subs.verb_practice`, `verb_syllabus` | Typed transformation contracts, constrained Dutch syllabus and error-aware NumPy selection. |
 | `yt_whisper_subs.verb_generate`, `verb_service` | Independent linguistic generation/audit, bounded repairs, durable correction orchestration and approved-answer fast path. |
 | `yt_whisper_subs.verb_schema`, `verb_db`, `verb_stats` | Relational typed history, first-attempt transactions, schedule replay and Polars diagnostics. |
+| `yt_whisper_subs.verb_catalog_db`, `verb_vocabulary` | Deduplicated vocabulary-to-verb links, contextual lexical audits and incremental import policy. |
 | `yt_whisper_subs.library_verbs`, `library_verb_controls`, `library_verb_progress` | Native sentence input/correction, verb options and inspectable learning trends. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |

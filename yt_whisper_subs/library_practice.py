@@ -17,6 +17,7 @@ from yt_whisper_subs import library_practice_controls as controls
 from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_verbs
+from yt_whisper_subs import library_verb_progress
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
 
@@ -150,13 +151,18 @@ class PracticeDialog(QtWidgets.QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(page)
         self._progress = library_practice_progress.ProgressPanel(self._db)
+        self._verb_progress = library_verb_progress.VerbProgress(self._db)
+        self._progress_tabs = QtWidgets.QTabWidget()
+        self._progress_tabs.addTab(self._progress, "Vocabulary")
+        self._progress_tabs.addTab(self._verb_progress, "Verbs")
+        self._progress_tabs.currentChanged.connect(self._refresh_progress)
         self._activity = library_practice_activity.ActivityPanel(self._db)
         activity_scroll = QtWidgets.QScrollArea()
         activity_scroll.setWidgetResizable(True)
         activity_scroll.setWidget(self._activity)
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(scroll, "Practice")
-        self._tabs.addTab(self._progress, "Progress")
+        self._tabs.addTab(self._progress_tabs, "Progress")
         self._tabs.addTab(activity_scroll, "Activity")
         self._verbs = library_verbs.VerbPanel(self._db)
         self._verbs.activity_changed.connect(self.activity_changed)
@@ -443,7 +449,11 @@ class PracticeDialog(QtWidgets.QDialog):
         if idx in (0, 3):
             self._db.set_setting("practice_last_mode", "verbs" if idx == 3 else "vocabulary")
         if idx == 1:
-            self._progress.refresh()
+            mode = 1 if self._db.setting("practice_last_mode", "vocabulary") == "verbs" else 0
+            if self._progress_tabs.currentIndex() == mode:
+                self._refresh_progress()
+            else:
+                self._progress_tabs.setCurrentIndex(mode)
         elif idx == 2:
             self._activity.refresh()
         elif idx == 3:
@@ -462,7 +472,7 @@ class PracticeDialog(QtWidgets.QDialog):
         else:
             if self._db.setting("practice_last_mode", "vocabulary") == "verbs":
                 self._tabs.setCurrentIndex(3)
-                self._verbs.show_practice()
+                self._verbs.activate()
                 return
             self._tabs.setCurrentIndex(0)
             if not self._current and not self._task:
@@ -474,6 +484,14 @@ class PracticeDialog(QtWidgets.QDialog):
 
         super().showEvent(event)
         QtCore.QTimer.singleShot(0, self, self._ensure_round)
+
+    def _refresh_progress(self, *_args) -> None:
+        """Keep both kinds of learning in the main statistics page; e.g. show verb accuracy without starting a verb round."""
+
+        if self._progress_tabs.currentIndex() == 0:
+            self._progress.refresh()
+        else:
+            self._verb_progress.refresh()
 
     def reject(self) -> None:
         """Pause on close, Escape or application exit; e.g. cancel an in-flight preparation without awaiting HTTP."""
