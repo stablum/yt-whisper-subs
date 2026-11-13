@@ -15,6 +15,7 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_practice_progress
+from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
@@ -122,6 +123,8 @@ class AnswerButtons(QtWidgets.QWidget):
 class PracticeDialog(QtWidgets.QDialog):
     """Own the current interaction while persistence and generation remain separate strategies."""
 
+    activity_changed = QtCore.Signal()
+
     def __init__(self, service, parent=None, *, engine: practice_service.PracticeService | None = None) -> None:
         """Bind one native window to a catalog; e.g. review while a video continues playing."""
 
@@ -190,9 +193,14 @@ class PracticeDialog(QtWidgets.QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(page)
         self._progress = library_practice_progress.ProgressPanel(self._db)
+        self._activity = library_practice_activity.ActivityPanel(self._db)
+        activity_scroll = QtWidgets.QScrollArea()
+        activity_scroll.setWidgetResizable(True)
+        activity_scroll.setWidget(self._activity)
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(scroll, "Practice")
         self._tabs.addTab(self._progress, "Progress")
+        self._tabs.addTab(activity_scroll, "Activity")
         self._tabs.currentChanged.connect(self._tab_changed)
         outer = QtWidgets.QVBoxLayout(self)
         outer.addWidget(title)
@@ -307,6 +315,7 @@ class PracticeDialog(QtWidgets.QDialog):
             self._result.setText(f"Could not save your answer: {exc}")
             return
         self._current = row
+        self.activity_changed.emit()
         if row["outcome"] == "invalid":
             self._report()
             return
@@ -326,6 +335,7 @@ class PracticeDialog(QtWidgets.QDialog):
 
         if self._current:
             self._db.practice_flag(self._current["id"])
+            self.activity_changed.emit()
             self._current["outcome"] = "invalid"
             self._result.setText("Question reported and removed from future practice. It does not affect your score or review schedule.")
             self._flag.setEnabled(False)
@@ -353,6 +363,16 @@ class PracticeDialog(QtWidgets.QDialog):
 
         if idx == 1:
             self._progress.refresh()
+        elif idx == 2:
+            self._activity.refresh()
+
+    def show_page(self, activity: bool = False) -> None:
+        """Route menu and balloon actions to the same window; e.g. Practice now always selects the round tab."""
+
+        if activity and self._tabs.currentIndex() == 2:
+            self._activity.refresh()
+        else:
+            self._tabs.setCurrentIndex(2 if activity else 0)
 
     def closeEvent(self, event) -> None:
         """Leave active rounds resumable and cancel preparation; e.g. never wait for HTTP before closing."""

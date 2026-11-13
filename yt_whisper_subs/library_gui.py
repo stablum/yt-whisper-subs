@@ -164,9 +164,13 @@ class LibraryWindow(
         self._ui.catalog.filters.set_view(saved_view)
         self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
         self._tray = self._build_tray()
-        self._notifications = library_notifications.TrayNotifications(service.db, self._tray)
+        self._notifications = library_notifications.TrayNotifications(
+            service.db, self._tray, practice_window=lambda: self._practice_dialog,
+        )
         self._notifications.video_requested.connect(self._notification_video)
         self._notifications.settings_requested.connect(self._notification_settings)
+        self._notifications.practice.requested.connect(self._show_practice)
+        self._notifications.practice.settings_requested.connect(self._notification_settings)
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._notifications.stop)
         self._connect_actions()
         self._build_menus()
@@ -402,6 +406,7 @@ class LibraryWindow(
         vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
         practice_action = file_menu.addAction("Practice…", self._show_practice)
         practice_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+R"))
+        file_menu.addAction("Practice activity…", lambda: self._show_practice(True))
         file_menu.addSeparator()
         quit_action = file_menu.addAction("Quit")
         quit_action.triggered.connect(self._quit)
@@ -470,15 +475,19 @@ class LibraryWindow(
         self._vocabulary_dialog.raise_()
         self._vocabulary_dialog.activateWindow()
 
-    def _show_practice(self) -> None:
+    def _show_practice(self, activity: bool = False) -> None:
         """Reuse one adaptive practice window; e.g. open it from Vocabulary or the Library menu."""
 
+        if self._notifications.practice.visible:
+            self._notifications.practice.snooze()
         # Load scheduling, validation and analytics only when the learner opens Practice.
         from yt_whisper_subs import library_practice
 
         if self._practice_dialog is None:
             self._practice_dialog = library_practice.PracticeDialog(self._service, self)
             self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
+            self._practice_dialog.activity_changed.connect(self._notifications.practice.check)
+        self._practice_dialog.show_page(activity)
         self._practice_dialog.show()
         self._practice_dialog.raise_()
         self._practice_dialog.activateWindow()

@@ -23,8 +23,11 @@ from PySide6 import QtGui  # noqa: E402
 from PySide6 import QtTest  # noqa: E402
 from PySide6 import QtWidgets  # noqa: E402
 
+from tests import practice_fixtures  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
+from yt_whisper_subs import library_balloon  # noqa: E402
 from yt_whisper_subs import library_notifications as notifications  # noqa: E402
+from yt_whisper_subs import library_practice_reminders as reminders  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_views as views  # noqa: E402
@@ -398,8 +401,11 @@ class TrayNotificationTests(unittest.TestCase):
 
         prefs = notifications.NotificationPrefs(False, 120, 0, True)
         current = library_widgets.SettingsValues(4, "", True, False, 50, "", notifications=prefs)
+        current = current._replace(practice_reminders=reminders.ReminderPrefs(False, 6))
         dialog = library_widgets.SettingsDialog(current, self._window)
         self.assertEqual(dialog.values().notifications, prefs)
+        self.assertEqual(dialog.values().practice_reminders, current.practice_reminders)
+        self.assertFalse(dialog.findChild(QtWidgets.QSpinBox, "practiceSnoozeHours").isEnabled())
         enabled = dialog.findChild(QtWidgets.QCheckBox, "notifyEnabled")
         delay = dialog.findChild(QtWidgets.QSpinBox, "notifyDelay")
         self.assertFalse(delay.isEnabled())
@@ -418,11 +424,39 @@ class TrayNotificationTests(unittest.TestCase):
             self._window._edit_settings()
         self.assertEqual(notifications.NotificationPrefs.load(self._service.db), prefs)
         self.assertEqual(self._notifier._prefs, prefs)
+        self.assertEqual(reminders.ReminderPrefs.load(self._service.db), current.practice_reminders)
+        self.assertEqual(self._notifier.practice._prefs, current.practice_reminders)
         self._service.db.set_setting("notify_delay_seconds", "broken")
         self._service.db.set_setting("notify_duration_seconds", "999999999")
         loaded = notifications.NotificationPrefs.load(self._service.db)
         self.assertEqual(loaded.delay_seconds, 30)
         self.assertEqual(loaded.duration_seconds, 600)
+
+    def test_practice_activity_actions_reuse_the_existing_practice_window(self) -> None:
+        """Navigate from menu and tray without duplicate analytics windows; e.g. Practice now returns to the round tab."""
+
+        practice_fixtures.seed(self._service.db)
+        self._notifier.practice.check()
+        self.assertTrue(self._notifier.practice.visible)
+        menu = self._window.menuBar().actions()[0].menu()
+        activity = next(action for action in menu.actions() if action.text() == "Practice activity…")
+        activity.trigger()
+        self.assertFalse(self._notifier.practice.visible)
+        self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
+        dialog = self._window._practice_dialog
+        self.assertEqual(dialog._tabs.currentIndex(), 2)
+        dialog.resize(800, 600)
+        self._app.processEvents()
+        self.assertGreater(dialog._tabs.currentWidget().verticalScrollBar().maximum(), 0)
+        practice = next(action for action in menu.actions() if action.text() == "Practice…")
+        practice.trigger()
+        self.assertIs(self._window._practice_dialog, dialog)
+        self.assertEqual(dialog._tabs.currentIndex(), 0)
+        tray = next(action for action in self._window._tray_menu.actions() if action.text() == "Practice activity…")
+        tray.trigger()
+        self.assertIs(self._window._practice_dialog, dialog)
+        self.assertEqual(dialog._tabs.currentIndex(), 2)
+        dialog.close()
 
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:
         """Keep the entire list accessible instead of truncating a native toast.
@@ -456,7 +490,7 @@ class TrayNotificationTests(unittest.TestCase):
         )
         for anchor in anchors:
             with self.subTest(anchor=anchor):
-                rect = notifications.popup_rect(anchor, available, QtCore.QSize(440, 360))
+                rect = library_balloon.popup_rect(anchor, available, QtCore.QSize(440, 360))
                 self.assertTrue(available.contains(rect))
 
 

@@ -83,6 +83,8 @@ The companion library is optimized for a second workflow:
     review contextual English meanings, repeated clicks, and distinct-video counts.
 18. Practice saved Dutch vocabulary in either translation direction with challenging
     three-choice rounds, adaptive spaced review, and a native progress dashboard.
+19. Get a daily practice reminder with a persistent snooze and seven-day activity
+    chart; browse answered-question counts in the practice activity calendar.
 
 ## Important Defaults
 
@@ -157,6 +159,9 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Notification grouping delay | `30` seconds after channel discovery; adjustable from `0` to `3,600` |
 | Notification dismissal | `20` seconds, paused while hovering; `0` keeps it open until dismissed |
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
+| Daily practice reminders | enabled once eligible Dutch vocabulary exists; quiet after any submitted answer today |
+| Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
+| Practice activity amount | submitted questions in either direction, including mistakes; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -802,6 +807,44 @@ Changes take effect on Save and persist per output root in SQLite. Pending
 balloons are session-scoped. Settings uses a scrollable form so Save and Cancel
 remain reachable on smaller screens. These are application-owned Qt balloons,
 so Windows notification-center history and Focus Assist do not manage them.
+
+### Daily Practice Reminder
+
+Once you have eligible saved Dutch words, a **Time for practice** balloon reminds
+you on local calendar days when you have not submitted a practice answer. It
+checks shortly after startup and once per minute while the library is open or
+in the system tray, including after waking from sleep. Opening Practice alone
+does not count; one submitted answer, correct or wrong, stops that day's reminder.
+The balloon waits while the Practice window is active in the foreground, while another modal
+dialog is open, or while a pinned-video notification is waiting or visible.
+
+**Snooze 4h**, **×**, and **Escape** all postpone the reminder by the configured
+number of real hours. The absolute snooze deadline is saved in the catalog, so
+it survives closing/restarting the app and crossing midnight. There is no
+automatic timeout for this balloon. **Practice now**, **Activity & calendar**,
+and **Settings…** also snooze before opening their destination; opening a page
+does not invent practice credit. After the deadline, it can remind again if you
+still have not answered today. A saved snooze is not extended by application exit
+or by changing its duration in Settings; the new duration applies next dismissal.
+Opening Practice or Activity from the menu/tray also snoozes a visible reminder.
+
+When your last answer was two or more local calendar days ago, the balloon says
+how many days it has been. With no recorded answers, it invites your first
+practice without inventing an inactivity start date. The **last 7 days** chart
+shows questions answered, including zero days, with weekday/date labels and
+separate colors for Dutch → English and English → Dutch. It ends today rather
+than starting on Monday. The balloon and Activity page share the same counts.
+
+Under **Library → Settings → Daily practice reminder**, enable/disable reminders
+independently of pinned-channel notifications and set **Snooze for** from **1–72
+hours**, default **4**. Disabling closes an existing reminder immediately.
+The two notification types share their native frame, monitor-aware placement,
+and one visible slot. After its configured grouping delay, a video alert can
+temporarily replace a practice reminder without snoozing it. The reminder returns
+after the video alert closes, if still due. These reminders use local
+SQLite history and require no additional OpenAI calls or Windows scheduled task.
+They cannot appear while the library process is fully quit; the existing
+**Start with Windows** option can keep the library available in the tray.
 
 ### Responsiveness And Derived-State Safety
 
@@ -1988,6 +2031,26 @@ table keeps the two directions separate and includes the next review date.
 The **Rounds** table retains completed, stopped, and resumable round results,
 including direction, actual presentations, correct/wrong totals, accuracy,
 answer time, and start date.
+
+The **Activity** tab shows effort separately from accuracy: a zero-filled weekly
+bar chart, weekly/all-time answer totals, active-day counts, distinct words,
+current/longest study streaks, and a browsable monthly calendar. Each calendar
+tile shows that day's answer count; stronger teal indicates more answers.
+Select a date by mouse or keyboard to see questions answered, distinct words,
+both direction counts and valid-answer accuracy. Browse earlier months with the
+native calendar controls or use **Today** to return. Empty days remain visible.
+The page scrolls on smaller screens and refreshes its local date after midnight.
+Open it directly through **Library → Practice activity…**, the tray's
+**Practice activity…**, or **Activity & calendar** in the reminder. All paths
+reuse the same Practice window, alongside its existing Progress tab.
+
+Activity counts actual submitted choices, including wrong answers and answers
+to questions reported later. Reporting an unanswered question, merely showing
+one, or planning an unused round adds nothing. Reported questions still do not
+affect accuracy or scheduling. Habit streaks use these submitted-answer days
+consistently in Activity and Progress. Answer dates, not initial presentation
+dates, determine each day's activity. Charts count answers rather than elapsed
+window time, which can include interruptions.
 **Established** means at least three valid correct answers, a correct latest
 answer, and FSRS stability of at least 21 days; it is a descriptive threshold,
 not proof of mastery. Accuracy can fall when practice selects harder words.
@@ -2015,7 +2078,7 @@ modules load on demand so library startup and the CLI stay lean.
 Run the deterministic practice tests (no OpenAI calls):
 
 ```powershell
-python -m unittest tests.test_practice tests.test_library_practice -v
+python -m unittest tests.test_practice tests.test_library_practice tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 They exercise independent directions, due/new selection, lapse/uncertainty
@@ -2402,6 +2465,10 @@ High-level groups:
 | `yt_whisper_subs.library_channel_service` | Bounded channel-snapshot merging, live transitions, and automatic-download eligibility. |
 | `yt_whisper_subs.library_channels` | Sidebar subscription presentation and transient per-channel check animation. |
 | `yt_whisper_subs.library_notifications` | Persisted notification controls, pinned-discovery aggregation, tray positioning, and one dismissible scrollable balloon. |
+| `yt_whisper_subs.library_balloon` | Shared native notification frame, explicit dismissal, hover timer, and monitor-aware placement. |
+| `yt_whisper_subs.library_practice_reminders` | Daily eligibility, persisted snooze deadlines, reminder settings, and the practice balloon. |
+| `yt_whisper_subs.practice_activity` | Shared submitted-answer/day accounting, zero-filled rolling week, and habit streaks. |
+| `yt_whisper_subs.library_practice_activity` | Shared weekly bar chart and a native calendar with selected-day details. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
@@ -2575,6 +2642,12 @@ auto-downloads, baseline/archive/repeat suppression, cancellation after commit,
 fixed-delay ID deduplication, current pin membership, immediate deactivation,
 hidden-only delivery, dismissal and hover timers, exact title navigation,
 persisted settings, large scrollable batches, and multi-monitor tray positioning.
+Practice reminder tests cover snooze/restart persistence, close/Escape/stop,
+midnight, inactivity wording, first practice, shared balloon delivery without
+shortening aggregation, opening without completion credit, settings, and reuse
+of the existing Practice window. Activity tests exercise real SQLite answers,
+both directions, mistakes, idempotency, reported/unanswered questions, local
+answer dates, zero days, streaks, and native calendar navigation.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

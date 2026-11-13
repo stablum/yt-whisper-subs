@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import polars as pl
+
+from yt_whisper_subs import practice_activity
 
 
 def _aggregate(frame: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
@@ -29,7 +31,7 @@ def _history(db) -> tuple[list[dict], list[dict], list[dict]]:
     with db._connect() as conn:
         conn.execute("BEGIN")
         rows = [dict(row) for row in conn.execute(
-            "SELECT p.id,p.shown_at,p.answered_at,p.elapsed_ms,p.outcome,s.direction,l.word_id,"
+            "SELECT p.id,p.shown_at,p.answered_at,p.selected_idx,p.elapsed_ms,p.outcome,s.direction,l.word_id,"
             "json_extract(q.body_json,'$.surface') AS word "
             "FROM practice_presentations p JOIN practice_sessions s ON s.id=p.session_id "
             "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
@@ -49,10 +51,11 @@ def snapshot(db) -> dict:
     """Aggregate real presentations with explicit grading rules; e.g. compare both learning directions."""
 
     rows, states, rounds = _history(db)
+    activity = practice_activity.from_rows(rows)
     empty = {"shown": 0, "correct": 0, "wrong": 0, "invalid": 0, "attempts": 0, "accuracy": None, "median_ms": None}
     if not rows:
         return {"daily": [], "coverage": [], "terms": [], "rounds": rounds,
-                "totals": empty, "due": 0, "established": 0, "streak": 0}
+                "totals": empty, "due": 0, "established": 0, "streak": 0, "activity": activity}
     for row in rows:
         row["shown_day"] = datetime.fromtimestamp(row["shown_at"]).date().isoformat()
         instant = row["answered_at"] if row["outcome"] in {"correct", "wrong"} else row["shown_at"]
@@ -84,13 +87,7 @@ def snapshot(db) -> dict:
     calendar = pl.DataFrame({"day": pl.date_range(first, last, eager=True)})
     coverage = calendar.join(coverage, on="day", how="left").with_columns(pl.col("words").forward_fill())
     coverage = coverage.select(pl.col("day").dt.to_string("%Y-%m-%d"), "words").to_dicts()
-    graded = frame.filter(pl.col("graded"))
-    active_dates = {date.fromisoformat(day) for day in graded["day"].unique().to_list()}
-    cursor = date.today() if date.today() in active_dates else date.today() - timedelta(days=1)
-    streak = 0
-    while cursor in active_dates:
-        streak += 1
-        cursor -= timedelta(days=1)
     return {"daily": daily, "coverage": coverage, "terms": terms, "rounds": rounds,
             "totals": _aggregate(frame, ["all"]).drop("all").row(0, named=True),
-            "due": sum(row["due_at"] <= time.time() for row in states), "established": established, "streak": streak}
+            "due": sum(row["due_at"] <= time.time() for row in states), "established": established,
+            "streak": activity.streaks[0], "activity": activity}

@@ -6,6 +6,7 @@ Example: `notifier.add(videos)` merges a completed check without per-video alert
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 from typing import NamedTuple
 
 from PySide6 import QtCore
@@ -13,7 +14,8 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_db
-from yt_whisper_subs import library_theme
+from yt_whisper_subs import library_balloon
+from yt_whisper_subs import library_practice_reminders
 from yt_whisper_subs import library_types as types
 
 
@@ -117,27 +119,7 @@ class NotificationSettings(QtWidgets.QGroupBox):
         )
 
 
-def popup_rect(anchor: QtCore.QRect, available: QtCore.QRect, size: QtCore.QSize) -> QtCore.QRect:
-    """Keep a balloon beside the tray and inside its monitor's usable area.
-
-    Example: a top taskbar places the balloon below its icon.
-    """
-
-    width = min(size.width(), available.width())
-    height = min(size.height(), available.height())
-    x = available.right() - width - 8
-    y = available.bottom() - height - 8
-    if anchor.isValid():
-        x = anchor.center().x() - width // 2
-        y = anchor.top() - height - 8
-        if y < available.top():
-            y = anchor.bottom() + 8
-    x = max(available.left(), min(x, available.right() - width + 1))
-    y = max(available.top(), min(y, available.bottom() - height + 1))
-    return QtCore.QRect(x, y, width, height)
-
-
-class VideoBalloon(QtWidgets.QDialog):
+class VideoBalloon(library_balloon.TrayBalloon):
     """Display all titles by channel without stealing the current app's focus.
 
     Example: twenty uploads remain readable in one scrollable list.
@@ -145,7 +127,6 @@ class VideoBalloon(QtWidgets.QDialog):
 
     video_requested = QtCore.Signal(str)
     settings_requested = QtCore.Signal()
-    dismissed = QtCore.Signal()
 
     def __init__(self, parent: QtWidgets.QWidget) -> None:
         """Build a reusable nonmodal window with explicit dismissal controls.
@@ -153,31 +134,8 @@ class VideoBalloon(QtWidgets.QDialog):
         Example: Escape or the close button hides the same balloon.
         """
 
-        flags = QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.FramelessWindowHint
-        flags |= QtCore.Qt.WindowType.WindowStaysOnTopHint
-        super().__init__(parent, flags)
+        super().__init__("New videos from pinned channels", parent)
         self.setObjectName("videoBalloon")
-        self.setWindowTitle("New videos from pinned channels")
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setStyleSheet(library_theme.STYLE)
-        self._duration_ms = 0
-        self._timer = QtCore.QTimer(self)
-        self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.hide)
-        root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        heading = QtWidgets.QHBoxLayout()
-        self._heading = QtWidgets.QLabel()
-        self._heading.setObjectName("notificationHeading")
-        self._heading.setWordWrap(True)
-        close = QtWidgets.QToolButton()
-        close.setObjectName("dismissNotification")
-        close.setText("×")
-        close.setAccessibleName("Dismiss notification")
-        close.setToolTip("Dismiss notification (Escape)")
-        close.clicked.connect(self.hide)
-        heading.addWidget(self._heading, 1)
-        heading.addWidget(close)
         self._videos = QtWidgets.QTextBrowser()
         self._videos.setObjectName("notificationVideos")
         self._videos.setOpenLinks(False)
@@ -191,9 +149,8 @@ class VideoBalloon(QtWidgets.QDialog):
         actions.addWidget(settings)
         actions.addStretch()
         actions.addWidget(open_library)
-        root.addLayout(heading)
-        root.addWidget(self._videos, 1)
-        root.addLayout(actions)
+        self._root.addWidget(self._videos, 1)
+        self._root.addLayout(actions)
 
     def present(self, videos: list[types.VideoMeta], prefs: NotificationPrefs, anchor: QtCore.QRect) -> None:
         """Update the complete list in place and reset its reading time.
@@ -223,48 +180,7 @@ class VideoBalloon(QtWidgets.QDialog):
         width = min(440, available.width())
         self._videos.document().setTextWidth(max(1, width - 52))
         height = min(440, 132 + int(self._videos.document().size().height()))
-        self.setGeometry(popup_rect(anchor, available, QtCore.QSize(width, height)))
-        self._duration_ms = prefs.duration_seconds * 1000
-        self.show()
-        self._restart_timeout()
-
-    def _restart_timeout(self) -> None:
-        """Give the reader a full timeout after interaction or a list update.
-
-        Example: zero seconds leaves the balloon open until dismissed.
-        """
-
-        self._timer.stop()
-        if self._duration_ms and not self.underMouse():
-            self._timer.start(self._duration_ms)
-
-    def enterEvent(self, event: QtGui.QEnterEvent) -> None:
-        """Pause dismissal while the pointer is reading or scrolling the list.
-
-        Example: hovering keeps a large batch available.
-        """
-
-        self._timer.stop()
-        super().enterEvent(event)
-
-    def leaveEvent(self, event: QtCore.QEvent) -> None:
-        """Resume the full reading timeout after the pointer leaves.
-
-        Example: moving back to another application starts twenty seconds.
-        """
-
-        super().leaveEvent(event)
-        self._restart_timeout()
-
-    def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        """Release the displayed batch on every dismissal path.
-
-        Example: Escape and auto-dismiss both clear accumulated titles.
-        """
-
-        self._timer.stop()
-        self.dismissed.emit()
-        super().hideEvent(event)
+        self._present(anchor, QtCore.QSize(width, height), prefs.duration_seconds)
 
 
 class TrayNotifications(QtCore.QObject):
@@ -276,7 +192,10 @@ class TrayNotifications(QtCore.QObject):
     video_requested = QtCore.Signal(str)
     settings_requested = QtCore.Signal()
 
-    def __init__(self, db: library_db.LibraryDb, tray: QtWidgets.QSystemTrayIcon) -> None:
+    def __init__(
+        self, db: library_db.LibraryDb, tray: QtWidgets.QSystemTrayIcon, *,
+        practice_window: Callable[[], QtWidgets.QWidget | None] = lambda: None,
+    ) -> None:
         """Keep the queue, preferences, and popup tied to the tray's lifetime.
 
         Example: `TrayNotifications(service.db, tray)` belongs to its main window.
@@ -291,10 +210,28 @@ class TrayNotifications(QtCore.QObject):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._show_pending)
         self._balloon = VideoBalloon(tray.parent())
-        self._balloon.dismissed.connect(self._clear)
+        self._balloon.hidden.connect(self._clear)
         self._balloon.video_requested.connect(self._open_video)
         self._balloon.settings_requested.connect(self._open_settings)
         self._stopped = False
+        self._practice_window = practice_window
+        self.practice = library_practice_reminders.PracticeReminders(db, tray, self._practice_available)
+        self.practice.hidden.connect(self._resume_pending, QtCore.Qt.ConnectionType.QueuedConnection)
+        self._balloon.hidden.connect(self.practice.check, QtCore.Qt.ConnectionType.QueuedConnection)
+
+    def _resume_pending(self) -> None:
+        """Resume a balloon waiting for the shared slot without shortening aggregation; e.g. preserve its thirty seconds."""
+
+        if self._pending and not self._timer.isActive() and not self._balloon.isVisible():
+            self._show_pending()
+
+    def _practice_available(self) -> bool:
+        """Use a single visible slot and respect active practice; e.g. no reminder over a question or video alert."""
+
+        window = self._practice_window()
+        practicing = window is not None and window.isVisible() and window.isActiveWindow()
+        modal = QtWidgets.QApplication.activeModalWidget() is not None
+        return not (self._stopped or self._pending or self._balloon.isVisible() or practicing or modal)
 
     @QtCore.Slot(object)
     def add(self, videos: list[types.VideoMeta]) -> None:
@@ -338,6 +275,7 @@ class TrayNotifications(QtCore.QObject):
         """
 
         self._stopped = True
+        self.practice.stop()
         self._balloon.hide()
         self._clear()
 
@@ -361,6 +299,8 @@ class TrayNotifications(QtCore.QObject):
         """
 
         self._timer.stop()
+        if not self._pending:
+            return
         self._retain_pinned()
         owner = self._balloon.parentWidget()
         suppressed = self._prefs.only_hidden and owner.isVisible() and not owner.isMinimized()
@@ -368,6 +308,7 @@ class TrayNotifications(QtCore.QObject):
             self._balloon.hide()
             self._clear()
             return
+        self.practice.defer()
         self._balloon.present(list(self._pending.values()), self._prefs, self._tray.geometry())
 
     def _clear(self) -> None:

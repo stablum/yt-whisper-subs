@@ -1144,6 +1144,9 @@ class TrayLifetimeTests(unittest.TestCase):
                 Example: the tray action can connect without a service.
                 """
 
+            def _show_practice(self, activity: bool = False) -> None:
+                """Stand in for practice navigation; e.g. the tray owns both study actions."""
+
         window = Window()
         tray = window._build_tray()
 

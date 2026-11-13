@@ -14,6 +14,7 @@ from PySide6 import QtWidgets
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_notifications
+from yt_whisper_subs import library_practice_reminders
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_widgets
 from yt_whisper_subs import windows_startup
@@ -130,6 +131,7 @@ class WindowActionsMixin:
             self._service.db.watch_policy(),
             library_notifications.NotificationPrefs.load(self._service.db),
             playback=self._service.playback_prefs(),
+            practice_reminders=library_practice_reminders.ReminderPrefs.load(self._service.db),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -159,6 +161,8 @@ class WindowActionsMixin:
         self._service.db.set_watch_policy(values.watch)
         values.notifications.save(self._service.db)
         self._notifications.configure(values.notifications)
+        values.practice_reminders.save(self._service.db)
+        self._notifications.practice.configure(values.practice_reminders)
         self.refresh()
         if cookies_changed:
             released = self._service.db.reset_metadata_attempts()

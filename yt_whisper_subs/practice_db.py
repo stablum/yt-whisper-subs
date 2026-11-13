@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS practice_presentations (
 );
 CREATE INDEX IF NOT EXISTS idx_practice_presentations_question ON practice_presentations(question_id);
 CREATE INDEX IF NOT EXISTS idx_practice_presentations_date ON practice_presentations(shown_at);
+CREATE INDEX IF NOT EXISTS idx_practice_answers ON practice_presentations(answered_at)
+    WHERE answered_at IS NOT NULL AND selected_idx IS NOT NULL;
 CREATE TABLE IF NOT EXISTS practice_states (
     word_id INTEGER NOT NULL REFERENCES vocab_words(id),
     direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl')),
@@ -72,6 +74,11 @@ FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.session_id
 """
 
+_READY_LOOKUPS = """
+FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN vocab_clicks c ON c.lookup_id=l.id
+WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
+"""
+
 
 class PracticeDbMixin:
     """Keep immutable question/answer evidence alongside a rebuildable scheduling cache."""
@@ -79,11 +86,10 @@ class PracticeDbMixin:
     def practice_candidates(self, direction: str) -> list[dict]:
         """Use one translated Dutch occurrence per word; e.g. ignore English clicks and ambiguous translations."""
 
-        sql = """
+        sql = f"""
         WITH ready AS (
             SELECT l.*,c.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY c.clicked_at DESC,c.id DESC) AS n
-            FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN vocab_clicks c ON c.lookup_id=l.id
-            WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
+            {_READY_LOOKUPS}
         ), counts AS (
             SELECT l.word_id,COUNT(*) AS clicks,COUNT(DISTINCT c.source_id) AS videos
             FROM vocab_clicks c JOIN vocab_lookups l ON l.id=c.lookup_id GROUP BY l.word_id
@@ -94,6 +100,32 @@ class PracticeDbMixin:
         """
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql, (direction,))]
+
+    def practice_has_candidates(self) -> bool:
+        """Check eligibility without loading the scheduler; e.g. avoid reminders before any Dutch words are saved."""
+
+        with self._connect() as conn:
+            return bool(conn.execute(f"SELECT EXISTS(SELECT 1 {_READY_LOOKUPS})").fetchone()[0])
+
+    def practice_last_answer(self, until: float) -> float | None:
+        """Use the answer index for cheap reminder checks; e.g. reporting an unanswered question is not practice."""
+
+        with self._connect() as conn:
+            row = conn.execute("SELECT answered_at FROM practice_presentations "
+                               "WHERE answered_at IS NOT NULL AND selected_idx IS NOT NULL AND answered_at<=? "
+                               "ORDER BY answered_at DESC LIMIT 1", (until,)).fetchone()
+        return row[0] if row else None
+
+    def practice_activity_rows(self, since: float, until: float) -> list[dict]:
+        """Read real answer events in a bounded interval; e.g. seven days for a reminder's chart."""
+
+        with self._connect() as conn:
+            rows = conn.execute("SELECT p.answered_at,p.selected_idx,p.outcome,s.direction,l.word_id "
+                                "FROM practice_presentations p JOIN practice_sessions s ON s.id=p.session_id "
+                                "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
+                                "WHERE p.answered_at IS NOT NULL AND p.selected_idx IS NOT NULL "
+                                "AND p.answered_at>=? AND p.answered_at<=? ORDER BY p.answered_at,p.id", (since, until))
+            return [dict(row) for row in rows]
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:
         """Reuse only the requested generation policy; e.g. a model upgrade cannot silently serve older choices."""

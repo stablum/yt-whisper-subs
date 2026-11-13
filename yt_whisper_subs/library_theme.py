@@ -5,14 +5,15 @@ Example: `window.setStyleSheet(library_theme.STYLE)`.
 
 STYLE = """
 QMainWindow, QDialog { background: #171a21; color: #eef2f7; }
-QDialog#videoBalloon { border: 1px solid #4b617c; border-radius: 10px; }
+QDialog#videoBalloon, QDialog#practiceBalloon { border: 1px solid #4b617c; border-radius: 10px; }
 QLabel#notificationHeading { color: #ffffff; font-size: 11pt; font-weight: 600; }
 QTextBrowser#notificationVideos { background: transparent; border: 0; }
 QToolButton#dismissNotification { border: 0; padding: 2px 8px; font-size: 18pt; }
 QToolButton#dismissNotification:hover { background: #49292d; border-radius: 5px; }
 QScrollArea#settingsScroll, QWidget#settingsFields { background: #171a21; border: 0; }
-QGroupBox#notificationSettings { border: 1px solid #343b47; border-radius: 7px; margin-top: 12px; padding: 12px 8px 8px; }
-QGroupBox#notificationSettings::title { subcontrol-origin: margin; left: 10px; color: #f1c75b; }
+QGroupBox#notificationSettings, QGroupBox#practiceReminderSettings { border: 1px solid #343b47; border-radius: 7px; margin-top: 12px; padding: 12px 8px 8px; }
+QGroupBox#notificationSettings::title, QGroupBox#practiceReminderSettings::title { subcontrol-origin: margin; left: 10px; color: #f1c75b; }
+QLabel#practiceDay { font-size: 15pt; font-weight: 600; color: #ffffff; }
 QWidget { color: #eef2f7; font-family: "Segoe UI"; font-size: 10pt; }
 QFrame#sidebar { background: #11141a; border-right: 1px solid #2a303b; }
 QLabel#appTitle { font-size: 18pt; font-weight: 700; color: #ffffff; }

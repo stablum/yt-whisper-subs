@@ -17,6 +17,7 @@ from yt_whisper_subs import cfg
 from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_notifications
+from yt_whisper_subs import library_practice_reminders
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
 from yt_whisper_subs import openai_chapters
@@ -41,6 +42,7 @@ class SettingsValues(NamedTuple):
     watch: playback_progress.WatchPolicy = playback_progress.WatchPolicy()
     notifications: library_notifications.NotificationPrefs = library_notifications.NotificationPrefs()
     playback: playback.PlaybackPrefs = playback.PlaybackPrefs.defaults()
+    practice_reminders: library_practice_reminders.ReminderPrefs = library_practice_reminders.ReminderPrefs()
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -543,6 +545,8 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Windows", self._startup)
         self._notifications = library_notifications.NotificationSettings(values.notifications)
         form.addRow(self._notifications)
+        self._practice_reminders = library_practice_reminders.ReminderSettings(values.practice_reminders)
+        form.addRow(self._practice_reminders)
         note = QtWidgets.QLabel(
             "Scheduled checks run while the app is open or living in the system tray. "
             "Start with Windows is per-user and needs no administrator rights. "
@@ -592,4 +596,5 @@ class SettingsDialog(QtWidgets.QDialog):
             playback_progress.WatchPolicy(self._watched.value()),
             self._notifications.values(),
             playback=self._playback._replace(seek_seconds=self._seek.value()),
+            practice_reminders=self._practice_reminders.values(),
         )

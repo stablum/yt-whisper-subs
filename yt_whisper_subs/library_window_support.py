@@ -38,6 +38,8 @@ class WindowRuntimeMixin:
         tray.setToolTip("yt-whisper-subs YouTube Library")
         menu = QtWidgets.QMenu(self)
         menu.addAction("Show library", self._show_window)
+        menu.addAction("Practice…", self._show_practice)
+        menu.addAction("Practice activity…", lambda: self._show_practice(True))
         menu.addAction("Check now", self.check_now)
         menu.addSeparator()
         menu.addAction("Quit", self._quit)
