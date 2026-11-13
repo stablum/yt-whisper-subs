@@ -15,6 +15,16 @@ from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
 
 
+class NothingToPractice(ValueError):
+    """Distinguish normal empty states from failures; e.g. offer early review when everything is scheduled later."""
+
+    def __init__(self, reason: str, message: str) -> None:
+        """Keep a machine-readable reason beside the explanation; e.g. `not_due` becomes an actionable card."""
+
+        super().__init__(message)
+        self.reason = reason
+
+
 class PracticeService:
     """Select due vocabulary and assemble independently checked three-choice questions."""
 
@@ -24,17 +34,17 @@ class PracticeService:
         self._db = db
         self._generator = generator or practice_generate.QuestionGenerator()
 
-    def start(self, opts: practice.RoundOptions, report: Callable[[str], None]) -> str:
+    def start(self, opts: practice.RoundOptions, report: Callable[[str], None], *, cached_first: bool = False) -> str:
         """Generate bounded batches before committing a round; e.g. cancel safely while preparing choices."""
 
         policy = practice.ReviewPolicy()
         candidates = self._db.practice_candidates(opts.direction.value)
         if not candidates:
-            raise ValueError("No translated Dutch words are ready. Capture words in mpv and let their translations finish first.")
+            raise NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
         selected = policy.select(candidates, opts, time.time())
         if not selected:
-            raise ValueError("No terms are due yet. Try the other direction, capture more words, or enable early review.")
-        cached = self._ensure_content(selected, opts.direction, report)
+            raise NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
+        cached = self._ensure_content(selected, opts.direction, report, cached_first=cached_first)
         questions = []
         for row in selected:
             if not (question := cached.get(row["lookup_id"])):
@@ -46,9 +56,13 @@ class PracticeService:
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
         report(f"Ready · {len(questions)} distinct terms (requested {opts.count})")
+        if not questions:
+            raise NothingToPractice("no_questions", "No unambiguous questions are available for these words yet.")
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
 
-    def _ensure_content(self, selected: list[dict], direction: practice.Direction, report: Callable[[str], None]) -> dict:
+    def _ensure_content(
+        self, selected: list[dict], direction: practice.Direction, report: Callable[[str], None], *, cached_first: bool,
+    ) -> dict:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
@@ -59,7 +73,7 @@ class PracticeService:
             if variants:
                 cached[row["lookup_id"]] = variants[0]
             # Build a small rotating pool, then use the least-seen variant with new button ordering.
-            if not variants or (len(variants) < 3 and variants[0]["uses"] > 0):
+            if not variants or (not cached_first and len(variants) < 3 and variants[0]["uses"] > 0):
                 pending.append(row)
         for offset in range(0, len(pending), 6):
             batch = pending[offset:offset + 6]

@@ -28,6 +28,7 @@ from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_balloon  # noqa: E402
 from yt_whisper_subs import library_notifications as notifications  # noqa: E402
 from yt_whisper_subs import library_practice_reminders as reminders  # noqa: E402
+from yt_whisper_subs import practice_service  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_views as views  # noqa: E402
@@ -444,6 +445,7 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertFalse(self._notifier.practice.visible)
         self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
         dialog = self._window._practice_dialog
+        dialog._engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())
         self.assertEqual(dialog._tabs.currentIndex(), 2)
         dialog.resize(800, 600)
         self._app.processEvents()
@@ -457,6 +459,7 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertIs(self._window._practice_dialog, dialog)
         self.assertEqual(dialog._tabs.currentIndex(), 2)
         dialog.close()
+        QtCore.QThreadPool.globalInstance().waitForDone(5000)
 
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:
         """Keep the entire list accessible instead of truncating a native toast.

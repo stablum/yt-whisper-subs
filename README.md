@@ -1960,10 +1960,15 @@ onset is not inferred from sentence-level SRT timing.
 ### Adaptive Vocabulary Practice
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
-window. **Practice** is a learning exercise with feedback, rather than a timed
-exam or a proficiency score. Choose **Dutch → English** or **English → Dutch**
-and a round length of **1–50 distinct terms** (default 10). Each question offers
-three large buttons; `1`, `2`, and `3` provide the same keyboard access. The
+window. It opens directly on your saved question, or automatically prepares the
+first question using your saved settings. No **Start round** or **Resume round**
+click is required. **Practice** is a learning exercise with feedback, rather
+than a timed exam or a proficiency score. Use **Round options** to choose
+**Dutch → English** or **English → Dutch**, a length of **1–50 distinct terms**
+(default 10), and optional early review. **New round** applies those settings;
+it replaces an unfinished round while retaining its answer history. Occasional
+setup and **End this round** live in that popover instead of the question path.
+Each question offers three large buttons; `1`, `2`, and `3` select answers. The
 original Dutch sentence anchors the intended sense. In the reverse direction,
 the selected Dutch word is blanked everywhere in that sentence so it cannot
 reveal the answer. Correct answers always come from captured vocabulary.
@@ -1972,15 +1977,35 @@ terms or independently approved questions are available than requested, the
 round announces the actual count. English subtitle clicks remain reviewable in
 Vocabulary but are not Dutch practice targets.
 
+One click answers and reveals the correct choice. After reading the feedback,
+click an answer again, click the question/feedback area, or use **Continue →**,
+**Space**, or **Enter** to move on. Correct/wrong highlights remain clickable;
+numeric answer shortcuts turn off during feedback. A short guard using the
+system double-click interval prevents double-clicks from skipping feedback or
+answering the next word accidentally, and held continuation keys do not repeat.
+The answer targets retain their positions after answering. The compact verdict
+uses the correct answer in the current direction; **Why this answer?** expands
+the explanation and next-review date. Feedback does not advance automatically.
+
+At the configured round boundary, a concise result card offers **Another round**.
+If nothing is due, **You're all caught up** offers a deliberate, one-round
+**Practice early** action without changing your saved early-review preference.
+No saved vocabulary, unapproved questions, and preparation failures have separate
+inline states with a clear retry/resume action. The options popover remains
+available for changing direction or round length. Typing in it cannot answer or
+continue a question.
+
 OpenAI generates two challenging incorrect choices: false friends, close but
 distinct meanings, or confusable grammatical forms. It also explains each
 distinction. A separate review call checks the stored correct answer and rejects
 questions with valid synonyms, overlapping meanings, misleading explanations,
 or otherwise ambiguous choices. This is a quality filter, not a guarantee of
-linguistic correctness. **Report unclear question** works before or after an
+linguistic correctness. **Report question** works before or after an
 answer: it quarantines that question, excludes all its uses from grading, and
 rebuilds the affected word's schedule from the remaining valid answers. Original
 answer evidence is retained. Unseen planned uses of that question are excluded too.
+The reported question's choices and explanation are hidden, and one continuation
+moves past it without treating it as a mistake.
 
 Question generation and its separate quality review use **`gpt-6-luna` with
 `medium` reasoning**, sharing the existing `.env` key. Practice has its own
@@ -1996,6 +2021,10 @@ practice gradually builds a pool of up to three variants per context/direction
 and generation policy (model, reasoning, prompt version), then rotates the
 least-used variant and reshuffles button order. If a new variant
 cannot be generated, existing approved cached content can still be used offline.
+Automatic opening prioritizes existing approved choices rather than waiting to
+replenish variants; only uncached terms need generation in that path. Explicitly
+starting another round can replenish the rotating pool as before. Initial
+uncached preparation still shows an inline loading state and can take time.
 An uncached term cannot silently fall back to an unchecked question or content
 from another model/reasoning policy. Previously generated questions and answer
 history remain stored; an existing round resumes its original questions, while
@@ -2015,13 +2044,19 @@ unless **Include words not due yet** is enabled. Model predictions are estimates
 for this recognition exercise, not measured language fluency. FSRS uses its
 standard parameters; this release does not fit personalized model weights.
 
-Answers are committed immediately. Closing Practice leaves the round resumable
-with identical choices and no extra presentation count. **Resume round** continues
-it; **Start round** replaces an unfinished round while preserving all its history.
-**End round** stores partial results without treating unanswered questions as
-failures. Cancelling preparation waits cooperatively for the current API call;
-closing the window remains immediate. A failed preparation does not create a
-partial round, though already approved question content remains cached.
+Answers are committed immediately. Closing Practice or pressing **Escape** leaves
+an unfinished round resumable with identical choices and no extra presentation
+count; opening Practice resumes it automatically. **Round options → End this
+round** stores partial results without treating unanswered questions as failures.
+Cancelling preparation waits cooperatively for the current API call; closing or
+Escape remains immediate. A failed replacement preparation preserves the old
+round and offers **Resume round**. A failed preparation creates no partial round,
+though already approved question content remains cached.
+
+Opening **Activity** directly never starts generation or counts a question. If
+you switch to statistics during preparation, the ready round waits until the
+Practice page is visible before recording its first presentation. The round
+page scrolls for long context/explanations and smaller windows.
 
 The **Progress** tab shows daily accuracy separately for both directions,
 cumulative distinct words encountered, actual presentation and answer counts,
@@ -2078,7 +2113,7 @@ modules load on demand so library startup and the CLI stay lean.
 Run the deterministic practice tests (no OpenAI calls):
 
 ```powershell
-python -m unittest tests.test_practice tests.test_library_practice tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_practice tests.test_library_practice tests.test_practice_flow tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 They exercise independent directions, due/new selection, lapse/uncertainty
@@ -2469,6 +2504,7 @@ High-level groups:
 | `yt_whisper_subs.library_practice_reminders` | Daily eligibility, persisted snooze deadlines, reminder settings, and the practice balloon. |
 | `yt_whisper_subs.practice_activity` | Shared submitted-answer/day accounting, zero-filled rolling week, and habit streaks. |
 | `yt_whisper_subs.library_practice_activity` | Shared weekly bar chart and a native calendar with selected-day details. |
+| `yt_whisper_subs.library_practice_controls` | Round-options popover, answer targets, and guarded mouse/keyboard continuation. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
@@ -2648,6 +2684,11 @@ shortening aggregation, opening without completion credit, settings, and reuse
 of the existing Practice window. Activity tests exercise real SQLite answers,
 both directions, mistakes, idempotency, reported/unanswered questions, local
 answer dates, zero days, streaks, and native calendar navigation.
+Practice-flow tests cover automatic start/resume, stable answer positions,
+double-click and held-key guards, card/answer/keyboard continuation, explanations
+and reports, settings-entry isolation, round completion, healthy empty states,
+one-round early review, cached opening without variant replenishment, safe
+replacement failure, Escape cancellation, and no hidden exposures on analytics.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

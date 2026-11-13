@@ -56,6 +56,7 @@ class PracticeDialogTests(unittest.TestCase):
         dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=self.engine)
         dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+        dialog.show_page(True)
         dialog.show()
         self.app.processEvents()
         return dialog
@@ -73,22 +74,24 @@ class PracticeDialogTests(unittest.TestCase):
         """A wrong answer highlights feedback, reporting removes it, and Next presents a different word."""
 
         self.dialog._controls.count.setValue(3)
-        self.dialog._controls.start.click()
+        self.dialog.show_page(False)
         self._wait_ready()
         row = self.dialog._current
         wrong = (row["correct_idx"] + 1) % 3
         QtTest.QTest.mouseClick(self.dialog._answers._buttons[wrong], QtCore.Qt.MouseButton.LeftButton)
-        self.assertIn("A word to revisit", self.dialog._result.text())
-        self.assertTrue(all(not button.isEnabled() for button in self.dialog._answers._buttons))
+        self.assertIn("Not quite", self.dialog._result.text())
+        self.assertTrue(all(button.isEnabled() for button in self.dialog._answers._buttons))
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["wrong"], 1)
         self.dialog._flag.click()
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["attempts"], 0)
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
         self.dialog._next.click()
         self.assertNotEqual(row["word_id"], self.dialog._current["word_id"])
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
         self.dialog._unsure.setChecked(True)
         self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
         self.assertEqual(self.dialog._current["rating"], 2)
-        self.dialog._end.click()
+        self.dialog._controls.finish_requested.emit()
         self.assertIn("Round saved", self.dialog._prompt.text())
         self.dialog._tabs.setCurrentIndex(1)
         self.assertGreater(self.dialog._progress._terms.rowCount(), 0)
@@ -96,13 +99,14 @@ class PracticeDialogTests(unittest.TestCase):
     def test_close_and_resume_does_not_recount_the_current_question(self) -> None:
         """Closing the dialog preserves the round; e.g. continue later with the same button ordering."""
 
-        self.dialog._controls.start.click()
+        self.dialog.show_page(False)
         self._wait_ready()
         row = self.dialog._current
         self.dialog.close()
         self.app.processEvents()
         self.dialog = self._dialog()
-        self.dialog._controls.resume.click()
+        self.dialog.show_page(False)
+        self._wait_ready()
         self.assertEqual(self.dialog._current["id"], row["id"])
         self.assertEqual(self.dialog._current["choices"], row["choices"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
@@ -129,7 +133,7 @@ class PracticeDialogTests(unittest.TestCase):
             return generate(rows, direction)
 
         self.engine._generator.generate = blocked
-        self.dialog._controls.start.click()
+        self.dialog.show_page(False)
         deadline = time.monotonic() + 4
         while not entered.is_set() and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
@@ -164,12 +168,14 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(data["totals"]["attempts"], 48)
         self.dialog._controls.direction.setCurrentIndex(1)
         self.dialog._controls.early.setChecked(True)
-        self.dialog._controls.start.click()
+        self.dialog.show_page(False)
         self._wait_ready()
         self.assertNotIn(self.dialog._current["content"]["surface"], self.dialog._context.text())
         if folder := os.environ.get("YTW_PRACTICE_PREVIEW"):
             self.app.processEvents()
             self.assertTrue(self.dialog.grab().save(str(Path(folder) / "practice-round.png")))
+        self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
+        self.assertIn(self.dialog._current["content"]["surface"], self.dialog._result.text())
         self.dialog._tabs.setCurrentIndex(1)
         self.app.processEvents()
         self.assertEqual(self.dialog._progress._terms.rowCount(), 8)
