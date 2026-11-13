@@ -16,6 +16,7 @@ from yt_whisper_subs import library_practice_progress
 from yt_whisper_subs import library_practice_controls as controls
 from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import library_verbs
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
 
@@ -42,7 +43,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Restore a resumable round before preparing another; e.g. opening Activity alone does not start practice."""
 
         super().__init__(parent)
-        self.setWindowTitle("Practice · vocabulary that stays with you")
+        self.setWindowTitle("Practice · vocabulary and Dutch verbs")
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(1060, 900)
         self._db = service.db
@@ -157,6 +158,9 @@ class PracticeDialog(QtWidgets.QDialog):
         self._tabs.addTab(scroll, "Practice")
         self._tabs.addTab(self._progress, "Progress")
         self._tabs.addTab(activity_scroll, "Activity")
+        self._verbs = library_verbs.VerbPanel(self._db)
+        self._verbs.activity_changed.connect(self.activity_changed)
+        self._tabs.addTab(self._verbs, "Verbs")
         self._tabs.currentChanged.connect(self._tab_changed)
         outer = QtWidgets.QVBoxLayout(self)
         outer.addWidget(title)
@@ -435,10 +439,15 @@ class PracticeDialog(QtWidgets.QDialog):
     def _tab_changed(self, idx: int) -> None:
         """Keep analytics on demand and practice automatic; e.g. no hidden question exposure while inspecting stats."""
 
+        self._next.setDefault(idx == 0 and self._next.isEnabled())
+        if idx in (0, 3):
+            self._db.set_setting("practice_last_mode", "verbs" if idx == 3 else "vocabulary")
         if idx == 1:
             self._progress.refresh()
         elif idx == 2:
             self._activity.refresh()
+        elif idx == 3:
+            self._verbs.activate()
         else:
             self._ensure_round()
 
@@ -451,6 +460,10 @@ class PracticeDialog(QtWidgets.QDialog):
             else:
                 self._tabs.setCurrentIndex(2)
         else:
+            if self._db.setting("practice_last_mode", "vocabulary") == "verbs":
+                self._tabs.setCurrentIndex(3)
+                self._verbs.show_practice()
+                return
             self._tabs.setCurrentIndex(0)
             if not self._current and not self._task:
                 self._autostart_pending = True
@@ -466,6 +479,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Pause on close, Escape or application exit; e.g. cancel an in-flight preparation without awaiting HTTP."""
 
         self._closed = True
+        self._verbs.shutdown()
         if self._task:
             self._task.cancel()
         super().reject()

@@ -112,6 +112,17 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(data.gap, 1)
         self.assertEqual(data.streaks, (1, 1))
 
+    def test_typed_and_choice_answers_share_days_without_colliding_word_ids(self) -> None:
+        """Keep separate item namespaces in the shared calendar; e.g. verb ID 1 is not vocabulary word ID 1."""
+
+        rows = [
+            {"selected_idx": 0, "answered_at": self.now.timestamp(), "outcome": "correct", "word_id": 1, "direction": "nl_en"},
+            {"answer_text": "Jij werkt.", "answered_at": self.now.timestamp(), "outcome": None, "word_id": 1, "direction": "verbs"},
+        ]
+        data = practice_activity.from_rows(rows, now=self.now)
+        self.assertEqual((data.answers, data.distinct_words, data.distinct_verbs), (2, 1, 1))
+        self.assertEqual((data.week[-1].verbs, data.week[-1].graded), (1, 1))
+
 
 if __name__ == "__main__":
     unittest.main()

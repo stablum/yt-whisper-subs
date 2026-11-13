@@ -17,6 +17,7 @@ from PySide6 import QtTest
 from PySide6 import QtWidgets
 
 from tests import practice_fixtures
+from tests import verb_fixtures
 from tests import test_library_notifications as notification_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_notifications
@@ -27,6 +28,7 @@ from yt_whisper_subs import library_types
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import verb_service
 
 
 class ReminderTests(unittest.TestCase):
@@ -94,6 +96,28 @@ class ReminderTests(unittest.TestCase):
         self.now += 2 * 3600
         self.reminder.check()
         self.assertFalse(self.reminder.visible)
+
+    def test_verb_only_history_enables_reminders_and_submitted_verbs_complete_today(self) -> None:
+        """Share daily habit accounting across modes; e.g. a saved typed attempt suppresses reminders even if grading is pending."""
+
+        catalog = verb_fixtures.catalog(self.db)
+        engine = verb_service.VerbService(self.db, verb_fixtures.FakeVerbProvider())
+        with mock.patch.object(self.db, "practice_has_candidates", return_value=False):
+            self.reminder.check()
+            self.assertFalse(self.reminder.visible)
+            with mock.patch.object(self.db, "verb_catalog", return_value=catalog):
+                session = engine.start(verb_fixtures.options(1), lambda _: None)
+            self.reminder.check()
+            self.assertTrue(self.reminder.visible)
+            with mock.patch("yt_whisper_subs.verb_db.time.time", return_value=self.now):
+                row = self.db.verb_current(session)
+                self.db.verb_submit(row["id"], row["content"]["answer"], 1500)
+            self.reminder.check()
+            self.assertFalse(self.reminder.visible)
+            self.now += 2 * 86400
+            self.reminder.check()
+            self.assertTrue(self.reminder.visible)
+            self.assertIn("2 days", self.reminder._balloon._message.text())
 
     def test_close_escape_and_stop_have_distinct_persistence(self) -> None:
         """User dismissal snoozes but application shutdown does not; e.g. close using the window manager."""

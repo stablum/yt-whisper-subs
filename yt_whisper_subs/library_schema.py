@@ -8,6 +8,7 @@ from __future__ import annotations
 from yt_whisper_subs import library_job_db
 from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import practice_db
+from yt_whisper_subs import verb_schema
 
 
 _SCHEMA = f"""
@@ -75,6 +76,8 @@ CREATE TABLE IF NOT EXISTS video_history (
 {vocabulary_db.SCHEMA}
 
 {practice_db.SCHEMA}
+
+{verb_schema.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

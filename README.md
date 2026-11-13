@@ -85,6 +85,9 @@ The companion library is optimized for a second workflow:
     three-choice rounds, adaptive spaced review, and a native progress dashboard.
 19. Get a daily practice reminder with a persistent snooze and seven-day activity
     chart; browse answered-question counts in the practice activity calendar.
+20. Rewrite Dutch sentences for different subjects, tenses, moods and situations;
+    learn from precise corrections and adaptive verb-form review, including
+    conditionals and the Dutch subjunctive.
 
 ## Important Defaults
 
@@ -103,6 +106,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | OpenAI reasoning effort | `medium` |
 | Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
+| Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -159,9 +163,9 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Notification grouping delay | `30` seconds after channel discovery; adjustable from `0` to `3,600` |
 | Notification dismissal | `20` seconds, paused while hovering; `0` keeps it open until dismissed |
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
-| Daily practice reminders | enabled once eligible Dutch vocabulary exists; quiet after any submitted answer today |
+| Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet after any submitted answer today |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
-| Practice activity amount | submitted questions in either direction, including mistakes; seven-day bars and monthly calendar |
+| Practice activity amount | submitted vocabulary and verb answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -199,7 +203,7 @@ python .\yt_whisper_library.pyw
 ```
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
-`PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS,
+`PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS, NumPy,
 and Polars) when needed, and relaunches with `pythonw.exe`.
 The window first opens the saved catalog, then scans local downloads in the
 background and refreshes the results. An overdue channel check and the
@@ -536,10 +540,10 @@ The script expects to run on Windows. It uses:
 - `ffmpeg`
 - `mpv`
 - `PySide6-Essentials` for the native library GUI
-- `psutil` for pausing and resuming the complete owned pipeline process tree
-- `pydantic`, `fsrs`, and `polars` for validated practice content, spaced review,
+- `psutil` for pausing/resuming the owned pipeline process tree and distinguishing
+  live pipeline owners from crashed or reused process IDs
+- `pydantic`, `fsrs`, `numpy`, and `polars` for validated practice content, spaced review,
   and progress analytics in the native library
-  and distinguishing live pipeline owners from crashed or reused process IDs
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
@@ -810,7 +814,7 @@ so Windows notification-center history and Focus Assist do not manage them.
 
 ### Daily Practice Reminder
 
-Once you have eligible saved Dutch words, a **Time for practice** balloon reminds
+Once you have eligible saved Dutch words or have started a verb round, a **Time for practice** balloon reminds
 you on local calendar days when you have not submitted a practice answer. It
 checks shortly after startup and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
@@ -2072,14 +2076,14 @@ bar chart, weekly/all-time answer totals, active-day counts, distinct words,
 current/longest study streaks, and a browsable monthly calendar. Each calendar
 tile shows that day's answer count; stronger teal indicates more answers.
 Select a date by mouse or keyboard to see questions answered, distinct words,
-both direction counts and valid-answer accuracy. Browse earlier months with the
+both direction counts, verb submissions and valid-answer accuracy. Browse earlier months with the
 native calendar controls or use **Today** to return. Empty days remain visible.
 The page scrolls on smaller screens and refreshes its local date after midnight.
 Open it directly through **Library → Practice activity…**, the tray's
 **Practice activity…**, or **Activity & calendar** in the reminder. All paths
 reuse the same Practice window, alongside its existing Progress tab.
 
-Activity counts actual submitted choices, including wrong answers and answers
+Activity counts actual submitted choices and typed verb answers, including wrong answers and answers
 to questions reported later. Reporting an unanswered question, merely showing
 one, or planning an unused round adds nothing. Reported questions still do not
 affect accuracy or scheduling. Habit streaks use these submitted-answer days
@@ -2107,7 +2111,7 @@ activation is idempotent. Immutable JSON snapshots preserve the exact linguistic
 content, option order, and external scheduler state inside otherwise relational
 records. Analytics use Polars; charts render natively with Qt painting, without
 requiring QtCharts, a browser, or a server. The native launcher installs Pydantic,
-FSRS, and Polars into its managed environment automatically. These feature
+FSRS, NumPy, and Polars into its managed environment automatically. These feature
 modules load on demand so library startup and the CLI stay lean.
 
 Run the deterministic practice tests (no OpenAI calls):
@@ -2123,6 +2127,130 @@ analytics. Generation uses the existing Responses client and follows
 [OpenAI's structured output contract](https://developers.openai.com/api/docs/guides/structured-outputs).
 Cache-policy tests also verify that model/reasoning changes generate fresh
 questions without losing prior answers or silently falling back to another policy.
+
+### Verb Transformation Practice
+
+Open **Library → Practice… → Verbs**. The first sentence appears automatically
+after checked content is ready. Read the original Dutch sentence and the
+requested subject, tense/mood and situation, type the **whole transformed Dutch
+sentence**, then press **Enter** or **Check sentence**. Capitalization, ordinary
+sentence punctuation and extra spaces do not count as mistakes; verb spelling
+does. The answer stays hidden until submission. Feedback highlights the corrected
+sentence in green and explains specific mistakes with the original text and its
+replacement. Read it, then use a separate **Continue →** click, **Enter**, or a
+click in the card background. Double-click and held-key guards prevent accidental
+advancement. **Shift+Enter** remains available for a line break while typing.
+
+**Verb round options** configures **1–50 exercises** (default **10**), an adaptive
+mixed syllabus or a particular tense/mood, a subject, a sentence situation, and
+optional early review. **New verb round** applies the filters; impossible
+combinations produce an inline explanation. **Conditionals** and **Subjunctives**
+are separate focus groups, each including present/simple and perfect/past forms
+where Dutch actually has them. The window remembers whether you last practised
+vocabulary or verbs; Activity remains directly accessible without starting either.
+An unfinished round resumes automatically. Closing pauses immediately; **End this
+verb round** saves partial results without penalizing unanswered questions.
+
+The initial syllabus contains **36 curated verbs**, covering regular, strong,
+irregular, separable, reflexive and modal constructions. It works without captured
+subtitle vocabulary. The catalog is deliberately lexical, rather than treating
+every saved Dutch noun or fragment as a verb. Its grammar targets include:
+
+- Present, simple past, present perfect, past perfect, future and future perfect.
+- Conditional (`zou/zouden + infinitive`) and conditional perfect
+  (`zou/zouden + perfect infinitive`), including hypothetical `als` situations.
+- Present subjunctive (**aanvoegende wijs / conjunctief**) in established formal
+  wishes and expressions, and the formal past subjunctive **ware** of **zijn**.
+- Imperatives addressed to singular/plural you, person/number changes, polite
+  **u**, **jij** inversion, negatives, **omdat** clauses and compatible passives.
+- Auxiliary choice, participles, modal double infinitives, separable particles,
+  reflexives and the verb spelling required by each transformation.
+
+Dutch subjunctives mostly survive in fixed or formal expressions; this feature
+does not invent an Italian-style productive subjunctive paradigm. Formal/archaic
+contexts are labelled and explained, following
+[Taaladvies's description of the Dutch subjunctive](https://taaladvies.net/termen-aanvoegende-wijs/).
+Passive targets are restricted to transitive verbs; commands and subjunctives
+have their own allowed subject/structure combinations. Rare formal moods and
+future perfect receive less weight in mixed practice, but remain directly
+selectable. Selection balances tense families so large indicative paradigms do
+not crowd out the much smaller subjunctive syllabus.
+
+Generation, independent quality auditing and non-exact answer correction use the
+existing **`gpt-6-luna` / `medium`** practice policy and `.env` credentials.
+New content is generated in batches of up to **four** targets and independently
+audited. Rejected targets get **one bounded regeneration and audit**, with the
+rejection reason; unchecked content is never playable. A round can be shorter
+than requested if some targets still fail review; its status shows the actual
+count. Approved questions are cached by target/model/reasoning/prompt version.
+The normal opening path reuses approved content; explicit new rounds can build
+a rotating pool of up to three variants per target/policy. Requests have a **90-second timeout**,
+no automatic HTTP retries, strict JSON schemas and **`store=false`**. New batches
+need two requests, or four if regeneration is necessary. An exact match to a
+checked answer or alternative, after harmless text normalization, is graded
+locally; other answers need a remote correction request. Valid Dutch alternatives,
+including verb-cluster variation and appropriate
+[prepositional-phrase extraposition](https://e-ans.ivdnt.org/topics/pid/ans2107020201lingtopic),
+are accepted rather than requiring literal equality with one example sentence.
+Generation sends the selected verb and local grammar requirements; correction
+additionally sends that exercise and your submitted sentence. Neither sends
+video paths, source URLs, your full vocabulary or past learning history.
+
+Every **first submitted attempt is committed before correction starts**. A
+timeout, cancellation or uncertain/contradictory correction leaves it pending,
+with no invented failure or scheduling update. **Retry checking** grades that
+same saved sentence; repeated activation cannot add attempts. Pending submissions
+survive restart and already count toward daily effort. **Report exercise /
+correction** works before or after answering: it quarantines all uses of that
+question, removes their grading influence, and rebuilds the exact target's
+schedule from remaining valid reviews. Original sentences, submissions and
+correction evidence remain available. AI review is a quality filter rather than
+a guarantee; reporting remains available for disputed linguistic judgments.
+
+Adaptation combines FSRS at **90% target retention** for each
+**verb × tense/mood × subject × structure** with independently assessed error
+rates for those four dimensions. A wrong sentence receives **Again**, a correct
+one **Good**; typing speed does not affect mastery. Due reviews take priority,
+with one slot in five reserved for new targets while available. Future reviews
+wait unless early practice is enabled, and are used after due/new targets.
+The marginal error estimate uses a Beta prior, `(failures + 1)/(assessments + 3)`;
+weak dimensions and lower estimated retention increase sampling weight. Thus
+agreement trouble can increase practice with that subject across different verbs
+without automatically recording a tense failure. Selection avoids repeating an
+exact target within a round and varies verbs when the eligible pool permits.
+These are learning estimates, not a fluency score or a fitted personal model.
+
+**Verbs → Verb insights** shows daily full-sentence accuracy and checked-answer
+counts, independently assessed tense/mood, subject, structure and verb accuracy,
+per-verb exposure/submission/success totals, error-type frequencies, exact mistake
+history and round results. Tables sort numerically and retain full hover text.
+Multiple errors in one answer remain distinct; only assessed valid answers enter
+accuracy denominators. **Activity** and its calendar combine both vocabulary
+directions with a purple **Verbs** series, separate distinct-word/verb counts and
+one shared study streak. A submitted verb answer also completes today's reminder,
+even if correction is pending; users practising only verbs receive reminders once
+they have started a verb round.
+
+Eight related tables share the existing catalog SQLite database: `verb_lemmas`,
+`verb_targets`, `verb_questions`, `verb_sessions`, `verb_presentations`,
+`verb_assessments`, `verb_errors`, and rebuildable `verb_states`. Unique target
+keys, foreign keys, immutable question/grade snapshots, first-display/submission/
+grading timestamps, elapsed time, provider/prompt provenance and before/after
+FSRS state/review logs make the history auditable. Corrections, individual error
+rows, axis assessments and schedule changes commit in one transaction. NumPy
+handles weighted selection; Polars derives metrics; native Qt renders the UI.
+
+Run the deterministic verb and integration tests without API calls:
+
+```powershell
+python -m unittest tests.test_verbs tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+```
+
+They cover constrained mood/voice/person combinations, weak-form preference,
+due/new/early selection, independent strict generation/audit/grading contracts,
+exact alternatives, pending-answer recovery, idempotency, specific error axes,
+reporting with schedule replay, typed Enter/Continue gestures, read-only analytics,
+shared reminders/calendar accounting and native progress rendering.
 
 ### Word Capture Verification
 
@@ -2505,6 +2633,11 @@ High-level groups:
 | `yt_whisper_subs.practice_activity` | Shared submitted-answer/day accounting, zero-filled rolling week, and habit streaks. |
 | `yt_whisper_subs.library_practice_activity` | Shared weekly bar chart and a native calendar with selected-day details. |
 | `yt_whisper_subs.library_practice_controls` | Round-options popover, answer targets, and guarded mouse/keyboard continuation. |
+| `yt_whisper_subs.practice_ai` | Shared strict Responses transport and dedicated practice model policy. |
+| `yt_whisper_subs.verb_practice`, `verb_syllabus` | Typed transformation contracts, constrained Dutch syllabus and error-aware NumPy selection. |
+| `yt_whisper_subs.verb_generate`, `verb_service` | Independent linguistic generation/audit, bounded repairs, durable correction orchestration and approved-answer fast path. |
+| `yt_whisper_subs.verb_schema`, `verb_db`, `verb_stats` | Relational typed history, first-attempt transactions, schedule replay and Polars diagnostics. |
+| `yt_whisper_subs.library_verbs`, `library_verb_controls`, `library_verb_progress` | Native sentence input/correction, verb options and inspectable learning trends. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |
 | `yt_whisper_subs.library_progress` | Native pipeline and watched progress-bar rendering. |
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |

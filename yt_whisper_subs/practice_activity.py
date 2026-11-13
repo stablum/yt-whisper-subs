@@ -21,6 +21,8 @@ class Day(pd.BaseModel):
     words: int = 0
     nl_en: int = 0
     en_nl: int = 0
+    verbs: int = 0
+    verb_lemmas: int = 0
 
 
 class Activity(pd.BaseModel):
@@ -30,6 +32,7 @@ class Activity(pd.BaseModel):
     days: list[Day] = pd.Field(default_factory=list)
     last_day: date | None = None
     distinct_words: int = 0
+    distinct_verbs: int = 0
 
     @property
     def week(self) -> list[Day]:
@@ -72,22 +75,28 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
     answers = []
     for row in rows:
         stamp = row.get("answered_at")
-        if row.get("selected_idx") is None or stamp is None or stamp > now.timestamp():
+        submitted = row.get("selected_idx") is not None or row.get("answer_text") is not None
+        if not submitted or stamp is None or stamp > now.timestamp():
             continue
         answers.append({
             "day": datetime.fromtimestamp(stamp, now.tzinfo).date(), "word_id": row["word_id"],
             "correct": row["outcome"] == "correct", "graded": row["outcome"] in {"correct", "wrong"},
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
+            "verbs": row["direction"] == "verbs",
         })
     if not answers:
         return Activity(today=now.date())
     frame = pl.DataFrame(answers)
     days = frame.group_by("day").agg(
         pl.len().alias("answers"), pl.col("correct").sum(), pl.col("graded").sum(),
-        pl.col("word_id").n_unique().alias("words"), pl.col("nl_en").sum(), pl.col("en_nl").sum(),
+        pl.col("word_id").filter(~pl.col("verbs")).n_unique().alias("words"),
+        pl.col("word_id").filter(pl.col("verbs")).n_unique().alias("verb_lemmas"),
+        pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
     ).sort("day")
     return Activity(today=now.date(), last_day=frame["day"].max(),
-                    distinct_words=frame["word_id"].n_unique(), days=[Day(**row) for row in days.to_dicts()])
+                    distinct_words=frame.filter(~pl.col("verbs"))["word_id"].n_unique(),
+                    distinct_verbs=frame.filter(pl.col("verbs"))["word_id"].n_unique(),
+                    days=[Day(**row) for row in days.to_dicts()])
 
 
 def read(db, *, now: datetime | None = None, since: date | None = None) -> Activity:

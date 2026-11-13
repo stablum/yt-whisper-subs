@@ -6,6 +6,7 @@ Example: `ProgressPanel(db).refresh()` redraws both practice directions from sav
 from __future__ import annotations
 
 from datetime import datetime
+import math
 
 from PySide6 import QtCore
 from PySide6 import QtGui
@@ -69,7 +70,8 @@ class TrendChart(QtWidgets.QWidget):
         dates = sorted({point[0] for point in points})
         stamps = {day: datetime.fromisoformat(day).toordinal() for day in dates}
         lo, hi = min(stamps.values()), max(stamps.values())
-        top = 100 if self._percent else max(1, max(point[1] for point in points))
+        maximum = max(point[1] for point in points)
+        top = 100 if self._percent else max(2, math.ceil(maximum / 2) * 2)
         for ratio in (0, 0.5, 1):
             y = plot.bottom() - plot.height() * ratio
             painter.setPen(QtGui.QColor("#333c4a"))

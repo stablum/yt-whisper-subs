@@ -51,11 +51,11 @@ def snapshot(db) -> dict:
     """Aggregate real presentations with explicit grading rules; e.g. compare both learning directions."""
 
     rows, states, rounds = _history(db)
-    activity = practice_activity.from_rows(rows)
+    activity = practice_activity.read(db)
     empty = {"shown": 0, "correct": 0, "wrong": 0, "invalid": 0, "attempts": 0, "accuracy": None, "median_ms": None}
     if not rows:
         return {"daily": [], "coverage": [], "terms": [], "rounds": rounds,
-                "totals": empty, "due": 0, "established": 0, "streak": 0, "activity": activity}
+                "totals": empty, "due": 0, "established": 0, "streak": activity.streaks[0], "activity": activity}
     for row in rows:
         row["shown_day"] = datetime.fromtimestamp(row["shown_at"]).date().isoformat()
         instant = row["answered_at"] if row["outcome"] in {"correct", "wrong"} else row["shown_at"]

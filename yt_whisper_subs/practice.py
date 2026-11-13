@@ -100,10 +100,9 @@ class ReviewPolicy:
         return self._scheduler.to_json()
 
     @staticmethod
-    def new_card(word_id: int, direction: str, now: float) -> str:
+    def new_card(card_id: int, now: float) -> str:
         """Give review logs a stable distinct skill ID; e.g. future fitting never merges two simultaneous cards."""
 
-        card_id = word_id * 2 + (direction == Direction.EN_NL.value)
         return fsrs.Card(card_id=card_id, due=datetime.fromtimestamp(now, timezone.utc)).to_json()
 
     def recall(self, card_json: str | None, now: float) -> float:

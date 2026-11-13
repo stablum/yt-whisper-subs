@@ -189,7 +189,7 @@ class PracticeReminders(QtCore.QObject):
             deadline = 0
         if (math.isfinite(deadline) and now < deadline) or not self._available():
             return
-        if not self._db.practice_has_candidates():
+        if not self._db.practice_has_candidates() and not self._db.verb_has_history():
             return
         key = (today, last, self._prefs)
         if self.visible and self._display_key == key:

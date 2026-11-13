@@ -111,20 +111,27 @@ class PracticeDbMixin:
         """Use the answer index for cheap reminder checks; e.g. reporting an unanswered question is not practice."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT answered_at FROM practice_presentations "
+            row = conn.execute("SELECT MAX(stamp) FROM (SELECT (SELECT answered_at FROM practice_presentations "
                                "WHERE answered_at IS NOT NULL AND selected_idx IS NOT NULL AND answered_at<=? "
-                               "ORDER BY answered_at DESC LIMIT 1", (until,)).fetchone()
-        return row[0] if row else None
+                               "ORDER BY answered_at DESC LIMIT 1) AS stamp UNION ALL "
+                               "SELECT (SELECT answered_at FROM verb_presentations WHERE answered_at IS NOT NULL "
+                               "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1))",
+                               (until, until)).fetchone()
+        return row[0]
 
     def practice_activity_rows(self, since: float, until: float) -> list[dict]:
         """Read real answer events in a bounded interval; e.g. seven days for a reminder's chart."""
 
         with self._connect() as conn:
-            rows = conn.execute("SELECT p.answered_at,p.selected_idx,p.outcome,s.direction,l.word_id "
+            rows = conn.execute("SELECT p.answered_at,p.selected_idx,NULL AS answer_text,p.outcome,s.direction,l.word_id "
                                 "FROM practice_presentations p JOIN practice_sessions s ON s.id=p.session_id "
                                 "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
                                 "WHERE p.answered_at IS NOT NULL AND p.selected_idx IS NOT NULL "
-                                "AND p.answered_at>=? AND p.answered_at<=? ORDER BY p.answered_at,p.id", (since, until))
+                                "AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
+                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'verbs',t.verb_id "
+                                "FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id "
+                                "JOIN verb_targets t ON t.id=q.target_id WHERE p.answer_text IS NOT NULL "
+                                "AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at", (since, until, since, until))
             return [dict(row) for row in rows]
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:
@@ -235,7 +242,8 @@ class PracticeDbMixin:
             state = conn.execute("SELECT card_json FROM practice_states WHERE word_id=? AND direction=?",
                                  (row["word_id"], row["direction"])).fetchone()
             correct = choice == row["correct_idx"]
-            card_json = state[0] if state else practice.ReviewPolicy.new_card(row["word_id"], row["direction"], now)
+            card_id = row["word_id"] * 2 + (row["direction"] == "en_nl")
+            card_json = state[0] if state else practice.ReviewPolicy.new_card(card_id, now)
             result = practice.ReviewPolicy(row["scheduler_json"]).answer(
                 card_json, correct=correct, unsure=bool(unsure), now=now, elapsed_ms=elapsed_ms)
             self._practice_state(conn, row, result)
@@ -268,7 +276,8 @@ class PracticeDbMixin:
             conn.execute("DELETE FROM practice_states WHERE word_id=? AND direction=?", (row["word_id"], row["direction"]))
             card_json = None
             for review in reviews:
-                card_json = card_json or practice.ReviewPolicy.new_card(review["word_id"], review["direction"], review["answered_at"])
+                card_id = review["word_id"] * 2 + (review["direction"] == "en_nl")
+                card_json = card_json or practice.ReviewPolicy.new_card(card_id, review["answered_at"])
                 result = practice.ReviewPolicy(review["scheduler_json"]).answer(
                     card_json, correct=review["outcome"] == "correct", unsure=bool(review["unsure"]),
                     now=review["answered_at"], elapsed_ms=review["elapsed_ms"])

@@ -5,13 +5,11 @@ Example: `QuestionGenerator().generate(candidates, Direction.NL_EN)` preserves s
 
 from __future__ import annotations
 
-import argparse
 import json
 from typing import Protocol
 
-from yt_whisper_subs import cfg
-from yt_whisper_subs import openai_client
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_ai
 
 
 PROMPT_VERSION = 1
@@ -29,28 +27,8 @@ class Generator(Protocol):
         ...
 
 
-class QuestionGenerator:
+class QuestionGenerator(practice_ai.StructuredGenerator):
     """Treat vocabulary as authoritative data and reject ambiguous choices in a second pass."""
-
-    def __init__(self, args: argparse.Namespace | None = None) -> None:
-        """Use a dedicated practice policy with shared credentials; e.g. changing Practice never changes subtitle translation."""
-
-        self._args = argparse.Namespace(**vars(args or argparse.Namespace()))
-        self._args.openai_timeout = 90.0
-        self._args.openai_max_retries = 0
-        self.model = getattr(self._args, "openai_practice_model", cfg.DEFAULT_PRACTICE_MODEL)
-        self.reasoning = getattr(self._args, "openai_practice_reasoning", cfg.DEFAULT_PRACTICE_REASONING)
-
-    def _request[T: practice.Content](self, model: type[T], prompt: str, document: dict) -> T:
-        """Validate structured output after the shared HTTP client; e.g. reject incomplete question batches."""
-
-        payload = {"model": self.model, "instructions": prompt,
-                   "input": json.dumps(document, ensure_ascii=False), "store": False,
-                   "reasoning": {"effort": self.reasoning},
-                   "text": {"format": {"type": "json_schema", "name": model.__name__.lower(),
-                                       "strict": True, "schema": model.model_json_schema()}}}
-        result = openai_client.responses_api_request(self._args, payload)
-        return model.model_validate_json(openai_client.response_output_text(result))
 
     def generate(self, rows: list[dict], direction: practice.Direction) -> list[dict]:
         """Fix the answer locally and ask only for two hard distractors; e.g. near meanings with clear contrasts."""

@@ -72,8 +72,8 @@ AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 MEDIA_SUFFIXES = (".mkv", ".mp4", ".webm")
 YT_DLP_PYTHON_PACKAGE = "yt-dlp[default]"
 YT_DLP_JS_RUNTIMES = ("deno", "node")
-LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil", "pydantic", "fsrs", "polars")
-LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials", "psutil", "pydantic>=2.12,<3", "fsrs==6.3.1", "polars>=1.30,<2")
+LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil", "pydantic", "fsrs", "polars", "numpy")
+LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials", "psutil", "pydantic>=2.12,<3", "fsrs==6.3.1", "polars>=1.30,<2", "numpy>=2,<3")
 
 
 def output_scratch_dir(out_dir: Path) -> Path:
