@@ -11,6 +11,7 @@ import pydantic as pd
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import verb_practice
+from yt_whisper_subs import vocabulary_learning as learning
 
 
 SCENES = {"home": "Home and family", "shopping": "Shopping", "work": "Work and study",
@@ -151,6 +152,7 @@ class Grade(practice.Content):
     explanation: str = pd.Field(min_length=3, max_length=1500)
     words: list[WordResult] = pd.Field(min_length=1, max_length=3)
     errors: list[Error] = pd.Field(max_length=15)
+    vocabulary: list[learning.Correction] = pd.Field(max_length=10)
 
     def check(self, answer: str, content: dict) -> None:
         """Reject fabricated or inconsistent diagnostics; e.g. a whole-sentence failure cannot blindly punish unrelated words."""

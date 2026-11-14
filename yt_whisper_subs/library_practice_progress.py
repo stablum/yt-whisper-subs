@@ -125,7 +125,8 @@ class ProgressPanel(QtWidgets.QWidget):
         history = QtWidgets.QTabWidget()
         history.addTab(self._terms, "Words")
         history.addTab(self._rounds, "Rounds")
-        note = QtWidgets.QLabel("Accuracy reflects changing review difficulty, not an overall proficiency score. "
+        note = QtWidgets.QLabel("Word reviews combine vocabulary choices with assessed words and lexical mistakes from typed practice. "
+                               "Activity counts each submitted exercise once. Accuracy reflects changing review difficulty. "
                                "Established = 3+ correct answers, latest correct, and review stability of 21+ days. "
                                "Reported questions do not affect accuracy or scheduling. Dates use local time.")
         note.setWordWrap(True)

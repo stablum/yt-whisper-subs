@@ -46,6 +46,7 @@ class SentenceReviewDbMixin:
 
         from yt_whisper_subs import practice
         from yt_whisper_subs import sentence_db
+        from yt_whisper_subs import vocabulary_learning
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -72,6 +73,14 @@ class SentenceReviewDbMixin:
                          ("correct" if grade.correct else "wrong", grade.model_dump_json(), provenance["model"], provenance["reasoning"],
                           provenance["grade_version"], time.time(), result["rating"], result["recall"], result["due_at"],
                           result["before_json"], result["after_json"], result["log_json"], presentation_id))
+            completed = {**row, "content": content, "grade": grade.model_dump()}
+            self._learning_save(conn, "sentence", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
+            lookups = {item["word_id"]: item["lookup_id"] for item in conn.execute(
+                "SELECT l.word_id,w.lookup_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
+                "WHERE w.question_id=?", (row["question_id"],))}
+            for word in grade.words:
+                if word.target_used or not word.correct:
+                    self._word_observe(conn, "sentence", row, lookups[word.word_id], word.correct)
             self._sentence_complete(conn)
             return self._sentence_row(conn.execute(sentence_db.PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
 
@@ -114,6 +123,7 @@ class SentenceReviewDbMixin:
                 raise ValueError("This sentence has not been presented")
             conn.execute("UPDATE sentence_questions SET flagged_at=? WHERE id=?", (time.time(), row["question_id"]))
             conn.execute("UPDATE sentence_presentations SET outcome='invalid' WHERE question_id=?", (row["question_id"],))
+            self._word_unlink(conn, "sentence", row["question_id"])
             conn.execute("DELETE FROM sentence_question_states WHERE question_id=?", (row["question_id"],))
             words = conn.execute("SELECT l.word_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
                                  "WHERE w.question_id=?", (row["question_id"],)).fetchall()

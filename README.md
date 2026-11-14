@@ -116,6 +116,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | Ready practice rounds | background preparation of one unconsumed round per mode using its saved settings; unused cached questions consumed first |
+| Shared vocabulary learning | lexical mistakes add both intended and genuinely confused dictionary words; quiz and sentence practice share word reviews and selection |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -1957,7 +1958,7 @@ results include sentence/span/context, language, model, reasoning, and prompt
 version in their identity; a spelling alone is never a translation-cache key.
 
 Choose **Library → Vocabulary…** (`Ctrl+Shift+W`) to search captured words,
-inspect **Clicks** and **Videos** separately, optionally group inflections by
+inspect **Clicks**, practice **Mistakes** and **Videos** separately, optionally group inflections by
 their dictionary form, and see every occurrence with its local click date,
 source video, original sentence, and contextual translation. Double-click an
 occurrence or choose **Play occurrence** to seek/open its video at the cue start.
@@ -1997,8 +1998,9 @@ or new eligible targets exist. Future-due skills wait unless you explicitly
 enabled early practice. There is no growing queue of unused rounds.
 
 Questions from a stopped or changed round remain cached. Within adaptive
-eligibility and the current filters/model policy, approved **never-shown
-questions take priority over fresh generation**. Sentence practice reuses these
+eligibility and the current filters/model policy, approved **never-shown new
+questions take priority over fresh exploration**. Due reviews retain priority,
+including newly discovered failures whose questions are not cached yet. Sentence practice reuses stock
 across random mixed-context and companion-word plans; changing the random draw
 cannot strand a previously paid question. Updated source lookups and explicit
 context/target-count restrictions still apply. Once unused stock is consumed,
@@ -2025,6 +2027,71 @@ Run deterministic readiness and concurrency checks without API calls:
 
 ```powershell
 python -m unittest tests.test_practice_ready tests.test_sentence_practice -v
+```
+
+### Shared Vocabulary Learning Across Practice Modes
+
+Vocabulary choices, sentence translation and verb transformation exchange learning
+signals. Words have **one shared FSRS review state per Dutch vocabulary identity
+and translation direction**. The word quiz and sentence vocabulary selection read
+that state and use the same NumPy selection implementation. A success in one can
+defer the word in the other; a failure brings it back through the same **Again**
+update used by a wrong quiz choice. Sentence correctness, verb conjugation and
+specific grammatical forms retain their own diagnostic history and review states.
+
+When a typed sentence or verb answer reveals a lexical mistake, its correction
+adds the **intended Dutch dictionary word and base English meaning** to Vocabulary.
+If a different genuine word was used, that concept receives its **own correct
+meaning**, too. For example, **zekerder** for **veiliger** records **veilig ↔ safe**
+and **zeker ↔ sure/certain**, linked by the original confusion. Both receive failed
+English → Dutch word reviews. Reverse translation works similarly while retaining
+separate directional skills. Repeated mistakes remain separate timestamped events;
+existing dictionary identities are reused. Typos and uncertain identities do not
+manufacture another dictionary word. Pure article, agreement, tense and word-order
+problems remain in the relevant grammar metrics.
+
+Saved targets are assessed independently: correctly translated targets can receive
+shared successes while an unrelated supporting word fails. Future-due words are
+not repeatedly upgraded by incidental grammar retries unless early practice was
+requested. A correct Dutch synonym earns sentence credit while the saved lexeme
+remains to practise. Multiple mistakes involving one word in the same answer
+produce one shared review, with failure taking priority over incidental success.
+
+The common probability uses a Beta-smoothed failure estimate **p=(f+1)/(n+3)**,
+shared review counts, FSRS forgetting probability and bounded click/video/mistake
+frequency evidence. Due words take priority, with one slot in five reserved for
+new words when available; sampling is without replacement and future-due skills
+wait unless early review is enabled. Unused approved cached questions still take
+precedence within those eligibility rules. Verb transformations use the same
+lexical difficulty factor for their dictionary verb alongside their own tense,
+subject, structure and formation difficulty, with the same due/new/early-review
+philosophy. Meaning recall and particular conjugations remain separately measurable.
+
+**Vocabulary** includes the new entries, with separate click, mistake and video
+counts. Practice occurrences show the typed confusion, correction, meaning and
+timestamp, and offer no video playback. Feedback lists the concepts entering
+review. **Progress → Vocabulary** combines quiz outcomes and transferred lexical
+observations; its round history retains actual quiz rounds. **Activity**, calendar
+and reminder credit still count each submitted exercise once, even when it
+reviews several word skills.
+
+Lexical metadata accompanies the existing correction request. Malformed spans can
+receive bounded focused vocabulary repair without repeating the full grade.
+Separated Dutch verbs and English phrasal verbs use exact multi-span evidence.
+Historical graded answers can be enriched once from saved feedback, preserving
+grades and activity timestamps. Existing target-word assessments enter the common
+review ledger on catalog initialization.
+
+`vocab_enrichments`, `vocab_errors` and `vocab_error_words` retain source presentation
+foreign keys, both roles, model policy and evidence. `word_transfers` retains
+cross-mode outcomes, directional skills, scheduler settings and before/after FSRS
+logs. Quiz presentations retain their original records. `practice_states` is the
+common rebuildable cache; sentence-word/form and verb-target caches retain their
+specific responsibilities. Reporting an exercise excludes its vocabulary events
+and rebuilds shared skills from all remaining valid modes, preserving the evidence.
+
+```powershell
+python -m unittest tests.test_shared_learning tests.test_practice tests.test_sentence_practice tests.test_verbs -v
 ```
 
 ### Adaptive Vocabulary Practice
@@ -2106,12 +2173,12 @@ and separate state for each captured word **and direction**. Mistakes receive
 **Again**; correct but uncertain answers (**I'm unsure / guessing**) receive
 **Hard**; other correct answers receive **Good**. Response speed never upgrades
 or downgrades a rating, and there is no automatic **Easy** grade for multiple-choice
-recognition. Due reviews are ordered by estimated recall, with one slot in five
+recognition. Due reviews are weighted by shared failures and estimated recall, with one slot in five
 reserved for new terms while any remain. Frequently clicked new words,
 especially across videos, are introduced first. Successful words move farther into the
 future; failed words return sooner. Future reviews stay out of ordinary rounds
 unless **Include words not due yet** is enabled. Model predictions are estimates
-for this recognition exercise, not measured language fluency. FSRS uses its
+for these shared word skills, not measured language fluency. FSRS uses its
 standard parameters; this release does not fit personalized model weights.
 
 Answers are committed immediately. Closing Practice or pressing **Escape** leaves
@@ -2421,14 +2488,14 @@ and continuation are separate gestures; held Enter and double clicks cannot skip
 feedback. **Report exercise** quarantines a disputed pair and removes its grading
 influence while preserving submitted effort and the original evidence.
 
-Adaptive selection has two independent levels. Each saved word has a separate
-FSRS review state for writing and comprehension, while each sentence has its own
-review state for complete meaning and grammar. A global word-order error can
+Adaptive selection shares its word/direction FSRS state with vocabulary practice,
+while each sentence has its own review state for complete meaning and grammar.
+Detailed word/form observations retain a separate diagnostic cache. A global word-order error can
 bring the sentence back without failing correctly translated vocabulary. Correct
 future-due words do not gain extra scheduled successes merely because a grammar
 review repeats them, unless early review was requested. Per-word meaning and form
-failures, a half-weight prior from the matching vocabulary-quiz direction, click
-frequency and distinct-video counts influence weighted selection. Due words get
+failures from all shared word reviews, click frequency, practice mistakes and
+distinct-video counts influence the same weighted selection as the word quiz. Due words get
 priority, with room for new words; mastered future-due targets wait. Observed form
 and context errors bias subsequent exercise plans toward weaker areas.
 

@@ -12,6 +12,7 @@ from datetime import date, datetime
 import polars as pl
 
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import word_reviews
 
 
 def _aggregate(frame: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
@@ -36,6 +37,10 @@ def _history(db) -> tuple[list[dict], list[dict], list[dict]]:
             "FROM practice_presentations p JOIN practice_sessions s ON s.id=p.session_id "
             "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
             "WHERE p.shown_at IS NOT NULL ORDER BY p.shown_at,p.id")]
+        rows.extend(dict(row) for row in conn.execute(
+            f"SELECT -event_id AS id,answered_at AS shown_at,answered_at,NULL AS selected_idx,elapsed_ms,outcome,direction,word_id,word "
+            f"FROM ({word_reviews.REVIEWS}) WHERE origin<>'practice' ORDER BY answered_at,event_id"))
+        rows.sort(key=lambda row: (row["shown_at"], row["id"]))
         states = [dict(row) for row in conn.execute("SELECT * FROM practice_states")]
         rounds = [dict(row) for row in conn.execute(
             "SELECT s.id,s.created_at,s.direction,s.status,s.requested_count,COUNT(p.id) AS planned,"

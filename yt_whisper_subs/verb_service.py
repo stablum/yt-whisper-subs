@@ -44,7 +44,7 @@ class VerbService:
         for row in candidates:
             row["unused"] = row.get("target_id") in unused
         selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
-        selected = practice_ready.consume_first(candidates, opts, lambda rows, options: selector.select(rows, metrics, options, time.time()))
+        selected = selector.select(candidates, metrics, opts, time.time())
         if not selected:
             raise practice_service.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
         selected = [self._db.verb_target(row) for row in selected]
@@ -124,7 +124,7 @@ class VerbService:
             grade = verbs.Grade(confident=True, correct=True, corrected=row["answer_text"],
                                 corrected_english=content.get("answer_english") or self._provider.translate_sentence(row["answer_text"]),
                                 explanation=content["explanation"], errors=[],
-                                axes=[verbs.Axis(axis=axis, correct=True) for axis in verbs.AXES])
+                                axes=[verbs.Axis(axis=axis, correct=True) for axis in verbs.AXES], vocabulary=[])
         else:
             target = {key: row[key] for key in ("lemma", "family", "tense", "subject", "structure")}
             grade = self._provider.grade({"target": target, "exercise": content, "learner_answer": row["answer_text"]})

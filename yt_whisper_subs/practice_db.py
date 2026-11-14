@@ -79,16 +79,6 @@ JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.sess
 class PracticeDbMixin:
     """Keep immutable question/answer evidence alongside a rebuildable scheduling cache."""
 
-    def practice_candidates(self, direction: str) -> list[dict]:
-        """Use one translated Dutch occurrence per word; e.g. ignore English clicks and ambiguous translations."""
-
-        sql = f"""
-        SELECT r.*,s.card_json,s.due_at FROM ({vocabulary_db.READY_WORDS}) r
-        LEFT JOIN practice_states s ON s.word_id=r.word_id AND s.direction=?
-        """
-        with self._connect() as conn:
-            return [dict(row) for row in conn.execute(sql, (direction,))]
-
     def practice_has_candidates(self) -> bool:
         """Check eligibility without loading the scheduler; e.g. avoid reminders before any Dutch words are saved."""
 
@@ -266,19 +256,7 @@ class PracticeDbMixin:
             conn.execute("UPDATE practice_presentations SET outcome='invalid',"
                          "answered_at=CASE WHEN shown_at IS NOT NULL THEN COALESCE(answered_at,?) ELSE answered_at END "
                          "WHERE question_id=?", (time.time(), row["question_id"]))
-            reviews = conn.execute(_PRESENTATION + " WHERE l.word_id=? AND s.direction=? "
-                                   "AND p.outcome IN ('correct','wrong') ORDER BY p.answered_at,p.id",
-                                   (row["word_id"], row["direction"])).fetchall()
-            conn.execute("DELETE FROM practice_states WHERE word_id=? AND direction=?", (row["word_id"], row["direction"]))
-            card_json = None
-            for review in reviews:
-                card_id = review["word_id"] * 2 + (review["direction"] == "en_nl")
-                card_json = card_json or practice.ReviewPolicy.new_card(card_id, review["answered_at"])
-                result = practice.ReviewPolicy(review["scheduler_json"]).answer(
-                    card_json, correct=review["outcome"] == "correct", unsure=bool(review["unsure"]),
-                    now=review["answered_at"], elapsed_ms=review["elapsed_ms"])
-                card_json = result["after_json"]
-                self._practice_state(conn, review, result)
+            self._word_replay(conn, row["word_id"], row["direction"])
             self._practice_complete(conn)
 
     def practice_finish(self, session_id: str) -> dict:

@@ -9,6 +9,7 @@ import json
 import time
 
 from yt_whisper_subs import vocabulary as words
+from yt_whisper_subs import vocabulary_learning_db as learning
 
 
 SCHEMA = """
@@ -68,35 +69,34 @@ CREATE INDEX IF NOT EXISTS idx_vocab_pending ON vocab_lookups(state, lease_until
 CREATE INDEX IF NOT EXISTS idx_vocab_lookup_word ON vocab_lookups(word_id);
 """
 
-_EVENTS = """
-SELECT c.*, s.source_key, s.video_id, s.title, s.url, s.path,
+_EVENTS = f"""
+SELECT e.*,e.event_key AS id,
        w.language, w.normalized, l.state, l.meaning, l.lemma, l.lemma_norm,
        l.lemma_meaning, l.part_of_speech, l.note, l.expression, l.ambiguous,
        l.error, l.context_json
-FROM vocab_clicks c
-JOIN vocab_sources s ON s.id=c.source_id
-JOIN vocab_lookups l ON l.id=c.lookup_id
+FROM ({learning.OCCURRENCES}) e
+JOIN vocab_lookups l ON l.id=e.lookup_id
 JOIN vocab_words w ON w.id=l.word_id
 """
 
 # One eligibility query is shared by word recognition and whole-sentence production.
-READY_LOOKUPS = """
-FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN vocab_clicks c ON c.lookup_id=l.id
+READY_LOOKUPS = f"""
+FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN ({learning.OCCURRENCES}) e ON e.lookup_id=l.id
 WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
 """
 READY_WORDS = f"""
 WITH ready AS (
-    SELECT l.*,c.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY c.clicked_at DESC,c.id DESC) AS n
+    SELECT l.*,e.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY e.occurred_at DESC,e.event_key DESC) AS n
     {READY_LOOKUPS}
 ), counts AS (
-    SELECT l.word_id,COUNT(*) AS clicks,COUNT(DISTINCT c.source_id) AS videos
-    FROM vocab_clicks c JOIN vocab_lookups l ON l.id=c.lookup_id GROUP BY l.word_id
+    SELECT l.word_id,SUM(e.origin='click') AS clicks,COUNT(DISTINCT e.source_id) AS videos,SUM(e.origin<>'click') AS mistakes
+    FROM ({learning.OCCURRENCES}) e JOIN vocab_lookups l ON l.id=e.lookup_id GROUP BY l.word_id
 ) SELECT r.id AS lookup_id,r.word_id,r.surface,r.meaning,r.note,r.context_json,r.lemma,r.lemma_meaning,r.part_of_speech,
-         c.clicks,c.videos FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
+         c.clicks,c.videos,c.mistakes FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
 """
 
 
-class VocabularyDbMixin:
+class VocabularyDbMixin(learning.LearningDbMixin):
     """Keep vocabulary transactions independent from channel queries; e.g. CLI capture."""
 
     def has_unfinished_word_lookups(self) -> bool:
@@ -196,7 +196,7 @@ class VocabularyDbMixin:
         group = "COALESCE(NULLIF(lemma_norm,''),normalized)" if by_lemma else "normalized"
         with self._connect() as conn:
             rows = conn.execute(f"WITH events AS ({_EVENTS}) SELECT * FROM events "
-                                f"WHERE language=? AND {group}=? ORDER BY clicked_at DESC,id DESC", (language, key))
+                                f"WHERE language=? AND {group}=? ORDER BY occurred_at DESC,id DESC", (language, key))
             return [dict(row) for row in rows]
 
     def word_summary(self, *, by_lemma: bool = False) -> list[dict]:
@@ -207,14 +207,14 @@ class VocabularyDbMixin:
             WITH events AS ({_EVENTS}), grouped AS (
                 SELECT *, {group} AS word_key FROM events
             ), counts AS (
-                SELECT language,word_key,COUNT(*) AS clicks,COUNT(DISTINCT source_id) AS videos,
+                SELECT language,word_key,SUM(origin='click') AS clicks,COUNT(DISTINCT source_id) AS videos,SUM(origin<>'click') AS mistakes,
                        SUM(state='failed') AS failed,SUM(state IN ('pending','working')) AS pending
                 FROM grouped GROUP BY language,word_key
             ), recent AS (
-                SELECT *,ROW_NUMBER() OVER(PARTITION BY language,word_key ORDER BY clicked_at DESC,id DESC) AS n
+                SELECT *,ROW_NUMBER() OVER(PARTITION BY language,word_key ORDER BY occurred_at DESC,id DESC) AS n
                 FROM grouped
-            ) SELECT r.*,c.clicks,c.videos,c.failed,c.pending FROM recent r
-              JOIN counts c USING(language,word_key) WHERE n=1 ORDER BY clicked_at DESC,id DESC
+            ) SELECT r.*,c.clicks,c.videos,c.mistakes,c.failed,c.pending FROM recent r
+              JOIN counts c USING(language,word_key) WHERE n=1 ORDER BY occurred_at DESC,id DESC
         """
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql)]

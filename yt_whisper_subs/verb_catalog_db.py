@@ -8,6 +8,9 @@ from __future__ import annotations
 import json
 import time
 
+from yt_whisper_subs import vocabulary_learning_db as learning
+from yt_whisper_subs import word_reviews
+
 
 class VerbCatalogDbMixin:
     """Own lexicon provenance independently of exercise transactions; e.g. catalog updates never rewrite past questions."""
@@ -27,8 +30,14 @@ class VerbCatalogDbMixin:
                 "AND l.ambiguous=0 AND l.updated_at=x.source_stamp) "
                 "LEFT JOIN vocab_clicks c ON c.lookup_id=x.lookup_id GROUP BY v.id ORDER BY v.id")
             result = [dict(row) for row in rows]
+            history = conn.execute(f"SELECT l.lemma_norm,COUNT(*) AS attempts,SUM(h.outcome='wrong') AS failures "
+                                   f"FROM ({word_reviews.REVIEWS}) h JOIN vocab_lookups l ON l.id=h.lookup_id "
+                                   "WHERE h.outcome IN ('correct','wrong') GROUP BY l.lemma_norm").fetchall()
+            lexical = {row["lemma_norm"]: row for row in history}
         starters = {lemma for lemma, _, _ in verb_syllabus.CATALOG}
-        return [{**row, "starter": row["lemma"] in starters} for row in result]
+        return [{**row, "starter": row["lemma"] in starters,
+                 "word_attempts": lexical[row["lemma"]]["attempts"] if row["lemma"] in lexical else 0,
+                 "word_failures": lexical[row["lemma"]]["failures"] if row["lemma"] in lexical else 0} for row in result]
 
     def verb_vocab_pending(self, policy: dict) -> list[dict]:
         """Load newly translated or changed occurrences once per policy; e.g. repeated clicks reuse the same lexical decision."""
@@ -39,7 +48,7 @@ class VerbCatalogDbMixin:
                 "l.note,l.updated_at AS source_stamp FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id "
                 "LEFT JOIN verb_vocab_links x ON x.lookup_id=l.id WHERE w.language='nl' AND l.state='ready' "
                 "AND l.ambiguous=0 AND TRIM(COALESCE(l.lemma,''))<>'' "
-                "AND EXISTS(SELECT 1 FROM vocab_clicks c WHERE c.lookup_id=l.id) "
+                f"AND EXISTS(SELECT 1 FROM ({learning.OCCURRENCES}) e WHERE e.lookup_id=l.id) "
                 "AND (x.lookup_id IS NULL OR x.source_stamp<>l.updated_at OR x.model<>:model "
                 "OR x.reasoning<>:reasoning OR x.prompt_version<>:prompt_version "
                 "OR (json_extract(x.evidence_json,'$.verdict.valid')=0 AND x.checked_at<:retry_before)) ORDER BY l.id",

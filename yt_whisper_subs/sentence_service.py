@@ -32,7 +32,7 @@ class SentenceService:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
         policy, now = practice.ReviewPolicy(), time.time()
-        rows = self._db.sentence_candidates(opts.direction.value)
+        rows = self._db.word_candidates(opts.direction.value)
         if not rows:
             raise practice_service.NothingToPractice("no_words", "Save and translate some Dutch vocabulary words before sentence practice.")
         generation = {"direction": opts.direction.value, "model": self._provider.model,
@@ -43,7 +43,7 @@ class SentenceService:
         unused = {row["anchor_word_id"] for row in pool}
         for row in rows:
             row["unused"] = row["word_id"] in unused
-        anchors = practice_ready.consume_first(rows, opts, lambda rows, options: selector.select(rows, options, now))
+        anchors = selector.select(rows, opts, now)
         reviews = self._db.sentence_due(generation, now)
         if opts.scene != "mixed":
             reviews = [row for row in reviews if row["scene"] == opts.scene]
@@ -158,7 +158,7 @@ class SentenceService:
                 words.append(sentences.WordResult(word_id=item["word_id"], meaning_correct=True, target_used=True, form_correct=form_correct,
                                                    explanation=item["explanation"], forms=forms))
             grade = sentences.Grade(confident=True, correct=True, corrected=row["answer_text"], corrected_meaning=content[source_key],
-                                     explanation=content["explanation"], words=words, errors=[])
+                                     explanation=content["explanation"], words=words, errors=[], vocabulary=[])
         else:
             grade = self._provider.grade({"direction": row["direction"], "exercise": content, "learner_answer": row["answer_text"]})
         grade.check(row["answer_text"], content)

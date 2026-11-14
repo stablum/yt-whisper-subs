@@ -6,7 +6,6 @@ Example: `ReviewPolicy().answer(card_json, correct=True, unsure=False, now=now, 
 from __future__ import annotations
 
 import enum
-import random
 from datetime import datetime, timezone
 
 import fsrs
@@ -112,25 +111,6 @@ class ReviewPolicy:
             return 0.0
         card = fsrs.Card.from_json(card_json)
         return self._scheduler.get_card_retrievability(card, datetime.fromtimestamp(now, timezone.utc))
-
-    def select(self, candidates: list[dict], opts: RoundOptions, now: float) -> list[dict]:
-        """Mix due reviews with one new term per five slots; e.g. established words wait until due."""
-
-        random.shuffle(candidates)
-        new = [row for row in candidates if not row["card_json"]]
-        new.sort(key=lambda row: (-row.get("videos", 0), -row.get("clicks", 0)))
-        due = [row for row in candidates if row["card_json"] and row["due_at"] <= now]
-        early = [row for row in candidates if row["card_json"] and row["due_at"] > now]
-        due.sort(key=lambda row: self.recall(row["card_json"], now))
-        early.sort(key=lambda row: row["due_at"])
-        selected = []
-        while len(selected) < opts.count and (due or new):
-            pool = new if new and (not due or len(selected) % 5 == 4) else due
-            selected.append(pool.pop(0))
-        if opts.include_early:
-            selected.extend(early[:opts.count - len(selected)])
-        random.shuffle(selected)
-        return selected
 
     def answer(self, card_json: str | None, *, correct: bool, unsure: bool, now: float, elapsed_ms: int) -> dict:
         """Map outcome to Again/Hard/Good, never speed-based Easy; e.g. interruptions do not lower mastery."""

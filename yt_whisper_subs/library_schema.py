@@ -11,6 +11,8 @@ from yt_whisper_subs import practice_db
 from yt_whisper_subs import verb_schema
 from yt_whisper_subs import sentence_schema
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import vocabulary_learning_db
+from yt_whisper_subs import word_reviews
 
 
 _SCHEMA = f"""
@@ -83,6 +85,8 @@ CREATE TABLE IF NOT EXISTS video_history (
 
 {sentence_schema.SCHEMA}
 {practice_ready.SCHEMA}
+{vocabulary_learning_db.SCHEMA}
+{word_reviews.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -145,3 +149,4 @@ class SchemaDbMixin:
                 ON videos(metadata_checked_at, metadata_attempted_at, discovered_at DESC)
                 """
             )
+            self._word_sync(conn)

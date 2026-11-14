@@ -9,51 +9,12 @@ import re
 
 import numpy as np
 
-from yt_whisper_subs import practice
+from yt_whisper_subs import word_select
 from yt_whisper_subs import sentence_practice as sentences
 
 
-class Selector:
+class Selector(word_select.Selector):
     """Combine recall, error rates and context variety; e.g. weak Dutch superlatives receive extra practice."""
-
-    def __init__(self, policy: practice.ReviewPolicy, rng: np.random.Generator | None = None) -> None:
-        """Allow reproducible sampling checks; e.g. tests seed the generator without replacing real scheduling."""
-
-        self._policy = policy
-        self._rng = rng or np.random.default_rng()
-
-    def weights(self, rows: list[dict], now: float) -> np.ndarray:
-        """Use p=(f+1+0.5 f_prior)/(n+3+0.5 n_prior); e.g. recognition history seeds the prior without fabricating sentence attempts."""
-
-        failures = np.array([row["failures"] + 0.5 * row["prior_failures"] for row in rows])
-        attempts = np.array([row["attempts"] + 0.5 * row["prior_attempts"] for row in rows])
-        p = (failures + 1) / (attempts + 3)  # Beta-smoothed probability p of a target-word error.
-        recall = np.array([self._policy.recall(row["card_json"], now) for row in rows])
-        frequency = np.log1p([row["clicks"] + 2 * row["videos"] for row in rows])
-        return (1 + 6 * p) * (1 + 2 * (1 - recall)) * (1 + np.minimum(1, frequency / 5))
-
-    def select(self, rows: list[dict], opts: sentences.Options, now: float) -> list[dict]:
-        """Reserve one in five slots for new words and defer future reviews; e.g. choose distinct anchors instead of spamming one difficult term."""
-
-        rows = [row for row in rows if not row["card_json"] or row["due_at"] <= now or opts.include_early]
-        if not rows:
-            return []
-        weights = self.weights(rows, now)
-        available = np.ones(len(rows), dtype=bool)
-        due = np.array([bool(row["card_json"]) and row["due_at"] <= now for row in rows])
-        new = np.array([not row["card_json"] for row in rows])
-        selected = []
-        for idx in range(min(opts.count, len(rows))):
-            pool = available & (due if idx % 5 != 4 and np.any(available & due) else new)
-            if not np.any(pool):
-                pool = available & due
-            if not np.any(pool):
-                pool = available.copy()
-            probs = np.where(pool, weights, 0)
-            pick = int(self._rng.choice(len(rows), p=probs / probs.sum()))
-            selected.append(rows[pick])
-            available[pick] = False
-        return selected
 
     def plans(self, anchors: list[dict], rows: list[dict], opts: sentences.Options, metrics: dict, now: float) -> list[dict]:
         """Add a small number of target companions and varied form preferences; e.g. other words in the sentence remain unrestricted."""

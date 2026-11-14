@@ -9,6 +9,7 @@ import numpy as np
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import verb_practice as verbs
+from yt_whisper_subs import word_select
 
 
 # Lemma, conjugation family and passive eligibility; lexical properties constrain generation.
@@ -113,7 +114,8 @@ class Selector:
         vocab = np.array([3 + min(2, np.log1p(row["clicks"] + 2 * row["videos"])) if row["lookups"] else 1 for row in rows])
         _, inverse, counts = np.unique([row["tense"] for row in rows], return_inverse=True, return_counts=True)
         # Divide by n_tau, the number of targets in tense tau, so a large paradigm cannot drown out a small mood.
-        return (1 + 5 * difficulty) * (1 + 2 * (1 - recall)) * rare * vocab / counts[inverse]
+        lexical = word_select.error_weight([row.get("word_attempts", 0) for row in rows], [row.get("word_failures", 0) for row in rows])
+        return (1 + 5 * difficulty) * (1 + 2 * (1 - recall)) * rare * vocab * lexical / counts[inverse]
 
     def select(self, rows: list[dict], metrics: list[dict], opts: verbs.Options, now: float) -> list[dict]:
         """Prefer due weak targets with exploration and verb variety; e.g. mastered combinations wait until due."""
@@ -125,6 +127,7 @@ class Selector:
         available = np.ones(len(rows), dtype=bool)
         due = np.array([bool(row["card_json"]) and row["due_at"] <= now for row in rows])
         new = np.array([not row["card_json"] for row in rows])
+        unused = np.array([row.get("unused", False) for row in rows])
         used = set()
         chosen = []
         for idx in range(min(opts.count, len(rows))):
@@ -133,6 +136,7 @@ class Selector:
                 pool = available & due
             if not np.any(pool):
                 pool = available.copy()
+            pool = word_select.prefer_stock(pool, due, unused)
             varied = pool & np.array([row["verb_id"] not in used for row in rows])
             if np.any(varied):
                 pool = varied

@@ -116,7 +116,8 @@ class SentenceCard(written.WritingCard):
         targets = [f"{' … '.join(word['dutch_forms'])} — {' … '.join(word['english_forms'])}" for word in row["content"]["words"]]
         self.show_feedback(written.Feedback(correct=grade["correct"], corrected=grade["corrected"],
                                             translation=grade["corrected_meaning"], explanation=grade["explanation"],
-                                            errors=grade["errors"], targets="Practised: " + ";  ".join(targets)))
+                                            errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
+                                            vocabulary=grade.get("vocabulary", [])))
 
 
 class SentencePanel(library_written.WrittenPanel):

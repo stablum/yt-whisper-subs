@@ -60,7 +60,7 @@ class FakeVerbProvider:
             return self.grade_result
         make = document["target"]["lemma"] == "maken"
         stem, form = ("maak", "maakt") if make else ("werk", "werkt")
-        return verbs.Grade(confident=True, correct=False, corrected=document["exercise"]["answer"],
+        return verbs.Grade(confident=True, correct=False, corrected=document["exercise"]["answer"], vocabulary=[],
                            corrected_english=document["exercise"]["answer_english"],
                            explanation="Jij needs the present ending -t in this statement.",
                            axes=[verbs.Axis(axis=axis, correct=axis != "subject") for axis in verbs.AXES],

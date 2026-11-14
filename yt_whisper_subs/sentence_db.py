@@ -23,31 +23,6 @@ JOIN sentence_sessions s ON s.id=p.session_id
 class SentenceDbMixin(sentence_review_db.SentenceReviewDbMixin):
     """Own durable sentence lifecycle; e.g. resuming a pending answer needs no language-provider call."""
 
-    def sentence_candidates(self, direction: str) -> list[dict]:
-        """Attach direction-specific sentence recall and recognition priors to saved vocabulary; e.g. production and recognition stay distinct."""
-
-        sql = f"""
-        SELECT r.*,s.card_json,s.due_at,
-          (SELECT COUNT(*) FROM sentence_assessments a JOIN sentence_presentations p ON p.id=a.presentation_id
-           JOIN sentence_sessions t ON t.id=p.session_id JOIN vocab_lookups l ON l.id=a.lookup_id
-           WHERE l.word_id=r.word_id AND t.direction=:direction AND p.outcome IN ('correct','wrong')
-           AND (a.target_used=1 OR a.meaning_correct=0 OR a.form_correct=0)) AS attempts,
-          (SELECT COUNT(*) FROM sentence_assessments a JOIN sentence_presentations p ON p.id=a.presentation_id
-           JOIN sentence_sessions t ON t.id=p.session_id JOIN vocab_lookups l ON l.id=a.lookup_id
-           WHERE l.word_id=r.word_id AND t.direction=:direction AND p.outcome IN ('correct','wrong')
-           AND (a.meaning_correct=0 OR a.form_correct=0)) AS failures,
-          (SELECT COUNT(*) FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
-           JOIN vocab_lookups l ON l.id=q.lookup_id WHERE l.word_id=r.word_id AND q.direction=:direction
-           AND p.outcome IN ('correct','wrong')) AS prior_attempts,
-          (SELECT COUNT(*) FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
-           JOIN vocab_lookups l ON l.id=q.lookup_id WHERE l.word_id=r.word_id AND q.direction=:direction
-           AND p.outcome='wrong') AS prior_failures
-        FROM ({vocabulary_db.READY_WORDS}) r
-        LEFT JOIN sentence_states s ON s.word_id=r.word_id AND s.direction=:direction
-        """
-        with self._connect() as conn:
-            return [dict(row) for row in conn.execute(sql, {"direction": direction})]
-
     def sentence_cached(self, plan: dict, policy: dict) -> list[dict]:
         """Reuse only the exact saved contexts and direction under the current generation policy; e.g. do not substitute a new word sense."""
 

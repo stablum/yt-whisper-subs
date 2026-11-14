@@ -7,12 +7,12 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from yt_whisper_subs import practice_ai
+from yt_whisper_subs import vocabulary_learning as learning
 from yt_whisper_subs import verb_practice as verbs
 
 
 PROMPT_VERSION = 2
-GRADE_VERSION = 2
+GRADE_VERSION = 3
 LEXICON_VERSION = 1
 TRANSLATION_VERSION = 1
 _RULES = (
@@ -68,7 +68,7 @@ class Provider(Protocol):
         ...
 
 
-class VerbGenerator(practice_ai.StructuredGenerator):
+class VerbGenerator(learning.LearningGenerator):
     """Use independent generation and audit followed by diagnostic answer checking."""
 
     def generate(self, targets: list[dict]) -> list[dict]:
@@ -109,7 +109,7 @@ class VerbGenerator(practice_ai.StructuredGenerator):
     def grade(self, document: dict) -> verbs.Grade:
         """Accept valid alternatives and identify actual error axes; e.g. d/t spelling is not an automatic tense failure."""
 
-        return self._request(verbs.Grade, _RULES + (
+        grade = self._request(verbs.Grade, _RULES + learning.RULES + (
             "Evaluate ONLY the learner_answer against the displayed source, instruction and LOCAL target. "
             "The stored answer is a helpful checked example, NOT the only acceptable wording. Accept standard "
             "Dutch alternatives including valid verb-cluster order, contracted pronouns with the same referent, "
@@ -130,6 +130,8 @@ class VerbGenerator(practice_ai.StructuredGenerator):
             " corrected_english must faithfully translate that corrected full Dutch sentence into natural English, "
             "preserving tense, person, negation and modality, without additional grammar explanation."
         ), document)
+        context = learning.document("verb", {"grade": grade.model_dump(), "answer_text": document["learner_answer"]})
+        return self.check_vocabulary(grade, context)
 
     def lexemes(self, rows: list[dict]) -> list[dict]:
         """Extract and independently audit saved verb occurrences; e.g. reject an adjective homonym rather than guessing."""

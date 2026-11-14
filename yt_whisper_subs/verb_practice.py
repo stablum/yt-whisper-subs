@@ -13,6 +13,7 @@ from typing import Literal
 import pydantic as pd
 
 from yt_whisper_subs import practice
+from yt_whisper_subs import vocabulary_learning as learning
 
 
 class Tense(enum.StrEnum):
@@ -218,6 +219,7 @@ class Grade(practice.Content):
     explanation: str = pd.Field(min_length=3, max_length=1200)
     axes: list[Axis] = pd.Field(min_length=4, max_length=4)
     errors: list[Error] = pd.Field(max_length=12)
+    vocabulary: list[learning.Correction] = pd.Field(max_length=10)
 
     def check(self, answer: str) -> None:
         """Reject contradictory or fabricated feedback; e.g. an error quote must appear in the submitted sentence."""

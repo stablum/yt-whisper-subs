@@ -16,6 +16,7 @@ from unittest import mock
 from tests import practice_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
+from yt_whisper_subs import word_select
 from yt_whisper_subs import practice_generate
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
@@ -82,8 +83,8 @@ class PracticeTests(unittest.TestCase):
         session = self._round(count=1)
         first = self.db.practice_current(session)
         self.db.practice_answer(first["id"], first["correct_idx"], True, 900)
-        self.assertEqual(sum(bool(row["card_json"]) for row in self.db.practice_candidates("nl_en")), 1)
-        self.assertTrue(all(row["card_json"] is None for row in self.db.practice_candidates("en_nl")))
+        self.assertEqual(sum(bool(row["card_json"]) for row in self.db.word_candidates("nl_en")), 1)
+        self.assertTrue(all(row["card_json"] is None for row in self.db.word_candidates("en_nl")))
         reverse = self._round(practice.Direction.EN_NL)
         row = self.db.practice_current(reverse)
         self.assertEqual(row["content"]["prompt"], row["content"]["meaning"])
@@ -109,7 +110,7 @@ class PracticeTests(unittest.TestCase):
         data = practice_stats.snapshot(self.db)
         self.assertEqual(data["totals"]["attempts"], 4)
         self.assertEqual(data["totals"]["invalid"], 1)
-        state = next(row for row in self.db.practice_candidates("nl_en") if row["word_id"] == first["word_id"])
+        state = next(row for row in self.db.word_candidates("nl_en") if row["word_id"] == first["word_id"])
         expected = practice.ReviewPolicy(later["scheduler_json"]).answer(
             None, correct=True, unsure=False, now=later["answered_at"], elapsed_ms=500)
         actual_card, expected_card = json.loads(state["card_json"]), json.loads(expected["after_json"])
@@ -132,7 +133,7 @@ class PracticeTests(unittest.TestCase):
         early = policy.answer(None, correct=True, unsure=False, now=now, elapsed_ms=0)
         rows += [{"word_id": 200, "card_json": early["after_json"], "due_at": early["due_at"]}]
         opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=5)
-        selected = policy.select(rows, opts, now)
+        selected = word_select.Selector(policy).select(rows, opts, now)
         self.assertEqual(len({row["word_id"] for row in selected}), 5)
         self.assertIn(100, [row["word_id"] for row in selected])
         self.assertNotIn(200, [row["word_id"] for row in selected])
@@ -155,7 +156,7 @@ class PracticeTests(unittest.TestCase):
     def test_cached_variants_work_offline_and_rejected_questions_never_enter_round(self) -> None:
         """Preserve playable approved content during outages; e.g. no fallback to unchecked or random answers."""
 
-        candidates = self.db.practice_candidates("nl_en")
+        candidates = self.db.word_candidates("nl_en")
         self.generator.rejected.add(candidates[0]["lookup_id"])
         session = self._round()
         self.assertEqual(self.db.practice_summary(session)["planned"], 3)
@@ -173,7 +174,7 @@ class PracticeTests(unittest.TestCase):
     def test_generator_uses_two_strict_passes_and_rejects_duplicate_choices(self, request) -> None:
         """Verify the real provider contract, including independent semantics review and literal saved answers."""
 
-        rows = self.db.practice_candidates("nl_en")[:1]
+        rows = self.db.word_candidates("nl_en")[:1]
         draft = self.generator.generate(rows, practice.Direction.NL_EN)[0]
         request.side_effect = [{"output_text": json.dumps({"questions": [draft["draft"]]})},
                                {"output_text": json.dumps({"verdicts": [draft["verdict"]]})}]

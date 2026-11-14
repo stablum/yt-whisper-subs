@@ -67,7 +67,7 @@ class VocabularyDialogTests(unittest.TestCase):
         dialog._group.setChecked(True)
         self.assertEqual(dialog._words.rowCount(), 1)
         self.assertEqual(dialog._words.item(0, 4).data(QtCore.Qt.ItemDataRole.DisplayRole), 3)
-        self.assertEqual(dialog._words.item(0, 5).data(QtCore.Qt.ItemDataRole.DisplayRole), 2)
+        self.assertEqual(dialog._words.item(0, 6).data(QtCore.Qt.ItemDataRole.DisplayRole), 2)
         dialog._words.selectRow(0)
         self.assertEqual(dialog._history.rowCount(), 3)
         dialog._history.selectRow(1)

@@ -105,17 +105,6 @@ def _owner_alive(owner: str) -> bool:
         return True
 
 
-def consume_first(rows: list[dict], opts, choose) -> list[dict]:
-    """Apply normal adaptive selection to unused stock first; e.g. new targets fill only the remaining round slots."""
-
-    selected = choose([row for row in rows if row.get("unused")], opts)
-    remaining = opts.count - len(selected)
-    if remaining:
-        used = {id(row) for row in selected}
-        selected.extend(choose([row for row in rows if id(row) not in used], opts.model_copy(update={"count": remaining})))
-    return selected
-
-
 def serialized(kind: str, version: int):
     """Wrap paid preparation with shared ownership; e.g. each mode keeps its own linguistic strategy and SQL transactions."""
 

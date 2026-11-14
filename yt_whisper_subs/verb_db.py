@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 PRESENTATION = """
 SELECT p.*,q.body_json,q.target_id,q.flagged_at,t.verb_id,t.tense,t.subject,t.structure,
-       v.lemma,v.family,v.transitive,s.status,s.scheduler_json
+       v.lemma,v.family,v.transitive,s.status,s.scheduler_json,s.options_json
 FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id
 JOIN verb_targets t ON t.id=q.target_id JOIN verb_lemmas v ON v.id=t.verb_id
 JOIN verb_sessions s ON s.id=p.session_id
@@ -195,6 +195,7 @@ class VerbDbMixin:
         """Commit one verified correction, its error evidence and FSRS update together; e.g. double callbacks cannot add reviews."""
 
         from yt_whisper_subs import practice
+        from yt_whisper_subs import vocabulary_learning
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -224,6 +225,8 @@ class VerbDbMixin:
             conn.executemany("INSERT INTO verb_errors(presentation_id,ordinal,kind,axis,evidence,correction,explanation) "
                              "VALUES(?,?,?,?,?,?,?)", [(presentation_id, idx, item.kind, item.axis, item.evidence,
                                                         item.correction, item.explanation) for idx, item in enumerate(grade.errors)])
+            completed = {**dict(row), "grade": grade.model_dump()}
+            self._learning_save(conn, "verb", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
             self._verb_complete(conn)
             return self._verb_row(conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
 
@@ -239,6 +242,7 @@ class VerbDbMixin:
                 raise ValueError("This exercise has not been shown")
             conn.execute("UPDATE verb_questions SET flagged_at=? WHERE id=?", (time.time(), row["question_id"]))
             conn.execute("UPDATE verb_presentations SET outcome='invalid' WHERE question_id=?", (row["question_id"],))
+            self._word_unlink(conn, "verb", row["question_id"])
             reviews = conn.execute(PRESENTATION + " WHERE q.target_id=? AND p.outcome IN ('correct','wrong') "
                                    "ORDER BY p.answered_at,p.id", (row["target_id"],)).fetchall()
             conn.execute("DELETE FROM verb_states WHERE target_id=?", (row["target_id"],))

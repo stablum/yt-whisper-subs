@@ -116,7 +116,7 @@ class VerbCard(written.WritingCard):
         grade = row["grade"]
         self.show_feedback(written.Feedback(correct=grade["correct"], corrected=grade["corrected"],
                                             translation=grade["corrected_english"], explanation=grade["explanation"],
-                                            errors=grade["errors"]))
+                                            errors=grade["errors"], vocabulary=grade.get("vocabulary", [])))
 
 
 class VerbView(written.WritingView):

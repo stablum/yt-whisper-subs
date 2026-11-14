@@ -108,4 +108,4 @@ class FakeSentenceProvider:
         corrected = content["dutch"] if nl else content["english"]
         return sentences.Grade(confident=True, correct=not errors, corrected=corrected if errors else answer,
                                  corrected_meaning=content["english"] if nl else content["dutch"],
-                                 explanation="Check the requested degree and sentence structure.", words=words, errors=errors)
+                                 explanation="Check the requested degree and sentence structure.", words=words, errors=errors, vocabulary=[])

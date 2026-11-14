@@ -38,7 +38,7 @@ class VocabularyDialog(QtWidgets.QDialog):
         """Bind the review window to one output root; e.g. the currently open library."""
 
         super().__init__(parent)
-        self.setWindowTitle("Vocabulary · selected subtitle words")
+        self.setWindowTitle("Vocabulary · subtitles and practice")
         self.resize(1080, 760)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self._service = service
@@ -48,9 +48,9 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._search.setPlaceholderText("Search words, meanings, or dictionary forms…")
         self._group = QtWidgets.QCheckBox("Group by dictionary form")
         self._status = QtWidgets.QLabel()
-        self._words = self._table(["Word", "Language", "Dictionary form", "Meaning here", "Clicks", "Videos", "Last clicked", "Translation"])
-        self._history = self._table(["Clicked at", "Video", "Cue time", "Click position", "Meaning here", "Translation"])
-        for col, width in enumerate((125, 75, 135, 200, 60, 65, 160, 120)):
+        self._words = self._table(["Word", "Language", "Dictionary form", "Meaning", "Clicks", "Mistakes", "Videos", "Last seen", "Translation"])
+        self._history = self._table(["Recorded at", "Source", "Cue time", "Click position", "Meaning", "Translation"])
+        for col, width in enumerate((125, 75, 135, 180, 60, 70, 65, 160, 105)):
             self._words.setColumnWidth(col, width)
         for col, width in enumerate((160, 245, 90, 105, 200, 105)):
             self._history.setColumnWidth(col, width)
@@ -141,7 +141,7 @@ class VocabularyDialog(QtWidgets.QDialog):
             word = row["lemma"] if self._group.isChecked() and row["lemma"] else row["surface"]
             status = f"{row['failed']} failed" if row["failed"] else (f"{row['pending']} pending" if row["pending"] else "Ready")
             values = [word, row["language"], row["lemma"] or "", row["meaning"] or "",
-                      row["clicks"], row["videos"], _when(row["clicked_at"]), status]
+                      row["clicks"], row["mistakes"], row["videos"], _when(row["occurred_at"]), status]
             idx = self._words.rowCount()
             self._words.insertRow(idx)
             identity = (row["language"], row["word_key"])
@@ -154,7 +154,8 @@ class VocabularyDialog(QtWidgets.QDialog):
                 self._words.selectRow(idx)
         self._words.setSortingEnabled(True)
         self._words.blockSignals(False)
-        self._status.setText(f"{len(rows):,} words · {sum(row['clicks'] for row in rows):,} clicks · each click is retained")
+        self._status.setText(f"{len(rows):,} words · {sum(row['clicks'] for row in rows):,} clicks · "
+                             f"{sum(row['mistakes'] for row in rows):,} word confusions · each occurrence is retained")
         self._show_history()
 
     def _show_history(self) -> None:
@@ -168,8 +169,10 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._history.setRowCount(len(self._events))
         selected = 0
         for idx, row in enumerate(self._events):
-            values = [_when(row["clicked_at"]), row["title"], _time(row["cue_start_ms"] / 1000),
-                      _time(row["position_seconds"]), row["meaning"] or "", row["state"].capitalize()]
+            cue = _time(row["cue_start_ms"] / 1000) if row["cue_start_ms"] is not None else "—"
+            position = _time(row["position_seconds"]) if row["position_seconds"] is not None else "—"
+            source = row["title"] + (f" · {row['role']}" if row["role"] else "")
+            values = [_when(row["occurred_at"]), source, cue, position, row["meaning"] or "", row["state"].capitalize()]
             for col, value in enumerate(values):
                 self._history.setItem(idx, col, QtWidgets.QTableWidgetItem(value))
             if old and row["id"] == old["id"]:
@@ -189,8 +192,9 @@ class VocabularyDialog(QtWidgets.QDialog):
         """Show source and translation provenance plainly; e.g. an ambiguous idiom."""
 
         row = self._selected_event()
-        self._play.setEnabled(row is not None)
-        self._source.setEnabled(row is not None)
+        playable = row is not None and row["origin"] == "click"
+        self._play.setEnabled(playable)
+        self._source.setEnabled(playable)
         if row is None:
             self._detail.clear()
             return
@@ -198,10 +202,14 @@ class VocabularyDialog(QtWidgets.QDialog):
         lines = [f"{row['surface']} → {row['meaning'] or 'Translation pending'}",
                  f"Dictionary form: {row['lemma'] or '—'} · {row['lemma_meaning'] or '—'}",
                  f"{row['part_of_speech'] or ''} · {row['note'] or ''}",
-                 f"Expression: {row['expression'] or '—'}", "", ctx["sentence"],
-                 "", f"Before: {ctx['before']}", f"After: {ctx['after']}",
-                 f"English subtitle: {ctx['english'] or '—'}", "",
-                 f"Source: {row['url']}", f"File: {row['path']}"]
+                 f"Expression: {row['expression'] or '—'}", "", ctx["sentence"]]
+        if row["origin"] == "click":
+            lines.extend(["", f"Before: {ctx['before']}", f"After: {ctx['after']}",
+                          f"English subtitle: {ctx['english'] or '—'}", "", f"Source: {row['url']}", f"File: {row['path']}"])
+        else:
+            lines.extend(["", f"{row['title']} · {row['role']} concept",
+                          f"You typed: {row['typed'] or '(omitted)'}", f"Correction: {row['correction']}",
+                          f"English: {ctx['english'] or '—'}"])
         if row["ambiguous"]:
             lines.append("Meaning is ambiguous in this context.")
         if row["error"]:
@@ -211,13 +219,13 @@ class VocabularyDialog(QtWidgets.QDialog):
     def _play_occurrence(self, *_args: object) -> None:
         """Delegate playback to the library's existing worker; e.g. double-click a history row."""
 
-        if row := self._selected_event():
+        if (row := self._selected_event()) and row["origin"] == "click":
             self.play_requested.emit(row)
 
     def _open_source(self) -> None:
         """Open the original URL or local file; e.g. a removed download's YouTube page."""
 
-        if row := self._selected_event():
+        if (row := self._selected_event()) and row["origin"] == "click":
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(row["url"]))
 
     def _retry(self) -> None:

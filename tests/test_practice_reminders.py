@@ -225,9 +225,9 @@ class ReminderTests(unittest.TestCase):
         engine = sentence_service.SentenceService(self.db, sentence_fixtures.FakeSentenceProvider())
         last = datetime(2026, 11, 12, 23, 55).timestamp()
         # Vocabulary fixtures share the catalog: sentence generation still sees only its own approved target set.
-        candidates = self.db.sentence_candidates("en_nl")
+        candidates = self.db.word_candidates("en_nl")
         words = [row for row in candidates if row["lemma"] in {"slim", "fiets", "lopen"}]
-        with mock.patch.object(self.db, "sentence_candidates", return_value=words):
+        with mock.patch.object(self.db, "word_candidates", return_value=words):
             session = engine.start(sentence_fixtures.options(), lambda _: None)
         with mock.patch("yt_whisper_subs.sentence_db.time.time", return_value=last):
             row = self.db.sentence_current(session)

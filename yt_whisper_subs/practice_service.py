@@ -14,6 +14,7 @@ from collections.abc import Callable
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import word_select
 
 
 class NothingToPractice(ValueError):
@@ -40,7 +41,7 @@ class PracticeService:
         """Generate bounded batches before committing a round; e.g. cancel safely while preparing choices."""
 
         policy = practice.ReviewPolicy()
-        candidates = self._db.practice_candidates(opts.direction.value)
+        candidates = self._db.word_candidates(opts.direction.value)
         if not candidates:
             raise NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
@@ -48,7 +49,8 @@ class PracticeService:
         unused = self._db.practice_unused("practice", generation)
         for row in candidates:
             row["unused"] = row["lookup_id"] in unused
-        selected = practice_ready.consume_first(candidates, opts, lambda rows, options: policy.select(rows, options, time.time()))
+        selector = word_select.Selector(policy)
+        selected = selector.select(candidates, opts, time.time())
         if not selected:
             raise NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
         cached = self._ensure_content(selected, opts.direction, report, cached_first=cached_first)
@@ -117,7 +119,9 @@ class PracticeService:
         draft.check(answer)
         sentence = ctx["sentence"]
         if reverse:
-            sentence = re.sub(re.escape(row["surface"]), "____", sentence, flags=re.IGNORECASE)
+            span = ctx["span"]
+            form = sentence[span[0]:span[1]] if span else row["surface"]
+            sentence = re.sub(re.escape(form), "____", sentence, flags=re.IGNORECASE)
         return {"prompt": prompt, "answer": answer, "context": sentence, "source_sentence": ctx["sentence"],
                 "surface": row["surface"], "meaning": row["meaning"], "explanation": draft.explanation,
                 "distractors": [item.model_dump() for item in draft.distractors]}

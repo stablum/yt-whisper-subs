@@ -33,6 +33,7 @@ class Feedback(pd.BaseModel):
     explanation: str
     errors: list[dict]
     targets: str = ""
+    vocabulary: list[dict] = pd.Field(default_factory=list)
 
 
 class SentenceEdit(QtWidgets.QPlainTextEdit):
@@ -212,8 +213,13 @@ class WritingCard(controls.ContinueSurface):
         self._verdict.setText("Correct" if content.correct else "Not quite · here is the correction")
         self._correction.setText(content.corrected)
         self._translation.setText(content.translation)
-        self._targets.setText(content.targets)
-        self._targets.setVisible(bool(content.targets))
+        concepts = {lexeme["lemma"]: lexeme["meaning"] for fix in content.vocabulary
+                    for role in ("intended", "confused") if (lexeme := fix[role]) is not None}
+        labels = [content.targets] if content.targets else []
+        if concepts:
+            labels.append("Vocabulary review: " + ";  ".join(f"{word} — {meaning}" for word, meaning in concepts.items()))
+        self._targets.setText("\n".join(labels))
+        self._targets.setVisible(bool(labels))
         details = [content.explanation]
         for error in content.errors:
             evidence = error["evidence"] or "missing text"

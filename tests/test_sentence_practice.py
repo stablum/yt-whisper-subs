@@ -106,7 +106,7 @@ class SentenceTests(unittest.TestCase):
         features = {word["feature"]: word for word in stats["forms"]}
         self.assertEqual(features["superlative"]["failures"], 1)
         self.assertEqual(features["adjective_ending"]["failures"], 0)
-        rows = self.db.sentence_candidates("en_nl")
+        rows = self.db.word_candidates("en_nl")
         selector = sentence_select.Selector(practice.ReviewPolicy())
         weights = selector.weights(rows, time.time())
         scored = {word["surface"]: weight for word, weight in zip(rows, weights)}
@@ -118,7 +118,7 @@ class SentenceTests(unittest.TestCase):
         row = self.db.sentence_current(self._round())
         result = self._answer(row, fixtures.DUTCH.replace("slimste", "intelligentste"))
         self.assertEqual(result["outcome"], "correct")
-        words = {item["surface"]: item for item in self.db.sentence_candidates("en_nl")}
+        words = {item["surface"]: item for item in self.db.word_candidates("en_nl")}
         self.assertIsNone(words["slim"]["card_json"])
         self.assertEqual(words["slim"]["attempts"], 0)
         self.assertIsNotNone(words["fiets"]["card_json"])
@@ -131,7 +131,7 @@ class SentenceTests(unittest.TestCase):
         row = self.db.sentence_current(self._round(direction=practice.Direction.NL_EN))
         result = self._answer(row, fixtures.ENGLISH.replace("cleverest", "smartest"))
         self.assertEqual(result["outcome"], "correct")
-        self.assertTrue(all(word["card_json"] for word in self.db.sentence_candidates("nl_en")))
+        self.assertTrue(all(word["card_json"] for word in self.db.word_candidates("nl_en")))
         forms = {item["feature"]: item for item in sentence_stats.snapshot(self.db)["forms"]}
         self.assertEqual(forms["adjective_ending"]["attempts"], 0)
 
@@ -245,7 +245,7 @@ class SentenceTests(unittest.TestCase):
         row = self.db.sentence_current(self._round())
         self._answer(row, row["content"]["alternatives"][0])
         self.assertEqual(len(self.provider.graded), 1)
-        words = {word["surface"]: word for word in self.db.sentence_candidates("en_nl")}
+        words = {word["surface"]: word for word in self.db.word_candidates("en_nl")}
         self.assertIsNone(words["slim"]["card_json"])
 
     def test_mastered_targets_wait_until_due_unless_early_is_requested(self) -> None:
@@ -257,13 +257,13 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(error.exception.reason, "not_due")
         self.assertIsNotNone(self.db.sentence_current(self._round(include_early=True)))
 
-    def test_selection_uses_prior_vocabulary_difficulty_and_varied_contexts(self) -> None:
-        """Seed sentence sampling from recognition without fabricating sentence attempts; e.g. prior failures increase probability for a new word."""
+    def test_selection_uses_shared_vocabulary_difficulty_and_varied_contexts(self) -> None:
+        """Use common word evidence and varied scenes; e.g. failures increase probability in the shared selector."""
 
-        rows = self.db.sentence_candidates("en_nl")
+        rows = self.db.word_candidates("en_nl")
         selector = sentence_select.Selector(practice.ReviewPolicy(), np.random.default_rng(4))
         baseline = selector.weights(rows, time.time())
-        rows[0].update(prior_attempts=10, prior_failures=10)
+        rows[0].update(attempts=10, failures=10)
         self.assertGreater(selector.weights(rows, time.time())[0], baseline[0])
         opts = sentences.Options(count=3, words=2)
         plans = selector.plans(rows, rows, opts, {}, time.time())
@@ -274,7 +274,7 @@ class SentenceTests(unittest.TestCase):
     def test_generation_audit_and_grading_share_luna_strict_contracts(self, request) -> None:
         """Exercise the real structured provider boundary; e.g. generation and independent audit are separate requests with storage disabled."""
 
-        rows = self.db.sentence_candidates("en_nl")
+        rows = self.db.word_candidates("en_nl")
         opts = fixtures.options()
         selector = sentence_select.Selector(practice.ReviewPolicy())
         plan = selector.plans(rows[:1], rows, opts, {}, time.time())[0]
@@ -303,7 +303,7 @@ class SentenceTests(unittest.TestCase):
     def test_overlapping_targets_have_required_audit_slots_and_locally_bound_ids(self, request) -> None:
         """Require one actual decision per question; e.g. shared vocabulary and reversed response order cannot corrupt audit identity."""
 
-        rows = self.db.sentence_candidates("en_nl")
+        rows = self.db.word_candidates("en_nl")
         opts = fixtures.options().model_copy(update={"count": 3})
         plans = sentence_select.Selector(practice.ReviewPolicy()).plans(rows, rows, opts, {}, time.time())
         documents = [self.engine._document(plan) for plan in plans]
@@ -327,7 +327,7 @@ class SentenceTests(unittest.TestCase):
     def test_incomplete_audit_retries_only_review_without_regenerating_paid_drafts(self, request) -> None:
         """Recover the reported failure once without inventing approvals; e.g. a missing slot triggers a corrected audit of the same content."""
 
-        rows = self.db.sentence_candidates("en_nl")
+        rows = self.db.word_candidates("en_nl")
         plan = sentence_select.Selector(practice.ReviewPolicy()).plans(rows[:1], rows, fixtures.options(), {}, time.time())[0]
         document = self.engine._document(plan)
         item = self.provider.generate([document], practice.Direction.EN_NL, [])[0]
