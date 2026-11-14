@@ -4,7 +4,8 @@
 for YouTube videos and local video files. The implementation lives in the
 `yt_whisper_subs/` package. It downloads a lossy compressed video when given a
 URL, extracts a small lossy audio track, runs local OpenAI Whisper to create
-primary language subtitles, optionally translates Dutch subtitles to English
+primary language subtitles, conservatively checks their words, punctuation and
+capitalization with Luna, optionally translates Dutch subtitles to English
 with the OpenAI Responses API, can create bilingual topic chapters from the
 finished timestamped transcript, and optionally launches `mpv` with dual
 subtitles and chapter navigation.
@@ -29,7 +30,9 @@ The script is optimized for this workflow:
    named from the YouTube video ID.
 3. Generate Dutch subtitles locally with Whisper.
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
-   then extend cue end times slightly into following silence.
+   then extend cue end times slightly into following silence. Check new
+   transcriptions for rare sound-alike errors plus clear punctuation/case errors
+   before generating translations or chapters.
 5. Send the compacted and gap-extended Dutch cue texts to the OpenAI API as
    bounded indexed JSON chunks whose cue order is dispersed inside each batch.
 6. Receive natural English translations with the exact same cue count and time
@@ -108,6 +111,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | English translation provider | `openai` |
 | OpenAI translation model | `gpt-6-luna` |
 | OpenAI reasoning effort | `medium` |
+| Primary transcription review | enabled for new `transcribe` output; same Luna model/effort; 80 cues plus 3 neighbors per side; independent verification of candidates |
 | Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
@@ -272,7 +276,7 @@ uv run .\yt_whisper_subs.py --url "https://www.youtube.com/watch?v=VIDEO_ID"
 If the `.venv` beside the script is missing, the script uses `uv` to create it
 and install the Python dependencies it needs for Whisper and yt-dlp.
 
-For OpenAI translation, create a `.env` file next to the script:
+For transcription review, OpenAI translation, or chapters, create a `.env` file next to the script:
 
 ```dotenv
 OPENAI_API_KEY=sk-...
@@ -356,6 +360,7 @@ yt-whisper-subs\
     youtube_id.info.json
   subtitles\
     youtube_id.srt
+    youtube_id.srt.transcription-review.json
     youtube_id.en.srt
     youtube_id.uncompact.srt
     youtube_id.en.uncompact.srt
@@ -455,6 +460,7 @@ otherwise:
     check ffmpeg
     check CUDA if --device cuda
   generate primary subtitles if needed
+  review new/pending primary text; optionally review cached primary on explicit request
   generate English subtitles if requested and needed
   generate bilingual chapters if requested and needed
   optionally delete audio
@@ -978,7 +984,8 @@ download, audio extraction, speech-to-text, English translation, AI chapter
 planning, and final file work. The label above the bar changes through
 **Queued**, **Preparing**,
 **Downloading**, **Extracting audio**, **Speech-to-text**, **Translating**,
-**Creating chapters**, **Finalizing**, and **Ready to play**. Available, live,
+**Checking transcription** (within speech-to-text), **Creating chapters**,
+**Finalizing**, and **Ready to play**. Available, live,
 upcoming, post-live, unknown-live-state, and failed rows use the same column, so
 status is not split across unrelated UI elements. A table refresh keeps only
 active or paused in-memory pipeline labels; completed labels are rebuilt from
@@ -1049,7 +1056,8 @@ or explicit cancellation removes that recovery marker. If Windows, the machine,
 or the GUI process terminates without reaching a normal outcome, the next launch
 marks the row **Interrupted** and offers **Resume** without a confirmation dialog.
 The resumed operation uses the normal idempotent pipeline: yt-dlp continues its
-`.part` file, completed media/audio/subtitles are reused, OpenAI translation can
+`.part` file, completed media/audio/subtitles are reused, transcription review
+resumes its completed batches, OpenAI translation can
 reuse its chunk checkpoint, and only unfinished work reruns. Whisper itself does
 not expose a serializable in-memory CUDA checkpoint, so a crash during that one
 stage restarts speech-to-text while preserving all earlier stages.
@@ -1475,6 +1483,77 @@ than silently running a huge job on CPU.
 The script also checks and removes corrupt or zero-byte Whisper model cache files
 when it can infer the expected SHA-256 from Whisper's model URL. This protects
 against interrupted model downloads.
+
+## Conservative Transcription Review
+
+Since `0.5.15`, new primary subtitles from `--task transcribe` automatically get
+a conservative OpenAI pass after normal compaction/gap extension and before
+English translation or chapters. The native library uses the same pipeline and
+enables this by default. The pass shares `--openai-translation-model` (default
+`gpt-6-luna`), `--openai-reasoning-effort` (`medium`), credentials, timeout and
+retry settings with translation. It runs even when English generation is off
+or uses Whisper; `--task translate` is not reviewed as an original transcript.
+
+The model reviews chronological batches of at most 80 cues, with three
+read-only neighboring cues on each side. It proposes sparse changes rather
+than a rewritten SRT. A separate, fresh verification request checks eligible
+candidates; clean batches need only one request. Both requests use strict
+[structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
+with local validation of the permitted edits:
+
+- Word corrections must replace one exact, lowercase word with one close word,
+  only when the original is clearly wrong in context and the replacement sounds
+  nearly identical. Doubt means keep the original. Local guards allow at most
+  two letter edits, a spelling-distance ratio of 0.34, one changed word per cue,
+  and 1% of words per batch and whole transcript, rounded down with a minimum
+  allowance of one. Suspiciously dense batches are rejected. Names, numbers,
+  quantities, pronouns, negation and modal verbs are excluded by the prompt;
+  local guards additionally protect capitalized words and common Dutch/English
+  negation, pronouns, number words and modals.
+- Punctuation and capitalization are checked separately. These edits must
+  preserve every word and number, word order, apostrophe, hyphen and whitespace
+  boundary. Numeric punctuation cannot change. Each cue permits at most four
+  punctuation character edits; ordinary words cannot become all-caps. Sentence
+  boundaries may continue across cues, so a cue end alone is no reason to add
+  a period. These changes do not consume the rare-word correction allowance.
+- No grammar cleanup, paraphrasing, additions, deletions, translation or factual
+  correction is allowed. The verifier defaults to rejecting doubtful changes.
+
+Only approved changes are applied to exact original text spans. Cue count,
+timestamps, line breaks and other text stay intact. The finalized primary SRT
+then becomes the source for OpenAI English translation and chapters. Whisper
+audio translation continues to work independently from the audio.
+
+The exact pre-review SRT, settings and accepted edits are retained beside the
+archive in `VIDEO_ID.srt.transcription-review.json`. During work, the file is
+`VIDEO_ID.srt.transcription-review.pending.json`; it checkpoints completed
+batches. Failed, malformed or incomplete requests stop the pipeline before
+downstream publication. The next normal run (or Library Repair/Resume) resumes
+without rerunning Whisper or charging again for completed batches. A pending
+review remains required even if a later invocation disables review for new
+transcriptions. External changes to either subtitle copy are preserved and
+require an explicit fresh review. A fresh review uses the playback sidecar;
+any differing archive text is retained in its audit JSON. These files are included in the library's
+normal exact per-video removal manifest.
+
+Existing completed subtitles remain cached on ordinary runs. To review an
+existing video without downloading it or running Whisper again:
+
+```powershell
+python .\yt_whisper_subs.py --force-transcription-review --no-play --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+This invalidates existing English and chapters, regenerating those requested
+by the run. Omit `--chapters` if chapters are not wanted now. To keep new primary
+transcription fully local, use `--no-transcription-review` together with
+`--no-english-for-dutch` (or `--english-translation-provider whisper`) and omit
+`--chapters`. An API key is needed for the default review even when translation
+is local or disabled.
+
+This is a text-only quality filter, not audio verification. It deliberately
+misses ambiguous, capitalized, very short or more distantly spelled word
+confusions. Similar spelling alone cannot prove similar pronunciation or the
+speaker's intent, and the two model judgments cannot guarantee correctness.
 
 ## English Translation Modes
 
@@ -2574,6 +2653,8 @@ Exactly one source must be provided.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--model MODEL` | `turbo` | Primary Whisper model. |
+| `--transcription-review` / `--no-transcription-review` | on | Conservative sound-alike word, punctuation and capitalization check on newly transcribed primary subtitles. |
+| `--force-transcription-review` | off | Check existing primary subtitles without rerunning Whisper; invalidate dependent English/chapters. Requires `transcribe` and enabled review. |
 | `--device cuda|cpu` | `cuda` | Whisper/PyTorch device. |
 | `--torch-index-url URL` | CUDA 12.8 PyTorch index | Torch install index when using CUDA. |
 | `--python-version VERSION` | `3.14` | Python version for the uv-managed `.venv`. |
@@ -2592,8 +2673,8 @@ tiny, base, small, medium, large, large-v2, large-v3, turbo
 | `--no-english-for-dutch` | off | Disable automatic English subtitles for Dutch input. |
 | `--english-translation-provider openai|whisper` | `openai` | Select OpenAI SRT translation or Whisper audio translation. |
 | `--english-model MODEL` | conditional | Whisper model for the `whisper` provider only. |
-| `--openai-translation-model MODEL` | `gpt-6-luna` | Model shared by OpenAI SRT translation/review, word lookups and chapter generation. |
-| `--openai-reasoning-effort EFFORT` | `medium` | Reasoning effort shared by translation/review, word lookups and chapters. |
+| `--openai-translation-model MODEL` | `gpt-6-luna` | Model shared by transcription review, OpenAI SRT translation/review, word lookups and chapter generation. |
+| `--openai-reasoning-effort EFFORT` | `medium` | Reasoning effort shared by transcription review, translation/review, word lookups and chapters. |
 | `--openai-timeout SECONDS` | `900` | API request timeout. |
 | `--openai-max-retries INT` | `3` | Retries for transient OpenAI request failures. |
 | `--openai-translation-chunk-cues INT` | `120` | Maximum cues per generation request; `0` means the full cue list. Semantic review remains bounded to 40 pairs. |
@@ -2709,6 +2790,8 @@ The split is intentionally responsibility-oriented:
   downloads.
 - `media.py` owns local video paths and audio extraction.
 - `whisper_local.py` owns Whisper execution and model-cache validation.
+- `transcription_review.py` owns conservative primary word/punctuation/case
+  proposals, local edit limits, independent verification and resumable auditing.
 - `srt.py` owns the subtitle cue model, SRT parsing/rendering, compaction, and
   gap extension.
 - `openai_client.py` owns dotenv loading, Responses API calls, retry behavior,
@@ -2874,6 +2957,7 @@ High-level groups:
 | `yt_whisper_subs.srt` | `SubtitleCue`, SRT parsing/rendering, file-yield validation, cue compaction, and gap extension. |
 | `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, response text extraction, JSON cleanup, and shared usage reporting. |
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
+| `yt_whisper_subs.transcription_review` | Sparse primary word/punctuation/case correction, exact-span edits, verification, original-source audit and batch checkpoints. |
 | `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
 | `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
@@ -3121,13 +3205,19 @@ three pruning paths while an unfinished job exists.
 Exercise translation, review and correction without making an API call:
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest tests.test_openai_translate tests.test_translation_review -v
+.\.venv\Scripts\python.exe -m unittest tests.test_transcription_review tests.test_openai_translate tests.test_translation_review -v
 ```
 
 The mocked tests exercise exact source timestamps, missing/duplicate translation
 repair, cue swaps, sparse correction spans, review coverage, bounded failure,
 whole-file mode, and resuming only reviewed checkpoints. They also check the
 Luna defaults and model-specific reasoning validation.
+
+Transcription tests cover verified sound-alike replacements, lexical limits,
+punctuation/case isolation, quantity/whitespace protection, doubtful candidate
+rejection, exact timestamp/line-break preservation, partial publication and
+batch recovery, external edits, GUI issue invalidation, the local opt-out, and
+explicit review of cached subtitles without rerunning Whisper.
 
 Check compaction routing for default OpenAI mode:
 
@@ -3430,7 +3520,7 @@ Downloaded video is the durable media yield.
 YouTube info JSON is the durable source metadata yield.
 SQLite retains catalog metadata, subscriptions, and durable download/watch/removal history.
 Primary compacted and gap-extended SRT is the timing authority.
-OpenAI translates text only.
+OpenAI conservatively checks primary text, then translates text only.
 The script renders English onto the primary SRT timings.
 Sidecars are for mpv; archives are for durable reuse.
 Second runs should be cheap.

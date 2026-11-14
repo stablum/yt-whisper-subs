@@ -14,6 +14,7 @@ from yt_whisper_subs import chapters
 from yt_whisper_subs import library_feed
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import srt
+from yt_whisper_subs import transcription_review
 from yt_whisper_subs import yield_files
 
 
@@ -145,9 +146,12 @@ def _stale_yields(out_dir: Path, video_id: str) -> dict[str, Path]:
     Example: syntactically valid old English remains a repairable Issue.
     """
 
+    primary = out_dir / "subtitles" / f"{video_id}.srt"
     english = out_dir / "subtitles" / f"{video_id}.en.srt"
     chapter = chapters.ChapterFiles.for_video(out_dir, video_id).archive
     return {
+        "transcription review needs completion": transcription_review.pending_path(primary),
+        "primary subtitles need regeneration": yield_files.stale_path(primary),
         "English subtitles need regeneration": yield_files.stale_path(english),
         "chapter plan needs regeneration": yield_files.stale_path(chapter),
     }

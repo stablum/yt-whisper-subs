@@ -36,8 +36,8 @@ def cue(text: str) -> str:
     return f"1\n00:00:00,000 --> 00:00:02,000\n{text}\n\n"
 
 
-class YieldRecoveryTests(unittest.TestCase):
-    """Run the real orchestration around mocked expensive generation.
+class YieldRecoveryFixture:
+    """Share real orchestration fixtures with source-review tests.
 
     Example: instantiate a new runner after failure to model an app restart.
     """
@@ -70,6 +70,9 @@ class YieldRecoveryTests(unittest.TestCase):
         self.enterContext(mock.patch.object(media, "extract_audio"))
         self.enterContext(mock.patch.object(media, "probe_duration_ms", return_value=90_000))
         self.whisper = self.enterContext(mock.patch.object(pipeline.whisper_local, "run_whisper", side_effect=self._transcribe))
+        # Exercise real transcription checkpoints while isolating all existing tests from the API.
+        self.enterContext(mock.patch.object(pipeline.transcription_review.openai_client, "responses_api_request",
+            return_value={"output_text": '{"edits":[],"formatting":[]}'}))
 
     def _runner(self) -> pipeline.PipelineRunner:
         """Use a fresh orchestration owner with the same durable yields.
@@ -113,6 +116,10 @@ class YieldRecoveryTests(unittest.TestCase):
         plan = self._plan("New chapter")
         files.write(plan)
         return plan
+
+
+class YieldRecoveryTests(YieldRecoveryFixture, unittest.TestCase):
+    """Run real recovery around mocked generation; e.g. a fresh runner after failure."""
 
     def test_translation_failure_retries_only_stale_dependents_after_restart(self) -> None:
         """Never accept old downstream text after a new primary succeeds.

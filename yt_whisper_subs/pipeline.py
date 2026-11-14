@@ -21,6 +21,7 @@ from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
+from yt_whisper_subs import transcription_review
 from yt_whisper_subs import whisper_local
 from yt_whisper_subs import youtube
 from yt_whisper_subs import yield_files
@@ -90,7 +91,8 @@ class RunYields(NamedTuple):
 
         english_ready = (not self.make_english) or self.english.ready()
         chapters_ready = (not self.make_chapters) or self.chapters.ready()
-        return self.video.exists() and self.primary.ready() and english_ready and chapters_ready
+        review_done = not transcription_review.pending_path(self.primary.archive).exists()
+        return self.video.exists() and self.primary.ready() and review_done and english_ready and chapters_ready
 
     def srt_paths(self) -> list[Path]:
         """Return subtitle sidecars in the playback order expected by mpv.
@@ -186,20 +188,24 @@ class PipelineRunner:
         run_yields = self._build_yields(video_path, source_video_id)
         self._prepare_existing_subtitles(run_yields)
         run_yields.print_paths(self._log_path)
+        review_requested = self._args.force_transcription_review
+        review_pending = transcription_review.pending_path(run_yields.primary.archive).exists()
 
         if (
             run_yields.all_ready()
             and not self._args.force
             and not self._force_english(run_yields)
             and not self._force_chapters(run_yields)
+            and not review_requested
         ):
             progress.emit(progress.Stage.FINALIZING, 0.0, "Reusing completed files")
             self._reuse_ready_yields(run_yields)
             progress.emit(progress.Stage.READY, 1.0)
             return run_yields
 
-        need_primary_generation = (not run_yields.primary.ready()) or self._args.force
-        if need_primary_generation:
+        review_source_ready = review_pending and all(srt.file_is_usable(path) for path in run_yields.primary)
+        need_primary_generation = self._args.force or (not run_yields.primary.ready() and not review_source_ready)
+        if need_primary_generation or review_requested or review_pending:
             run_yields.english.invalidate()
             run_yields.chapters.invalidate()
         need_english_generation = run_yields.make_english and (
@@ -221,6 +227,13 @@ class PipelineRunner:
         else:
             print()
             print("Subtitle file already exists. Use --force to regenerate.")
+
+        review = transcription_review.TranscriptionReview(run_yields.primary, self._args)
+        if review_requested and not need_primary_generation:
+            review.begin()
+        if transcription_review.pending_path(run_yields.primary.archive).exists():
+            progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Checking transcription")
+            review.run()
 
         if run_yields.make_english:
             self._generate_english_subs(run_yields, regenerate=need_primary_generation)
@@ -364,6 +377,9 @@ class PipelineRunner:
         if run_yields.make_english:
             run_yields.english.hydrate("English", self._args, is_english=True, force=self._args.force)
 
+        if transcription_review.pending_path(run_yields.primary.archive).exists():
+            return  # Pending review owns exact text spans; defer further normalization.
+
         run_yields.primary.ensure_compacted(
             self._args,
             is_english=False,
@@ -435,6 +451,7 @@ class PipelineRunner:
         print()
         print("Running Whisper...")
         progress.emit(progress.Stage.TRANSCRIBING, 0.0)
+        run_yields.primary.invalidate()
         whisper_local.run_whisper(
             run_yields.audio,
             run_yields.primary.sidecar,
@@ -444,7 +461,11 @@ class PipelineRunner:
         )
         run_yields.primary.accept_sidecar_replacement()
         run_yields.primary.finalize(self._args, is_english=False, label="primary")
-        run_yields.primary.complete()
+        if self._args.task == "transcribe" and self._args.transcription_review:
+            transcription_review.TranscriptionReview(run_yields.primary, self._args).begin()
+        else:
+            transcription_review.pending_path(run_yields.primary.archive).unlink(missing_ok=True)
+            run_yields.primary.complete()
         progress.emit(progress.Stage.TRANSCRIBING, 1.0, "Speech-to-text complete")
 
     def _generate_english_subs(self, run_yields: RunYields, *, regenerate: bool = False) -> None:

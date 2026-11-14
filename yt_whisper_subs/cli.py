@@ -53,6 +53,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--model", choices=cfg.MODEL_CHOICES, default="turbo")
     parser.add_argument(
+        "--transcription-review", action=argparse.BooleanOptionalAction, default=cfg.DEFAULT_TRANSCRIPTION_REVIEW,
+        help="Conservatively fix isolated sound-alike words, punctuation and capitalization with OpenAI. Default: on.",
+    )
+    parser.add_argument(
+        "--force-transcription-review", action="store_true",
+        help="Review existing primary subtitles without redownloading or rerunning Whisper; regenerate dependent yields.",
+    )
+    parser.add_argument(
         "--english-model",
         choices=cfg.MODEL_CHOICES,
         help=(
@@ -75,7 +83,7 @@ def parse_args() -> argparse.Namespace:
         "--openai-translation-model",
         default=cfg.DEFAULT_OPENAI_TRANSLATION_MODEL,
         help=(
-            "OpenAI model for subtitle translation/review, word lookups and chapters. "
+            "OpenAI model for transcription correction, translation/review, word lookups and chapters. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_MODEL}."
         ),
     )
@@ -84,7 +92,7 @@ def parse_args() -> argparse.Namespace:
         choices=("none", "minimal", "low", "medium", "high", "xhigh", "max"),
         default=cfg.DEFAULT_OPENAI_TRANSLATION_REASONING,
         help=(
-            "OpenAI reasoning effort for subtitle translation/review, word lookups and chapters. "
+            "OpenAI reasoning effort for transcription correction, translation/review, word lookups and chapters. "
             f"Default: {cfg.DEFAULT_OPENAI_TRANSLATION_REASONING}."
         ),
     )
@@ -408,6 +416,8 @@ def parse_args() -> argparse.Namespace:
         parser.error("provide exactly one source: positional SOURCE, --url, or --video-file")
     if args.openai_max_retries < 0:
         parser.error("--openai-max-retries must be 0 or greater")
+    if args.force_transcription_review and (not args.transcription_review or args.task != "transcribe"):
+        parser.error("--force-transcription-review requires transcription review and --task transcribe")
     if args.openai_translation_chunk_cues < 0:
         parser.error("--openai-translation-chunk-cues must be 0 or greater")
     if args.openai_translation_context_cues < 0:
