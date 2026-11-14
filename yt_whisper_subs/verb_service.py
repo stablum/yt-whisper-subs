@@ -9,6 +9,7 @@ import time
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import practice_ready
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_stats
@@ -25,6 +26,7 @@ class VerbService:
         self._db = db
         self._provider = provider or verb_generate.VerbGenerator()
 
+    @practice_ready.serialized("verb", verb_generate.PROMPT_VERSION)
     def start(self, opts: verbs.Options, report, *, cached_first: bool = True) -> str:
         """Build the whole approved round before replacing another; e.g. failures preserve existing practice."""
 
@@ -36,7 +38,13 @@ class VerbService:
             message = ("No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
                        if opts.source == "vocabulary" else "These filters have no valid Dutch forms. Change the round options.")
             raise practice_service.NothingToPractice("no_questions", message)
-        selected = verb_syllabus.Selector(policy).select(candidates, verb_stats.metrics(self._db), opts, time.time())
+        generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
+                      "prompt_version": verb_generate.PROMPT_VERSION}
+        unused = self._db.practice_unused("verb", generation)
+        for row in candidates:
+            row["unused"] = row.get("target_id") in unused
+        selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
+        selected = practice_ready.consume_first(candidates, opts, lambda rows, options: selector.select(rows, metrics, options, time.time()))
         if not selected:
             raise practice_service.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
         selected = [self._db.verb_target(row) for row in selected]

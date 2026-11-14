@@ -284,7 +284,8 @@ class SentenceTests(unittest.TestCase):
         grade_doc = {"direction": "en_nl", "exercise": item["draft"], "learner_answer": wrong}
         grade = self.provider.grade(grade_doc)
         request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"]]})},
-                               {"output_text": json.dumps({"verdicts": [item["verdict"]]})},
+                               {"output_text": json.dumps({f"q_{item['draft']['anchor_word_id']}":
+                                                             {key: item["verdict"][key] for key in ("valid", "reason")}})},
                                {"output_text": grade.model_dump_json()}]
         provider = sentence_generate.SentenceGenerator()
         self.assertEqual(provider.generate([document], opts.direction, []), [item])
@@ -297,6 +298,106 @@ class SentenceTests(unittest.TestCase):
             self.assertFalse(payload["store"])
             self.assertTrue(payload["text"]["format"]["strict"])
             self.assertEqual(args.openai_max_retries, 0)
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_overlapping_targets_have_required_audit_slots_and_locally_bound_ids(self, request) -> None:
+        """Require one actual decision per question; e.g. shared vocabulary and reversed response order cannot corrupt audit identity."""
+
+        rows = self.db.sentence_candidates("en_nl")
+        opts = fixtures.options().model_copy(update={"count": 3})
+        plans = sentence_select.Selector(practice.ReviewPolicy()).plans(rows, rows, opts, {}, time.time())
+        documents = [self.engine._document(plan) for plan in plans]
+        items = self.provider.generate(documents, opts.direction, [])
+        decisions = {f"q_{item['draft']['anchor_word_id']}": {"valid": idx != 1, "reason": f"Independent check {idx}"}
+                     for idx, item in enumerate(reversed(items))}
+        request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"] for item in items]})},
+                               {"output_text": json.dumps(decisions)}]
+        result = sentence_generate.SentenceGenerator().generate(documents, opts.direction, [])
+        for item in result:
+            anchor = item["draft"]["anchor_word_id"]
+            self.assertEqual(item["verdict"], {"anchor_word_id": anchor, **decisions[f"q_{anchor}"]})
+        audit = request.call_args_list[-1].args[1]
+        schema = audit["text"]["format"]["schema"]
+        self.assertEqual(set(schema["required"]), set(decisions))
+        self.assertEqual(set(json.loads(audit["input"])["questions"]), set(decisions))
+        self.assertFalse(schema["additionalProperties"])
+        self.assertNotIn("anchor_word_id", schema["$defs"]["Decision"]["properties"])
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_incomplete_audit_retries_only_review_without_regenerating_paid_drafts(self, request) -> None:
+        """Recover the reported failure once without inventing approvals; e.g. a missing slot triggers a corrected audit of the same content."""
+
+        rows = self.db.sentence_candidates("en_nl")
+        plan = sentence_select.Selector(practice.ReviewPolicy()).plans(rows[:1], rows, fixtures.options(), {}, time.time())[0]
+        document = self.engine._document(plan)
+        item = self.provider.generate([document], practice.Direction.EN_NL, [])[0]
+        decision = {f"q_{item['draft']['anchor_word_id']}": {"valid": True, "reason": "Checked independently"}}
+        request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"]]})},
+                               {"output_text": "{}"}, {"output_text": json.dumps(decision)}]
+        result = sentence_generate.SentenceGenerator().generate([document], practice.Direction.EN_NL, [])
+        self.assertTrue(result[0]["verdict"]["valid"])
+        names = [call.args[1]["text"]["format"]["name"] for call in request.call_args_list]
+        self.assertEqual(names, ["drafts", "sentenceaudit", "sentenceaudit"])
+        self.assertIn("response_error", json.loads(request.call_args_list[-1].args[1]["input"]))
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_repeated_incomplete_audit_is_bounded_and_never_creates_playable_content(self, request) -> None:
+        """Fail closed after one response repair; e.g. the previous ready round survives two missing-audit responses."""
+
+        session = self._round()
+
+        def incomplete(_args, payload):
+            """Return structurally incomplete reviews for the current real request; e.g. no matching-ID response is fabricated."""
+
+            if payload["text"]["format"]["name"] != "drafts":
+                return {"output_text": "{}"}
+            data = json.loads(payload["input"])
+            items = self.provider.generate(data["plans"], practice.Direction.EN_NL, [])
+            return {"output_text": json.dumps({"questions": [item["draft"] for item in items]})}
+
+        request.side_effect = incomplete
+        engine = sentence_service.SentenceService(self.db, sentence_generate.SentenceGenerator())
+        with self.assertRaisesRegex(ValueError, "incomplete after retry"):
+            engine.start(fixtures.options(), lambda _: None)
+        self.assertEqual(request.call_count, 3)
+        self.assertEqual(self.db.sentence_active(), session)
+        with self.db._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM sentence_questions").fetchone()[0], 1)
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_invalid_form_evidence_is_repaired_without_discarding_other_questions(self, request) -> None:
+        """Treat local metadata defects as content rejections; e.g. absent English evidence repairs one draft and preserves the other paid approvals."""
+
+        events = []
+        bad_anchor = None
+
+        def respond(_args, payload):
+            """Simulate one bad form annotation followed by a valid repair; e.g. all auditing still uses the real strict schema."""
+
+            nonlocal bad_anchor
+            data = json.loads(payload["input"])
+            name = payload["text"]["format"]["name"]
+            events.append((name, data))
+            if name == "drafts":
+                items = self.provider.generate(data["plans"], practice.Direction.EN_NL, [])
+                if bad_anchor is None:
+                    bad_anchor = items[0]["draft"]["anchor_word_id"]
+                    items[0]["draft"]["words"][0]["english_forms"] = ["absent invented annotation"]
+                return {"output_text": json.dumps({"questions": [item["draft"] for item in items]})}
+            return {"output_text": json.dumps({key: {"valid": True, "reason": "Independently checked"} for key in data["questions"]})}
+
+        request.side_effect = respond
+        engine = sentence_service.SentenceService(self.db, sentence_generate.SentenceGenerator())
+        opts = fixtures.options().model_copy(update={"count": 3})
+        session = engine.start(opts, lambda _: None)
+        generations = [doc for name, doc in events if name == "drafts"]
+        self.assertEqual([len(doc["plans"]) for doc in generations], [3, 1])
+        self.assertEqual(generations[1]["plans"][0]["anchor_word_id"], bad_anchor)
+        self.assertIn("absent", generations[1]["plans"][0]["previous_rejection"])
+        self.assertEqual(self.db.sentence_summary(session)["planned"], 3)
+        self.assertEqual(self.db.sentence_summary(session)["shown"], 0)
+        with self.db._connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM sentence_questions").fetchone()[0], 3)
 
 
 if __name__ == "__main__":

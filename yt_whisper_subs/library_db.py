@@ -25,6 +25,7 @@ from yt_whisper_subs import practice_db
 from yt_whisper_subs import verb_db
 from yt_whisper_subs import verb_catalog_db
 from yt_whisper_subs import sentence_db
+from yt_whisper_subs import practice_ready
 
 
 _VIDEO_SELECT = """
@@ -60,6 +61,7 @@ class SnapshotResult(NamedTuple):
 
 
 class LibraryDb(
+    practice_ready.ReadyDbMixin,
     library_schema.SchemaDbMixin,
     library_metadata_db.MetadataDbMixin,
     library_job_db.PipelineJobDbMixin,

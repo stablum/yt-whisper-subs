@@ -115,6 +115,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
+| Ready practice rounds | background preparation of one unconsumed round per mode using its saved settings; unused cached questions consumed first |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -1975,6 +1976,57 @@ subscription pruning, and subtitle regeneration. The records store both the
 subtitle cue interval and playback position when clicked; exact spoken word
 onset is not inferred from sentence-level SRT timing.
 
+### Ready Rounds and Background Preparation
+
+While the library is open or in the tray, it prepares **one durable round per
+practice mode**: vocabulary choices, verb transformations and sentence
+translations. Preparation starts shortly after app startup, prioritizes your
+most recently used mode, and checks for missing stock once a minute. It uses each
+mode's last saved direction, filters and round size; first-use defaults apply
+until you change them. Background preparation becomes eligible once ready Dutch
+vocabulary exists or verb practice has a history. It uses the same configured
+practice model and API credentials as foreground preparation.
+
+The prepared round is the stock: **another round is never automatically created
+while that mode has an unfinished one**, including a partially answered round or
+a submitted answer awaiting correction. Opening the mode consumes its existing
+questions, with automatic first-question display. Restarting the app preserves
+the same unconsumed questions and saved choice order. Once all questions are
+resolved, the next background check can prepare another round if skills are due
+or new eligible targets exist. Future-due skills wait unless you explicitly
+enabled early practice. There is no growing queue of unused rounds.
+
+Questions from a stopped or changed round remain cached. Within adaptive
+eligibility and the current filters/model policy, approved **never-shown
+questions take priority over fresh generation**. Sentence practice reuses these
+across random mixed-context and companion-word plans; changing the random draw
+cannot strand a previously paid question. Updated source lookups and explicit
+context/target-count restrictions still apply. Once unused stock is consumed,
+new variants can replenish the existing bounded pools.
+
+Foreground and background preparation share a SQLite generation lease per mode.
+Opening Practice while its background job is running waits for that same result
+instead of issuing duplicate model requests. Leases renew at work milestones and
+expire after an abandoned job; dead processes are reclaimed immediately using
+their PID and birth time, and only the current owner can renew or release a lease. Provider
+or quality failures retain a diagnostic and a **one-hour background cooldown**
+across restarts. An explicit retry can run sooner. Healthy all-caught-up states
+are checked again on the normal minute cadence. App exit cancels cooperatively
+and preserves already approved content.
+
+The first fill, newly selected filters/direction, or unavailable model service
+can still require a wait. Preparation needs the app running and incurs the normal
+API cost for missing content; cached consumption needs no new generation call.
+Preparing a round records no exposure, answer, activity, accuracy or reminder
+credit. Questions count as shown only when actually displayed, and as practice
+only when an answer is submitted. Viewing statistics does not trigger preparation.
+
+Run deterministic readiness and concurrency checks without API calls:
+
+```powershell
+python -m unittest tests.test_practice_ready tests.test_sentence_practice -v
+```
+
 ### Adaptive Vocabulary Practice
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
@@ -2338,7 +2390,14 @@ shorter round than requested.
 Generation and a separate quality audit use **`gpt-6-luna` / `medium`** with the
 existing practice credentials, strict structured responses and `store: false`.
 Audits check naturalness, saved senses, matching bilingual meaning, evidence for
-each form and answer alternatives. Rejected pairs get one bounded repair pass.
+each form and answer alternatives. Every question has its own required named
+audit-response slot, with identifiers bound locally instead of asking the model
+to copy them. Overlapping target words cannot merge the verdicts. An incomplete
+audit response gets one bounded **audit-only retry** of the same drafts, without
+regenerating them or treating missing decisions as approvals. Local defects such
+as a form annotation absent from its sentence become specific rejections too;
+valid questions in the batch stay approved while only the defective drafts get
+one bounded content repair pass.
 Checked content is cached under the exact source lookups and model/prompt policy.
 Automatic opening prefers cached content; explicit new rounds can gradually add
 up to three variants per target set and context. Only the source sentence is

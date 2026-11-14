@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
+from yt_whisper_subs import practice_ready
 
 
 class NothingToPractice(ValueError):
@@ -32,8 +33,9 @@ class PracticeService:
         """Allow a deterministic provider in tests; e.g. exercise the entire round without network."""
 
         self._db = db
-        self._generator = generator or practice_generate.QuestionGenerator()
+        self._provider = generator or practice_generate.QuestionGenerator()
 
+    @practice_ready.serialized("practice", practice_generate.PROMPT_VERSION)
     def start(self, opts: practice.RoundOptions, report: Callable[[str], None], *, cached_first: bool = False) -> str:
         """Generate bounded batches before committing a round; e.g. cancel safely while preparing choices."""
 
@@ -41,7 +43,12 @@ class PracticeService:
         candidates = self._db.practice_candidates(opts.direction.value)
         if not candidates:
             raise NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
-        selected = policy.select(candidates, opts, time.time())
+        generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
+                      "prompt_version": practice_generate.PROMPT_VERSION, "direction": opts.direction.value}
+        unused = self._db.practice_unused("practice", generation)
+        for row in candidates:
+            row["unused"] = row["lookup_id"] in unused
+        selected = practice_ready.consume_first(candidates, opts, lambda rows, options: policy.select(rows, options, time.time()))
         if not selected:
             raise NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
         cached = self._ensure_content(selected, opts.direction, report, cached_first=cached_first)
@@ -66,7 +73,7 @@ class PracticeService:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
-        policy = {"model": self._generator.model, "reasoning": self._generator.reasoning,
+        policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": practice_generate.PROMPT_VERSION}
         for row in selected:
             variants = self._db.practice_cached(row["lookup_id"], direction.value, policy)
@@ -79,7 +86,7 @@ class PracticeService:
             batch = pending[offset:offset + 6]
             report(f"Preparing and checking choices · {offset + 1}–{offset + len(batch)} of {len(pending)}")
             try:
-                results = self._generator.generate(batch, direction)
+                results = self._provider.generate(batch, direction)
             except Exception:
                 if not all(row["lookup_id"] in cached for row in batch):
                     raise

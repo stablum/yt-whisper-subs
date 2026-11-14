@@ -61,6 +61,24 @@ class SentenceDbMixin(sentence_review_db.SentenceReviewDbMixin):
                                 "GROUP BY q.id ORDER BY uses,q.id DESC", params)
             return [dict(row) for row in rows]
 
+    def sentence_pool(self, opts, policy: dict) -> list[dict]:
+        """Consume unseen approved pairs across random companion/context plans; e.g. reopening cannot strand a paid unused sentence."""
+
+        params = {**policy, "scene": opts.scene, "words": opts.words}
+        sql = f"""
+        SELECT q.*,COUNT(p.shown_at) AS uses FROM sentence_questions q
+        LEFT JOIN sentence_presentations p ON p.question_id=q.id
+        WHERE q.flagged_at IS NULL AND q.direction=:direction AND q.model=:model
+          AND q.reasoning=:reasoning AND q.prompt_version=:prompt_version
+          AND (:scene='mixed' OR q.scene=:scene)
+          AND (SELECT COUNT(*) FROM sentence_question_words w WHERE w.question_id=q.id)<=:words
+          AND NOT EXISTS(SELECT 1 FROM sentence_question_words w WHERE w.question_id=q.id
+                         AND w.lookup_id NOT IN (SELECT lookup_id FROM ({vocabulary_db.READY_WORDS})))
+        GROUP BY q.id HAVING COUNT(p.shown_at)=0 ORDER BY q.id
+        """
+        with self._connect() as conn:
+            return [dict(row) for row in conn.execute(sql, params)]
+
     @staticmethod
     def _sentence_key(plan: dict) -> str:
         """Give a target context set one deterministic cache key; e.g. changed lookup meanings require a fresh bilingual pair."""

@@ -480,7 +480,7 @@ class LibraryWindow(
 
         if self._notifications.practice.visible:
             self._notifications.practice.snooze()
-        # Load scheduling, validation and analytics only when the learner opens Practice.
+        # Construct practice widgets on demand; background preparation shares the same durable catalog.
         from yt_whisper_subs import library_practice
 
         if self._practice_dialog is None:

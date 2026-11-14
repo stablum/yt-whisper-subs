@@ -123,7 +123,7 @@ class PracticeDialogTests(unittest.TestCase):
         """A delayed provider must not hold the window open or invent exposures; e.g. close during an API call."""
 
         entered, release = threading.Event(), threading.Event()
-        generate = self.engine._generator.generate
+        generate = self.engine._provider.generate
 
         def blocked(rows, direction):
             """Simulate an uninterruptible HTTP segment; e.g. cancellation is checked at the next report."""
@@ -132,7 +132,7 @@ class PracticeDialogTests(unittest.TestCase):
             release.wait(3)
             return generate(rows, direction)
 
-        self.engine._generator.generate = blocked
+        self.engine._provider.generate = blocked
         self.dialog.show_page(False)
         deadline = time.monotonic() + 4
         while not entered.is_set() and time.monotonic() < deadline:

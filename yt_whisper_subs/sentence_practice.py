@@ -77,9 +77,10 @@ class Draft(practice.Content):
         if self.scene not in SCENES or (scene != "mixed" and self.scene != scene):
             raise ValueError("The sentence changed its requested life context")
         for row in self.words:
-            for text, forms in ((self.dutch, row.dutch_forms), (self.english, row.english_forms)):
-                if any(not form.strip() or form.casefold() not in text.casefold() for form in forms):
-                    raise ValueError("A target word's evidence is absent from its sentence")
+            for language, text, forms in (("Dutch", self.dutch, row.dutch_forms), ("English", self.english, row.english_forms)):
+                for form in forms:
+                    if not form.strip() or form.casefold() not in text.casefold():
+                        raise ValueError(f"The {language} evidence {form!r} for word {row.word_id} is absent from its sentence; use exact substrings.")
             if len(row.features) != len(set(row.features)):
                 raise ValueError("Duplicate word-form targets")
         if any(not text.strip() or len(text) > 1000 for text in self.alternatives):
@@ -92,18 +93,17 @@ class Drafts(practice.Content):
     questions: list[Draft]
 
 
-class Verdict(practice.Content):
-    """Preserve independent sentence and morphology approval; e.g. reject a forced comparative or altered word sense."""
+class Decision(practice.Content):
+    """Audit content independently of identifier bookkeeping; e.g. each required question slot receives a real decision."""
 
-    anchor_word_id: int
     valid: bool
     reason: str
 
 
-class Verdicts(practice.Content):
-    """Require a decision for every generated exercise; e.g. missing quality checks never imply approval."""
+class Verdict(Decision):
+    """Bind an audited decision to its local anchor; e.g. storage never relies on the model copying the right ID."""
 
-    verdicts: list[Verdict]
+    anchor_word_id: int
 
 
 class FormResult(practice.Content):

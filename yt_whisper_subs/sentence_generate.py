@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import pydantic as pd
+
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ai
 from yt_whisper_subs import sentence_practice as sentences
@@ -74,22 +76,51 @@ class SentenceGenerator(practice_ai.StructuredGenerator):
         ids = [row.anchor_word_id for row in batch.questions]
         if len(ids) != len(set(ids)) or set(ids) != set(expected):
             raise ValueError("Missing or substituted sentence anchors")
+        healthy, rejected = [], []
         for row in batch.questions:
             plan = expected[row.anchor_word_id]
-            row.check({word["word_id"] for word in plan["words"]}, "mixed" if plan["allow_context_change"] else plan["scene"])
-        document["questions"] = batch.model_dump()["questions"]
-        review = self._request(sentences.Verdicts, _RULES + (
-            "Independently audit EVERY anchor. Approve only natural, accurate bilingual pairs with ALL saved target "
+            try:
+                row.check({word["word_id"] for word in plan["words"]}, "mixed" if plan["allow_context_change"] else plan["scene"])
+            except ValueError as exc:
+                verdict = sentences.Verdict(anchor_word_id=row.anchor_word_id, valid=False, reason=str(exc))
+                rejected.append({"draft": row.model_dump(), "verdict": verdict.model_dump()})
+            else:
+                healthy.append(row)
+        checked = self._audit(sentences.Drafts(questions=healthy), document) if healthy else []
+        return [*checked, *rejected]
+
+    def _audit(self, batch: sentences.Drafts, document: dict) -> list[dict]:
+        """Require a decision in each named question slot; e.g. overlapping vocabulary cannot duplicate or omit audit IDs."""
+
+        plans = {row["anchor_word_id"]: row for row in document["plans"]}
+        questions = {f"q_{row.anchor_word_id}": {"plan": plans[row.anchor_word_id], "draft": row.model_dump()}
+                     for row in batch.questions}
+        fields = {key: (sentences.Decision, ...) for key in questions}
+        schema = pd.create_model("SentenceAudit", __base__=practice.Content, **fields)
+        audit = {"direction": document["direction"], "questions": questions}
+        prompt = _RULES + (
+            "Independently audit EVERY question in its own required q_ID response slot. Each slot evaluates its "
+            "complete draft against the matching plan, NOT one verdict per vocabulary word. Do not merge slots "
+            "even when questions share target words. Approve only natural, accurate bilingual pairs with ALL saved target "
             "senses faithfully represented, correct word/form evidence and feature tags, valid target-language "
             "alternatives and accurate explanations. Reject forced unnatural vocabulary puzzles, unsupported "
             "inflections, invented meanings, changed number/person/tense/degree, or missing targets. Extra supporting "
             "vocabulary is EXPECTED and must not be rejected merely because it is not saved. Check appropriate "
-            "register and life context. If in doubt mark invalid with a concrete reason; do not silently repair it."
-        ), document)
-        checks = {row.anchor_word_id: row for row in review.verdicts}
-        if len(checks) != len(review.verdicts) or set(checks) != set(expected):
-            raise ValueError("Incomplete sentence quality checks")
-        return [{"draft": row.model_dump(), "verdict": checks[row.anchor_word_id].model_dump()} for row in batch.questions]
+            "register and life context. If in doubt mark invalid with a concrete reason; do not silently repair it. "
+            "If response_error is present, repeat the audit using EVERY required slot and the exact response schema."
+        )
+        for attempt in range(2):
+            try:
+                review = self._request(schema, prompt, audit)
+                break
+            except ValueError as exc:
+                if attempt:
+                    raise ValueError("The sentence quality review was incomplete after retry. Your existing round is preserved.") from exc
+                audit["response_error"] = str(exc)[:1200]
+        return [{"draft": row.model_dump(),
+                 "verdict": sentences.Verdict(anchor_word_id=row.anchor_word_id,
+                                               **getattr(review, f"q_{row.anchor_word_id}").model_dump()).model_dump()}
+                for row in batch.questions]
 
     def grade(self, document: dict) -> sentences.Grade:
         """Grade meaning, natural grammar and specific vocabulary forms; e.g. synonyms are allowed but lost superlatives are corrected."""

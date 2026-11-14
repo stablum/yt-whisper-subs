@@ -10,6 +10,7 @@ import time
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import practice_ready
 from yt_whisper_subs import sentence_generate
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_select
@@ -26,6 +27,7 @@ class SentenceService:
         self._db = db
         self._provider = provider or sentence_generate.SentenceGenerator()
 
+    @practice_ready.serialized("sentence", sentence_generate.PROMPT_VERSION)
     def start(self, opts: sentences.Options, report, *, cached_first: bool = True) -> str:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
@@ -37,7 +39,11 @@ class SentenceService:
                       "reasoning": self._provider.reasoning, "prompt_version": sentence_generate.PROMPT_VERSION}
         selector = sentence_select.Selector(policy)
         metrics = sentence_stats.metrics(self._db, opts.direction.value)
-        anchors = selector.select(rows, opts, now)
+        pool = self._db.sentence_pool(opts, generation)
+        unused = {row["anchor_word_id"] for row in pool}
+        for row in rows:
+            row["unused"] = row["word_id"] in unused
+        anchors = practice_ready.consume_first(rows, opts, lambda rows, options: selector.select(rows, options, now))
         reviews = self._db.sentence_due(generation, now)
         if opts.scene != "mixed":
             reviews = [row for row in reviews if row["scene"] == opts.scene]
@@ -65,8 +71,10 @@ class SentenceService:
         """Cache exact target-context sets and repair rejected pairs once; e.g. supporting words are never constrained to the saved list."""
 
         ready, pending = {}, []
+        pool = self._db.sentence_pool(opts, policy)
         for plan in plans:
-            cached = self._db.sentence_cached(plan, policy)
+            cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"]]
+            cached = cached or self._db.sentence_cached(plan, policy)
             if cached:
                 ready[plan["anchor_word_id"]] = cached[0]
             if not cached or (not cached_first and len(cached) < 3 and cached[0]["uses"]):
@@ -113,7 +121,8 @@ class SentenceService:
             if draft.anchor_word_id not in plans or draft.anchor_word_id in checked or verdict.anchor_word_id != draft.anchor_word_id:
                 raise ValueError("Invalid sentence generation IDs")
             plan = plans[draft.anchor_word_id]
-            draft.check({word["word_id"] for word in plan["words"]}, "mixed" if plan["allow_context_change"] else plan["scene"])
+            if verdict.valid:
+                draft.check({word["word_id"] for word in plan["words"]}, "mixed" if plan["allow_context_change"] else plan["scene"])
             checked[draft.anchor_word_id] = draft, verdict
         if set(checked) != set(plans):
             raise ValueError("The provider omitted sentence exercises")
