@@ -5,6 +5,8 @@ Example: one answer click reveals feedback, then a separate click continues.
 
 from __future__ import annotations
 
+import html
+import re
 import textwrap
 
 from PySide6 import QtCore
@@ -12,6 +14,46 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import practice
+
+
+class QuizContext(QtWidgets.QLabel):
+    """Make the tested occurrence stand out safely; e.g. highlight veiliger for a saved veilig dictionary entry."""
+
+    def __init__(self) -> None:
+        """Keep rich formatting local to the example; e.g. model-provided markup stays literal text."""
+
+        super().__init__()
+        self.setObjectName("practiceContext")
+        self.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def message(self, text: str) -> None:
+        """Render loading and empty messages as text; e.g. an API error containing angle brackets cannot become markup."""
+
+        self.setText(html.escape(text).replace("\n", "<br>"))
+
+    def present(self, row: dict) -> None:
+        """Highlight every full-word occurrence or reverse-answer gap; e.g. de never lights up the prefix in deze."""
+
+        content, ctx = row["content"], row["lookup_context"]
+        text = content["context"]
+        if row["direction"] == practice.Direction.EN_NL:
+            pattern = r"(?<!_)_{4}(?!_)"
+        else:
+            form = content["surface"]
+            pattern = rf"(?<!\w){re.escape(form)}(?!\w)"
+            if not re.search(pattern, text, re.IGNORECASE) and ctx["span"]:
+                start, end = ctx["span"]
+                form = ctx["sentence"][start:end]
+                pattern = rf"(?<!\w){re.escape(form)}(?!\w)" if form else r"(?!)"
+        parts, end = [], 0
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            parts.extend([html.escape(text[end:match.start()]),
+                          '<span style="color:#ffd166; background-color:#3b3220; font-weight:700;">',
+                          html.escape(match.group()), "</span>"])
+            end = match.end()
+        parts.append(html.escape(text[end:]))
+        self.setText("".join(parts).replace("\n", "<br>"))
 
 
 class PracticeButton(QtWidgets.QPushButton):

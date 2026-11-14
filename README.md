@@ -2176,18 +2176,25 @@ python -m unittest tests.test_shared_learning tests.test_practice tests.test_sen
 ### Adaptive Vocabulary Practice
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
-window. It opens directly on your saved question, or automatically prepares the
+window, then choose **Word quiz** for the three-choice vocabulary exercise.
+It opens directly on your saved question, or automatically prepares the
 first question using your saved settings. No **Start round** or **Resume round**
-click is required. **Practice** is a learning exercise with feedback, rather
+click is required. **Word quiz** is a learning exercise with feedback, rather
 than a timed exam or a proficiency score. Use **Round options** to choose
 **Dutch → English** or **English → Dutch**, a length of **1–50 distinct terms**
 (default 10), and optional early review. **New round** applies those settings;
 it replaces an unfinished round while retaining its answer history. Occasional
 setup and **End this round** live in that popover instead of the question path.
 Each question offers three large buttons; `1`, `2`, and `3` select answers. The
-original Dutch sentence anchors the intended sense. In the reverse direction,
+original Dutch sentence anchors the intended sense. The tested word stands out
+in **bold amber** with a subtle background, including repeated occurrences and
+the captured inflection when the quiz uses its dictionary form. In the reverse
+direction,
 the selected Dutch word is blanked everywhere in that sentence so it cannot
-reveal the answer. Correct answers always come from captured vocabulary.
+reveal the answer; that blank receives the same emphasis. Text and punctuation
+remain literal, including angle brackets and ampersands. Existing cached rounds
+use this display immediately without new question generation.
+Correct answers always come from saved vocabulary.
 Only translated, non-ambiguous Dutch selections are eligible. If fewer due/new
 terms or independently approved questions are available than requested, the
 round announces the actual count. English subtitle clicks remain reviewable in
@@ -2271,7 +2278,7 @@ though already approved question content remains cached.
 
 Opening **Activity** directly never starts generation or counts a question. If
 you switch to statistics during preparation, the ready round waits until the
-Practice page is visible before recording its first presentation. The round
+Word quiz page is visible before recording its first presentation. The round
 page scrolls for long context/explanations and smaller windows.
 
 The **Progress** tab shows daily accuracy separately for both directions,

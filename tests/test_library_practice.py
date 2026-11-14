@@ -17,12 +17,14 @@ from unittest import mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6 import QtCore
+from PySide6 import QtGui
 from PySide6 import QtTest
 from PySide6 import QtWidgets
 
 from tests import practice_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice
+from yt_whisper_subs import library_practice_controls
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
@@ -101,6 +103,7 @@ class PracticeDialogTests(unittest.TestCase):
 
         self.dialog.show_page(False)
         self._wait_ready()
+        self.assertEqual(self.dialog._tabs.tabText(0), "Word quiz")
         row = self.dialog._current
         self.dialog.close()
         self.app.processEvents()
@@ -110,6 +113,40 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(self.dialog._current["id"], row["id"])
         self.assertEqual(self.dialog._current["choices"], row["choices"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
+
+    def test_example_emphasizes_whole_words_inflections_and_hidden_answer_gaps(self) -> None:
+        """Inspect actual rich-text rendering and answer secrecy; e.g. liep pops while liepen and literal HTML remain ordinary text."""
+
+        scenarios = [
+            ("nl_en", "liep", "Liep, liep! Liepen. <b>woord</b> & fiets", [0, 4], ["Liep", "liep"]),
+            ("nl_en", "veilig", "Deze route is veiliger.", [14, 22], ["veiliger"]),
+            ("nl_en", "de", "de deur in deze kamer", [0, 2], ["de"]),
+            ("en_nl", "liep", "Ik ____ en ____.", [3, 7], ["____", "____"]),
+        ]
+        for direction, word, sentence, span, expected in scenarios:
+            with self.subTest(word=word, direction=direction):
+                label = library_practice_controls.QuizContext()
+                label.present({"direction": direction, "content": {"context": sentence, "surface": word},
+                               "lookup_context": {"sentence": sentence, "span": span}})
+                document = QtGui.QTextDocument()
+                document.setHtml(label.text())
+                self.assertEqual(document.toPlainText(), sentence)
+                highlighted = []
+                block = document.begin()
+                while block.isValid():
+                    cursor = block.begin()
+                    while not cursor.atEnd():
+                        fragment = cursor.fragment()
+                        if fragment.charFormat().fontWeight() >= QtGui.QFont.Weight.Bold:
+                            highlighted.append(fragment.text())
+                        cursor += 1
+                    block = block.next()
+                self.assertEqual(highlighted, expected)
+                if direction == "en_nl":
+                    self.assertNotIn(word, document.toPlainText())
+                label.message("<b>Could not prepare & retry</b>")
+                document.setHtml(label.text())
+                self.assertEqual(document.toPlainText(), "<b>Could not prepare & retry</b>")
 
     def test_answer_shortcuts_do_not_intercept_round_length_entry(self) -> None:
         """Numeric answer access must respect native editing; e.g. type a twelve-term round before starting."""

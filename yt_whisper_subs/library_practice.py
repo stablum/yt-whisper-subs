@@ -83,8 +83,7 @@ class PracticeDialog(QtWidgets.QDialog):
         self._surface.continued.connect(lambda: self._advance(guard=True))
         self._prompt = QtWidgets.QLabel()
         self._prompt.setObjectName("practicePrompt")
-        self._context = QtWidgets.QLabel()
-        self._context.setObjectName("practiceContext")
+        self._context = controls.QuizContext()
         for label in (self._prompt, self._context):
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             label.setWordWrap(True)
@@ -110,7 +109,7 @@ class PracticeDialog(QtWidgets.QDialog):
         self._hint = QtWidgets.QLabel()
         self._hint.setObjectName("settingsNote")
         self._hint.setWordWrap(True)
-        for label in (self._prompt, self._context, self._result, self._explanation, self._hint, self._status):
+        for label in (self._prompt, self._result, self._explanation, self._hint, self._status):
             label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
             label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         feedback = QtWidgets.QWidget()
@@ -165,7 +164,7 @@ class PracticeDialog(QtWidgets.QDialog):
         activity_scroll.setWidgetResizable(True)
         activity_scroll.setWidget(self._activity)
         self._tabs = QtWidgets.QTabWidget()
-        self._tabs.addTab(scroll, "Practice")
+        self._tabs.addTab(scroll, "Word quiz")
         self._tabs.addTab(self._progress_tabs, "Progress")
         self._tabs.addTab(activity_scroll, "Activity")
         self._verbs = library_verbs.VerbPanel(self._db)
@@ -192,7 +191,7 @@ class PracticeDialog(QtWidgets.QDialog):
         self._task = None
         self._surface.reset()
         self._prompt.setText(title)
-        self._context.setText(message)
+        self._context.message(message)
         self._result.clear()
         self._result.setStyleSheet("")
         self._details.setChecked(False)
@@ -284,7 +283,7 @@ class PracticeDialog(QtWidgets.QDialog):
             return
         self._session = result
         self._autostart_pending = True
-        self._idle("Your round is ready", "Return to Practice to continue.", "Continue round")
+        self._idle("Your round is ready", "Return to Word quiz to continue.", "Continue round")
         self._ensure_round()
 
     @QtCore.Slot(str, str)
@@ -321,7 +320,7 @@ class PracticeDialog(QtWidgets.QDialog):
         self._bar.setValue(row["ordinal"] - 1)
         self._bar.show()
         self._prompt.setText(row["content"]["prompt"])
-        self._context.setText(row["content"]["context"])
+        self._context.present(row)
         self._result.clear()
         self._result.setStyleSheet("")
         self._details.setChecked(False)

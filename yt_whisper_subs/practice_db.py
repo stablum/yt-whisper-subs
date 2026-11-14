@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS practice_states (
 """
 
 _PRESENTATION = """
-SELECT p.*,q.body_json,q.lookup_id,l.word_id,s.direction,s.status,s.scheduler_json,s.requested_count
+SELECT p.*,q.body_json,q.lookup_id,l.word_id,l.context_json,s.direction,s.status,s.scheduler_json,s.requested_count
 FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.session_id
 """
@@ -169,6 +169,7 @@ class PracticeDbMixin:
             return None
         result = dict(row)
         result["content"] = json.loads(result.pop("body_json"))
+        result["lookup_context"] = json.loads(result.pop("context_json"))
         result["choices"] = json.loads(result.pop("choices_json"))
         return result
 
