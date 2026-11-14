@@ -48,6 +48,8 @@ class PracticeDialogTests(unittest.TestCase):
         self.db = library_db.LibraryDb(Path(tmp.name) / "catalog.sqlite3")
         self.db.initialize()
         practice_fixtures.seed(self.db)
+        opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=4)
+        self.db.set_setting("practice_options", opts.model_dump_json())
         self.engine = practice_service.PracticeService(self.db, practice_fixtures.FakeGenerator())
         self.dialog = self._dialog()
         self.addCleanup(lambda: self.dialog.close())
@@ -97,6 +99,20 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertIn("Round saved", self.dialog._prompt.text())
         self.dialog._tabs.setCurrentIndex(1)
         self.assertGreater(self.dialog._progress._terms.rowCount(), 0)
+
+    def test_insufficient_targets_offer_options_without_a_partial_round(self) -> None:
+        """Keep unavailable sizes recoverable in the native flow; e.g. four saved terms cannot silently turn a 35-question request into four."""
+
+        self.dialog._controls.count.setValue(35)
+        self.dialog.show_page(False)
+        deadline = time.monotonic() + 5
+        while self.dialog._task is not None:
+            QtTest.QTest.qWait(10)
+            if time.monotonic() > deadline:
+                self.fail("Round availability did not resolve")
+        self.assertEqual(self.dialog._prompt.text(), "Choose a smaller round")
+        self.assertIsNone(self.dialog._current)
+        self.assertIsNone(self.db.practice_active())
 
     def test_close_and_resume_does_not_recount_the_current_question(self) -> None:
         """Closing the dialog preserves the round; e.g. continue later with the same button ordering."""

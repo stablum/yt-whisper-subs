@@ -2085,6 +2085,18 @@ cannot strand a previously paid question. Updated source lookups and explicit
 context/target-count restrictions still apply. Once unused stock is consumed,
 new variants can replenish the existing bounded pools.
 
+The configured round size is the **actual number of questions**, in all three
+modes. Preparation first attempts just that many distinct targets, keeps approved
+questions, and prepares only the missing replacements after quality rejections.
+Cached approvals are reused throughout. Internally, the shared round builder caps
+total submitted draft items at **twice the requested count**, including replacement
+attempts; it does not generate a reserve upfront. Quality-audit response repairs
+reuse the same drafts. If a full checked round cannot be assembled, the previous
+round and approved cached content remain available for a later retry. Too few
+eligible distinct targets prompts a smaller round or early review before spending
+tokens on new exercises. Startup returns incomplete, never-shown rounds to cached
+stock for rebuilding; rounds already shown or answered retain their history.
+
 Foreground and background preparation share a SQLite generation lease per mode.
 Opening Practice while its background job is running waits for that same result
 instead of issuing duplicate model requests. Leases renew at work milestones and
@@ -2105,7 +2117,7 @@ only when an answer is submitted. Viewing statistics does not trigger preparatio
 Run deterministic readiness and concurrency checks without API calls:
 
 ```powershell
-python -m unittest tests.test_practice_ready tests.test_sentence_practice -v
+python -m unittest tests.test_practice_ready tests.test_exact_rounds tests.test_written_round_sizes tests.test_sentence_practice -v
 ```
 
 ### Shared Vocabulary Learning Across Practice Modes
@@ -2195,9 +2207,9 @@ reveal the answer; that blank receives the same emphasis. Text and punctuation
 remain literal, including angle brackets and ampersands. Existing cached rounds
 use this display immediately without new question generation.
 Correct answers always come from saved vocabulary.
-Only translated, non-ambiguous Dutch selections are eligible. If fewer due/new
-terms or independently approved questions are available than requested, the
-round announces the actual count. English subtitle clicks remain reviewable in
+Only translated, non-ambiguous Dutch selections are eligible. The requested
+number of distinct terms must be available and independently approved before
+the round becomes playable. English subtitle clicks remain reviewable in
 Vocabulary but are not Dutch practice targets.
 
 One click answers and reveals the correct choice. After reading the feedback,
@@ -2428,14 +2440,15 @@ not crowd out the much smaller subjunctive syllabus.
 Generation, independent quality auditing and non-exact answer correction use the
 existing **`gpt-6-luna` / `medium`** practice policy and `.env` credentials.
 New content is generated in batches of up to **four** targets and independently
-audited. Rejected targets get **one bounded regeneration and audit**, with the
-rejection reason; unchecked content is never playable. A round can be shorter
-than requested if some targets still fail review; its status shows the actual
-count. Approved questions are cached by target/model/reasoning/prompt version.
+audited. Rejected targets are replaced or refined with their rejection reason,
+within the shared round preparation guard; unchecked content is never playable.
+A round becomes playable only when it has the requested number of distinct
+targets. Approved questions are cached by target/model/reasoning/prompt version.
 The normal opening path reuses approved content; explicit new rounds can build
 a rotating pool of up to three variants per target/policy. Requests have a **90-second timeout**,
 no automatic HTTP retries, strict JSON schemas and **`store=false`**. New batches
-need two requests, or four if regeneration is necessary. An exact match to a
+need two requests; replacement batches need their own generation and audit.
+An exact match to a
 checked answer or alternative, after harmless text normalization, is graded
 locally; other answers need a remote correction request. Valid Dutch alternatives,
 including verb-cluster variation and appropriate
@@ -2537,8 +2550,9 @@ Captured inflections are adapted to different persons and tenses, conditionals,
 plurals, adjective endings, comparatives, superlatives and other suitable forms.
 Morphology follows the word's actual restrictions; requests never justify an
 invented form. Mixed contexts balance variety with areas where mistakes recur.
-Specific context selection is also available. A small vocabulary can produce a
-shorter round than requested.
+Specific context selection is also available. Each question has a distinct saved
+anchor word; a small eligible vocabulary requires a smaller configured round or
+early review rather than silently producing fewer questions.
 
 Generation and a separate quality audit use **`gpt-6-luna` / `medium`** with the
 existing practice credentials, strict structured responses and `store: false`.
@@ -2549,8 +2563,8 @@ to copy them. Overlapping target words cannot merge the verdicts. An incomplete
 audit response gets one bounded **audit-only retry** of the same drafts, without
 regenerating them or treating missing decisions as approvals. Local defects such
 as a form annotation absent from its sentence become specific rejections too;
-valid questions in the batch stay approved while only the defective drafts get
-one bounded content repair pass.
+valid questions in the batch stay approved while only missing questions need
+bounded replacement or content repair.
 Checked content is cached under the exact source lookups and model/prompt policy.
 Automatic opening prefers cached content; explicit new rounds can gradually add
 up to three variants per target set and context. Only the source sentence is

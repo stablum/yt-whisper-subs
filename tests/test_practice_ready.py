@@ -20,6 +20,7 @@ from PySide6 import QtTest
 from tests import practice_fixtures
 from tests import sentence_fixtures
 from tests import verb_fixtures
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice_ready
 from yt_whisper_subs import practice
@@ -234,7 +235,7 @@ class ReadyTests(unittest.TestCase):
         while row := db.sentence_current(session):
             db.sentence_submit(row["id"], row["content"]["dutch"], 1200)
             engine.check(row["id"], lambda _: None)
-        with self.assertRaises(practice_service.NothingToPractice):
+        with self.assertRaises(practice_round.NothingToPractice):
             engine.start(opts, lambda _: None)
         self.assertLess(db.practice_prepare_status("sentence")["next_at"], time.time() + 65)
 

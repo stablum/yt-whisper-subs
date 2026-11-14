@@ -6,25 +6,17 @@ Example: `PracticeService(db).start(opts, report)` returns a durable resumable r
 from __future__ import annotations
 
 import json
+import operator
 import random
 import re
 import time
 from collections.abc import Callable
 
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import word_select
-
-
-class NothingToPractice(ValueError):
-    """Distinguish normal empty states from failures; e.g. offer early review when everything is scheduled later."""
-
-    def __init__(self, reason: str, message: str) -> None:
-        """Keep a machine-readable reason beside the explanation; e.g. `not_due` becomes an actionable card."""
-
-        super().__init__(message)
-        self.reason = reason
 
 
 class PracticeService:
@@ -43,7 +35,7 @@ class PracticeService:
         policy = practice.ReviewPolicy()
         candidates = self._db.word_candidates(opts.direction.value)
         if not candidates:
-            raise NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
+            raise practice_round.NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                       "prompt_version": practice_generate.PROMPT_VERSION, "direction": opts.direction.value}
         unused = self._db.practice_unused("practice", generation)
@@ -52,29 +44,28 @@ class PracticeService:
         selector = word_select.Selector(policy)
         selected = selector.select(candidates, opts, time.time())
         if not selected:
-            raise NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
-        cached = self._ensure_content(selected, opts.direction, report, cached_first=cached_first)
+            raise practice_round.NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
+        plan = practice_round.Plan(candidates=candidates, initial=selected, key=operator.itemgetter("lookup_id"),
+                                   select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), time.time()),
+                                   load=self._ensure_content)
+        checked = build.fill(plan)
         questions = []
-        for row in selected:
-            if not (question := cached.get(row["lookup_id"])):
-                continue
+        for question in checked:
             content = json.loads(question["body_json"])
             choices = [{"text": content["answer"], "explanation": content["explanation"], "kind": "correct"},
                        *content["distractors"]]
             random.shuffle(choices)
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
-        report(f"Ready · {len(questions)} distinct terms (requested {opts.count})")
-        if not questions:
-            raise NothingToPractice("no_questions", "No unambiguous questions are available for these words yet.")
+        report(f"Ready · {len(questions)} distinct terms")
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
 
-    def _ensure_content(
-        self, selected: list[dict], direction: practice.Direction, report: Callable[[str], None], *, cached_first: bool,
-    ) -> dict:
+    def _ensure_content(self, selected: list[dict], build: practice_round.Build) -> dict:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
+        direction = build.opts.direction
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": practice_generate.PROMPT_VERSION}
         for row in selected:
@@ -82,32 +73,53 @@ class PracticeService:
             if variants:
                 cached[row["lookup_id"]] = variants[0]
             # Build a small rotating pool, then use the least-seen variant with new button ordering.
-            if not variants or (not cached_first and len(variants) < 3 and variants[0]["uses"] > 0):
+            if not variants or (not build.cached_first and len(variants) < 3 and variants[0]["uses"] > 0):
                 pending.append(row)
         for offset in range(0, len(pending), 6):
-            batch = pending[offset:offset + 6]
-            report(f"Preparing and checking choices · {offset + 1}–{offset + len(batch)} of {len(pending)}")
+            batch = build.take(pending[offset:offset + 6])
+            if not batch:
+                break
+            build.report(f"Preparing and checking {len(batch)} choices…")
             try:
                 results = self._provider.generate(batch, direction)
+                cached.update(self._cache(batch, results, direction, policy))
+            except ValueError as exc:
+                for row in batch:
+                    row["previous_rejection"] = str(exc)
             except Exception:
                 if not all(row["lookup_id"] in cached for row in batch):
                     raise
-                report("Using previously checked choices while generation is unavailable.")
+                build.report("Using previously checked choices while generation is unavailable.")
                 continue
-            rows = {row["lookup_id"]: row for row in batch}
-            for result in results:
-                draft = practice.Draft.model_validate(result["draft"])
-                if not result["verdict"]["valid"]:
-                    report(f"Excluded an unclear question: {result['verdict']['reason']}")
-                    continue
-                row = rows[draft.lookup_id]
-                body = self._body(row, direction, draft)
-                item = {"lookup_id": row["lookup_id"], "direction": direction.value,
-                        "body_json": json.dumps(body, ensure_ascii=False),
-                        "validation_json": json.dumps(result["verdict"], ensure_ascii=False),
-                        **policy}
-                cached[row["lookup_id"]] = self._db.practice_cache(item)
         return cached
+
+    def _cache(self, rows: list[dict], results: list[dict], direction, policy: dict) -> dict:
+        """Validate batch identity before keeping approvals; e.g. missing or substituted results become bounded replacement work."""
+
+        expected = {row["lookup_id"]: row for row in rows}
+        checked, ready = {}, {}
+        for result in results:
+            draft = practice.Draft.model_validate(result["draft"])
+            verdict = practice.Verdict.model_validate(result["verdict"])
+            if draft.lookup_id not in expected or draft.lookup_id in checked or verdict.lookup_id != draft.lookup_id:
+                raise ValueError("Invalid word-quiz generation identities")
+            checked[draft.lookup_id] = draft, verdict
+        if checked.keys() != expected.keys():
+            raise ValueError("The provider omitted word-quiz questions")
+        for key, (draft, verdict) in checked.items():
+            row = expected[key]
+            if not verdict.valid:
+                row["previous_rejection"] = verdict.reason
+                continue
+            try:
+                body = self._body(row, direction, draft)
+            except ValueError as exc:
+                row["previous_rejection"] = str(exc)
+                continue
+            item = {"lookup_id": key, "direction": direction.value, "body_json": json.dumps(body, ensure_ascii=False),
+                    "validation_json": verdict.model_dump_json(), **policy}
+            ready[key] = self._db.practice_cache(item)
+        return ready
 
     @staticmethod
     def _body(row: dict, direction: practice.Direction, draft: practice.Draft) -> dict:

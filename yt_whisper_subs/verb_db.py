@@ -104,8 +104,8 @@ class VerbDbMixin:
     def verb_create(self, opts: verbs.Options, questions: list[dict], scheduler_json: str) -> str:
         """Replace a round only after preparation succeeds; e.g. cancelling generation leaves the old round intact."""
 
-        if not questions:
-            raise ValueError("No approved verb transformations are available")
+        if len(questions) != opts.count:
+            raise ValueError("A verb round must contain its requested number of approved questions")
         session_id, now = uuid.uuid4().hex, time.time()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")

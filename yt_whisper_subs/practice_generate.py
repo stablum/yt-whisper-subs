@@ -36,7 +36,8 @@ class QuestionGenerator(practice_ai.StructuredGenerator):
         terms = []
         for row in rows:
             terms.append({"lookup_id": row["lookup_id"], "dutch": row["surface"], "english": row["meaning"],
-                          "context": json.loads(row["context_json"]), "note": row["note"] or ""})
+                          "context": json.loads(row["context_json"]), "note": row["note"] or "",
+                          "previous_rejection": row.get("previous_rejection", "")})
         document = {"direction": direction.value, "terms": terms}
         prompt = (
             "Create challenging but fair three-choice Dutch vocabulary practice for an English-speaking learner. "
@@ -50,7 +51,8 @@ class QuestionGenerator(practice_ai.StructuredGenerator):
             "The learner sees the Dutch source sentence, with the selected Dutch term blanked out in en_nl. "
             "If a fragment/idiom cannot be tested fairly, return your best candidates; an independent reviewer will reject it. "
             "Explain what makes each distractor wrong in THIS context, not just that it is wrong. "
-            "The question explanation should briefly teach the relevant distinction in English. Keep choices concise."
+            "The question explanation should briefly teach the relevant distinction in English. Keep choices concise. "
+            "If previous_rejection is provided, correct that concrete defect rather than repeating the rejected choices."
         )
         batch = self._request(practice.Drafts, prompt, document)
         expected = {row["lookup_id"]: row for row in rows}

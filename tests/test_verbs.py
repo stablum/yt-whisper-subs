@@ -13,10 +13,10 @@ from unittest import mock
 import numpy as np
 
 from tests import verb_fixtures
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
-from yt_whisper_subs import practice_service
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_service
@@ -159,7 +159,7 @@ class VerbTests(unittest.TestCase):
         self.assertEqual(self.db.verb_active(), session)
         self.provider.available = True
         self.provider.approved = False
-        with self.assertRaises(practice_service.NothingToPractice):
+        with self.assertRaises(practice_round.NothingToPractice):
             self._round()
         self.assertEqual(self.db.verb_active(), session)
 
@@ -206,7 +206,7 @@ class VerbTests(unittest.TestCase):
             self._submit(row)
             self.engine.check(row["id"], lambda _: None)
         self.provider.available = False
-        with self.assertRaises(practice_service.NothingToPractice) as empty:
+        with self.assertRaises(practice_round.NothingToPractice) as empty:
             self.engine.start(verb_fixtures.options(), lambda _: None)
         self.assertEqual(empty.exception.reason, "not_due")
         calls = self.provider.generated

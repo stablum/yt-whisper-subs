@@ -13,8 +13,8 @@ import pydantic as pd
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_workers
-from yt_whisper_subs import practice_service
 
 
 class SessionOps(pd.BaseModel):
@@ -151,7 +151,7 @@ class WrittenPanel(QtWidgets.QWidget):
 
             try:
                 return self._engine.start(opts, report, cached_first=cached_first)
-            except practice_service.NothingToPractice as empty:
+            except practice_round.NothingToPractice as empty:
                 return empty
 
         self._start_task(prepare, "prepare", self._prepared)
@@ -185,7 +185,7 @@ class WrittenPanel(QtWidgets.QWidget):
             self._cancelled()
             return
         self._task = None
-        if isinstance(result, practice_service.NothingToPractice):
+        if isinstance(result, practice_round.NothingToPractice):
             self._run.empty = result.reason
             self._run.session = self._mode.ops.active()
             action = "Resume round" if self._run.session else ("Practice early" if result.reason == "not_due" else "Try again")

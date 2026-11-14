@@ -14,10 +14,10 @@ from unittest import mock
 import numpy as np
 
 from tests import sentence_fixtures as fixtures
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
-from yt_whisper_subs import practice_service
 from yt_whisper_subs import sentence_generate
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_select
@@ -206,7 +206,7 @@ class SentenceTests(unittest.TestCase):
         session = self._round()
         self.provider.model = "new-policy"
         self.provider.approved = False
-        with self.assertRaises(practice_service.NothingToPractice):
+        with self.assertRaises(practice_round.NothingToPractice):
             self._round()
         self.assertEqual(len(self.provider.calls), 3)
         self.assertEqual(self.db.sentence_active(), session)
@@ -252,7 +252,7 @@ class SentenceTests(unittest.TestCase):
         """Avoid boring repetitions after success; e.g. an optional early round is explicit rather than silently ignoring due dates."""
 
         self._answer(self.db.sentence_current(self._round()))
-        with self.assertRaises(practice_service.NothingToPractice) as error:
+        with self.assertRaises(practice_round.NothingToPractice) as error:
             self._round()
         self.assertEqual(error.exception.reason, "not_due")
         self.assertIsNotNone(self.db.sentence_current(self._round(include_early=True)))
@@ -342,7 +342,7 @@ class SentenceTests(unittest.TestCase):
 
     @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
     def test_repeated_incomplete_audit_is_bounded_and_never_creates_playable_content(self, request) -> None:
-        """Fail closed after one response repair; e.g. the previous ready round survives two missing-audit responses."""
+        """Bound draft and audit repairs separately; e.g. failed reviews preserve the previous ready round without exceeding two drafts."""
 
         session = self._round()
 
@@ -357,9 +357,9 @@ class SentenceTests(unittest.TestCase):
 
         request.side_effect = incomplete
         engine = sentence_service.SentenceService(self.db, sentence_generate.SentenceGenerator())
-        with self.assertRaisesRegex(ValueError, "incomplete after retry"):
+        with self.assertRaises(practice_round.NothingToPractice):
             engine.start(fixtures.options(), lambda _: None)
-        self.assertEqual(request.call_count, 3)
+        self.assertEqual(request.call_count, 6)
         self.assertEqual(self.db.sentence_active(), session)
         with self.db._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM sentence_questions").fetchone()[0], 1)

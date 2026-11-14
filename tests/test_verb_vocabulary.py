@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest import mock
 
 from tests import verb_fixtures
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
-from yt_whisper_subs import practice_service
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_service
@@ -91,7 +91,7 @@ class VocabularyVerbTests(unittest.TestCase):
         self.sync.sync(lambda _: None)
         self.assertEqual(len(self.provider.lexical_calls), 1)
         opts = verb_fixtures.options(1).model_copy(update={"source": "vocabulary"})
-        with self.assertRaises(practice_service.NothingToPractice):
+        with self.assertRaises(practice_round.NothingToPractice):
             self.engine.start(opts, lambda _: None)
         self.assertNotIn("huis", {row["lemma"] for row in self.db.verb_catalog()})
 

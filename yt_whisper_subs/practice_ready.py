@@ -78,9 +78,20 @@ class ReadyDbMixin:
                 return None
             rows = conn.execute(f"SELECT p.shown_at,q.model,q.reasoning,q.prompt_version,q.flagged_at FROM {kind}_presentations p "
                                 f"JOIN {kind}_questions q ON q.id=p.question_id WHERE p.session_id=?", (row["id"],)).fetchall()
-            healthy = rows and all(item["shown_at"] is None and item["flagged_at"] is None
+            healthy = len(rows) == opts.count and all(item["shown_at"] is None and item["flagged_at"] is None
                                    and all(item[key] == value for key, value in policy.items()) for item in rows)
             return row["id"] if healthy else None
+
+    @staticmethod
+    def _practice_check_rounds(conn) -> None:
+        """Return incomplete unused rounds to their cached stock; e.g. startup never offers a 34-question ready round requested as 35."""
+
+        for kind in KINDS:
+            count = "s.requested_count" if kind == "practice" else "json_extract(s.options_json,'$.count')"
+            conn.execute(f"UPDATE {kind}_sessions AS s SET status='stopped',finished_at=? WHERE s.status='active' "
+                         f"AND (SELECT COUNT(*) FROM {kind}_presentations p WHERE p.session_id=s.id)<>{count} "
+                         f"AND NOT EXISTS(SELECT 1 FROM {kind}_presentations p WHERE p.session_id=s.id AND p.shown_at IS NOT NULL)",
+                         (time.time(),))
 
     def practice_unused(self, kind: str, policy: dict) -> set[int]:
         """Locate approved questions never presented; e.g. stopping a round returns its unseen questions to useful stock."""
@@ -140,10 +151,10 @@ def serialized(kind: str, version: int):
 
                 return fn(engine, opts, progress, **kwargs)
             except Exception as exc:
-                from yt_whisper_subs import practice_service
+                from yt_whisper_subs import practice_round
 
                 error = str(exc)
-                healthy = isinstance(exc, practice_service.NothingToPractice) and exc.reason in {"not_due", "no_words"}
+                healthy = isinstance(exc, practice_round.NothingToPractice) and exc.reason in {"not_due", "no_words", "not_enough"}
                 delay = 60 if healthy else 3600
                 raise
             finally:

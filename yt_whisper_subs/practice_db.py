@@ -146,8 +146,8 @@ class PracticeDbMixin:
     def practice_create(self, opts: dict, questions: list[dict], scheduler_json: str) -> str:
         """Create a complete round atomically; e.g. an API error never leaves half a playable round."""
 
-        if not questions:
-            raise ValueError("No unambiguous questions are available for this round")
+        if len(questions) != opts["count"]:
+            raise ValueError("A word-quiz round must contain its requested number of approved questions")
         session_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")

@@ -18,6 +18,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import word_select
 from yt_whisper_subs import practice_generate
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
 
@@ -158,11 +159,9 @@ class PracticeTests(unittest.TestCase):
 
         candidates = self.db.word_candidates("nl_en")
         self.generator.rejected.add(candidates[0]["lookup_id"])
-        session = self._round()
-        self.assertEqual(self.db.practice_summary(session)["planned"], 3)
-        while row := self.db.practice_current(session):
-            self.db.practice_answer(row["id"], row["correct_idx"], False, 100)
-        self.db.practice_finish(session)
+        with self.assertRaises(practice_round.NothingToPractice):
+            self._round()
+        self.assertIsNone(self.db.practice_active())
         self.generator.available = False
         # Remove the rejected, never-cached word from this test's eligibility.
         with self.db._connect() as conn:

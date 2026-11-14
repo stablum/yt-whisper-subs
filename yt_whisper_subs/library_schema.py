@@ -150,3 +150,4 @@ class SchemaDbMixin:
                 """
             )
             self._word_sync(conn)
+            self._practice_check_rounds(conn)

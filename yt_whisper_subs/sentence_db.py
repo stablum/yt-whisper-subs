@@ -98,8 +98,8 @@ class SentenceDbMixin(sentence_review_db.SentenceReviewDbMixin):
     def sentence_create(self, opts, questions: list[dict], scheduler_json: str) -> str:
         """Replace a round only after preparation succeeds; e.g. a partial API failure leaves the old session resumable."""
 
-        if not questions or len({row["id"] for row in questions}) != len(questions):
-            raise ValueError("A sentence round needs distinct approved questions")
+        if len(questions) != opts.count or len({row["id"] for row in questions}) != len(questions):
+            raise ValueError("A sentence round needs its requested number of distinct approved questions")
         session_id, now = uuid.uuid4().hex, time.time()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")

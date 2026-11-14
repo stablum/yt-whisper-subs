@@ -12,6 +12,7 @@ from datetime import datetime
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_practice_progress
 from yt_whisper_subs import library_practice_controls as controls
 from yt_whisper_subs import library_practice_activity
@@ -54,7 +55,7 @@ class PracticeDialog(QtWidgets.QDialog):
         self._session = self._db.practice_active()
         self._current: dict | None = None
         self._task: library_workers.BackgroundTask | None = None
-        self._empty: practice_service.NothingToPractice | None = None
+        self._empty: practice_round.NothingToPractice | None = None
         self._started = 0.0
         self._autostart_pending = True
         self._closed = False
@@ -253,7 +254,7 @@ class PracticeDialog(QtWidgets.QDialog):
 
             try:
                 return self._engine.start(opts, report, cached_first=cached_first)
-            except practice_service.NothingToPractice as empty:
+            except practice_round.NothingToPractice as empty:
                 return empty
 
         task = library_workers.BackgroundTask(prepare)
@@ -274,10 +275,11 @@ class PracticeDialog(QtWidgets.QDialog):
             self._cancelled()
             return
         self._task = None
-        if isinstance(result, practice_service.NothingToPractice):
+        if isinstance(result, practice_round.NothingToPractice):
             self._empty = result
             self._session = self._db.practice_active()
-            titles = {"not_due": "You're all caught up", "no_words": "No words ready yet", "no_questions": "No clear questions yet"}
+            titles = {"not_due": "You're all caught up", "no_words": "No words ready yet",
+                      "not_enough": "Choose a smaller round", "no_questions": "Could not prepare this round"}
             action = "Practice early" if result.reason == "not_due" else "Try again"
             self._idle(titles[result.reason], str(result), "Resume round" if self._session else action)
             return

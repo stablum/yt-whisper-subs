@@ -5,10 +5,11 @@ Example: `VerbService(db).start(Options(), report)` prepares a round without exp
 
 from __future__ import annotations
 
+import operator
 import time
 
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
-from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
@@ -37,7 +38,7 @@ class VerbService:
         if not candidates:
             message = ("No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
                        if opts.source == "vocabulary" else "These filters have no valid Dutch forms. Change the round options.")
-            raise practice_service.NothingToPractice("no_questions", message)
+            raise practice_round.NothingToPractice("no_questions", message)
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                       "prompt_version": verb_generate.PROMPT_VERSION}
         unused = self._db.practice_unused("verb", generation)
@@ -46,14 +47,29 @@ class VerbService:
         selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
         selected = selector.select(candidates, metrics, opts, time.time())
         if not selected:
-            raise practice_service.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
-        selected = [self._db.verb_target(row) for row in selected]
-        questions = self._content(selected, report, cached_first)
+            raise practice_round.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
+        key = operator.itemgetter("verb_id", "tense", "subject", "structure")
+
+        def load(rows, job):
+            """Bind stable relational targets only when selected; e.g. replacements never materialize the entire grammar cross-product."""
+
+            targets = [self._db.verb_target(row) for row in rows]
+            for row, target in zip(rows, targets, strict=True):
+                target["previous_rejection"] = row.get("previous_rejection", "")
+            checked = {row["target_id"]: row for row in self._content(targets, job)}
+            for row, target in zip(rows, targets, strict=True):
+                row["previous_rejection"] = target["previous_rejection"]
+            return {key(row): checked[row["target_id"]] for row in targets if row["target_id"] in checked}
+
+        plan = practice_round.Plan(candidates=candidates, initial=selected, key=key, load=load,
+                                   select=lambda rows, n: selector.select(rows, metrics, opts.model_copy(update={"count": n}), time.time()))
+        questions = build.fill(plan)
         report(f"{len(questions)} checked verb exercises ready")
         return self._db.verb_create(opts, questions, policy.document())
 
-    def _content(self, targets: list[dict], report, cached_first: bool) -> list[dict]:
-        """Cache independent approvals and rotate variants; e.g. rejected content is omitted rather than silently accepted."""
+    def _content(self, targets: list[dict], build: practice_round.Build) -> list[dict]:
+        """Cache each initial batch before shared replacement work; e.g. one rejection never regenerates its approved neighbours."""
 
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": verb_generate.PROMPT_VERSION}
@@ -62,27 +78,27 @@ class VerbService:
             cached = self._db.verb_cached(row["target_id"], policy)
             if cached:
                 ready[row["target_id"]] = cached[0]
-            if not cached or (not cached_first and len(cached) < 3 and cached[0]["uses"]):
+            if not cached or (not build.cached_first and len(cached) < 3 and cached[0]["uses"]):
                 pending.append(row)
         for offset in range(0, len(pending), 4):
-            batch = pending[offset:offset + 4]
-            document = [{key: row[key] for key in ("target_id", "lemma", "family", "transitive", "tense", "subject", "structure")}
+            batch = build.take(pending[offset:offset + 4])
+            if not batch:
+                break
+            document = [{key: row[key] for key in ("target_id", "lemma", "family", "transitive", "tense", "subject", "structure", "previous_rejection")}
                         for row in batch]
-            for attempt in range(2):
-                report(f"{'Preparing' if attempt == 0 else 'Refining'} and checking {len(document)} verb exercises…")
-                try:
-                    approved, rejected = self._checked(document, policy)
-                except Exception:
-                    if all(row["target_id"] in ready for row in document):
-                        break
-                    raise
-                ready.update(approved)
-                document = [{**row, "previous_rejection": rejected[row["target_id"]]}
-                            for row in document if row["target_id"] in rejected]
-                if not document:
-                    break
-        if not ready:
-            raise practice_service.NothingToPractice("no_questions", "No transformations passed the language check. Try another round.")
+            build.report(f"Preparing and checking {len(document)} verb exercises…")
+            try:
+                approved, rejected = self._checked(document, policy)
+            except ValueError as exc:
+                approved, rejected = {}, {row["target_id"]: str(exc) for row in batch}
+            except Exception:
+                if all(row["target_id"] in ready for row in batch):
+                    continue
+                raise
+            ready.update(approved)
+            for row in batch:
+                if row["target_id"] in rejected:
+                    row["previous_rejection"] = rejected[row["target_id"]]
         return [ready[row["target_id"]] for row in targets if row["target_id"] in ready]
 
     def _checked(self, targets: list[dict], policy: dict) -> tuple[dict, dict]:

@@ -6,10 +6,11 @@ Example: correct target meanings can back off while a sentence with a syntax mis
 from __future__ import annotations
 
 import json
+import operator
 import time
 
+from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
-from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import sentence_generate
 from yt_whisper_subs import sentence_practice as sentences
@@ -34,7 +35,7 @@ class SentenceService:
         policy, now = practice.ReviewPolicy(), time.time()
         rows = self._db.word_candidates(opts.direction.value)
         if not rows:
-            raise practice_service.NothingToPractice("no_words", "Save and translate some Dutch vocabulary words before sentence practice.")
+            raise practice_round.NothingToPractice("no_words", "Save and translate some Dutch vocabulary words before sentence practice.")
         generation = {"direction": opts.direction.value, "model": self._provider.model,
                       "reasoning": self._provider.reasoning, "prompt_version": sentence_generate.PROMPT_VERSION}
         selector = sentence_select.Selector(policy)
@@ -61,43 +62,60 @@ class SentenceService:
                 selected.append(row)
                 seen.add(row["word_id"])
         if not chosen and not selected:
-            raise practice_service.NothingToPractice("not_due", "Your sentence targets and writing reviews are not due yet. Try early practice if you wish.")
-        plans = selector.plans(selected, rows, opts, metrics, now)
-        chosen.extend(self._content(plans, opts, generation, metrics, report, cached_first))
-        report(f"{len(chosen)} checked sentence translations ready")
-        return self._db.sentence_create(opts, chosen, policy.document())
+            raise practice_round.NothingToPractice("not_due", "Your sentence targets and writing reviews are not due yet. Try early practice if you wish.")
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
 
-    def _content(self, plans: list[dict], opts, policy: dict, metrics: dict, report, cached_first: bool) -> list[dict]:
-        """Cache exact target-context sets and repair rejected pairs once; e.g. supporting words are never constrained to the saved list."""
+        def load(anchors, job):
+            """Plan only the missing sentence targets; e.g. checked cached sentences never get regenerated during a top-up."""
+
+            plans = selector.plans(anchors, rows, opts, metrics, now)
+            by_id = {row["word_id"]: row for row in anchors}
+            for item in plans:
+                item["previous_rejection"] = by_id[item["anchor_word_id"]].get("previous_rejection", "")
+            checked = self._content(plans, generation, metrics, job)
+            for item in plans:
+                by_id[item["anchor_word_id"]]["previous_rejection"] = item["previous_rejection"]
+            return {row["anchor_word_id"]: row for row in checked}
+
+        plan = practice_round.Plan(candidates=rows, initial=selected, key=operator.itemgetter("word_id"), load=load,
+                                   seed={row["anchor_word_id"]: row for row in chosen},
+                                   select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), now))
+        questions = build.fill(plan)
+        report(f"{len(questions)} checked sentence translations ready")
+        return self._db.sentence_create(opts, questions, policy.document())
+
+    def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
+        """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""
 
         ready, pending = {}, []
-        pool = self._db.sentence_pool(opts, policy)
+        pool = self._db.sentence_pool(build.opts, policy)
         for plan in plans:
             cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"]]
             cached = cached or self._db.sentence_cached(plan, policy)
             if cached:
                 ready[plan["anchor_word_id"]] = cached[0]
-            if not cached or (not cached_first and len(cached) < 3 and cached[0]["uses"]):
+            if not cached or (not build.cached_first and len(cached) < 3 and cached[0]["uses"]):
                 pending.append(plan)
         for offset in range(0, len(pending), 4):
-            document = [self._document(plan) for plan in pending[offset:offset + 4]]
-            originals = {plan["anchor_word_id"]: plan for plan in pending[offset:offset + 4]}
-            for attempt in range(2):
-                report(f"{'Preparing' if not attempt else 'Refining'} and checking {len(document)} sentence pairs…")
-                try:
-                    generated = self._provider.generate(document, opts.direction, metrics["kinds"])
-                except Exception:
-                    if all(row["anchor_word_id"] in ready for row in document):
-                        break
-                    raise
-                approved, rejected = self._cache(generated, {row["anchor_word_id"]: originals[row["anchor_word_id"]] for row in document}, policy)
-                ready.update(approved)
-                if not rejected:
-                    break
-                document = [{**row, "previous_rejection": rejected[row["anchor_word_id"]]}
-                            for row in document if row["anchor_word_id"] in rejected]
-        if plans and not ready:
-            raise practice_service.NothingToPractice("no_questions", "No sentence pair passed the language check. Try another round or context.")
+            batch = build.take(pending[offset:offset + 4])
+            if not batch:
+                break
+            document = [self._document(plan) for plan in batch]
+            originals = {plan["anchor_word_id"]: plan for plan in batch}
+            build.report(f"Preparing and checking {len(document)} sentence pairs…")
+            try:
+                generated = self._provider.generate(document, build.opts.direction, metrics["kinds"])
+                approved, rejected = self._cache(generated, originals, policy)
+            except ValueError as exc:
+                approved, rejected = {}, dict.fromkeys(originals, str(exc))
+            except Exception:
+                if all(row["anchor_word_id"] in ready for row in batch):
+                    continue
+                raise
+            ready.update(approved)
+            for row in batch:
+                if row["anchor_word_id"] in rejected:
+                    row["previous_rejection"] = rejected[row["anchor_word_id"]]
         return [ready[plan["anchor_word_id"]] for plan in plans if plan["anchor_word_id"] in ready]
 
     @staticmethod
@@ -109,7 +127,8 @@ class SentenceService:
                   "part_of_speech": row["part_of_speech"], "request_form": row["request_form"],
                   "context": json.loads(row["context_json"]), "note": row["note"] or ""} for row in plan["words"]]
         return {"anchor_word_id": plan["anchor_word_id"], "scene": plan["scene"],
-                "allow_context_change": plan["allow_context_change"], "words": words}
+                "allow_context_change": plan["allow_context_change"], "words": words,
+                "previous_rejection": plan.get("previous_rejection", "")}
 
     def _cache(self, generated: list[dict], plans: dict, policy: dict) -> tuple[dict, dict]:
         """Check a whole model batch before persisting approvals; e.g. duplicate or substituted IDs cannot partially seed playable content."""

@@ -70,7 +70,10 @@ class ActivityTests(unittest.TestCase):
         self.assertEqual(data.last_day, self.now.date())
         self.assertEqual(len(data.week), 7)
         self.assertEqual(data.week[0].day, self.now.date() - timedelta(days=6))
-        stats = practice_stats.snapshot(self.db)
+        # Keep both activity snapshots on the same local date, including when tests run after midnight.
+        with mock.patch("yt_whisper_subs.practice_activity.datetime", wraps=datetime) as clock:
+            clock.now.return_value = self.now
+            stats = practice_stats.snapshot(self.db)
         self.assertEqual(stats["activity"].answers, data.answers)
         self.assertEqual(stats["streak"], data.streaks[0])
 
