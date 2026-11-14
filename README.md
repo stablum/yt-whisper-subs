@@ -166,7 +166,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Notification grouping delay | `30` seconds after channel discovery; adjustable from `0` to `3,600` |
 | Notification dismissal | `20` seconds, paused while hovering; `0` keeps it open until dismissed |
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
-| Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet after any submitted answer today |
+| Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet for at least 24 hours after any submitted answer and throughout its local calendar day |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
 | Practice activity amount | submitted vocabulary and verb answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
@@ -818,8 +818,13 @@ so Windows notification-center history and Focus Assist do not manage them.
 ### Daily Practice Reminder
 
 Once you have eligible saved Dutch words or have started a verb round, a **Time for practice** balloon reminds
-you on local calendar days when you have not submitted a practice answer. It
-checks shortly after startup and once per minute while the library is open or
+you when you have not submitted a practice answer for at least **24 hours** and
+have not answered on the current local calendar day. A late session at **23:55**
+keeps the reminder quiet until at least **23:55 the following day**, including
+after an app restart; midnight does not reset practice credit. Vocabulary and
+typed verb submissions share this rule. The activity calendar and streaks still
+use the actual local answer dates. The reminder checks shortly after startup
+and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
 does not count; one submitted answer, correct or wrong, stops that day's reminder.
 The balloon waits while the Practice window is active in the foreground, while another modal
@@ -831,7 +836,7 @@ it survives closing/restarting the app and crossing midnight. There is no
 automatic timeout for this balloon. **Practice now**, **Activity & calendar**,
 and **Settings…** also snooze before opening their destination; opening a page
 does not invent practice credit. After the deadline, it can remind again if you
-still have not answered today. A saved snooze is not extended by application exit
+still meet the practice-spacing rule. A saved snooze is not extended by application exit
 or by changing its duration in Settings; the new duration applies next dismissal.
 Opening Practice or Activity from the menu/tray also snoozes a visible reminder.
 
@@ -839,7 +844,7 @@ When your last answer was two or more local calendar days ago, the balloon says
 how many days it has been. With no recorded answers, it invites your first
 practice without inventing an inactivity start date. The **last 7 days** chart
 shows questions answered, including zero days, with weekday/date labels and
-separate colors for Dutch → English and English → Dutch. It ends today rather
+separate colors for Dutch → English, English → Dutch and verbs. It ends today rather
 than starting on Monday. The balloon and Activity page share the same counts.
 
 Under **Library → Settings → Daily practice reminder**, enable/disable reminders
@@ -2861,7 +2866,8 @@ fixed-delay ID deduplication, current pin membership, immediate deactivation,
 hidden-only delivery, dismissal and hover timers, exact title navigation,
 persisted settings, large scrollable batches, and multi-monitor tray positioning.
 Practice reminder tests cover snooze/restart persistence, close/Escape/stop,
-midnight, inactivity wording, first practice, shared balloon delivery without
+the 24-hour practice interval across midnight/restart, vocabulary and verb credit,
+long local days, inactivity wording, first practice, shared balloon delivery without
 shortening aggregation, opening without completion credit, settings, and reuse
 of the existing Practice window. Activity tests exercise real SQLite answers,
 both directions, mistakes, idempotency, reported/unanswered questions, local

@@ -6,7 +6,7 @@ Example: `python -m unittest tests.test_practice_reminders` uses an injected wal
 import os
 import tempfile
 import unittest
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -66,7 +66,7 @@ class ReminderTests(unittest.TestCase):
         self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
 
     def _answer(self, at: float, *, count: int = 1, direction=practice.Direction.NL_EN) -> None:
-        """Submit real answers at a chosen instant; e.g. yesterday's practice should not suppress today's prompt."""
+        """Submit real answers at a chosen instant; e.g. distinguish a late session from one a full day ago."""
 
         opts = practice.RoundOptions(count=count, direction=direction, include_early=True)
         with mock.patch("yt_whisper_subs.practice_db.time.time", return_value=at):
@@ -163,6 +163,58 @@ class ReminderTests(unittest.TestCase):
         self.reminder.check()
         self.assertTrue(self.reminder.visible)
         self.assertIn("2 days", self.reminder._balloon._message.text())
+
+    def test_late_vocabulary_practice_stays_quiet_until_24_hours_even_after_restart(self) -> None:
+        """Regress the 23:55-to-midnight reset; e.g. reuse the saved answer timestamp without inventing a new deadline."""
+
+        last = datetime(2026, 11, 12, 23, 55).timestamp()
+        self._answer(last)
+        self.now = last + 5 * 60
+        self.reminder.check()
+        self.assertFalse(self.reminder.visible)
+        self.reminder.stop()
+        self.reminder = reminders.PracticeReminders(self.db, self.tray, lambda: True, clock=lambda: self.now)
+        self.now = last + 24 * 3600 - 1
+        self.reminder.check()
+        self.assertFalse(self.reminder.visible)
+        self.now += 1
+        self.reminder.check()
+        self.assertTrue(self.reminder.visible)
+        self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
+        activity = practice_activity.read(self.db, now=datetime.fromtimestamp(self.now))
+        self.assertEqual(activity.last_day, datetime.fromtimestamp(last).date())
+        self.assertEqual(activity.week[-1].answers, 0)
+
+    def test_late_verb_submission_has_the_same_minimum_interval(self) -> None:
+        """Share spacing across practice modes; e.g. a pending typed correction still prevents a midnight reminder."""
+
+        last = datetime(2026, 11, 12, 23, 55).timestamp()
+        engine = verb_service.VerbService(self.db, verb_fixtures.FakeVerbProvider())
+        opts = verb_fixtures.options(1).model_copy(update={"source": "starter"})
+        with mock.patch("yt_whisper_subs.verb_db.time.time", return_value=last):
+            session = engine.start(opts, lambda _: None)
+            row = self.db.verb_current(session)
+            self.db.verb_submit(row["id"], row["content"]["answer"], 1500)
+        self.now = last + 5 * 60
+        self.reminder.check()
+        self.assertFalse(self.reminder.visible)
+        self.now = last + 24 * 3600
+        self.reminder.check()
+        self.assertTrue(self.reminder.visible)
+
+    def test_same_local_day_stays_credited_when_longer_than_24_hours(self) -> None:
+        """Preserve daily credit alongside minimum spacing; e.g. a repeated clock hour can lengthen a local day."""
+
+        first = datetime(2026, 10, 25, 0, 15, tzinfo=timezone(timedelta(hours=2)))
+        later = datetime(2026, 10, 25, 23, 45, tzinfo=timezone(timedelta(hours=1)))
+        self._answer(first.timestamp())
+        self.now = later.timestamp()
+        local_dates = {first.timestamp(): first, later.timestamp(): later}
+        self.assertGreater(self.now - first.timestamp(), 24 * 3600)
+        with mock.patch.object(reminders, "datetime") as local_time:
+            local_time.fromtimestamp.side_effect = local_dates.__getitem__
+            self.reminder.check()
+        self.assertFalse(self.reminder.visible)
 
     def test_opening_practice_or_activity_is_not_completion(self) -> None:
         """Opening either page only snoozes; e.g. closing without answering still needs a later reminder."""

@@ -18,6 +18,7 @@ from yt_whisper_subs import library_balloon
 
 
 SNOOZE_HOURS = (1, 72)
+MIN_PRACTICE_HOURS = 24
 
 
 class ReminderPrefs(NamedTuple):
@@ -64,7 +65,7 @@ class ReminderSettings(QtWidgets.QGroupBox):
         self._hours.setValue(prefs.snooze_hours)
         self._hours.setEnabled(prefs.enabled)
         self._enabled.toggled.connect(self._hours.setEnabled)
-        note = QtWidgets.QLabel("Closing the balloon snoozes it. Answer a question to finish today's reminder. "
+        note = QtWidgets.QLabel(f"Closing the balloon snoozes it. Submitted answers keep reminders quiet for at least {MIN_PRACTICE_HOURS} hours. "
                                "Reminders run while the library is open or in the system tray.")
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
@@ -137,7 +138,7 @@ class PracticeBalloon(library_balloon.TrayBalloon):
 
 
 class PracticeReminders(QtCore.QObject):
-    """Evaluate local-day eligibility without scheduling OS jobs; e.g. catch up after wake or restart."""
+    """Combine elapsed-time spacing with daily credit; e.g. a late session stays credited across midnight and restart."""
 
     requested = QtCore.Signal(bool)
     settings_requested = QtCore.Signal()
@@ -171,14 +172,17 @@ class PracticeReminders(QtCore.QObject):
         self.check()
 
     def check(self) -> None:
-        """Show only when today has no submitted answers and snooze elapsed; e.g. one answer ends today's reminders."""
+        """Wait a full interval after practice and honor snooze; e.g. 23:55 practice cannot trigger a 00:00 reminder."""
 
         if self._stopped:
             return
         now = self._clock()
         today = datetime.fromtimestamp(now).date()
         last = self._db.practice_last_answer(now) if self._prefs.enabled else None
-        practiced = last is not None and datetime.fromtimestamp(last).date() == today
+        # Keep same-day credit on long DST days; elapsed time prevents a midnight reset after a recent answer.
+        practiced = last is not None and (
+            datetime.fromtimestamp(last).date() == today or now - last < MIN_PRACTICE_HOURS * 3600
+        )
         if not self._prefs.enabled or practiced:
             if self._balloon:
                 self._balloon.hide()
