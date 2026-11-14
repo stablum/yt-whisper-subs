@@ -1,4 +1,4 @@
-"""Native adaptive vocabulary practice with durable rounds and three large answer buttons.
+"""Native vocabulary, verb and sentence practice with shared progress and activity.
 
 Example: Library → Practice opens a configurable round or resumes an unfinished one.
 """
@@ -18,6 +18,8 @@ from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_verbs
 from yt_whisper_subs import library_verb_progress
+from yt_whisper_subs import library_sentences
+from yt_whisper_subs import library_sentence_progress
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
 
@@ -44,7 +46,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Restore a resumable round before preparing another; e.g. opening Activity alone does not start practice."""
 
         super().__init__(parent)
-        self.setWindowTitle("Practice · vocabulary and Dutch verbs")
+        self.setWindowTitle("Practice · vocabulary, verbs and sentences")
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(1060, 900)
         self._db = service.db
@@ -155,6 +157,8 @@ class PracticeDialog(QtWidgets.QDialog):
         self._progress_tabs = QtWidgets.QTabWidget()
         self._progress_tabs.addTab(self._progress, "Vocabulary")
         self._progress_tabs.addTab(self._verb_progress, "Verbs")
+        self._sentence_progress = library_sentence_progress.SentenceProgress(self._db)
+        self._progress_tabs.addTab(self._sentence_progress, "Sentences")
         self._progress_tabs.currentChanged.connect(self._refresh_progress)
         self._activity = library_practice_activity.ActivityPanel(self._db)
         activity_scroll = QtWidgets.QScrollArea()
@@ -167,6 +171,9 @@ class PracticeDialog(QtWidgets.QDialog):
         self._verbs = library_verbs.VerbPanel(self._db)
         self._verbs.activity_changed.connect(self.activity_changed)
         self._tabs.addTab(self._verbs, "Verbs")
+        self._sentences = library_sentences.SentencePanel(self._db)
+        self._sentences.activity_changed.connect(self.activity_changed)
+        self._tabs.addTab(self._sentences, "Sentences")
         self._tabs.currentChanged.connect(self._tab_changed)
         outer = QtWidgets.QVBoxLayout(self)
         outer.addWidget(title)
@@ -446,10 +453,10 @@ class PracticeDialog(QtWidgets.QDialog):
         """Keep analytics on demand and practice automatic; e.g. no hidden question exposure while inspecting stats."""
 
         self._next.setDefault(idx == 0 and self._next.isEnabled())
-        if idx in (0, 3):
-            self._db.set_setting("practice_last_mode", "verbs" if idx == 3 else "vocabulary")
+        if idx in (0, 3, 4):
+            self._db.set_setting("practice_last_mode", {0: "vocabulary", 3: "verbs", 4: "sentences"}[idx])
         if idx == 1:
-            mode = 1 if self._db.setting("practice_last_mode", "vocabulary") == "verbs" else 0
+            mode = {"vocabulary": 0, "verbs": 1, "sentences": 2}[self._db.setting("practice_last_mode", "vocabulary")]
             if self._progress_tabs.currentIndex() == mode:
                 self._refresh_progress()
             else:
@@ -458,6 +465,8 @@ class PracticeDialog(QtWidgets.QDialog):
             self._activity.refresh()
         elif idx == 3:
             self._verbs.activate()
+        elif idx == 4:
+            self._sentences.activate()
         else:
             self._ensure_round()
 
@@ -470,6 +479,10 @@ class PracticeDialog(QtWidgets.QDialog):
             else:
                 self._tabs.setCurrentIndex(2)
         else:
+            if self._db.setting("practice_last_mode", "vocabulary") == "sentences":
+                self._tabs.setCurrentIndex(4)
+                self._sentences.activate()
+                return
             if self._db.setting("practice_last_mode", "vocabulary") == "verbs":
                 self._tabs.setCurrentIndex(3)
                 self._verbs.activate()
@@ -486,18 +499,21 @@ class PracticeDialog(QtWidgets.QDialog):
         QtCore.QTimer.singleShot(0, self, self._ensure_round)
 
     def _refresh_progress(self, *_args) -> None:
-        """Keep both kinds of learning in the main statistics page; e.g. show verb accuracy without starting a verb round."""
+        """Keep every mode's learning in the main statistics page; e.g. show sentence accuracy without starting a round."""
 
         if self._progress_tabs.currentIndex() == 0:
             self._progress.refresh()
-        else:
+        elif self._progress_tabs.currentIndex() == 1:
             self._verb_progress.refresh()
+        else:
+            self._sentence_progress.refresh()
 
     def reject(self) -> None:
         """Pause on close, Escape or application exit; e.g. cancel an in-flight preparation without awaiting HTTP."""
 
         self._closed = True
         self._verbs.shutdown()
+        self._sentences.shutdown()
         if self._task:
             self._task.cancel()
         super().reject()

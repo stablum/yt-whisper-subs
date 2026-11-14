@@ -18,6 +18,7 @@ from PySide6 import QtWidgets
 
 from tests import practice_fixtures
 from tests import verb_fixtures
+from tests import sentence_fixtures
 from tests import test_library_notifications as notification_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_notifications
@@ -29,6 +30,7 @@ from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import verb_service
+from yt_whisper_subs import sentence_service
 
 
 class ReminderTests(unittest.TestCase):
@@ -215,6 +217,30 @@ class ReminderTests(unittest.TestCase):
             local_time.fromtimestamp.side_effect = local_dates.__getitem__
             self.reminder.check()
         self.assertFalse(self.reminder.visible)
+
+    def test_late_sentence_submission_quiets_reminder_while_correction_is_pending(self) -> None:
+        """Give full habit credit to a saved translation attempt; e.g. a 23:55 writing session cannot trigger a midnight reminder."""
+
+        sentence_fixtures.seed(self.db)
+        engine = sentence_service.SentenceService(self.db, sentence_fixtures.FakeSentenceProvider())
+        last = datetime(2026, 11, 12, 23, 55).timestamp()
+        # Vocabulary fixtures share the catalog: sentence generation still sees only its own approved target set.
+        candidates = self.db.sentence_candidates("en_nl")
+        words = [row for row in candidates if row["lemma"] in {"slim", "fiets", "lopen"}]
+        with mock.patch.object(self.db, "sentence_candidates", return_value=words):
+            session = engine.start(sentence_fixtures.options(), lambda _: None)
+        with mock.patch("yt_whisper_subs.sentence_db.time.time", return_value=last):
+            row = self.db.sentence_current(session)
+            self.db.sentence_submit(row["id"], sentence_fixtures.DUTCH, 1500)
+        self.now = last + 5 * 60
+        self.reminder.check()
+        self.assertFalse(self.reminder.visible)
+        self.now = last + 24 * 3600 - 1
+        self.reminder.check()
+        self.assertFalse(self.reminder.visible)
+        self.now += 1
+        self.reminder.check()
+        self.assertTrue(self.reminder.visible)
 
     def test_opening_practice_or_activity_is_not_completion(self) -> None:
         """Opening either page only snoozes; e.g. closing without answering still needs a later reminder."""

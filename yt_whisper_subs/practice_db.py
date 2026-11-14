@@ -9,6 +9,8 @@ import json
 import time
 import uuid
 
+from yt_whisper_subs import vocabulary_db
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS practice_questions (
@@ -74,12 +76,6 @@ FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.session_id
 """
 
-_READY_LOOKUPS = """
-FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN vocab_clicks c ON c.lookup_id=l.id
-WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
-"""
-
-
 class PracticeDbMixin:
     """Keep immutable question/answer evidence alongside a rebuildable scheduling cache."""
 
@@ -87,16 +83,8 @@ class PracticeDbMixin:
         """Use one translated Dutch occurrence per word; e.g. ignore English clicks and ambiguous translations."""
 
         sql = f"""
-        WITH ready AS (
-            SELECT l.*,c.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY c.clicked_at DESC,c.id DESC) AS n
-            {_READY_LOOKUPS}
-        ), counts AS (
-            SELECT l.word_id,COUNT(*) AS clicks,COUNT(DISTINCT c.source_id) AS videos
-            FROM vocab_clicks c JOIN vocab_lookups l ON l.id=c.lookup_id GROUP BY l.word_id
-        ) SELECT r.id AS lookup_id,r.word_id,r.surface,r.meaning,r.note,r.context_json,
-                 c.clicks,c.videos,s.card_json,s.due_at
-          FROM ready r JOIN counts c ON c.word_id=r.word_id
-          LEFT JOIN practice_states s ON s.word_id=r.word_id AND s.direction=? WHERE r.n=1
+        SELECT r.*,s.card_json,s.due_at FROM ({vocabulary_db.READY_WORDS}) r
+        LEFT JOIN practice_states s ON s.word_id=r.word_id AND s.direction=?
         """
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql, (direction,))]
@@ -105,7 +93,7 @@ class PracticeDbMixin:
         """Check eligibility without loading the scheduler; e.g. avoid reminders before any Dutch words are saved."""
 
         with self._connect() as conn:
-            return bool(conn.execute(f"SELECT EXISTS(SELECT 1 {_READY_LOOKUPS})").fetchone()[0])
+            return bool(conn.execute(f"SELECT EXISTS(SELECT 1 {vocabulary_db.READY_LOOKUPS})").fetchone()[0])
 
     def practice_last_answer(self, until: float) -> float | None:
         """Use the answer index for cheap reminder checks; e.g. reporting an unanswered question is not practice."""
@@ -115,23 +103,31 @@ class PracticeDbMixin:
                                "WHERE answered_at IS NOT NULL AND selected_idx IS NOT NULL AND answered_at<=? "
                                "ORDER BY answered_at DESC LIMIT 1) AS stamp UNION ALL "
                                "SELECT (SELECT answered_at FROM verb_presentations WHERE answered_at IS NOT NULL "
+                               "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1) UNION ALL "
+                               "SELECT (SELECT answered_at FROM sentence_presentations WHERE answered_at IS NOT NULL "
                                "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1))",
-                               (until, until)).fetchone()
+                               (until, until, until)).fetchone()
         return row[0]
 
     def practice_activity_rows(self, since: float, until: float) -> list[dict]:
         """Read real answer events in a bounded interval; e.g. seven days for a reminder's chart."""
 
         with self._connect() as conn:
-            rows = conn.execute("SELECT p.answered_at,p.selected_idx,NULL AS answer_text,p.outcome,s.direction,l.word_id "
+            rows = conn.execute("SELECT p.answered_at,p.selected_idx,NULL AS answer_text,p.outcome,s.direction,l.word_id,NULL AS word_ids_json "
                                 "FROM practice_presentations p JOIN practice_sessions s ON s.id=p.session_id "
                                 "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
                                 "WHERE p.answered_at IS NOT NULL AND p.selected_idx IS NOT NULL "
                                 "AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
-                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'verbs',t.verb_id "
+                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'verbs',t.verb_id,NULL "
                                 "FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id "
                                 "JOIN verb_targets t ON t.id=q.target_id WHERE p.answer_text IS NOT NULL "
-                                "AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at", (since, until, since, until))
+                                "AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
+                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'sentence_'||q.direction,q.anchor_word_id,"
+                                "(SELECT json_group_array(l.word_id) FROM sentence_question_words w "
+                                "JOIN vocab_lookups l ON l.id=w.lookup_id WHERE w.question_id=q.id) "
+                                "FROM sentence_presentations p JOIN sentence_questions q ON q.id=p.question_id "
+                                "WHERE p.answer_text IS NOT NULL AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at",
+                                (since, until, since, until, since, until))
             return [dict(row) for row in rows]
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:

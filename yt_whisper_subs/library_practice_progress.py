@@ -14,22 +14,9 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_stats
+from yt_whisper_subs import library_practice_tables as tables
 
 
-class MetricItem(QtWidgets.QTableWidgetItem):
-    """Sort formatted metrics by underlying values; e.g. 100% sorts after 75% rather than before it."""
-
-    def __init__(self, label: str | int, value: str | float) -> None:
-        """Separate human formatting from comparison; e.g. a local date retains its UTC timestamp as sort key."""
-
-        super().__init__()
-        self.setData(QtCore.Qt.ItemDataRole.DisplayRole, label)
-        self.setData(QtCore.Qt.ItemDataRole.UserRole, value)
-
-    def __lt__(self, other: QtWidgets.QTableWidgetItem) -> bool:
-        """Compare like-typed column keys; e.g. missing metrics sort below real observations."""
-
-        return self.data(QtCore.Qt.ItemDataRole.UserRole) < other.data(QtCore.Qt.ItemDataRole.UserRole)
 
 
 class TrendChart(QtWidgets.QWidget):
@@ -187,7 +174,7 @@ class ProgressPanel(QtWidgets.QWidget):
                     row["accuracy"] if row["accuracy"] is not None else -1,
                     row["median_ms"] if row["median_ms"] is not None else -1, row["due_at"] or -1]
             for col, (value, key) in enumerate(zip(values, keys)):
-                self._terms.setItem(idx, col, MetricItem(value, key))
+                self._terms.setItem(idx, col, tables.MetricItem(value, key))
         self._terms.resizeColumnsToContents()
         self._terms.setSortingEnabled(True)
 
@@ -205,6 +192,6 @@ class ProgressPanel(QtWidgets.QWidget):
             keys = [row["created_at"], row["direction"], row["shown"], row["correct"], row["wrong"],
                     row["correct"] / attempts if attempts else -1, row["answer_ms"], row["status"]]
             for col, (value, key) in enumerate(zip(values, keys)):
-                self._rounds.setItem(idx, col, MetricItem(value, key))
+                self._rounds.setItem(idx, col, tables.MetricItem(value, key))
         self._rounds.resizeColumnsToContents()
         self._rounds.setSortingEnabled(True)

@@ -45,7 +45,8 @@ class ActivityChart(QtWidgets.QWidget):
         painter.fillRect(self.rect(), QtGui.QColor("#1c212b"))
         painter.setPen(QtGui.QColor("#d9e3ef"))
         painter.drawText(12, 23, "Answers · last 7 days")
-        for x, text, color in ((12, "NL → EN", "#66d9ef"), (108, "EN → NL", "#ffd166"), (204, "Verbs", "#c4a1ff")):
+        for x, text, color in ((12, "NL → EN", "#66d9ef"), (108, "EN → NL", "#ffd166"),
+                               (204, "Verbs", "#c4a1ff"), (285, "Sentences", "#ffac78")):
             painter.setPen(QtGui.QColor(color))
             painter.drawText(x, 44, text)
         self._hits = []
@@ -64,7 +65,8 @@ class ActivityChart(QtWidgets.QWidget):
         for idx, row in enumerate(self._days):
             center = plot.left() + step * (idx + 0.5)
             baseline = plot.bottom()
-            for count, color in ((row.nl_en, "#66d9ef"), (row.en_nl, "#ffd166"), (row.verbs, "#c4a1ff")):
+            for count, color in ((row.nl_en, "#66d9ef"), (row.en_nl, "#ffd166"),
+                                 (row.verbs, "#c4a1ff"), (row.sentences, "#ffac78")):
                 height = plot.height() * count / maximum
                 painter.fillRect(QtCore.QRectF(center - width / 2, baseline - height, width, height), QtGui.QColor(color))
                 baseline -= height
@@ -75,7 +77,8 @@ class ActivityChart(QtWidgets.QWidget):
             painter.drawText(QtCore.QRectF(center - step / 2, plot.bottom() + 7, step, 40),
                              QtCore.Qt.AlignmentFlag.AlignCenter, row.day.strftime("%a\n%d %b"))
             hint = (f"{row.day:%A, %d %B %Y}\n{row.answers} answers · {row.words} words · {row.verb_lemmas} verbs\n"
-                    f"NL → EN: {row.nl_en} · EN → NL: {row.en_nl} · Verbs: {row.verbs}")
+                    f"NL → EN: {row.nl_en} · EN → NL: {row.en_nl} · Verbs: {row.verbs}\n"
+                    f"Sentences EN → NL: {row.sentence_en_nl} · NL → EN: {row.sentence_nl_en}")
             self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
 
     def mouseMoveEvent(self, event) -> None:
@@ -227,7 +230,8 @@ class ActivityPanel(QtWidgets.QWidget):
             return
         accuracy = f"{row.correct / row.graded:.0%} correct ({row.correct}/{row.graded} graded)" if row.graded else "No graded answers"
         self._details.setText(f"{row.answers} answers · {row.words} words · {row.verb_lemmas} verbs\n\n"
-                              f"Dutch → English: {row.nl_en}\nEnglish → Dutch: {row.en_nl}\nVerb transformations: {row.verbs}\n\n{accuracy}\n"
+                              f"Words Dutch → English: {row.nl_en}\nWords English → Dutch: {row.en_nl}\nVerb transformations: {row.verbs}\n"
+                              f"Sentences English → Dutch: {row.sentence_en_nl}\nSentences Dutch → English: {row.sentence_nl_en}\n\n{accuracy}\n"
                               f"{row.answers - row.graded} not graded (pending or reported)")
 
     def _show_month(self, *_args) -> None:

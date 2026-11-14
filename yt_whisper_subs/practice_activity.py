@@ -5,6 +5,7 @@ Example: `read(db).week` includes zero-answer days and counts attempts even afte
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, time, timedelta
 
 import polars as pl
@@ -23,6 +24,9 @@ class Day(pd.BaseModel):
     en_nl: int = 0
     verbs: int = 0
     verb_lemmas: int = 0
+    sentences: int = 0
+    sentence_nl_en: int = 0
+    sentence_en_nl: int = 0
 
 
 class Activity(pd.BaseModel):
@@ -78,23 +82,30 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
         submitted = row.get("selected_idx") is not None or row.get("answer_text") is not None
         if not submitted or stamp is None or stamp > now.timestamp():
             continue
+        word_ids = json.loads(row["word_ids_json"]) if row.get("word_ids_json") else [row["word_id"]]
+        if row["direction"] == "verbs":
+            word_ids = []
         answers.append({
             "day": datetime.fromtimestamp(stamp, now.tzinfo).date(), "word_id": row["word_id"],
+            "word_ids": word_ids,
             "correct": row["outcome"] == "correct", "graded": row["outcome"] in {"correct", "wrong"},
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
             "verbs": row["direction"] == "verbs",
+            "sentences": row["direction"].startswith("sentence_"),
+            "sentence_nl_en": row["direction"] == "sentence_nl_en", "sentence_en_nl": row["direction"] == "sentence_en_nl",
         })
     if not answers:
         return Activity(today=now.date())
-    frame = pl.DataFrame(answers)
+    frame = pl.DataFrame(answers, schema_overrides={"word_ids": pl.List(pl.Int64)})
     days = frame.group_by("day").agg(
         pl.len().alias("answers"), pl.col("correct").sum(), pl.col("graded").sum(),
-        pl.col("word_id").filter(~pl.col("verbs")).n_unique().alias("words"),
+        pl.col("word_ids").explode(empty_as_null=True).drop_nulls().n_unique().alias("words"),
         pl.col("word_id").filter(pl.col("verbs")).n_unique().alias("verb_lemmas"),
         pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
+        pl.col("sentences").sum(), pl.col("sentence_nl_en").sum(), pl.col("sentence_en_nl").sum(),
     ).sort("day")
     return Activity(today=now.date(), last_day=frame["day"].max(),
-                    distinct_words=frame.filter(~pl.col("verbs"))["word_id"].n_unique(),
+                    distinct_words=frame["word_ids"].explode(empty_as_null=True).drop_nulls().n_unique(),
                     distinct_verbs=frame.filter(pl.col("verbs"))["word_id"].n_unique(),
                     days=[Day(**row) for row in days.to_dicts()])
 

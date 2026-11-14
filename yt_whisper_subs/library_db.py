@@ -24,6 +24,7 @@ from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import practice_db
 from yt_whisper_subs import verb_db
 from yt_whisper_subs import verb_catalog_db
+from yt_whisper_subs import sentence_db
 
 
 _VIDEO_SELECT = """
@@ -67,6 +68,7 @@ class LibraryDb(
     practice_db.PracticeDbMixin,
     verb_db.VerbDbMixin,
     verb_catalog_db.VerbCatalogDbMixin,
+    sentence_db.SentenceDbMixin,
 ):
     """Own catalog SQL while opening one SQLite connection per worker thread.
 

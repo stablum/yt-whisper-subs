@@ -89,6 +89,9 @@ The companion library is optimized for a second workflow:
     for different subjects, tenses, moods and situations;
     learn from precise corrections and adaptive verb-form review, including
     conditionals and the Dutch subjunctive.
+21. Translate complete sentences between English and Dutch using saved vocabulary
+    in varied everyday situations, with natural supporting words, diagnostic
+    corrections and independent review of vocabulary and sentence writing.
 
 ## Important Defaults
 
@@ -110,6 +113,8 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
 | Verb sources | saved Dutch vocabulary plus 36 starter verbs; captured verbs receive extra priority |
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
+| Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
+| Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -168,7 +173,7 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
 | Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet for at least 24 hours after any submitted answer and throughout its local calendar day |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
-| Practice activity amount | submitted vocabulary and verb answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
+| Practice activity amount | submitted vocabulary, verb and sentence answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -821,8 +826,8 @@ Once you have eligible saved Dutch words or have started a verb round, a **Time 
 you when you have not submitted a practice answer for at least **24 hours** and
 have not answered on the current local calendar day. A late session at **23:55**
 keeps the reminder quiet until at least **23:55 the following day**, including
-after an app restart; midnight does not reset practice credit. Vocabulary and
-typed verb submissions share this rule. The activity calendar and streaks still
+after an app restart; midnight does not reset practice credit. Vocabulary,
+typed verb and sentence submissions share this rule. The activity calendar and streaks still
 use the actual local answer dates. The reminder checks shortly after startup
 and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
@@ -844,7 +849,8 @@ When your last answer was two or more local calendar days ago, the balloon says
 how many days it has been. With no recorded answers, it invites your first
 practice without inventing an inactivity start date. The **last 7 days** chart
 shows questions answered, including zero days, with weekday/date labels and
-separate colors for Dutch → English, English → Dutch and verbs. It ends today rather
+separate colors for vocabulary Dutch → English, vocabulary English → Dutch, verbs
+and sentence translations. It ends today rather
 than starting on Monday. The balloon and Activity page share the same counts.
 
 Under **Library → Settings → Daily practice reminder**, enable/disable reminders
@@ -2084,14 +2090,15 @@ bar chart, weekly/all-time answer totals, active-day counts, distinct words,
 current/longest study streaks, and a browsable monthly calendar. Each calendar
 tile shows that day's answer count; stronger teal indicates more answers.
 Select a date by mouse or keyboard to see questions answered, distinct words,
-both direction counts, verb submissions and valid-answer accuracy. Browse earlier months with the
+both vocabulary direction counts, verb and sentence submissions (including both
+sentence directions), and valid-answer accuracy. Browse earlier months with the
 native calendar controls or use **Today** to return. Empty days remain visible.
 The page scrolls on smaller screens and refreshes its local date after midnight.
 Open it directly through **Library → Practice activity…**, the tray's
 **Practice activity…**, or **Activity & calendar** in the reminder. All paths
 reuse the same Practice window, alongside its existing Progress tab.
 
-Activity counts actual submitted choices and typed verb answers, including wrong answers and answers
+Activity counts actual submitted choices, typed verb answers and sentence translations, including wrong answers and answers
 to questions reported later. Reporting an unanswered question, merely showing
 one, or planning an unused round adds nothing. Reported questions still do not
 affect accuracy or scheduling. Habit streaks use these submitted-answer days
@@ -2167,7 +2174,7 @@ verbs** (default), **My vocabulary only**, or **Starter verbs only**.
 combinations produce an inline explanation. **Conditionals** and **Subjunctives**
 are separate focus groups, each including present/simple and perfect/past forms
 where Dutch actually has them. The window remembers whether you last practised
-vocabulary or verbs; Activity remains directly accessible without starting either.
+vocabulary, verbs or sentences; Activity remains directly accessible without starting a round.
 An unfinished round resumes automatically. Closing pauses immediately; **End this
 verb round** saves partial results without penalizing unanswered questions.
 
@@ -2261,8 +2268,8 @@ Captured verbs receive three times the base weight plus a bounded boost from
 repeated clicks and distinct videos, within the same due/new review policy.
 These are learning estimates, not a fluency score or a fitted personal model.
 
-The main **Progress** page contains **Vocabulary** and **Verbs** statistics.
-After verb practice, opening Progress selects Verbs automatically; either view
+The main **Progress** page contains **Vocabulary**, **Verbs** and **Sentences** statistics.
+Opening Progress selects the most recently used practice mode automatically; each view
 can also be opened without starting exercises or spending API requests.
 **Progress → Verbs** shows daily full-sentence accuracy and checked-answer
 counts, independently assessed tense/mood, subject, structure and verb accuracy,
@@ -2271,7 +2278,7 @@ and video counts, error-type frequencies, exact mistake
 history and round results. Tables sort numerically and retain full hover text.
 Multiple errors in one answer remain distinct; only assessed valid answers enter
 accuracy denominators. **Activity** and its calendar combine both vocabulary
-directions with a purple **Verbs** series, separate distinct-word/verb counts and
+directions with purple **Verbs** and orange **Sentences** series, separate distinct-word/verb counts and
 one shared study streak. A submitted verb answer also completes today's reminder,
 even if correction is pending; users practising only verbs receive reminders once
 they have started a verb round.
@@ -2304,6 +2311,96 @@ separable/reflexive mappings, source filters, captured-verb weighting, noun and
 ambiguity exclusion, cached audits, bounded repair and cooldown, stale-lookup
 races, immediate English help, scoped keyboard input, delayed-help isolation,
 transformed-sentence English and the main Progress statistics entry point.
+
+### Whole-Sentence Translation Practice
+
+Open **Library → Practice… → Sentences**. The first question appears automatically.
+Translate the complete English sentence into Dutch, press **Enter** or **Check
+sentence**, read the correction, then use a fresh **Continue** click or Enter to
+advance. **Sentence round options** selects **English → Dutch** writing or
+**Dutch → English** comprehension, 1–50 sentences (default 10), 1–3 saved target
+words per sentence (default 2), a life context and optional early review.
+Preferences apply to the next round; **New sentence round** prepares and checks
+replacement content before ending an unfinished round. Closing or Escape pauses
+the current round. The most recently used mode opens again next time.
+
+Both goals matter: learn the saved vocabulary and write correct Dutch across
+home, shopping, work, travel, food, appointments, social life, hobbies and public
+life. Saved words are the **learning targets**, not a whitelist: the generator
+freely adds ordinary supporting vocabulary for natural meaningful sentences.
+Captured inflections are adapted to different persons and tenses, conditionals,
+plurals, adjective endings, comparatives, superlatives and other suitable forms.
+Morphology follows the word's actual restrictions; requests never justify an
+invented form. Mixed contexts balance variety with areas where mistakes recur.
+Specific context selection is also available. A small vocabulary can produce a
+shorter round than requested.
+
+Generation and a separate quality audit use **`gpt-6-luna` / `medium`** with the
+existing practice credentials, strict structured responses and `store: false`.
+Audits check naturalness, saved senses, matching bilingual meaning, evidence for
+each form and answer alternatives. Rejected pairs get one bounded repair pass.
+Checked content is cached under the exact source lookups and model/prompt policy.
+Automatic opening prefers cached content; explicit new rounds can gradually add
+up to three variants per target set and context. Only the source sentence is
+shown before submission; there is no translation-reveal shortcut for this mode.
+
+Corrections cover the **whole sentence**, including supporting words, meaning,
+negation, word order, spelling, articles, agreement and inflection. Feedback
+shows the corrected sentence, its meaning back in the source language, concrete
+error spans with explanations, and the practised Dutch forms and English meanings.
+Valid synonyms and natural alternative phrasing are accepted. In English → Dutch,
+using a different valid Dutch synonym earns sentence credit but does not certify
+recall of the saved lexeme; that word stays eligible for vocabulary review.
+English synonyms in Dutch → English can demonstrate comprehension normally.
+Exact approved reference answers can be graded locally; other answers, including
+approved paraphrases, receive per-word model assessment. An uncertain or failed
+correction stays pending, without recording a learning failure.
+
+The first typed attempt is committed **before** correction starts. Retry checking
+and app restarts reuse it without creating a second answer. Submission, correction
+and continuation are separate gestures; held Enter and double clicks cannot skip
+feedback. **Report exercise** quarantines a disputed pair and removes its grading
+influence while preserving submitted effort and the original evidence.
+
+Adaptive selection has two independent levels. Each saved word has a separate
+FSRS review state for writing and comprehension, while each sentence has its own
+review state for complete meaning and grammar. A global word-order error can
+bring the sentence back without failing correctly translated vocabulary. Correct
+future-due words do not gain extra scheduled successes merely because a grammar
+review repeats them, unless early review was requested. Per-word meaning and form
+failures, a half-weight prior from the matching vocabulary-quiz direction, click
+frequency and distinct-video counts influence weighted selection. Due words get
+priority, with room for new words; mastered future-due targets wait. Observed form
+and context errors bias subsequent exercise plans toward weaker areas.
+
+**Progress → Sentences** contains daily accuracy and checked-sentence charts,
+saved-word exposure/meaning/form/target-use counts and due dates, grammatical-form
+accuracy, life-context accuracy, detailed mistakes and round history. Unassessable
+forms are excluded from denominators: for example, Dutch adjective endings are
+not tested by an English answer. Opening Progress or Activity is read-only and
+does not generate or expose questions. **Activity** and the calendar add an orange
+**Sentences** series, count one submission per translated sentence and include all
+its distinct saved targets. A submitted answer quiets the shared reminder even
+when correction is pending, preserving the 24-hour spacing rule.
+
+Ten relational tables share the existing SQLite catalog: `sentence_questions`,
+`sentence_question_words`, `sentence_sessions`, `sentence_presentations`,
+`sentence_assessments`, `sentence_forms`, `sentence_errors`, `sentence_error_words`,
+and rebuildable `sentence_states` and `sentence_question_states`. Foreign keys link
+targets to their original vocabulary lookups and captured-video context. Immutable
+bilingual snapshots, quality verdicts, first-display/submission/grading timestamps,
+elapsed time, exact model/prompt policy, serialized scheduler parameters and
+before/after states/review logs retain the evidence. Correction, normalized word/
+form/error assessments and both scheduling levels commit in one transaction.
+Reporting rebuilds word states from remaining valid history. NumPy handles
+probabilities; Polars derives metrics. Verb and sentence modes share native typed
+input and lifecycle controls, keeping their providers and persistence separate.
+
+Run the deterministic sentence and native integration checks without API calls:
+
+```powershell
+python -m unittest tests.test_sentence_practice tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+```
 
 ### Word Capture Verification
 
@@ -2866,7 +2963,7 @@ fixed-delay ID deduplication, current pin membership, immediate deactivation,
 hidden-only delivery, dismissal and hover timers, exact title navigation,
 persisted settings, large scrollable batches, and multi-monitor tray positioning.
 Practice reminder tests cover snooze/restart persistence, close/Escape/stop,
-the 24-hour practice interval across midnight/restart, vocabulary and verb credit,
+the 24-hour practice interval across midnight/restart, vocabulary, verb and sentence credit,
 long local days, inactivity wording, first practice, shared balloon delivery without
 shortening aggregation, opening without completion credit, settings, and reuse
 of the existing Practice window. Activity tests exercise real SQLite answers,

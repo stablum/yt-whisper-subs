@@ -79,6 +79,22 @@ JOIN vocab_lookups l ON l.id=c.lookup_id
 JOIN vocab_words w ON w.id=l.word_id
 """
 
+# One eligibility query is shared by word recognition and whole-sentence production.
+READY_LOOKUPS = """
+FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN vocab_clicks c ON c.lookup_id=l.id
+WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
+"""
+READY_WORDS = f"""
+WITH ready AS (
+    SELECT l.*,c.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY c.clicked_at DESC,c.id DESC) AS n
+    {READY_LOOKUPS}
+), counts AS (
+    SELECT l.word_id,COUNT(*) AS clicks,COUNT(DISTINCT c.source_id) AS videos
+    FROM vocab_clicks c JOIN vocab_lookups l ON l.id=c.lookup_id GROUP BY l.word_id
+) SELECT r.id AS lookup_id,r.word_id,r.surface,r.meaning,r.note,r.context_json,r.lemma,r.lemma_meaning,r.part_of_speech,
+         c.clicks,c.videos FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
+"""
+
 
 class VocabularyDbMixin:
     """Keep vocabulary transactions independent from channel queries; e.g. CLI capture."""

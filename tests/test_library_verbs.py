@@ -277,7 +277,7 @@ class VerbFlowTests(unittest.TestCase):
         self.assertEqual(card.meaning._label.text(), self.panel._run.row["content"]["source_english"])
         self.assertEqual(card.editor.toPlainText(), "My draft")
         self.assertTrue(card.editor.hasFocus())
-        self.assertEqual(card._answer_english.text(), "")
+        self.assertEqual(card._translation.text(), "")
         self.assertEqual(card._correction.text(), "")
         self.assertEqual(self.provider.translated, [])
         self.assertEqual(practice_activity.read(self.db).answers, 0)
@@ -294,7 +294,7 @@ class VerbFlowTests(unittest.TestCase):
         self._answer(wrong=True)
         self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
         card = self.panel._view.card
-        self.assertEqual(card._answer_english.text(), self.panel._run.row["grade"]["corrected_english"])
+        self.assertEqual(card._translation.text(), self.panel._run.row["grade"]["corrected_english"])
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
         card.meaning._button.click()
         card.meaning._button.click()
@@ -302,7 +302,7 @@ class VerbFlowTests(unittest.TestCase):
         self.panel._view.action.click()
         self.assertNotEqual(self.panel._run.row["id"], first)
         self.assertFalse(card.meaning._button.isChecked())
-        self.assertEqual(card._answer_english.text(), "")
+        self.assertEqual(card._translation.text(), "")
 
     def test_existing_round_can_retry_source_translation_without_grading(self) -> None:
         """Keep old immutable questions usable; e.g. a failed on-demand source translation leaves draft text intact."""
