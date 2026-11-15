@@ -2636,6 +2636,17 @@ Exact approved reference answers can be graded locally; other answers, including
 approved paraphrases, receive per-word model assessment. An uncertain or failed
 correction stays pending, without recording a learning failure.
 
+The grader validates the complete response **before** enriching vocabulary or
+committing feedback. A malformed or contradictory response receives at most one
+repair request with the rejected proposal and the specific validation reason.
+For example, an error cannot simultaneously fail a target whose meaning and
+tested forms were assessed as correct: sentence-level construction errors retain
+their correction without inventing a vocabulary failure. Valid feedback takes
+one grading request as before. Genuine uncertainty and transport failures remain
+pending for explicit retry; they do not trigger this repair step. If the repaired
+response is still invalid, the saved first attempt and learning history remain
+unchanged. Correction provenance records grading policy version 5.
+
 The first typed attempt and its queue entry commit **together before correction
 starts**. One application-owned worker corrects queued sentences in submission
 order, avoiding a burst of simultaneous requests. SQLite ownership leases prevent
@@ -2707,7 +2718,7 @@ while verbs retain their existing correction/continue flow.
 Run the deterministic sentence and native integration checks without API calls:
 
 ```powershell
-python -m unittest tests.test_sentence_practice tests.test_sentence_variety tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_sentence_practice tests.test_sentence_grading tests.test_sentence_variety tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 ### Word Capture Verification

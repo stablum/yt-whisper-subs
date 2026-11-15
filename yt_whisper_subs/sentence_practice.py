@@ -175,8 +175,9 @@ class Grade(practice.Content):
                 raise ValueError("Correction evidence was absent from the submitted sentence")
             if len(error.word_ids) != len(set(error.word_ids)) or not set(error.word_ids) <= set(words):
                 raise ValueError("An error was attributed to unknown vocabulary")
-            if any(words[word_id].correct for word_id in error.word_ids):
-                raise ValueError("An error contradicts its word assessment")
+            conflicts = [word_id for word_id in error.word_ids if words[word_id].correct]
+            if conflicts:
+                raise ValueError(f"An error contradicts its word assessment for word IDs {conflicts}: {error.kind} ({error.evidence!r})")
             affected.update(error.word_ids)
         for word in self.words:
             features = {row.feature for row in word.forms}
