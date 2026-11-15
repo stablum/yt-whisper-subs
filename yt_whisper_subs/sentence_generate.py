@@ -62,6 +62,8 @@ class SentenceGenerator(learning.LearningGenerator):
         batch = self._request(sentences.Drafts, _RULES + (
             "Return exactly one question per anchor_word_id. Include ALL its requested saved word IDs and no other "
             "target IDs. Word meanings and subtitle context help disambiguate; the generated sentences must be fresh. "
+            "recent_sentences are exercise pairs already shown for this target, not learner answers. Use a genuinely "
+            "different situation and sentence construction; avoid reproducing them or making only small word swaps. "
             "Use the requested life scene; if allow_context_change is true you may choose another listed ordinary "
             "context when it is more natural for these words. Allowed scenes: " + ", ".join(sentences.SCENES) + ". "
             "For each target list exact substrings in dutch_forms and english_forms (separated verb pieces may use "
@@ -103,7 +105,8 @@ class SentenceGenerator(learning.LearningGenerator):
             "complete draft against the matching plan, NOT one verdict per vocabulary word. Do not merge slots "
             "even when questions share target words. Approve only natural, accurate bilingual pairs with ALL saved target "
             "senses faithfully represented, correct word/form evidence and feature tags, valid target-language "
-            "alternatives and accurate explanations. Reject forced unnatural vocabulary puzzles, unsupported "
+            "alternatives and accurate explanations. Reject near-copies of the plan's recent_sentences, including "
+            "small substitutions instead of a genuinely new context. Reject forced unnatural vocabulary puzzles, unsupported "
             "inflections, invented meanings, changed number/person/tense/degree, or missing targets. Extra supporting "
             "vocabulary is EXPECTED and must not be rejected merely because it is not saved. Check appropriate "
             "register and life context. If in doubt mark invalid with a concrete reason; do not silently repair it. "

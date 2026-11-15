@@ -21,14 +21,15 @@ class Mark(pd.BaseModel):
     end: int
     correction: str
     explanation: str
+    kind: str = "other"
 
 
 def marks(text: str, grade: dict, direction: str) -> list[Mark]:
     """Locate saved evidence without guessing errors from a paraphrase; e.g. a valid synonym is never marked merely because it differs from the reference."""
 
-    evidence = [(row["evidence"], row["correction"], row["explanation"]) for row in grade["errors"]]
+    evidence = [(row["evidence"], row["correction"], row["explanation"], row.get("kind", "other")) for row in grade["errors"]]
     target = "dutch" if direction == "en_nl" else "english"
-    evidence.extend((row["typed"], " … ".join(row[target]), row["note"]) for row in grade.get("vocabulary", []))
+    evidence.extend((row["typed"], " … ".join(row[target]), row["note"], "vocabulary") for row in grade.get("vocabulary", []))
     return _locate(text, evidence)
 
 
@@ -43,28 +44,58 @@ def source_marks(row: dict) -> list[Mark]:
         forms = error.get("source_forms", [])
         if not forms:
             forms = [form for word_id in error["word_ids"] if word_id in words for form in words[word_id][source + "_forms"]]
-        evidence.extend((form, error["correction"], error["explanation"]) for form in forms)
+        evidence.extend((form, error["correction"], error["explanation"], error.get("kind", "other")) for form in forms)
     for fix in grade.get("vocabulary", []):
-        evidence.extend((form, " … ".join(fix[target]), fix["note"]) for form in fix[source])
+        evidence.extend((form, " … ".join(fix[target]), fix["note"], "vocabulary") for form in fix[source])
     return _locate(content[source], evidence)
 
 
-def _locate(text: str, evidence: list[tuple[str, str, str]]) -> list[Mark]:
+def _locate(text: str, evidence: list[tuple[str, str, str, str]]) -> list[Mark]:
     """Share exact whole-word evidence matching across both texts; e.g. zeker never marks the unrelated zekerdere."""
 
     result, seen = [], set()
-    for original, correction, explanation in evidence:
+    for original, correction, explanation, kind in evidence:
         if not original:
             continue
         pattern = re.escape(original)
         pattern = (r"(?<!\w)" if original[0].isalnum() else "") + pattern
         pattern += r"(?!\w)" if original[-1].isalnum() else ""
         for found in re.finditer(pattern, text, re.IGNORECASE):
-            key = found.start(), found.end(), correction, explanation
+            key = found.start(), found.end(), correction, explanation, kind
             if key not in seen:
                 seen.add(key)
-                result.append(Mark(start=found.start(), end=found.end(), correction=correction, explanation=explanation))
+                result.append(Mark(start=found.start(), end=found.end(), correction=correction, explanation=explanation, kind=kind))
     return result
+
+
+def _related_corrections(left: str, right: str) -> bool:
+    """Identify a corrected word within its fuller phrase; e.g. wetsvoorstelletje and kleine wetsvoorstelletje express the same local correction."""
+
+    tokens = [tuple(re.findall(r"\w+", text.casefold())) for text in (left, right)]
+    short, long = sorted(tokens, key=len)
+    return bool(short) and any(long[idx:idx + len(short)] == short for idx in range(len(long) - len(short) + 1))
+
+
+def tooltip_html(matching: list[Mark]) -> str:
+    """Present each correction once with focused context; e.g. a grammar explanation supersedes a duplicate dictionary note."""
+
+    contextual = [row for row in matching if row.kind != "vocabulary"]
+    rows = [row for row in matching if row.kind != "vocabulary"
+            or not any(_related_corrections(row.correction, other.correction) for other in contextual)]
+    groups = {}
+    for row in rows:
+        key = " ".join(row.correction.casefold().split())
+        group = groups.setdefault(key, {"correction": row.correction, "notes": {}})
+        note_key = " ".join(re.findall(r"\w+", row.explanation.casefold()))
+        group["notes"].setdefault(note_key, row.explanation)
+    parts = []
+    for group in groups.values():
+        heading = html.escape(group["correction"])
+        notes = "<br>".join(html.escape(note) for note in group["notes"].values())
+        parts.append("<tr><td><span style='font-size:18pt;font-weight:600;color:#83e5af'>"
+                     + heading + "</span><br><span style='font-size:12pt'>" + notes + "</span></td></tr>")
+    # QTextDocument supports table width and explicit breaks, but ignores a div's CSS max-width.
+    return "<table width='440' cellspacing='0' cellpadding='0'>" + "<tr><td height='10'></td></tr>".join(parts) + "</table>"
 
 
 def show_tip(matching: list[Mark], global_pos, widget) -> None:
@@ -73,9 +104,7 @@ def show_tip(matching: list[Mark], global_pos, widget) -> None:
     if not matching:
         QtWidgets.QToolTip.hideText()
         return
-    rows = [f"<b style='color:#83e5af'>{html.escape(row.correction)}</b><br>{html.escape(row.explanation)}" for row in matching]
-    text = "<div style='max-width:440px;font-size:12pt'>" + "<br><br>".join(rows) + "</div>"
-    QtWidgets.QToolTip.showText(global_pos + QtCore.QPoint(12, 20), text, widget)
+    QtWidgets.QToolTip.showText(global_pos + QtCore.QPoint(12, 20), tooltip_html(matching), widget)
 
 
 class SourceLabel(QtWidgets.QLabel):

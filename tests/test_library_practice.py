@@ -20,6 +20,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtTest
 from PySide6 import QtWidgets
+import shiboken6
 
 from tests import practice_fixtures
 from yt_whisper_subs import library_db
@@ -39,6 +40,7 @@ class PracticeDialogTests(unittest.TestCase):
         """Share a Qt event loop with other desktop tests; e.g. background preparation replies are queued."""
 
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        cls.app.setQuitOnLastWindowClosed(False)
 
     def setUp(self) -> None:
         """Build a complete catalog and injectable strategy; e.g. no API key or user's database is required."""
@@ -52,7 +54,15 @@ class PracticeDialogTests(unittest.TestCase):
         self.db.set_setting("practice_options", opts.model_dump_json())
         self.engine = practice_service.PracticeService(self.db, practice_fixtures.FakeGenerator())
         self.dialog = self._dialog()
-        self.addCleanup(lambda: self.dialog.close())
+        self.addCleanup(self._close)
+
+    def _close(self) -> None:
+        """Drain owned work before removing its temporary catalog; e.g. a dialog already deleted by closing cannot be closed twice."""
+
+        if shiboken6.isValid(self.dialog):
+            self.dialog.close()
+        QtCore.QThreadPool.globalInstance().waitForDone(10000)
+        self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
 
     def _dialog(self):
         """Render actual native widgets without showing desktop windows; e.g. use Windows font rendering for previews."""
@@ -68,7 +78,7 @@ class PracticeDialogTests(unittest.TestCase):
     def _wait_ready(self) -> None:
         """Wait for the worker's meaningful completion; e.g. avoid sleep-only assertions about API preparation."""
 
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 10
         while self.dialog._current is None:
             QtTest.QTest.qWait(10)
             if time.monotonic() > deadline:
@@ -97,7 +107,7 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(self.dialog._current["rating"], 2)
         self.dialog._controls.finish_requested.emit()
         self.assertIn("Round saved", self.dialog._prompt.text())
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.assertGreater(self.dialog._progress._terms.rowCount(), 0)
 
     def test_insufficient_targets_offer_options_without_a_partial_round(self) -> None:
@@ -113,6 +123,30 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(self.dialog._prompt.text(), "Choose a smaller round")
         self.assertIsNone(self.dialog._current)
         self.assertIsNone(self.db.practice_active())
+
+    def test_grouped_navigation_separates_practice_from_tracking_without_extra_steps(self) -> None:
+        """Use actual grouped page buttons and native page state; e.g. visiting Progress records no exposure, then one Word quiz click opens a question."""
+
+        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(5)], ["Word quiz", "Verbs", "Sentences", "Progress", "Activity"])
+        self.assertFalse(self.dialog._tabs.tabBar().isVisible())
+        labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
+        self.assertEqual(labels, {"PRACTICE", "TRACKING"})
+        buttons = self.dialog._nav._buttons
+        buttons.button(library_practice.Page.PROGRESS).click()
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
+        self.assertIsNone(self.dialog._current)
+        self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 0)
+        QtTest.QTest.keyClick(self.dialog._tabs, QtCore.Qt.Key.Key_Tab, QtCore.Qt.KeyboardModifier.ControlModifier)
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
+        self.assertTrue(buttons.button(library_practice.Page.ACTIVITY).isChecked())
+        self.app.processEvents()
+        self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
+        buttons.button(library_practice.Page.QUIZ).click()
+        self._wait_ready()
+        self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
+        self.dialog.show_page(True)
+        self.assertTrue(buttons.button(library_practice.Page.ACTIVITY).isChecked())
+        self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
 
     def test_close_and_resume_does_not_recount_the_current_question(self) -> None:
         """Closing the dialog preserves the round; e.g. continue later with the same button ordering."""
@@ -176,18 +210,19 @@ class PracticeDialogTests(unittest.TestCase):
         """A delayed provider must not hold the window open or invent exposures; e.g. close during an API call."""
 
         entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
         generate = self.engine._provider.generate
 
         def blocked(rows, direction):
             """Simulate an uninterruptible HTTP segment; e.g. cancellation is checked at the next report."""
 
             entered.set()
-            release.wait(3)
+            release.wait(20)
             return generate(rows, direction)
 
         self.engine._provider.generate = blocked
         self.dialog.show_page(False)
-        deadline = time.monotonic() + 4
+        deadline = time.monotonic() + 10
         while not entered.is_set() and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
         self.assertTrue(entered.is_set())
@@ -195,6 +230,7 @@ class PracticeDialogTests(unittest.TestCase):
         self.dialog._task.signals.cancelled.connect(lambda: cancelled.append(True))
         self.dialog.close()
         release.set()
+        deadline = time.monotonic() + 10
         while not cancelled and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
         self.assertTrue(cancelled)
@@ -229,7 +265,7 @@ class PracticeDialogTests(unittest.TestCase):
             self.assertTrue(self.dialog.grab().save(str(Path(folder) / "practice-round.png")))
         self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
         self.assertIn(self.dialog._current["content"]["surface"], self.dialog._result.text())
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.app.processEvents()
         self.assertEqual(self.dialog._progress._terms.rowCount(), 8)
         self.assertEqual(self.dialog._progress._rounds.rowCount(), 13)

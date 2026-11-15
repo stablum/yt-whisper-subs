@@ -44,23 +44,7 @@ class SentenceService:
         unused = {row["anchor_word_id"] for row in pool}
         for row in rows:
             row["unused"] = row["word_id"] in unused
-        anchors = selector.select(rows, opts, now)
-        reviews = self._db.sentence_due(generation, now)
-        if opts.scene != "mixed":
-            reviews = [row for row in reviews if row["scene"] == opts.scene]
-        reviews.sort(key=lambda row: policy.recall(row["card_json"], now))
-        chosen, selected, seen = [], [], set()
-        for idx in range(opts.count):
-            anchors = [row for row in anchors if row["word_id"] not in seen]
-            reviews = [row for row in reviews if row["anchor_word_id"] not in seen]
-            if reviews and (not anchors or idx % 5 != 4):
-                row = reviews.pop(0)
-                chosen.append(row)
-                seen.add(row["anchor_word_id"])
-            elif anchors:
-                row = anchors.pop(0)
-                selected.append(row)
-                seen.add(row["word_id"])
+        chosen, selected = selector.targets(rows, self._db.sentence_due(generation, now), opts, now)
         if not chosen and not selected:
             raise practice_round.NothingToPractice("not_due", "Your sentence targets and writing reviews are not due yet. Try early practice if you wish.")
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
@@ -70,8 +54,10 @@ class SentenceService:
 
             plans = selector.plans(anchors, rows, opts, metrics, now)
             by_id = {row["word_id"]: row for row in anchors}
+            examples = self._db.sentence_examples(list(by_id), opts.direction.value)
             for item in plans:
                 item["previous_rejection"] = by_id[item["anchor_word_id"]].get("previous_rejection", "")
+                item["recent_sentences"] = examples.get(item["anchor_word_id"], [])
             checked = self._content(plans, generation, metrics, job)
             for item in plans:
                 by_id[item["anchor_word_id"]]["previous_rejection"] = item["previous_rejection"]
@@ -91,10 +77,10 @@ class SentenceService:
         pool = self._db.sentence_pool(build.opts, policy)
         for plan in plans:
             cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"]]
-            cached = cached or self._db.sentence_cached(plan, policy)
+            cached = cached or [row for row in self._db.sentence_cached(plan, policy) if row["uses"] == 0]
             if cached:
                 ready[plan["anchor_word_id"]] = cached[0]
-            if not cached or (not build.cached_first and len(cached) < 3 and cached[0]["uses"]):
+            if not cached:
                 pending.append(plan)
         for offset in range(0, len(pending), 4):
             batch = build.take(pending[offset:offset + 4])
@@ -108,10 +94,6 @@ class SentenceService:
                 approved, rejected = self._cache(generated, originals, policy)
             except ValueError as exc:
                 approved, rejected = {}, dict.fromkeys(originals, str(exc))
-            except Exception:
-                if all(row["anchor_word_id"] in ready for row in batch):
-                    continue
-                raise
             ready.update(approved)
             for row in batch:
                 if row["anchor_word_id"] in rejected:
@@ -128,7 +110,8 @@ class SentenceService:
                   "context": json.loads(row["context_json"]), "note": row["note"] or ""} for row in plan["words"]]
         return {"anchor_word_id": plan["anchor_word_id"], "scene": plan["scene"],
                 "allow_context_change": plan["allow_context_change"], "words": words,
-                "previous_rejection": plan.get("previous_rejection", "")}
+                "previous_rejection": plan.get("previous_rejection", ""),
+                "recent_sentences": plan.get("recent_sentences", [])}
 
     def _cache(self, generated: list[dict], plans: dict, policy: dict) -> tuple[dict, dict]:
         """Check a whole model batch before persisting approvals; e.g. duplicate or substituted IDs cannot partially seed playable content."""

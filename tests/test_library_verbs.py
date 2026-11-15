@@ -77,7 +77,7 @@ class VerbFlowTests(unittest.TestCase):
         self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.dialog.show_page(True)
         if not activity:
-            self.dialog._tabs.setCurrentIndex(3)
+            self.dialog._tabs.setCurrentIndex(library_practice.Page.VERBS)
         self.dialog.show()
         self.app.processEvents()
 
@@ -162,14 +162,14 @@ class VerbFlowTests(unittest.TestCase):
             return original(rows)
 
         self.provider.generate = delayed
-        self.dialog._tabs.setCurrentIndex(3)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.VERBS)
         self._wait(entered.is_set)
-        self.dialog._tabs.setCurrentIndex(2)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.ACTIVITY)
         release.set()
         self._wait(lambda: self.panel._task is None)
         session = self.db.verb_active()
         self.assertEqual(self.db.verb_summary(session)["shown"], 0)
-        self.dialog._tabs.setCurrentIndex(3)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.VERBS)
         self._wait(lambda: self.panel._run.row is not None)
         self.assertEqual(self.db.verb_summary(session)["shown"], 1)
 
@@ -193,12 +193,12 @@ class VerbFlowTests(unittest.TestCase):
         self._wait(lambda: self.panel._run.row is not None)
         self._answer(wrong=True)
         self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.assertEqual(self.dialog._progress_tabs.currentIndex(), 1)
         self.assertEqual(self.dialog._verb_progress._tables["Forms"].rowCount(), 4)
         self.assertEqual(self.dialog._verb_progress._tables["Mistakes"].rowCount(), 1)
         self.assertEqual(len(self.dialog._verb_progress._accuracy._series[0]["points"]), 1)
-        self.dialog._tabs.setCurrentIndex(2)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.ACTIVITY)
         self.assertEqual(self.dialog._activity._data.answers, 1)
 
     def test_explicit_practice_returns_from_verb_insights_to_the_sentence(self) -> None:
@@ -207,11 +207,11 @@ class VerbFlowTests(unittest.TestCase):
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
         first = self.panel._run.row["id"]
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.dialog._progress_tabs.setCurrentIndex(1)
         self.dialog.show_page(True)
         self.dialog.show_page(False)
-        self.assertEqual(self.dialog._tabs.currentIndex(), 3)
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.VERBS)
         self.assertEqual(self.panel._run.row["id"], first)
 
     def test_options_enter_cannot_continue_feedback(self) -> None:
@@ -281,7 +281,7 @@ class VerbFlowTests(unittest.TestCase):
         self.assertEqual(card._correction.text(), "")
         self.assertEqual(self.provider.translated, [])
         self.assertEqual(practice_activity.read(self.db).answers, 0)
-        self.dialog._tabs.setCurrentIndex(2)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.ACTIVITY)
         QtTest.QTest.keyClick(self.dialog, QtCore.Qt.Key.Key_E, QtCore.Qt.KeyboardModifier.AltModifier)
         self.assertTrue(card.meaning._button.isChecked())
 
@@ -333,7 +333,7 @@ class VerbFlowTests(unittest.TestCase):
         """Expose verb statistics at the normal Progress entry point; e.g. inspecting empty verb history costs no API request."""
 
         self._open(activity=True)
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.dialog._progress_tabs.setCurrentIndex(1)
         self.assertEqual(self.dialog._progress_tabs.tabText(1), "Verbs")
         self.assertIn("0 submitted", self.dialog._verb_progress._totals.text())

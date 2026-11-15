@@ -8,33 +8,12 @@ import unittest
 from pathlib import Path
 
 from tests import verb_fixtures
+from tests import sentence_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import verb_service
-
-
-class SentenceProvider:
-    """Supply structurally checked content without remote calls; e.g. tests measure selection and caching independently of linguistic review."""
-
-    model, reasoning = "round-size-sentences", "low"
-
-    def generate(self, plans, direction, focus):
-        """Bind every selected word to literal bilingual evidence; e.g. an anchor can be replaced without dropping its companions."""
-
-        results = []
-        for plan in plans:
-            words = [sentences.WordUse(word_id=row["word_id"], dutch_forms=[row["surface"]],
-                                        english_forms=[row["meaning"]], features=["base"], explanation="Controlled evidence.")
-                     for row in plan["words"]]
-            draft = sentences.Draft(anchor_word_id=plan["anchor_word_id"], scene=plan["scene"], words=words,
-                                     dutch="Ik leer " + " en ".join(row["surface"] for row in plan["words"]) + ".",
-                                     english="I learn " + " and ".join(row["meaning"] for row in plan["words"]) + ".",
-                                     alternatives=[], explanation="Controlled bilingual fixture.")
-            verdict = sentences.Verdict(anchor_word_id=plan["anchor_word_id"], valid=True, reason="Controlled independent approval.")
-            results.append({"draft": draft.model_dump(), "verdict": verdict.model_dump()})
-        return results
 
 
 class WrittenRoundSizeTests(unittest.TestCase):
@@ -55,7 +34,7 @@ class WrittenRoundSizeTests(unittest.TestCase):
             entries = [{"surface": f"woord{i}", "lemma": f"woord{i}", "pos": "noun", "meaning": f"term {i}"}
                        for i in range(12)]
             verb_fixtures.seed_vocab(db, entries)
-            provider = SentenceProvider()
+            provider = sentence_fixtures.SimpleSentenceProvider()
             opts = sentences.Options(count=5, words=2)
             engine = sentence_service.SentenceService(db, provider)
         return db, engine, opts

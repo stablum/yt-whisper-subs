@@ -2189,6 +2189,10 @@ python -m unittest tests.test_shared_learning tests.test_practice tests.test_sen
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
+The navigation separates **Practice** (Word quiz, Verbs, Sentences) from
+**Tracking** (Progress, Activity), with labelled groups and a visible divider.
+Each page remains one click away; existing menu/tray shortcuts and native page
+navigation select the same grouped controls.
 It opens directly on your saved question, or automatically prepares the
 first question using your saved settings. No **Start round** or **Resume round**
 click is required. **Word quiz** is a learning exercise with feedback, rather
@@ -2596,8 +2600,11 @@ as a form annotation absent from its sentence become specific rejections too;
 valid questions in the batch stay approved while only missing questions need
 bounded replacement or content repair.
 Checked content is cached under the exact source lookups and model/prompt policy.
-Automatic opening prefers cached content; explicit new rounds can gradually add
-up to three variants per target set and context. Only the source sentence is
+Fresh-context slots prefer approved **never-shown** cached content. Already-used
+sentences return through the limited due-review slots, rather than bypassing the
+variety quota through a full variant pool. Historical variants remain stored with
+their answer evidence; new checked contexts are prepared when unused stock for a
+selected target is exhausted. Only the source sentence is
 shown before submission; there is no translation-reveal shortcut for this mode.
 
 Corrections cover the **whole sentence**, including supporting words, meaning,
@@ -2609,7 +2616,11 @@ in the **original question**, stand out in bold amber with a warm background and
 underline. Hover either text to see its specific
 correction and explanation just below the pointer. This reuses saved grammar and
 vocabulary evidence, including supporting-word confusions; no hover API call is
-made. Source alignment uses saved bilingual vocabulary spans plus exact
+made. The green corrected form uses a larger **18 pt** heading, above **12 pt**
+explanation text. Duplicate dictionary notes are folded into their contextual
+correction, including a word already contained in a fuller corrected phrase.
+Distinct grammatical explanations remain available under one corrected-form
+heading. Source alignment uses saved bilingual vocabulary spans plus exact
 `source_forms` returned inside the existing correction response for grammar and
 supporting-word errors. Those spans must occur in the original source sentence
 before grading can commit. Existing feedback can reuse its saved target-word and
@@ -2650,6 +2661,24 @@ distinct-video counts influence the same weighted selection as the word quiz. Du
 priority, with room for new words; mastered future-due targets wait. Observed form
 and context errors bias subsequent exercise plans toward weaker areas.
 
+Exact **whole-sentence replays** have a separate, smaller quota: at most one slot
+in five when other eligible anchors are available (two in a ten-sentence round).
+The remaining questions use the same shared adaptive word selection, revisiting
+weak vocabulary in varied contexts as well as introducing new words. A new round
+does not require entirely unseen vocabulary. When the eligible pool is small,
+additional due sentence reviews can fill the requested length without inventing
+unavailable targets or making unnecessary generation calls. Review sentences also
+honour the configured target-word count and life-context filter.
+
+Fresh generation receives up to three previously shown **reference pairs** for
+each selected anchor word, including examples where it was a companion target.
+The generator and existing independent audit reject near-copies or minor word
+swaps instead of a fresh use of the concept. Typed answers, grading results and
+private video metadata are excluded from these novelty examples. Approved unused
+stock still takes priority and stays cached; this does not invalidate paid content.
+The updated mix applies when preparing a new round; in-progress answers retain
+their saved questions and history.
+
 **Progress → Sentences** contains daily accuracy and checked-sentence charts,
 saved-word exposure/meaning/form/target-use counts and due dates, grammatical-form
 accuracy, life-context accuracy, detailed mistakes and round history. Unassessable
@@ -2678,7 +2707,7 @@ while verbs retain their existing correction/continue flow.
 Run the deterministic sentence and native integration checks without API calls:
 
 ```powershell
-python -m unittest tests.test_sentence_practice tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_sentence_practice tests.test_sentence_variety tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 ### Word Capture Verification

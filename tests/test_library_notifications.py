@@ -28,6 +28,7 @@ from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_balloon  # noqa: E402
 from yt_whisper_subs import library_notifications as notifications  # noqa: E402
 from yt_whisper_subs import library_practice_reminders as reminders  # noqa: E402
+from yt_whisper_subs import library_practice
 from yt_whisper_subs import practice_service  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
@@ -446,18 +447,18 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
         dialog = self._window._practice_dialog
         dialog._engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())
-        self.assertEqual(dialog._tabs.currentIndex(), 2)
+        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
         dialog.resize(800, 600)
         self._app.processEvents()
         self.assertGreater(dialog._tabs.currentWidget().verticalScrollBar().maximum(), 0)
         practice = next(action for action in menu.actions() if action.text() == "Practice…")
         practice.trigger()
         self.assertIs(self._window._practice_dialog, dialog)
-        self.assertEqual(dialog._tabs.currentIndex(), 0)
+        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.QUIZ)
         tray = next(action for action in self._window._tray_menu.actions() if action.text() == "Practice activity…")
         tray.trigger()
         self.assertIs(self._window._practice_dialog, dialog)
-        self.assertEqual(dialog._tabs.currentIndex(), 2)
+        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
         dialog.close()
         QtCore.QThreadPool.globalInstance().waitForDone(5000)
 

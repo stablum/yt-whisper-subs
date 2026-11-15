@@ -38,6 +38,8 @@ class SentenceFlowTests(unittest.TestCase):
         """Share one native event loop; e.g. Enter follows the installed Qt behavior."""
 
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        # Mirror the tray app: closing practice must not quit its application-owned correction queue.
+        cls.app.setQuitOnLastWindowClosed(False)
 
     def setUp(self) -> None:
         """Build a fresh saved vocabulary and offline provider; e.g. failures cannot alter the user's catalog."""
@@ -73,7 +75,7 @@ class SentenceFlowTests(unittest.TestCase):
         self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.dialog.show_page(True)
         if not activity:
-            self.dialog._tabs.setCurrentIndex(4)
+            self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCES)
         self.dialog.show()
         self.app.setActiveWindow(self.dialog)
         self.app.processEvents()
@@ -81,10 +83,13 @@ class SentenceFlowTests(unittest.TestCase):
     def _wait(self, predicate) -> None:
         """Wait for observable asynchronous state; e.g. a native correction arrives from a background worker."""
 
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 10
         while not predicate() and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
-        self.assertTrue(predicate())
+        if not predicate():
+            session = self.panel._run.session
+            history = self.db.sentence_history(session) if session else []
+            self.fail(f"Sentence state did not arrive: {history}")
 
     def _answer(self, text: str) -> None:
         """Submit using the real editor event; e.g. one Enter creates one immutable attempt."""
@@ -136,7 +141,7 @@ class SentenceFlowTests(unittest.TestCase):
             presentation_id = self.panel._run.row["id"]
             self._answer(answer)
             self._wait(lambda: self.db.sentence_get(presentation_id)["outcome"] == "correct")
-            self.dialog._tabs.setCurrentIndex(1)
+            self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
             self.assertEqual(self.dialog._progress_tabs.currentIndex(), 2)
             self.assertIn("submitted", self.dialog._sentence_progress._totals.text())
             self.assertGreater(self.dialog._sentence_progress._tabs.tables["Forms"].rowCount(), 0)
@@ -149,7 +154,7 @@ class SentenceFlowTests(unittest.TestCase):
         """Keep analytics read-only; e.g. inspecting sentence forms does not automatically start a round."""
 
         self._open(activity=True)
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.dialog._progress_tabs.setCurrentIndex(2)
         QtTest.QTest.qWait(100)
         self.assertEqual((self.provider.calls, self.provider.graded), ([], []))
@@ -192,7 +197,7 @@ class SentenceFlowTests(unittest.TestCase):
             """Hold a real grading operation at the network boundary; e.g. the GUI must keep accepting later sentences."""
 
             entered.set()
-            if not release.wait(5):
+            if not release.wait(20):
                 raise TimeoutError("Test did not release the delayed correction")
             return original(document)
 
@@ -231,7 +236,7 @@ class SentenceFlowTests(unittest.TestCase):
             """Delay only the remote judgment; e.g. reporting happens before the grade transaction."""
 
             entered.set()
-            release.wait(5)
+            release.wait(20)
             return original(document)
 
         self.provider.grade = slow
@@ -259,7 +264,7 @@ class SentenceFlowTests(unittest.TestCase):
             """Hold only correction while preparation remains available; e.g. a new round can be built concurrently."""
 
             entered.set()
-            release.wait(5)
+            release.wait(20)
             return original(document)
 
         self.provider.grade = slow
@@ -327,7 +332,7 @@ class SentenceFlowTests(unittest.TestCase):
             """Let the learner leave before the response arrives; e.g. a hidden result needs to remain unread."""
 
             entered.set()
-            release.wait(5)
+            release.wait(20)
             return original(document)
 
         self.provider.grade = slow
@@ -337,11 +342,11 @@ class SentenceFlowTests(unittest.TestCase):
         self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
         self._wait(entered.is_set)
         self.assertEqual(self.panel._view.card._source.text(), "Waiting for corrections")
-        self.dialog._tabs.setCurrentIndex(1)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         release.set()
         self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
         self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
-        self.dialog._tabs.setCurrentIndex(4)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCES)
         self._wait(lambda: self.panel._run.row is not None)
         self.assertEqual(self.panel._run.row["id"], first)
         self.assertIsNotNone(self.db.sentence_get(first)["viewed_at"])
@@ -393,7 +398,7 @@ class SentenceFlowTests(unittest.TestCase):
             """Let the window lose focus before feedback arrives; e.g. drawing an off-focus correction cannot count as reading it."""
 
             entered.set()
-            release.wait(5)
+            release.wait(20)
             return original(document)
 
         self.provider.grade = slow

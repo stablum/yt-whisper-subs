@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 import sqlite3
+import enum
 from datetime import datetime
 
 from PySide6 import QtCore
@@ -16,6 +17,7 @@ from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_practice_progress
 from yt_whisper_subs import library_practice_controls as controls
 from yt_whisper_subs import library_practice_activity
+from yt_whisper_subs import library_practice_nav
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_verbs
 from yt_whisper_subs import library_verb_progress
@@ -36,6 +38,16 @@ QPushButton#practiceChoice[answerState="correct"] { background: #214b3d; border:
 QPushButton#practiceChoice[answerState="wrong"] { background: #552f39; border: 2px solid #ed8594; color: #ffe2e6; }
 QToolButton#practiceOptions, QToolButton#practiceDetails { padding: 5px 10px; border-radius: 6px; }
 """
+
+
+class Page(enum.IntEnum):
+    """Name native page positions centrally; e.g. adding navigation groups does not scatter numeric tab assumptions."""
+
+    QUIZ = 0
+    VERBS = 1
+    SENTENCES = 2
+    PROGRESS = 3
+    ACTIVITY = 4
 
 
 class PracticeDialog(QtWidgets.QDialog):
@@ -166,17 +178,22 @@ class PracticeDialog(QtWidgets.QDialog):
         activity_scroll.setWidget(self._activity)
         self._tabs = QtWidgets.QTabWidget()
         self._tabs.addTab(scroll, "Word quiz")
-        self._tabs.addTab(self._progress_tabs, "Progress")
-        self._tabs.addTab(activity_scroll, "Activity")
         self._verbs = library_verbs.VerbPanel(self._db)
         self._verbs.activity_changed.connect(self.activity_changed)
         self._tabs.addTab(self._verbs, "Verbs")
         self._sentences = library_sentences.SentencePanel(self._db)
         self._sentences.activity_changed.connect(self.activity_changed)
         self._tabs.addTab(self._sentences, "Sentences")
+        self._tabs.addTab(self._progress_tabs, "Progress")
+        self._tabs.addTab(activity_scroll, "Activity")
+        self._nav = library_practice_nav.PracticeNav(self._tabs, (
+            ("Practice", (Page.QUIZ, Page.VERBS, Page.SENTENCES)),
+            ("Tracking", (Page.PROGRESS, Page.ACTIVITY)),
+        ))
         self._tabs.currentChanged.connect(self._tab_changed)
         outer = QtWidgets.QVBoxLayout(self)
         outer.addWidget(title)
+        outer.addWidget(self._nav)
         outer.addWidget(self._tabs, 1)
         self._controls.restart_requested.connect(self._prepare)
         self._controls.finish_requested.connect(self._stop)
@@ -212,7 +229,7 @@ class PracticeDialog(QtWidgets.QDialog):
     def _practicing(self) -> bool:
         """Use one visibility rule for every interaction; e.g. hidden pages cannot record an answer or exposure."""
 
-        return not self._closed and self.isVisible() and self._tabs.currentIndex() == 0
+        return not self._closed and self.isVisible() and self._tabs.currentIndex() == Page.QUIZ
 
     def _ensure_round(self) -> None:
         """Autostart only on a visible practice page; e.g. visiting Activity must not record hidden exposures."""
@@ -453,20 +470,21 @@ class PracticeDialog(QtWidgets.QDialog):
     def _tab_changed(self, idx: int) -> None:
         """Keep analytics on demand and practice automatic; e.g. no hidden question exposure while inspecting stats."""
 
-        self._next.setDefault(idx == 0 and self._next.isEnabled())
-        if idx in (0, 3, 4):
-            self._db.set_setting("practice_last_mode", {0: "vocabulary", 3: "verbs", 4: "sentences"}[idx])
-        if idx == 1:
+        self._next.setDefault(idx == Page.QUIZ and self._next.isEnabled())
+        if idx in (Page.QUIZ, Page.VERBS, Page.SENTENCES):
+            modes = {Page.QUIZ: "vocabulary", Page.VERBS: "verbs", Page.SENTENCES: "sentences"}
+            self._db.set_setting("practice_last_mode", modes[idx])
+        if idx == Page.PROGRESS:
             mode = {"vocabulary": 0, "verbs": 1, "sentences": 2}[self._db.setting("practice_last_mode", "vocabulary")]
             if self._progress_tabs.currentIndex() == mode:
                 self._refresh_progress()
             else:
                 self._progress_tabs.setCurrentIndex(mode)
-        elif idx == 2:
+        elif idx == Page.ACTIVITY:
             self._activity.refresh()
-        elif idx == 3:
+        elif idx == Page.VERBS:
             self._verbs.activate()
-        elif idx == 4:
+        elif idx == Page.SENTENCES:
             self._sentences.activate()
         else:
             self._ensure_round()
@@ -475,20 +493,20 @@ class PracticeDialog(QtWidgets.QDialog):
         """Route every entry point to the intended page; e.g. a reminder's Practice now needs no further Start click."""
 
         if activity:
-            if self._tabs.currentIndex() == 2:
+            if self._tabs.currentIndex() == Page.ACTIVITY:
                 self._activity.refresh()
             else:
-                self._tabs.setCurrentIndex(2)
+                self._tabs.setCurrentIndex(Page.ACTIVITY)
         else:
             if self._db.setting("practice_last_mode", "vocabulary") == "sentences":
-                self._tabs.setCurrentIndex(4)
+                self._tabs.setCurrentIndex(Page.SENTENCES)
                 self._sentences.activate()
                 return
             if self._db.setting("practice_last_mode", "vocabulary") == "verbs":
-                self._tabs.setCurrentIndex(3)
+                self._tabs.setCurrentIndex(Page.VERBS)
                 self._verbs.activate()
                 return
-            self._tabs.setCurrentIndex(0)
+            self._tabs.setCurrentIndex(Page.QUIZ)
             if not self._current and not self._task:
                 self._autostart_pending = True
                 QtCore.QTimer.singleShot(0, self, self._ensure_round)

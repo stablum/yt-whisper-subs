@@ -94,3 +94,49 @@ class SentenceReviewTests(unittest.TestCase):
         label.setText("Another sentence <unchanged>.")
         self.assertEqual(label.text(), "Another sentence <unchanged>.")
         self.assertEqual(label.textFormat(), QtCore.Qt.TextFormat.PlainText)
+
+    def test_tooltip_merges_context_and_dictionary_duplicates_with_larger_correction(self):
+        """Show the contextual form once; e.g. safer/certain feedback must not repeat veiliger and the same contrast as two separate blocks."""
+
+        matching = [review.Mark(start=0, end=8, correction="veiliger", explanation="Zekerder means more certain; veiliger means safer.", kind="meaning"),
+                    review.Mark(start=0, end=8, correction="veiliger", explanation="Zeker means certain; veilig means safe.", kind="vocabulary")]
+        document = QtGui.QTextDocument()
+        document.setHtml(review.tooltip_html(matching))
+        text = document.toPlainText()
+        self.assertIn("veiliger\nZekerder", text)
+        self.assertIn("Zekerder means more certain", text)
+        self.assertNotIn("Zeker means certain", text)
+        headings = []
+        block = document.begin()
+        while block.isValid():
+            cursor = block.begin()
+            while not cursor.atEnd():
+                fragment = cursor.fragment()
+                if fragment.charFormat().foreground().color().name() == "#83e5af":
+                    headings.append(fragment.text())
+                    self.assertGreaterEqual(fragment.charFormat().fontPointSize(), 18)
+                cursor += 1
+            block = block.next()
+        self.assertEqual(headings, ["veiliger"])
+
+    def test_tooltip_prefers_full_corrected_phrase_over_repeated_dictionary_word(self):
+        """Merge a word with its contextual corrected phrase; e.g. small bill needs one kleine wetsvoorstelletje heading and one explanation."""
+
+        matching = [review.Mark(start=0, end=10, correction="kleine wetsvoorstelletje", kind="meaning",
+                               explanation="A wet is a law; a wetsvoorstel is a bill or proposed law."),
+                    review.Mark(start=0, end=10, correction="wetsvoorstelletje", kind="vocabulary",
+                               explanation="A wet is a law; a wetsvoorstel is a proposed law or bill.")]
+        rendered = review.tooltip_html(matching)
+        self.assertEqual(rendered.count("font-size:18pt"), 1)
+        self.assertIn("kleine wetsvoorstelletje", rendered)
+        self.assertNotIn("proposed law or bill", rendered)
+
+    def test_tooltip_keeps_independent_errors_under_one_corrected_form(self):
+        """Remove repeated headings while retaining distinct lessons; e.g. agreement and word order can both matter for werkt."""
+
+        matching = [review.Mark(start=0, end=4, correction="werkt", kind="agreement", explanation="Add -t for jij."),
+                    review.Mark(start=0, end=4, correction="werkt", kind="word_order", explanation="Place the finite verb second.")]
+        rendered = review.tooltip_html(matching)
+        self.assertEqual(rendered.count("font-size:18pt"), 1)
+        self.assertIn("Add -t for jij.", rendered)
+        self.assertIn("Place the finite verb second.", rendered)

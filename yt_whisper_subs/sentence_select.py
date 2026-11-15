@@ -16,6 +16,28 @@ from yt_whisper_subs import sentence_practice as sentences
 class Selector(word_select.Selector):
     """Combine recall, error rates and context variety; e.g. weak Dutch superlatives receive extra practice."""
 
+    def targets(self, rows: list[dict], reviews: list[dict], opts: sentences.Options, now: float) -> tuple[list[dict], list[dict]]:
+        """Limit exact sentence reviews while preserving shared word priorities; e.g. two review slots and eight varied contexts in a ten-question round."""
+
+        anchors = self.select(rows, opts, now)
+        reviews = [row for row in reviews if (opts.scene == "mixed" or row["scene"] == opts.scene)
+                   and row["word_count"] <= opts.words]
+        reviews.sort(key=lambda row: self._policy.recall(row["card_json"], now))
+        chosen, selected, seen = [], [], set()
+        limit = opts.count // 5
+        for _ in range(opts.count):
+            anchors = [row for row in anchors if row["word_id"] not in seen]
+            reviews = [row for row in reviews if row["anchor_word_id"] not in seen]
+            if reviews and (len(chosen) < limit or not anchors):
+                row = reviews.pop(0)
+                chosen.append(row)
+                seen.add(row["anchor_word_id"])
+            elif anchors:
+                row = anchors.pop(0)
+                selected.append(row)
+                seen.add(row["word_id"])
+        return chosen, selected
+
     def plans(self, anchors: list[dict], rows: list[dict], opts: sentences.Options, metrics: dict, now: float) -> list[dict]:
         """Add a small number of target companions and varied form preferences; e.g. other words in the sentence remain unrestricted."""
 

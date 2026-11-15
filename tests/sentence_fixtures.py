@@ -111,3 +111,25 @@ class FakeSentenceProvider:
         return sentences.Grade(confident=True, correct=not errors, corrected=corrected if errors else answer,
                                  corrected_meaning=content["english"] if nl else content["dutch"],
                                  explanation="Check the requested degree and sentence structure.", words=words, errors=errors, vocabulary=[])
+
+
+class SimpleSentenceProvider:
+    """Supply checked examples for an arbitrary test vocabulary; e.g. large-pool scheduling tests need more than the fixed three-word teaching corpus."""
+
+    model, reasoning = "round-size-sentences", "low"
+
+    def generate(self, plans, direction, focus):
+        """Bind selected targets to literal evidence; e.g. cache and quota tests never depend on a paid linguistic judgment."""
+
+        results = []
+        for plan in plans:
+            words = [sentences.WordUse(word_id=row["word_id"], dutch_forms=[row["surface"]],
+                                        english_forms=[row["meaning"]], features=["base"], explanation="Controlled evidence.")
+                     for row in plan["words"]]
+            draft = sentences.Draft(anchor_word_id=plan["anchor_word_id"], scene=plan["scene"], words=words,
+                                     dutch="Ik leer " + " en ".join(row["surface"] for row in plan["words"]) + ".",
+                                     english="I learn " + " and ".join(row["meaning"] for row in plan["words"]) + ".",
+                                     alternatives=[], explanation="Controlled bilingual fixture.")
+            verdict = sentences.Verdict(anchor_word_id=plan["anchor_word_id"], valid=True, reason="Controlled independent approval.")
+            results.append({"draft": draft.model_dump(), "verdict": verdict.model_dump()})
+        return results

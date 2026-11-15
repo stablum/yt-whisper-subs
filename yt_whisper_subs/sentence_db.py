@@ -90,12 +90,35 @@ class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db
         """Keep writing mistakes reviewable even when target meanings are known; e.g. a word-order error schedules its whole sentence."""
 
         with self._connect() as conn:
-            rows = conn.execute("SELECT q.*,s.card_json,s.due_at FROM sentence_question_states s "
+            rows = conn.execute("SELECT q.*,s.card_json,s.due_at,"
+                                "(SELECT COUNT(*) FROM sentence_question_words w WHERE w.question_id=q.id) AS word_count "
+                                "FROM sentence_question_states s "
                                 "JOIN sentence_questions q ON q.id=s.question_id WHERE s.due_at<=:now "
                                 "AND q.flagged_at IS NULL AND q.direction=:direction AND q.model=:model "
                                 "AND q.reasoning=:reasoning AND q.prompt_version=:prompt_version ORDER BY s.due_at,q.id",
                                 {**policy, "now": now})
             return [dict(row) for row in rows]
+
+    def sentence_examples(self, word_ids: list[int], direction: str) -> dict[int, list[dict]]:
+        """Expose three shown reference pairs per selected word, including past companions; e.g. generation avoids near-copies without sending learner answers."""
+
+        sql = """
+        WITH seen AS (
+            SELECT q.id,l.word_id AS anchor_word_id,q.body_json,MAX(p.shown_at) AS last_shown
+            FROM sentence_questions q JOIN sentence_presentations p ON p.question_id=q.id
+            JOIN sentence_question_words w ON w.question_id=q.id JOIN vocab_lookups l ON l.id=w.lookup_id
+            WHERE p.shown_at IS NOT NULL AND q.flagged_at IS NULL AND q.direction=?
+              AND l.word_id IN (SELECT value FROM json_each(?)) GROUP BY q.id,l.word_id
+        ), ranked AS (
+            SELECT *,ROW_NUMBER() OVER(PARTITION BY anchor_word_id ORDER BY last_shown DESC,id DESC) AS rank FROM seen
+        ) SELECT anchor_word_id,body_json FROM ranked WHERE rank<=3 ORDER BY anchor_word_id,rank
+        """
+        result = {}
+        with self._connect() as conn:
+            for row in conn.execute(sql, (direction, json.dumps(word_ids))):
+                body = json.loads(row["body_json"])
+                result.setdefault(row["anchor_word_id"], []).append({key: body[key] for key in ("dutch", "english")})
+        return result
 
     def sentence_create(self, opts, questions: list[dict], scheduler_json: str) -> str:
         """Replace a round only after preparation succeeds; e.g. a partial API failure leaves the old session resumable."""
