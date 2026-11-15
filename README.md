@@ -121,7 +121,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
-| Ready practice rounds | background preparation of one unconsumed round per mode using its saved settings; unused cached questions consumed first |
+| Ready practice rounds | five independent destinations; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Shared vocabulary learning | lexical mistakes add both intended and genuinely confused dictionary words; quiz and sentence practice share word reviews and selection |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -2126,67 +2126,71 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-While the library is open or in the tray, it prepares **one durable round per
-practice mode**: vocabulary choices, verb transformations and sentence
-translations. Preparation starts shortly after app startup, prioritizes your
-most recently used mode, and checks for missing stock once a minute. It uses each
-mode's last saved direction, filters and round size; first-use defaults apply
-until you change them. Background preparation becomes eligible once ready Dutch
-vocabulary exists or verb practice has a history. It uses the same configured
-practice model and API credentials as foreground preparation.
+The library keeps ready content for **five top-level practice destinations**:
+Word quiz · Dutch → English, Word quiz · English → Dutch, Verbs · Dutch
+transformations, Sentences · English → Dutch, and Sentences · Dutch → English.
+Each has its own round options, preparation ownership and resumable session.
+Switching direction does not end the other direction's round, replace its
+choices, or lose a typed draft. Progress and Activity remain in the separate
+Tracking group. The direction dropdowns have been removed from round options.
 
-The prepared round is the stock: **another round is never automatically created
-while that mode has an unfinished one**, including a partially answered round or
-a submitted answer awaiting correction. Opening the mode consumes its existing
-questions, with automatic first-question display. Restarting the app preserves
-the same unconsumed questions and saved choice order. Once all questions are
-resolved, the next background check can prepare another round if skills are due
-or new eligible targets exist. Future-due skills wait unless you explicitly
-enabled early practice. There is no growing queue of unused rounds.
+While the library is open or in the tray, preparation starts shortly after
+startup. It prioritizes the last selected destination and runs at most **two
+background jobs concurrently**, so one slow category cannot block all the others.
+It rechecks missing stock every five seconds and immediately after practice
+activity or a job finishes. Saved preferences apply per destination; shared
+previous preferences supply first-use defaults. Default word rounds explicitly
+include their required ten-term length, so startup cannot fail before beginning
+preparation. Preparation uses the configured practice model and API credentials.
 
-Questions from a stopped or changed round remain cached. Within adaptive
-eligibility and the current filters/model policy, approved **never-shown new
-questions take priority over fresh exploration**. Due reviews retain priority,
-including newly discovered failures whose questions are not cached yet. Sentence practice reuses stock
-across random mixed-context and companion-word plans; changing the random draw
-cannot strand a previously paid question. Updated source lookups and explicit
-context/target-count restrictions still apply. Once unused stock is consumed,
-new variants can replenish the existing bounded pools.
+An untouched ready round is consumed before anything else is prepared for that
+destination. Once you submit the first answer, background preparation can build
+**one standby round** while you continue the current round, including while
+sentence corrections are queued. Standby rounds are ordered relational plans,
+separate from active sessions and answer history: preparing one cannot stop your
+current round, expose questions, or count as practice. There is no growing queue
+of unused rounds. Restarting preserves checked stock and saved word-choice order.
+Starting the next round consumes its standby plan atomically with session creation.
 
-The configured round size is the **actual number of questions**, in all three
-modes. Preparation first attempts just that many distinct targets, keeps approved
-questions, and prepares only the missing replacements after quality rejections.
-Cached approvals are reused throughout. Internally, the shared round builder caps
-total submitted draft items at **twice the requested count**, including replacement
-attempts; it does not generate a reserve upfront. Quality-audit response repairs
-reuse the same drafts. If a full checked round cannot be assembled, the previous
-round and approved cached content remain available for a later retry. Too few
-eligible distinct targets prompts a smaller round or early review before spending
-tokens on new exercises. Startup returns incomplete, never-shown rounds to cached
-stock for rebuilding; rounds already shown or answered retain their history.
+Standby selection uses the same adaptive probabilities, due/new balance and
+filters as ordinary preparation. When enough other eligible targets exist,
+the current round's targets are excluded from the next plan, and questions already
+assigned to the active round cannot also be taken from cache into its spare.
+Shared word and grammar statistics continue to update as corrections arrive;
+the one-spare limit avoids a stale backlog of future rounds. Future-due skills
+wait unless early practice was explicitly enabled.
 
-Foreground and background preparation share a SQLite generation lease per mode.
-Opening Practice while its background job is running waits for that same result
-instead of issuing duplicate model requests. Leases renew at work milestones and
-expire after an abandoned job; dead processes are reclaimed immediately using
-their PID and birth time, and only the current owner can renew or release a lease. Provider
-or quality failures retain a diagnostic and a **one-hour background cooldown**
-across restarts. An explicit retry can run sooner. Healthy all-caught-up states
-are checked again on the normal minute cadence. App exit cancels cooperatively
-and preserves already approved content.
+Questions from stopped rounds or changed settings remain cached. Within adaptive
+eligibility and the current filters/model policy, approved never-shown questions
+take priority over new generation; urgent due reviews still retain priority.
+Background work uses cached approvals without requesting extra variants merely
+to fill a variant pool. Sentence stock is reusable across random mixed-context
+and companion-word plans. Changed source lookups and explicit context/target
+restrictions still apply. Reported or outdated-policy questions cannot be served
+from a standby plan.
 
-The first fill, newly selected filters/direction, or unavailable model service
-can still require a wait. Preparation needs the app running and incurs the normal
-API cost for missing content; cached consumption needs no new generation call.
-Preparing a round records no exposure, answer, activity, accuracy or reminder
-credit. Questions count as shown only when actually displayed, and as practice
-only when an answer is submitted. Viewing statistics does not trigger preparation.
+The configured round size is the **actual number of questions** in all modes.
+Preparation initially attempts only that many distinct targets, retains approved
+questions, and requests only missing replacements after rejection. The shared
+builder caps draft attempts at twice the requested count, without generating an
+extra reserve upfront. Quality-audit repairs reuse the same drafts. Failure to
+assemble a full round preserves current progress and all approved cache entries.
+Incomplete, never-shown active rounds are returned to cache during startup;
+shown or answered rounds retain their history.
 
-Run deterministic readiness and concurrency checks without API calls:
+Foreground and background preparation share a **SQLite lease per destination**.
+Opening a direction while its background job is running waits for that same
+result rather than issuing duplicate requests. Leases renew on real work, reclaim
+dead owners using PID and birth time, and can only be released by the current
+owner. Provider or quality failures retain their diagnostic and use bounded
+exponential background backoff: two minutes, four, eight, sixteen, then at most
+thirty minutes. Explicit retries can run sooner. All-caught-up states are healthy
+and checked again after a minute. Cancellation preserves paid approvals and does
+not impose a failure cooldown after restart.
 
-```powershell
-python -m unittest tests.test_practice_ready tests.test_exact_rounds tests.test_written_round_sizes tests.test_sentence_practice -v
-```
+The first fill, changed settings, insufficient eligible targets or an unavailable
+model can still require preparation. An untouched or in-progress round always
+remains resumable while background work is pending or has failed.
 
 ### Shared Vocabulary Learning Across Practice Modes
 
@@ -2257,15 +2261,16 @@ python -m unittest tests.test_shared_learning tests.test_practice tests.test_sen
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
-The navigation separates **Practice** (Word quiz, Verbs, Sentences) from
-**Tracking** (Progress, Activity), with labelled groups and a visible divider.
+The navigation exposes both Word quiz directions, Dutch verb transformations,
+and both Sentences directions as **five top-level Practice buttons**, with
+**Tracking** (Progress, Activity) separated by a labelled group and divider.
 Each page remains one click away; existing menu/tray shortcuts and native page
 navigation select the same grouped controls.
 It opens directly on your saved question, or automatically prepares the
 first question using your saved settings. No **Start round** or **Resume round**
 click is required. **Word quiz** is a learning exercise with feedback, rather
-than a timed exam or a proficiency score. Use **Round options** to choose
-**Dutch → English** or **English → Dutch**, a length of **1–50 distinct terms**
+than a timed exam or a proficiency score. Choose direction with its top-level
+button. Use **Round options** to choose a length of **1–50 distinct terms**
 (default 10), and optional early review. **New round** applies those settings;
 it replaces an unfinished round while retaining its answer history. Occasional
 setup and **End this round** live in that popover instead of the question path.
@@ -2299,8 +2304,8 @@ If nothing is due, **You're all caught up** offers a deliberate, one-round
 **Practice early** action without changing your saved early-review preference.
 No saved vocabulary, unapproved questions, and preparation failures have separate
 inline states with a clear retry/resume action. The options popover remains
-available for changing direction or round length. Typing in it cannot answer or
-continue a question.
+available for changing round length and early review. Use the other top-level
+direction button to switch practice. Typing in round options cannot answer or continue a question.
 
 OpenAI generates two challenging incorrect choices: false friends, close but
 distinct meanings, or confusable grammatical forms. It also explains each
@@ -2604,17 +2609,17 @@ transformed-sentence English and the main Progress statistics entry point.
 
 ### Whole-Sentence Translation Practice
 
-Open **Library → Practice… → Sentences**. The first question appears automatically.
+Open **Library → Practice…** and choose the top-level **Sentences · English →
+Dutch** or **Sentences · Dutch → English** button. The first question appears automatically.
 Translate the complete English sentence into Dutch, then press **Enter** or
 **Submit & next**. Your first attempt is saved immediately and the next question
-opens while correction runs in the background. **Sentence round options** selects
-**English → Dutch** writing or
-**Dutch → English** comprehension, 1–50 sentences (default 10), 1–3 saved target
+opens while correction runs in the background. Direction comes from the selected
+top-level page; **Sentence round options** selects 1–50 sentences (default 10), 1–3 saved target
 words per sentence (default 2), a life context and optional early review.
 Preferences apply to the next round; **New sentence round** prepares and checks
 replacement content before ending an unfinished round. Closing or Escape pauses
 the current round. Submitted corrections continue while the practice window is
-closed or another tab is open. The most recently used mode opens again next time.
+closed or another tab is open. The most recently used destination and direction open again next time.
 
 A narrow question overview stays on the left: **○** unanswered, amber **…**
 queued, blue **↻** checking, green **✓** correct, red **✕** to revisit, orange
@@ -2796,11 +2801,12 @@ does not generate or expose questions. **Activity** and the calendar add an oran
 its distinct saved targets. A submitted answer quiets the shared reminder even
 when correction is pending, preserving the 24-hour spacing rule.
 
-Thirteen relational tables share the existing SQLite catalog: `sentence_questions`,
+Fifteen relational tables share the existing SQLite catalog: `sentence_questions`,
 `sentence_question_words`, `sentence_sessions`, `sentence_presentations`,
 `sentence_assessments`, `sentence_forms`, `sentence_errors`, `sentence_error_words`,
 rebuildable `sentence_states` and `sentence_question_states`, plus durable
-`sentence_checks`, `sentence_drafts` and `sentence_feedback_views`. Foreign keys link
+`sentence_checks`, `sentence_drafts`, `sentence_feedback_views`, and the ordered
+standby-plan tables `sentence_stock` and `sentence_stock_questions`. Foreign keys link
 targets to their original vocabulary lookups and captured-video context. Immutable
 bilingual snapshots, quality verdicts, first-display/submission/grading timestamps,
 elapsed time, exact model/prompt policy, serialized scheduler parameters and
@@ -3206,6 +3212,9 @@ High-level groups:
 | `yt_whisper_subs.practice_activity` | Shared submitted-answer/day accounting, zero-filled rolling week, and habit streaks. |
 | `yt_whisper_subs.library_practice_activity` | Shared weekly bar chart and a native calendar with selected-day details. |
 | `yt_whisper_subs.library_practice_controls` | Round-options popover, answer targets, and guarded mouse/keyboard continuation. |
+| `yt_whisper_subs.library_practice`, `library_word_quiz` | Top-level direction pages and independent, resumable word-quiz controllers. |
+| `yt_whisper_subs.practice_tracks`, `practice_stock` | Shared destination identity and ordered relational standby plans without exposure or answer-history side effects. |
+| `yt_whisper_subs.library_practice_ready`, `practice_ready` | Two-slot background scheduler, per-direction leases, atomic standby consumption and bounded failure backoff. |
 | `yt_whisper_subs.practice_ai` | Shared strict Responses transport and dedicated practice model policy. |
 | `yt_whisper_subs.verb_practice`, `verb_syllabus` | Typed transformation contracts, constrained Dutch syllabus and error-aware NumPy selection. |
 | `yt_whisper_subs.verb_generate`, `verb_service` | Independent linguistic generation/audit, bounded repairs, durable correction orchestration and approved-answer fast path. |

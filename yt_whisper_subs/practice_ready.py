@@ -13,15 +13,19 @@ import uuid
 
 import psutil
 
+from yt_whisper_subs import practice
+from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import task_cancel
 
-KINDS = ("practice", "verb", "sentence")
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS practice_preparation (
-    kind TEXT PRIMARY KEY CHECK(kind IN ('practice','verb','sentence')),
+    track TEXT PRIMARY KEY,
     owner TEXT,
     lease_until REAL NOT NULL DEFAULT 0,
     next_at REAL NOT NULL DEFAULT 0,
-    error TEXT NOT NULL DEFAULT ''
+    error TEXT NOT NULL DEFAULT '',
+    failures INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -29,47 +33,88 @@ CREATE TABLE IF NOT EXISTS practice_preparation (
 class ReadyDbMixin:
     """Own preparation leases separately from answer history; e.g. waiting and caching add no learning activity."""
 
-    def practice_prepare_claim(self, kind: str, owner: str) -> bool:
+    @staticmethod
+    def _practice_upgrade(conn) -> None:
+        """Upgrade ephemeral preparation locks and direction indexes without changing answers; e.g. opposite directions can both stay active."""
+
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(practice_preparation)")}
+        if "track" not in columns:
+            conn.execute("DROP TABLE practice_preparation")
+            conn.execute(SCHEMA)
+        for kind in ("practice", "sentence"):
+            name = f"idx_{kind}_active"
+            row = conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name=?", (name,)).fetchone()
+            if row and f"{kind}_sessions(direction)" not in row[0].replace(" ", ""):
+                conn.execute(f"DROP INDEX {name}")
+            conn.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {name} ON {kind}_sessions(direction) WHERE status='active'")
+        if conn.execute("SELECT 1 FROM settings WHERE key='practice_last_track'").fetchone() is None:
+            row = conn.execute("SELECT value FROM settings WHERE key='practice_last_mode'").fetchone()
+            kind = {"sentences": "sentence", "verbs": "verb"}.get(row[0] if row else "", "practice")
+            saved = conn.execute("SELECT value FROM settings WHERE key=?", (kind + "_options",)).fetchone()
+            try:
+                direction = json.loads(saved[0]).get("direction") if saved else None
+                track = practice_tracks.Track(kind if kind == "verb" else f"{kind}:{direction or ('en_nl' if kind == 'sentence' else 'nl_en')}")
+            except (ValueError, TypeError):
+                track = practice_tracks.Track.WORD_NL_EN
+            conn.execute("INSERT INTO settings VALUES('practice_last_track',?)", (track.value,))
+        row = conn.execute("SELECT value FROM settings WHERE key='sentence_cursor'").fetchone()
+        try:
+            cursor = json.loads(row[0]) if row else {}
+            session = conn.execute("SELECT direction FROM sentence_sessions WHERE id=?", (cursor.get("session"),)).fetchone()
+            if session:
+                key = f"sentence:{session[0]}_cursor"
+                conn.execute("INSERT OR IGNORE INTO settings VALUES(?,?)", (key, row[0]))
+        except (ValueError, TypeError, AttributeError):
+            pass
+
+    def practice_prepare_claim(self, track: str, owner: str) -> bool:
         """Elect one generator atomically; e.g. the foreground and startup worker cannot prepare duplicate rounds."""
 
         now = time.time()
         with self._connect() as conn:
-            row = conn.execute("SELECT owner FROM practice_preparation WHERE kind=? AND lease_until>?", (kind, now)).fetchone()
+            row = conn.execute("SELECT owner FROM practice_preparation WHERE track=? AND lease_until>?", (track, now)).fetchone()
             if row and row[0] and not owner_alive(row[0]):
-                conn.execute("UPDATE practice_preparation SET lease_until=0 WHERE kind=? AND owner=?", (kind, row[0]))
-            cursor = conn.execute("INSERT INTO practice_preparation(kind,owner,lease_until) VALUES(?,?,?) "
-                                  "ON CONFLICT(kind) DO UPDATE SET owner=excluded.owner,lease_until=excluded.lease_until "
-                                  "WHERE practice_preparation.lease_until<=?", (kind, owner, now + 900, now))
+                conn.execute("UPDATE practice_preparation SET lease_until=0 WHERE track=? AND owner=?", (track, row[0]))
+            cursor = conn.execute("INSERT INTO practice_preparation(track,owner,lease_until) VALUES(?,?,?) "
+                                  "ON CONFLICT(track) DO UPDATE SET owner=excluded.owner,lease_until=excluded.lease_until "
+                                  "WHERE practice_preparation.lease_until<=?", (track, owner, now + 900, now))
             return cursor.rowcount == 1
 
-    def practice_prepare_touch(self, kind: str, owner: str) -> bool:
+    def practice_prepare_touch(self, track: str, owner: str) -> bool:
         """Renew on actual work milestones; e.g. a long checked round retains ownership between bounded API calls."""
 
         with self._connect() as conn:
-            cursor = conn.execute("UPDATE practice_preparation SET lease_until=? WHERE kind=? AND owner=?", (time.time() + 900, kind, owner))
+            cursor = conn.execute("UPDATE practice_preparation SET lease_until=? WHERE track=? AND owner=?", (time.time() + 900, track, owner))
             return cursor.rowcount == 1
 
-    def practice_prepare_done(self, kind: str, owner: str, error: str, *, delay: int = 60) -> None:
+    def practice_prepare_done(self, track: str, owner: str, error: str, *, delay: int = 0) -> None:
         """Release ownership with persistent failure backoff; e.g. a provider outage cannot trigger paid retries every minute."""
 
         with self._connect() as conn:
-            conn.execute("UPDATE practice_preparation SET owner=NULL,lease_until=0,next_at=?,error=? WHERE kind=? AND owner=?",
-                         (time.time() + delay, error[:2000], kind, owner))
+            row = conn.execute("SELECT failures FROM practice_preparation WHERE track=? AND owner=?", (track, owner)).fetchone()
+            if row is None:
+                return
+            failures = row[0] + 1 if error and not delay else 0
+            backoff = min(1800, 120 * 2 ** min(failures - 1, 4)) if failures else delay
+            conn.execute("UPDATE practice_preparation SET owner=NULL,lease_until=0,next_at=?,error=?,failures=? WHERE track=? AND owner=?",
+                         (time.time() + backoff, error[:2000], failures, track, owner))
 
-    def practice_prepare_status(self, kind: str) -> dict:
+    def practice_prepare_status(self, track: str) -> dict:
         """Read readiness without doing work; e.g. startup respects a failed request's cooldown after a restart."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM practice_preparation WHERE kind=?", (kind,)).fetchone()
+            row = conn.execute("SELECT * FROM practice_preparation WHERE track=?", (track,)).fetchone()
             return dict(row) if row else {"next_at": 0, "lease_until": 0, "error": ""}
 
     def practice_ready(self, kind: str, opts, policy: dict) -> str | None:
         """Reuse a matching unexposed round; e.g. prefetch never marks a question shown or shuffles its saved choices."""
 
-        if kind not in KINDS:
+        if kind not in practice_tracks.KINDS:
             raise ValueError("Unknown practice mode")
         with self._connect() as conn:
-            row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active' ORDER BY created_at DESC LIMIT 1").fetchone()
+            direction = " AND direction=?" if kind != "verb" else ""
+            params = (opts.direction.value,) if kind != "verb" else ()
+            row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active'{direction} ORDER BY created_at DESC LIMIT 1", params).fetchone()
             if row is None:
                 return None
             saved = ({"direction": row["direction"], "count": row["requested_count"], "include_early": bool(row["include_early"])}
@@ -86,7 +131,7 @@ class ReadyDbMixin:
     def _practice_check_rounds(conn) -> None:
         """Return incomplete unused rounds to their cached stock; e.g. startup never offers a 34-question ready round requested as 35."""
 
-        for kind in KINDS:
+        for kind in practice_tracks.KINDS:
             count = "s.requested_count" if kind == "practice" else "json_extract(s.options_json,'$.count')"
             conn.execute(f"UPDATE {kind}_sessions AS s SET status='stopped',finished_at=? WHERE s.status='active' "
                          f"AND (SELECT COUNT(*) FROM {kind}_presentations p WHERE p.session_id=s.id)<>{count} "
@@ -127,39 +172,45 @@ def serialized(kind: str, version: int):
             """Wait cooperatively and reuse ready work; e.g. cancellation cannot unlock another worker's generation lease."""
 
             db = engine._db
+            track = practice_tracks.Track.for_options(kind, opts).value
             owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
             provider = engine._provider
             policy = {"model": provider.model, "reasoning": provider.reasoning, "prompt_version": version}
-            while not db.practice_prepare_claim(kind, owner):
+            while not db.practice_prepare_claim(track, owner):
                 report("Finishing background preparation for this mode…")
                 time.sleep(0.25)
-            error, delay = "", 60
+            error, delay = "", 0
             try:
                 # Recheck under ownership: the learner may have opened a round while this job waited.
-                if background and (active := getattr(db, f"{kind}_active")()) is not None:
-                    return active
                 if session := db.practice_ready(kind, opts, policy):
                     report("Using your ready round")
                     return session
+                if questions := db.practice_stock(practice_tracks.Track(track), opts, policy):
+                    if background:
+                        return track
+                    report("Using your prepared round")
+                    options = opts.model_dump(mode="json") if kind == "practice" else opts
+                    return getattr(db, f"{kind}_create")(options, questions, practice.ReviewPolicy().document())
 
                 def progress(message):
                     """Keep cancellation and lease renewal together; e.g. a closed window leaves safely cached work."""
 
                     report(message)
-                    if not db.practice_prepare_touch(kind, owner):
+                    if not db.practice_prepare_touch(track, owner):
                         raise RuntimeError("A newer preparation owns this mode. Use its ready round.")
 
-                return fn(engine, opts, progress, **kwargs)
+                return fn(engine, opts, progress, background=background, **kwargs)
             except Exception as exc:
                 from yt_whisper_subs import practice_round
 
-                error = str(exc)
+                error = "" if isinstance(exc, task_cancel.CancelledError) else str(exc)
                 healthy = isinstance(exc, practice_round.NothingToPractice) and exc.reason in {"not_due", "no_words", "not_enough"}
-                delay = 60 if healthy else 3600
+                delay = 60 if healthy else 0
                 raise
             finally:
-                db.practice_prepare_done(kind, owner, error, delay=delay)
+                db.practice_prepare_done(track, owner, error, delay=delay)
 
+        prepare.prompt_version = version
         return prepare
 
     return decorate

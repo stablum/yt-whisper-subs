@@ -151,7 +151,9 @@ class PracticeDbMixin:
         session_id = uuid.uuid4().hex
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("UPDATE practice_sessions SET status='stopped',finished_at=? WHERE status='active'", (time.time(),))
+            conn.execute("UPDATE practice_sessions SET status='stopped',finished_at=? WHERE status='active' AND direction=?",
+                         (time.time(), opts["direction"]))
+            self._practice_consume_stock(conn, "practice", opts["direction"])
             conn.execute("INSERT INTO practice_sessions VALUES(?,?,?,?,?,?,?,?)",
                          (session_id, opts["direction"], opts["count"], int(opts["include_early"]),
                           time.time(), None, "active", scheduler_json))
@@ -173,11 +175,12 @@ class PracticeDbMixin:
         result["choices"] = json.loads(result.pop("choices_json"))
         return result
 
-    def practice_active(self) -> str | None:
+    def practice_active(self, direction: str | None = None) -> str | None:
         """Find a resumable round without altering it; e.g. the app closed between questions."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT id FROM practice_sessions WHERE status='active' ORDER BY created_at DESC LIMIT 1").fetchone()
+            row = conn.execute("SELECT id FROM practice_sessions WHERE status='active' AND (? IS NULL OR direction=?) "
+                               "ORDER BY created_at DESC LIMIT 1", (direction, direction)).fetchone()
             return row[0] if row else None
 
     def practice_current(self, session_id: str) -> dict | None:

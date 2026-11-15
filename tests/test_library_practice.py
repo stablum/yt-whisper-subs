@@ -68,6 +68,7 @@ class PracticeDialogTests(unittest.TestCase):
         """Render actual native widgets without showing desktop windows; e.g. use Windows font rendering for previews."""
 
         dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=self.engine)
+        self.quiz = dialog._quizzes[practice.Direction.NL_EN]
         dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
         dialog.show_page(True)
@@ -79,69 +80,71 @@ class PracticeDialogTests(unittest.TestCase):
         """Wait for the worker's meaningful completion; e.g. avoid sleep-only assertions about API preparation."""
 
         deadline = time.monotonic() + 10
-        while self.dialog._current is None:
+        while self.quiz._current is None:
             QtTest.QTest.qWait(10)
             if time.monotonic() > deadline:
-                self.fail(self.dialog._status.text())
+                self.fail(self.quiz._status.text())
 
     def test_answer_report_and_next_use_real_saved_history(self) -> None:
         """A wrong answer highlights feedback, reporting removes it, and Next presents a different word."""
 
-        self.dialog._controls.count.setValue(3)
+        self.quiz._controls.count.setValue(3)
         self.dialog.show_page(False)
         self._wait_ready()
-        row = self.dialog._current
+        row = self.quiz._current
         wrong = (row["correct_idx"] + 1) % 3
-        QtTest.QTest.mouseClick(self.dialog._answers._buttons[wrong], QtCore.Qt.MouseButton.LeftButton)
-        self.assertIn("Not quite", self.dialog._result.text())
-        self.assertTrue(all(button.isEnabled() for button in self.dialog._answers._buttons))
+        QtTest.QTest.mouseClick(self.quiz._answers._buttons[wrong], QtCore.Qt.MouseButton.LeftButton)
+        self.assertIn("Not quite", self.quiz._result.text())
+        self.assertTrue(all(button.isEnabled() for button in self.quiz._answers._buttons))
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["wrong"], 1)
-        self.dialog._flag.click()
+        self.quiz._flag.click()
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["attempts"], 0)
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
-        self.dialog._next.click()
-        self.assertNotEqual(row["word_id"], self.dialog._current["word_id"])
+        self.quiz._next.click()
+        self.assertNotEqual(row["word_id"], self.quiz._current["word_id"])
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
-        self.dialog._unsure.setChecked(True)
-        self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
-        self.assertEqual(self.dialog._current["rating"], 2)
-        self.dialog._controls.finish_requested.emit()
-        self.assertIn("Round saved", self.dialog._prompt.text())
+        self.quiz._unsure.setChecked(True)
+        self.quiz._answers._buttons[self.quiz._current["correct_idx"]].click()
+        self.assertEqual(self.quiz._current["rating"], 2)
+        self.quiz._controls.finish_requested.emit()
+        self.assertIn("Round saved", self.quiz._prompt.text())
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.assertGreater(self.dialog._progress._terms.rowCount(), 0)
 
     def test_insufficient_targets_offer_options_without_a_partial_round(self) -> None:
         """Keep unavailable sizes recoverable in the native flow; e.g. four saved terms cannot silently turn a 35-question request into four."""
 
-        self.dialog._controls.count.setValue(35)
+        self.quiz._controls.count.setValue(35)
         self.dialog.show_page(False)
         deadline = time.monotonic() + 5
-        while self.dialog._task is not None:
+        while self.quiz._task is not None:
             QtTest.QTest.qWait(10)
             if time.monotonic() > deadline:
                 self.fail("Round availability did not resolve")
-        self.assertEqual(self.dialog._prompt.text(), "Choose a smaller round")
-        self.assertIsNone(self.dialog._current)
+        self.assertEqual(self.quiz._prompt.text(), "Choose a smaller round")
+        self.assertIsNone(self.quiz._current)
         self.assertIsNone(self.db.practice_active())
 
     def test_grouped_navigation_separates_practice_from_tracking_without_extra_steps(self) -> None:
         """Use actual grouped page buttons and native page state; e.g. visiting Progress records no exposure, then one Word quiz click opens a question."""
 
-        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(5)], ["Word quiz", "Verbs", "Sentences", "Progress", "Activity"])
+        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(7)],
+                         ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Verbs\nDutch transformations",
+                          "Sentences\nEnglish → Dutch", "Sentences\nDutch → English", "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
         self.assertEqual(labels, {"PRACTICE", "TRACKING"})
         buttons = self.dialog._nav._buttons
         buttons.button(library_practice.Page.PROGRESS).click()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
-        self.assertIsNone(self.dialog._current)
+        self.assertIsNone(self.quiz._current)
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 0)
         QtTest.QTest.keyClick(self.dialog._tabs, QtCore.Qt.Key.Key_Tab, QtCore.Qt.KeyboardModifier.ControlModifier)
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
         self.assertTrue(buttons.button(library_practice.Page.ACTIVITY).isChecked())
         self.app.processEvents()
         self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
-        buttons.button(library_practice.Page.QUIZ).click()
+        buttons.button(library_practice.Page.WORD_NL_EN).click()
         self._wait_ready()
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
         self.dialog.show_page(True)
@@ -153,15 +156,15 @@ class PracticeDialogTests(unittest.TestCase):
 
         self.dialog.show_page(False)
         self._wait_ready()
-        self.assertEqual(self.dialog._tabs.tabText(0), "Word quiz")
-        row = self.dialog._current
+        self.assertEqual(self.dialog._tabs.tabText(0), "Word quiz\nDutch → English")
+        row = self.quiz._current
         self.dialog.close()
         self.app.processEvents()
         self.dialog = self._dialog()
         self.dialog.show_page(False)
         self._wait_ready()
-        self.assertEqual(self.dialog._current["id"], row["id"])
-        self.assertEqual(self.dialog._current["choices"], row["choices"])
+        self.assertEqual(self.quiz._current["id"], row["id"])
+        self.assertEqual(self.quiz._current["choices"], row["choices"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
 
     def test_example_emphasizes_whole_words_inflections_and_hidden_answer_gaps(self) -> None:
@@ -201,10 +204,30 @@ class PracticeDialogTests(unittest.TestCase):
     def test_answer_shortcuts_do_not_intercept_round_length_entry(self) -> None:
         """Numeric answer access must respect native editing; e.g. type a twelve-term round before starting."""
 
-        editor = self.dialog._controls.count.lineEdit()
+        editor = self.quiz._controls.count.lineEdit()
         editor.selectAll()
         QtTest.QTest.keyClicks(editor, "12")
-        self.assertEqual(self.dialog._controls.count.value(), 12)
+        self.assertEqual(self.quiz._controls.count.value(), 12)
+
+    def test_top_level_direction_buttons_preserve_both_rounds_and_feedback(self) -> None:
+        """Switch actual destinations directly; e.g. returning to Dutch-to-English preserves its answer and shuffled choices."""
+
+        buttons = self.dialog._nav._buttons
+        buttons.button(library_practice.Page.WORD_NL_EN).click()
+        self._wait_ready()
+        first = self.quiz._current
+        self.quiz._answers._buttons[first["correct_idx"]].click()
+        original = self.quiz
+        self.quiz = self.dialog._quizzes[practice.Direction.EN_NL]
+        buttons.button(library_practice.Page.WORD_EN_NL).click()
+        self._wait_ready()
+        self.assertEqual(self.quiz._current["direction"], "en_nl")
+        self.assertNotEqual(self.quiz._session, original._session)
+        buttons.button(library_practice.Page.WORD_NL_EN).click()
+        self.assertEqual(original._current["id"], first["id"])
+        self.assertEqual(original._current["choices"], first["choices"])
+        self.assertEqual(original._current["outcome"], "correct")
+        self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 2)
 
     def test_closing_during_generation_cancels_without_a_partial_round(self) -> None:
         """A delayed provider must not hold the window open or invent exposures; e.g. close during an API call."""
@@ -227,7 +250,7 @@ class PracticeDialogTests(unittest.TestCase):
             QtTest.QTest.qWait(10)
         self.assertTrue(entered.is_set())
         cancelled = []
-        self.dialog._task.signals.cancelled.connect(lambda: cancelled.append(True))
+        self.quiz._task.signals.cancelled.connect(lambda: cancelled.append(True))
         self.dialog.close()
         release.set()
         deadline = time.monotonic() + 10
@@ -255,16 +278,16 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(len(data["daily"]), 12)
         self.assertEqual(data["coverage"][-1]["words"], 4)
         self.assertEqual(data["totals"]["attempts"], 48)
-        self.dialog._controls.direction.setCurrentIndex(1)
-        self.dialog._controls.early.setChecked(True)
-        self.dialog.show_page(False)
+        self.quiz = self.dialog._quizzes[practice.Direction.EN_NL]
+        self.quiz._controls.early.setChecked(True)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.WORD_EN_NL)
         self._wait_ready()
-        self.assertNotIn(self.dialog._current["content"]["surface"], self.dialog._context.text())
+        self.assertNotIn(self.quiz._current["content"]["surface"], self.quiz._context.text())
         if folder := os.environ.get("YTW_PRACTICE_PREVIEW"):
             self.app.processEvents()
             self.assertTrue(self.dialog.grab().save(str(Path(folder) / "practice-round.png")))
-        self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
-        self.assertIn(self.dialog._current["content"]["surface"], self.dialog._result.text())
+        self.quiz._answers._buttons[self.quiz._current["correct_idx"]].click()
+        self.assertIn(self.quiz._current["content"]["surface"], self.quiz._result.text())
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.app.processEvents()
         self.assertEqual(self.dialog._progress._terms.rowCount(), 8)

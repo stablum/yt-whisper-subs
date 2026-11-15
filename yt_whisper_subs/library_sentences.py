@@ -13,6 +13,7 @@ from yt_whisper_subs import library_written_controls as written
 from yt_whisper_subs import library_sentence_review
 from yt_whisper_subs import library_sentence_session
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import sentence_score
@@ -25,7 +26,7 @@ class SentenceOptions(QtWidgets.QWidget):
     finish_requested = QtCore.Signal()
     editing = QtCore.Signal(bool)
 
-    def __init__(self, saved: str) -> None:
+    def __init__(self, saved: str, direction: practice.Direction) -> None:
         """Restore next-round preferences; e.g. English-to-Dutch writing is the default direction."""
 
         super().__init__()
@@ -33,10 +34,7 @@ class SentenceOptions(QtWidgets.QWidget):
             opts = sentences.Options.model_validate_json(saved) if saved else sentences.Options()
         except ValueError:
             opts = sentences.Options()
-        self._direction = QtWidgets.QComboBox()
-        for direction in (practice.Direction.EN_NL, practice.Direction.NL_EN):
-            self._direction.addItem(direction.label, direction.value)
-        self._direction.setCurrentIndex(self._direction.findData(opts.direction.value))
+        self._direction = direction
         self._scene = QtWidgets.QComboBox()
         for key, label in {"mixed": "Varied everyday situations", **sentences.SCENES}.items():
             self._scene.addItem(label, key)
@@ -50,7 +48,7 @@ class SentenceOptions(QtWidgets.QWidget):
         self._early.setChecked(opts.include_early)
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        for label, widget in (("Direction", self._direction), ("Life context", self._scene),
+        for label, widget in (("Life context", self._scene),
                               ("Sentences", self._count), ("Saved words per sentence", self._words)):
             form.addRow(label, widget)
         form.addRow(self._early)
@@ -88,7 +86,7 @@ class SentenceOptions(QtWidgets.QWidget):
     def options(self) -> sentences.Options:
         """Return a validated learning request; e.g. the companion-word count stays separate from the sentence count."""
 
-        return sentences.Options(direction=self._direction.currentData(), scene=self._scene.currentData(),
+        return sentences.Options(direction=self._direction, scene=self._scene.currentData(),
                                   count=self._count.value(), words=self._words.value(), include_early=self._early.isChecked())
 
     def set_active(self, active: bool) -> None:
@@ -136,11 +134,14 @@ class SentenceCard(written.WritingCard):
 class SentencePanel(library_sentence_session.SentenceSession):
     """Bind sentences to the common typed-practice flow; e.g. reopening retries the same pending translation."""
 
-    def __init__(self, db, *, engine: sentence_service.SentenceService | None = None) -> None:
+    def __init__(self, db, *, direction: practice.Direction = practice.Direction.EN_NL,
+                 engine: sentence_service.SentenceService | None = None) -> None:
         """Create the view without generation; e.g. Progress and Activity can be opened without hidden sentence exposure."""
 
-        view = written.WritingView(SentenceOptions(db.setting("sentence_options", "")), SentenceCard())
-        mode = library_written.Mode(key="sentence", label="Sentence translations", tab_name="Sentences",
+        track = practice_tracks.Track.for_options("sentence", sentences.Options(direction=direction))
+        saved = db.setting(track.settings_key, db.setting("sentence_options", ""))
+        view = written.WritingView(SentenceOptions(saved, direction), SentenceCard())
+        mode = library_written.Mode(key="sentence", settings_key=track.settings_key, label="Sentence translations", tab_name=track.label.replace("\n", " · "),
                                     intro="Use your saved vocabulary to understand and write natural sentences in everyday situations.",
-                                    view=view, ops=library_written.SessionOps.for_db(db, "sentence"))
+                                    view=view, ops=library_written.SessionOps.for_db(db, "sentence", direction.value))
         super().__init__(db, mode, engine=engine or sentence_service.SentenceService(db))

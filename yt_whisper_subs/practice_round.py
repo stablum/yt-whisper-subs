@@ -39,6 +39,7 @@ class Build(pd.BaseModel):
     opts: pd.BaseModel
     report: abc.Callable
     cached_first: bool
+    background: bool = False
     _spent: int = pd.PrivateAttr(default=0)
 
     @property

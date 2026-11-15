@@ -29,11 +29,13 @@ class PracticeService:
         self._provider = generator or practice_generate.QuestionGenerator()
 
     @practice_ready.serialized("practice", practice_generate.PROMPT_VERSION)
-    def start(self, opts: practice.RoundOptions, report: Callable[[str], None], *, cached_first: bool = False) -> str:
+    def start(self, opts: practice.RoundOptions, report: Callable[[str], None], *, cached_first: bool = False, background: bool = False) -> str:
         """Generate bounded batches before committing a round; e.g. cancel safely while preparing choices."""
 
         policy = practice.ReviewPolicy()
         candidates = self._db.word_candidates(opts.direction.value)
+        if background:
+            candidates = self._db.practice_spare_candidates("practice", opts, candidates)
         if not candidates:
             raise practice_round.NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
@@ -45,7 +47,7 @@ class PracticeService:
         selected = selector.select(candidates, opts, time.time())
         if not selected:
             raise practice_round.NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
-        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         plan = practice_round.Plan(candidates=candidates, initial=selected, key=operator.itemgetter("lookup_id"),
                                    select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), time.time()),
                                    load=self._ensure_content)
@@ -59,17 +61,20 @@ class PracticeService:
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
         report(f"Ready · {len(questions)} distinct terms")
+        if background:
+            return self._db.practice_stage("practice", opts, questions)
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
 
     def _ensure_content(self, selected: list[dict], build: practice_round.Build) -> dict:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
+        reserved = self._db.practice_reserved("practice", build.opts) if build.background else set()
         direction = build.opts.direction
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": practice_generate.PROMPT_VERSION}
         for row in selected:
-            variants = self._db.practice_cached(row["lookup_id"], direction.value, policy)
+            variants = [item for item in self._db.practice_cached(row["lookup_id"], direction.value, policy) if item["id"] not in reserved]
             if variants:
                 cached[row["lookup_id"]] = variants[0]
             # Build a small rotating pool, then use the least-seen variant with new button ordering.

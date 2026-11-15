@@ -54,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
             window = library_gui.LibraryWindow(service)
             library_sentence_checks.SentenceChecks.shared(service.db).resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
+            window.practice_changed.connect(preparation.check)
             qt_app.aboutToQuit.connect(preparation.stop)
             start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()
             if not start_in_tray:

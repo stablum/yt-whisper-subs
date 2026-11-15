@@ -105,13 +105,11 @@ class RoundControls(QtWidgets.QWidget):
     finish_requested = QtCore.Signal()
     editing = QtCore.Signal(bool)
 
-    def __init__(self) -> None:
+    def __init__(self, direction: practice.Direction) -> None:
         """Offer settings and explicit restart together; e.g. count entry never triggers answer shortcuts."""
 
         super().__init__()
-        self.direction = QtWidgets.QComboBox()
-        for direction in practice.Direction:
-            self.direction.addItem(direction.label, direction)
+        self._direction = direction
         self.count = QtWidgets.QSpinBox()
         self.count.setRange(1, 50)
         self.count.setValue(10)
@@ -127,7 +125,6 @@ class RoundControls(QtWidgets.QWidget):
         panel = QtWidgets.QWidget()
         panel.setMinimumWidth(330)
         form = QtWidgets.QFormLayout(panel)
-        form.addRow("Direction", self.direction)
         form.addRow("Round length", self.count)
         form.addRow(self.early)
         form.addRow(note)
@@ -165,7 +162,7 @@ class RoundControls(QtWidgets.QWidget):
     def options(self) -> practice.RoundOptions:
         """Validate the native controls as one value; e.g. a twelve-term reverse round."""
 
-        return practice.RoundOptions(direction=practice.Direction(self.direction.currentData()),
+        return practice.RoundOptions(direction=self._direction,
                                      count=self.count.value(), include_early=self.early.isChecked())
 
     def restore(self, document: str) -> None:
@@ -175,7 +172,6 @@ class RoundControls(QtWidgets.QWidget):
             opts = practice.RoundOptions.model_validate_json(document)
         except ValueError:
             return
-        self.direction.setCurrentIndex(self.direction.findData(opts.direction))
         self.count.setValue(opts.count)
         self.early.setChecked(opts.include_early)
 

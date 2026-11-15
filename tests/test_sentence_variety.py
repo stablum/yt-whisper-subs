@@ -23,6 +23,25 @@ from yt_whisper_subs import sentence_service
 class SentenceVarietyTests(unittest.TestCase):
     """Exercise adaptive selection and checked caches together; e.g. a replay cap cannot fabricate short rounds or erase past outcomes."""
 
+    def test_standby_does_not_take_an_active_due_sentence_in_a_small_pool(self):
+        """Keep an active review out of the next round even when target diversity is limited; e.g. the exact-review quota cannot bypass reservation."""
+
+        candidates = self.db.word_candidates("en_nl")[:13]
+        with mock.patch.object(self.db, "word_candidates", return_value=candidates):
+            session = self.engine.start(self.opts, lambda _: None)
+            row = self.db.sentence_current(session)
+            self.db.sentence_submit(row["id"], row["content"]["dutch"], 1000)
+            self.engine.check(row["id"], lambda _: None)
+            with self.db._connect() as conn:
+                conn.execute("UPDATE sentence_question_states SET due_at=?", (time.time() - 1,))
+                active = {item[0] for item in conn.execute("SELECT question_id FROM sentence_presentations WHERE session_id=?", (session,))}
+            self.engine.start(self.opts, lambda _: None, background=True)
+        with self.db._connect() as conn:
+            spare = {item[0] for item in conn.execute("SELECT question_id FROM sentence_stock_questions")}
+        self.assertEqual(len(spare), 10)
+        self.assertFalse(active & spare)
+        self.assertEqual(self.db.sentence_active("en_nl"), session)
+
     def setUp(self):
         """Seed a pool larger than a round and inject checked content; e.g. tests use no learner catalog or API key."""
 

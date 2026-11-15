@@ -61,7 +61,7 @@ class SentenceSession(library_written.WrittenPanel):
             self._prepare(cached_first=True)
             return
         try:
-            cursor = json.loads(self._db.setting("sentence_cursor", "{}"))
+            cursor = json.loads(self._db.setting(self._mode.settings_key.removesuffix("_options") + "_cursor", "{}"))
         except ValueError:
             cursor = {}
         history = self._db.sentence_history(self._run.session)
@@ -85,7 +85,7 @@ class SentenceSession(library_written.WrittenPanel):
         if not self._active or not self._run.session or self._task:
             return
         rows = self._db.sentence_history(self._run.session)
-        writing = self._db.sentence_active() == self._run.session
+        writing = self._mode.ops.active() == self._run.session
         unanswered = next((row for row in rows if row["answer_text"] is None and row["outcome"] is None), None) if writing else None
         current = self._run.row
         later = [row for row in rows if current and row["ordinal"] > current["ordinal"]
@@ -113,7 +113,7 @@ class SentenceSession(library_written.WrittenPanel):
             return
         self._save_draft()
         row = self._db.sentence_open(presentation_id)
-        self._db.set_setting("sentence_cursor", json.dumps({"session": self._run.session, "id": presentation_id}))
+        self._db.set_setting(self._mode.settings_key.removesuffix("_options") + "_cursor", json.dumps({"session": self._run.session, "id": presentation_id}))
         self._present(row, guard=guard)
         self._refresh()
 
@@ -210,7 +210,7 @@ class SentenceSession(library_written.WrittenPanel):
         self._view.status.setText(f"{summary['submitted']} / {summary['planned']} answered  ·  {summary['correct']} correct"
                                   + (f"  ·  {pending} awaiting correction" if pending else "")
                                   + (f"  ·  {unseen} unseen" if unseen else ""))
-        self._view.options.set_active(self._db.sentence_active() == self._run.session)
+        self._view.options.set_active(self._mode.ops.active() == self._run.session)
         self._view.bar.setRange(0, summary["planned"])
         self._view.bar.setValue(summary["submitted"])
 
@@ -289,7 +289,7 @@ class SentenceSession(library_written.WrittenPanel):
             result += "\nAll available corrections have been viewed. Select an answer on the left to revisit it."
         self._idle(title, result, action)
         self._view.action.setEnabled(not pending or failed or bool(unseen))
-        self._view.options.set_active(self._db.sentence_active() == self._run.session)
+        self._view.options.set_active(self._mode.ops.active() == self._run.session)
         self._refresh()
 
     def _finish(self) -> None:

@@ -28,13 +28,15 @@ class VerbService:
         self._provider = provider or verb_generate.VerbGenerator()
 
     @practice_ready.serialized("verb", verb_generate.PROMPT_VERSION)
-    def start(self, opts: verbs.Options, report, *, cached_first: bool = True) -> str:
+    def start(self, opts: verbs.Options, report, *, cached_first: bool = True, background: bool = False) -> str:
         """Build the whole approved round before replacing another; e.g. failures preserve existing practice."""
 
         policy = practice.ReviewPolicy()
         if opts.source != "starter":
             verb_vocabulary.VocabularySync(self._db, self._provider).sync(report)
         candidates = verb_syllabus.candidates(self._db.verb_catalog(), self._db.verb_targets(), opts)
+        if background:
+            candidates = self._db.practice_spare_candidates("verb", opts, candidates)
         if not candidates:
             message = ("No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
                        if opts.source == "vocabulary" else "These filters have no valid Dutch forms. Change the round options.")
@@ -48,7 +50,7 @@ class VerbService:
         selected = selector.select(candidates, metrics, opts, time.time())
         if not selected:
             raise practice_round.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
-        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         key = operator.itemgetter("verb_id", "tense", "subject", "structure")
 
         def load(rows, job):
@@ -66,6 +68,8 @@ class VerbService:
                                    select=lambda rows, n: selector.select(rows, metrics, opts.model_copy(update={"count": n}), time.time()))
         questions = build.fill(plan)
         report(f"{len(questions)} checked verb exercises ready")
+        if background:
+            return self._db.practice_stage("verb", opts, questions)
         return self._db.verb_create(opts, questions, policy.document())
 
     def _content(self, targets: list[dict], build: practice_round.Build) -> list[dict]:
@@ -74,8 +78,9 @@ class VerbService:
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": verb_generate.PROMPT_VERSION}
         ready, pending = {}, []
+        reserved = self._db.practice_reserved("verb", build.opts) if build.background else set()
         for row in targets:
-            cached = self._db.verb_cached(row["target_id"], policy)
+            cached = [item for item in self._db.verb_cached(row["target_id"], policy) if item["id"] not in reserved]
             if cached:
                 ready[row["target_id"]] = cached[0]
             if not cached or (not build.cached_first and len(cached) < 3 and cached[0]["uses"]):

@@ -454,7 +454,7 @@ class TrayNotificationTests(unittest.TestCase):
         practice = next(action for action in menu.actions() if action.text() == "Practice…")
         practice.trigger()
         self.assertIs(self._window._practice_dialog, dialog)
-        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.QUIZ)
+        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.WORD_NL_EN)
         tray = next(action for action in self._window._tray_menu.actions() if action.text() == "Practice activity…")
         tray.trigger()
         self.assertIs(self._window._practice_dialog, dialog)

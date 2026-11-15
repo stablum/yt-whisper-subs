@@ -12,6 +12,7 @@ from yt_whisper_subs import verb_schema
 from yt_whisper_subs import sentence_schema
 from yt_whisper_subs import sentence_queue_db
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import practice_stock
 from yt_whisper_subs import vocabulary_learning_db
 from yt_whisper_subs import word_reviews
 
@@ -87,6 +88,7 @@ CREATE TABLE IF NOT EXISTS video_history (
 {sentence_schema.SCHEMA}
 {sentence_queue_db.SCHEMA}
 {practice_ready.SCHEMA}
+{practice_stock.SCHEMA}
 {vocabulary_learning_db.SCHEMA}
 {word_reviews.SCHEMA}
 
@@ -116,6 +118,7 @@ class SchemaDbMixin:
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.executescript(_SCHEMA)
+            self._practice_upgrade(conn)
             job_columns = {
                 str(row["name"]) for row in conn.execute("PRAGMA table_info(pipeline_jobs)")
             }

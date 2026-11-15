@@ -112,6 +112,8 @@ class LibraryWindow(
     Example: `window = LibraryWindow(service); window.show()`.
     """
 
+    practice_changed = QtCore.Signal()
+
     def __init__(self, service: library_service.LibraryService) -> None:
         super().__init__()
         self._service = service
@@ -488,6 +490,7 @@ class LibraryWindow(
             self._practice_dialog = library_practice.PracticeDialog(self._service, self)
             self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
             self._practice_dialog.activity_changed.connect(self._notifications.practice.check)
+            self._practice_dialog.activity_changed.connect(self.practice_changed)
         self._practice_dialog.show_page(activity)
         self._practice_dialog.show()
         self._practice_dialog.raise_()

@@ -69,13 +69,14 @@ class SentenceFlowTests(unittest.TestCase):
 
         vocab = practice_service.PracticeService(self.db, practice_fixtures.FakeGenerator())
         self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=vocab)
-        self.panel = self.dialog._sentences
+        opts = fixtures.options().model_validate_json(self.db.setting("sentence_options", fixtures.options().model_dump_json()))
+        self.panel = self.dialog._sentences[opts.direction]
         self.panel._engine = self.engine
         self.dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.dialog.show_page(True)
         if not activity:
-            self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCES)
+            self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCE_EN_NL if opts.direction == practice.Direction.EN_NL else library_practice.Page.SENTENCE_NL_EN)
         self.dialog.show()
         self.app.setActiveWindow(self.dialog)
         self.app.processEvents()
@@ -164,6 +165,24 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertEqual((self.provider.calls, self.provider.graded), ([], []))
         self.assertIsNone(self.db.sentence_active())
         self.assertEqual(sentence_stats.snapshot(self.db)["shown"], 0)
+
+    def test_top_level_direction_switch_preserves_both_drafts(self) -> None:
+        """Keep reading and writing drafts independent; e.g. switching directions never stops the sentence the learner was composing."""
+
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel
+        first._view.card.editor.setPlainText("Mijn eerste concept")
+        second = self.dialog._sentences[practice.Direction.NL_EN]
+        second._engine = self.engine
+        self.dialog._nav._buttons.button(library_practice.Page.SENTENCE_NL_EN).click()
+        self._wait(lambda: second._run.row is not None)
+        second._view.card.editor.setPlainText("My other draft")
+        self.dialog._nav._buttons.button(library_practice.Page.SENTENCE_EN_NL).click()
+        self.assertEqual(first._view.card.editor.toPlainText(), "Mijn eerste concept")
+        self.assertEqual(self.db.sentence_draft(second._run.row["id"])["text"], "My other draft")
+        self.assertEqual(self.db.sentence_active("en_nl"), first._run.session)
+        self.assertEqual(self.db.sentence_active("nl_en"), second._run.session)
 
     def test_pending_correction_resumes_original_answer(self) -> None:
         """Do not turn network errors into learning failures; e.g. reopening retries the saved first attempt exactly once."""
@@ -350,7 +369,7 @@ class SentenceFlowTests(unittest.TestCase):
         release.set()
         self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
         self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
-        self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCES)
+        self.dialog._tabs.setCurrentIndex(library_practice.Page.SENTENCE_EN_NL)
         self._wait(lambda: self.panel._run.row is not None)
         self.assertEqual(self.panel._run.row["id"], first)
         self.assertIsNotNone(self.db.sentence_get(first)["viewed_at"])

@@ -51,9 +51,9 @@ class FakeGenerator:
         self.calls.append((rows, direction))
         if not self.available:
             raise ConnectionError("test provider offline")
-        en = {"liep": ("ran", "stood"), "eventueel": ("eventually", "currently"),
+        en = {"fiets": ("car", "train"), "liep": ("ran", "stood"), "eventueel": ("eventually", "currently"),
               "winkel": ("market", "office"), "slim": ("slender", "cautious")}
-        nl = {"liep": ("rende", "stond"), "eventueel": ("uiteindelijk", "momenteel"),
+        nl = {"fiets": ("auto", "trein"), "liep": ("rende", "stond"), "eventueel": ("uiteindelijk", "momenteel"),
               "winkel": ("markt", "kantoor"), "slim": ("slank", "voorzichtig")}
         results = []
         for row in rows:

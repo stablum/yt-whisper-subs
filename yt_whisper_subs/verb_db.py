@@ -110,6 +110,7 @@ class VerbDbMixin:
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("UPDATE verb_sessions SET status='stopped',finished_at=? WHERE status='active'", (now,))
+            self._practice_consume_stock(conn, "verb")
             conn.execute("INSERT INTO verb_sessions VALUES(?,?,?,?,?,?)",
                          (session_id, opts.model_dump_json(), scheduler_json, now, None, "active"))
             conn.executemany("INSERT INTO verb_presentations(session_id,question_id,ordinal) VALUES(?,?,?)",

@@ -132,7 +132,8 @@ class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db
                 row = conn.execute("SELECT direction,flagged_at FROM sentence_questions WHERE id=?", (question["id"],)).fetchone()
                 if row is None or row["flagged_at"] is not None or row["direction"] != opts.direction.value:
                     raise ValueError("An exercise is unavailable for this translation direction")
-            conn.execute("UPDATE sentence_sessions SET status='stopped',finished_at=? WHERE status='active'", (now,))
+            conn.execute("UPDATE sentence_sessions SET status='stopped',finished_at=? WHERE status='active' AND direction=?", (now, opts.direction.value))
+            self._practice_consume_stock(conn, "sentence", opts.direction.value)
             conn.execute("INSERT INTO sentence_sessions VALUES(?,?,?,?,?,?,?)",
                          (session_id, opts.direction.value, opts.model_dump_json(), scheduler_json, now, None, "active"))
             conn.executemany("INSERT INTO sentence_presentations(session_id,question_id,ordinal) VALUES(?,?,?)",
@@ -150,11 +151,12 @@ class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db
         result["grade"] = json.loads(result["grade_json"]) if result["grade_json"] else None
         return result
 
-    def sentence_active(self) -> str | None:
+    def sentence_active(self, direction: str | None = None) -> str | None:
         """Find a resumable session without counting exposure; e.g. viewing statistics stays read-only."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT id FROM sentence_sessions WHERE status='active' ORDER BY created_at DESC LIMIT 1").fetchone()
+            row = conn.execute("SELECT id FROM sentence_sessions WHERE status='active' AND (? IS NULL OR direction=?) "
+                               "ORDER BY created_at DESC LIMIT 1", (direction, direction)).fetchone()
         return row[0] if row else None
 
     def sentence_get(self, presentation_id: int) -> dict:

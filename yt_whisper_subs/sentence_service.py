@@ -29,11 +29,13 @@ class SentenceService:
         self._provider = provider or sentence_generate.SentenceGenerator()
 
     @practice_ready.serialized("sentence", sentence_generate.PROMPT_VERSION)
-    def start(self, opts: sentences.Options, report, *, cached_first: bool = True) -> str:
+    def start(self, opts: sentences.Options, report, *, cached_first: bool = True, background: bool = False) -> str:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
         policy, now = practice.ReviewPolicy(), time.time()
         rows = self._db.word_candidates(opts.direction.value)
+        if background:
+            rows = self._db.practice_spare_candidates("sentence", opts, rows)
         if not rows:
             raise practice_round.NothingToPractice("no_words", "Save and translate some Dutch vocabulary words before sentence practice.")
         generation = {"direction": opts.direction.value, "model": self._provider.model,
@@ -44,10 +46,15 @@ class SentenceService:
         unused = {row["anchor_word_id"] for row in pool}
         for row in rows:
             row["unused"] = row["word_id"] in unused
-        chosen, selected = selector.targets(rows, self._db.sentence_due(generation, now), opts, now)
+        reviews = self._db.sentence_due(generation, now)
+        if background:
+            targets = {row["word_id"] for row in rows}
+            reserved = self._db.practice_reserved("sentence", opts)
+            reviews = [row for row in reviews if row["anchor_word_id"] in targets and row["id"] not in reserved]
+        chosen, selected = selector.targets(rows, reviews, opts, now)
         if not chosen and not selected:
             raise practice_round.NothingToPractice("not_due", "Your sentence targets and writing reviews are not due yet. Try early practice if you wish.")
-        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first)
+        build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
 
         def load(anchors, job):
             """Plan only the missing sentence targets; e.g. checked cached sentences never get regenerated during a top-up."""
@@ -68,16 +75,19 @@ class SentenceService:
                                    select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), now))
         questions = build.fill(plan)
         report(f"{len(questions)} checked sentence translations ready")
+        if background:
+            return self._db.practice_stage("sentence", opts, questions)
         return self._db.sentence_create(opts, questions, policy.document())
 
     def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
         """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""
 
         ready, pending = {}, []
+        reserved = self._db.practice_reserved("sentence", build.opts) if build.background else set()
         pool = self._db.sentence_pool(build.opts, policy)
         for plan in plans:
-            cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"]]
-            cached = cached or [row for row in self._db.sentence_cached(plan, policy) if row["uses"] == 0]
+            cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"] and row["id"] not in reserved]
+            cached = cached or [row for row in self._db.sentence_cached(plan, policy) if row["uses"] == 0 and row["id"] not in reserved]
             if cached:
                 ready[plan["anchor_word_id"]] = cached[0]
             if not cached:

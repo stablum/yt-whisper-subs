@@ -4,6 +4,7 @@ Example: ready questions survive app restarts and count only when actually shown
 """
 
 import concurrent.futures
+import json
 import os
 import tempfile
 import threading
@@ -24,6 +25,7 @@ from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice_ready
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import sentence_select
@@ -66,7 +68,7 @@ class ReadyTests(unittest.TestCase):
                 provider = verb_fixtures.FakeVerbProvider()
                 engine = verb_service.VerbService(db, provider)
                 opts = verb_fixtures.options().model_copy(update={"source": "starter"})
-        db.set_setting(f"{kind}_options", opts.model_dump_json())
+        db.set_setting(practice_tracks.Track.for_options(kind, opts).settings_key, opts.model_dump_json())
         ready = library_practice_ready.PracticeReady(db, modes={kind: (opts, engine)})
         self.addCleanup(self._stop, ready)
         return db, provider, engine, opts, ready
@@ -78,6 +80,14 @@ class ReadyTests(unittest.TestCase):
         self.assertTrue(ready._pool.waitForDone(15000))
         self.app.processEvents()
 
+    def _stock(self, db, engine, opts):
+        """Read the exact requested standby without creating a session; e.g. test preparation has no exposure side effects."""
+
+        kind = "sentence" if isinstance(engine, sentence_service.SentenceService) else "verb" if isinstance(engine, verb_service.VerbService) else "practice"
+        policy = {"model": engine._provider.model, "reasoning": engine._provider.reasoning,
+                  "prompt_version": engine.start.prompt_version}
+        return db.practice_stock(practice_tracks.Track.for_options(kind, opts), opts, policy)
+
     def test_each_mode_prepares_one_round_without_exposure_and_reuses_it_after_restart(self) -> None:
         """Keep one consumable durable round; e.g. re-entering a mode never replaces an untouched paid batch."""
 
@@ -85,32 +95,43 @@ class ReadyTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 db, provider, engine, opts, ready = self._case(kind)
                 ready.prepare(lambda _: None)
-                session = getattr(db, f"{kind}_active")()
-                self.assertIsNotNone(session)
-                self.assertEqual(getattr(db, f"{kind}_summary")(session)["shown"], 0)
+                self.assertIsNone(getattr(db, f"{kind}_active")())
+                stock = self._stock(db, engine, opts)
+                self.assertEqual(len(stock), opts.count)
+                if kind == "practice":
+                    before_choices, before_correct = stock[0]["choices"], stock[0]["correct_idx"]
                 self.assertEqual(practice_activity.read(db).answers, 0)
+                db.initialize()
                 with db._connect() as conn:
                     before = conn.execute(f"SELECT COUNT(*) FROM {kind}_questions").fetchone()[0]
                 provider.available = False
                 ready.prepare(lambda _: None)
                 reopened = type(engine)(library_db.LibraryDb(db.path), provider)
-                self.assertEqual(reopened.start(opts, lambda _: None), session)
+                session = reopened.start(opts, lambda _: None)
+                self.assertEqual(getattr(db, f"{kind}_summary")(session)["shown"], 0)
+                if kind == "practice":
+                    shown = db.practice_current(session)
+                    self.assertEqual(shown["choices"], before_choices)
+                    self.assertEqual(shown["correct_idx"], before_correct)
                 with db._connect() as conn:
                     self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {kind}_questions").fetchone()[0], before)
 
-    def test_partial_round_and_pending_answer_block_refill(self) -> None:
-        """Treat unanswered saved work as the stock; e.g. waiting for a correction cannot cause another automatic round."""
+    def test_pending_answer_allows_one_spare_without_replacing_the_active_round(self) -> None:
+        """Prepare ahead while corrections arrive; e.g. one queued answer cannot strand next-round preparation or create an unlimited backlog."""
 
         db, provider, engine, opts, ready = self._case("sentence")
         ready.prepare(lambda _: None)
-        session = db.sentence_active()
+        session = engine.start(opts, lambda _: None)
         row = db.sentence_current(session)
         db.sentence_submit(row["id"], row["content"]["dutch"], 1200)
-        calls = len(provider.calls)
         with db._connect() as conn:
             conn.execute("UPDATE practice_preparation SET next_at=0")
         ready.prepare(lambda _: None)
-        self.assertEqual((db.sentence_active(), len(provider.calls)), (session, calls))
+        self.assertEqual(db.sentence_active(), session)
+        self.assertEqual(len(self._stock(db, engine, opts)), opts.count)
+        calls = len(provider.calls)
+        ready.prepare(lambda _: None)
+        self.assertEqual(len(provider.calls), calls)
         self.assertEqual(practice_activity.read(db).answers, 1)
         self.assertEqual(db.sentence_get(row["id"])["answer_text"], row["content"]["dutch"])
 
@@ -164,14 +185,14 @@ class ReadyTests(unittest.TestCase):
         db, provider, engine, opts, ready = self._case("sentence")
         provider.available = False
         ready.prepare(lambda _: None)
-        status = db.practice_prepare_status("sentence")
+        status = db.practice_prepare_status("sentence:en_nl")
         self.assertIn("unavailable", status["error"])
-        self.assertGreater(status["next_at"], time.time() + 3500)
+        self.assertGreater(status["next_at"], time.time() + 110)
         ready.prepare(lambda _: None)
         self.assertEqual(len(provider.calls), 1)
         provider.available = True
         self.assertIsNotNone(engine.start(opts, lambda _: None))
-        self.assertEqual(db.practice_prepare_status("sentence")["error"], "")
+        self.assertEqual(db.practice_prepare_status("sentence:en_nl")["error"], "")
 
     def test_stale_lease_recovery_never_unlocks_the_new_owner(self) -> None:
         """Recover abandoned preparations safely; e.g. a late worker cannot release a replacement worker's lease."""
@@ -220,11 +241,11 @@ class ReadyTests(unittest.TestCase):
         db, _, _, _, ready = self._case("sentence")
         ready.check()
         deadline = time.monotonic() + 10
-        while ready._task is not None and time.monotonic() < deadline:
+        while ready._tasks and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
-        self.assertIsNone(ready._task)
-        self.assertIsNotNone(db.sentence_active())
-        self.assertEqual(db.sentence_summary(db.sentence_active())["shown"], 0)
+        self.assertFalse(ready._tasks)
+        self.assertIsNone(db.sentence_active())
+        self.assertEqual(len(self._stock(db, ready._modes["sentence"][1], ready._modes["sentence"][0])), 2)
         self.assertEqual(practice_activity.read(db).answers, 0)
 
     def test_not_due_waits_for_scheduling_without_provider_failure_backoff(self) -> None:
@@ -237,7 +258,7 @@ class ReadyTests(unittest.TestCase):
             engine.check(row["id"], lambda _: None)
         with self.assertRaises(practice_round.NothingToPractice):
             engine.start(opts, lambda _: None)
-        self.assertLess(db.practice_prepare_status("sentence")["next_at"], time.time() + 65)
+        self.assertLess(db.practice_prepare_status("sentence:en_nl")["next_at"], time.time() + 65)
 
     def test_background_rechecks_existing_round_under_lease_even_when_settings_changed(self) -> None:
         """Protect against a foreground/background ordering race; e.g. a waiting refill cannot replace the learner's newly opened round."""
@@ -245,8 +266,130 @@ class ReadyTests(unittest.TestCase):
         db, provider, engine, opts, _ = self._case("sentence")
         session = engine.start(opts, lambda _: None)
         row = db.sentence_current(session)
-        provider.available = False
         retained = engine.start(opts.model_copy(update={"count": 1}), lambda _: None, background=True)
-        self.assertEqual(retained, session)
-        self.assertEqual(db.sentence_current(retained)["id"], row["id"])
+        self.assertEqual(retained, "sentence:en_nl")
+        self.assertEqual(db.sentence_active(), session)
+        self.assertEqual(db.sentence_current(session)["id"], row["id"])
+        self.assertEqual(len(self._stock(db, engine, opts.model_copy(update={"count": 1}))), 1)
+
+    def test_production_defaults_describe_all_five_valid_requests(self) -> None:
+        """Exercise the real startup factory, not just injected modes; e.g. omitting the required word count must never silently disable all pre-preparation."""
+
+        db, *_ = self._case("practice")
+        ready = library_practice_ready.PracticeReady(db)
+        self.addCleanup(self._stop, ready)
+        requests = ready._requests()
+        self.assertEqual({track for track, _, _ in requests}, set(practice_tracks.Track))
+        self.assertTrue(all(opts.count > 0 for _, opts, _ in requests))
+
+    def test_schema_upgrade_preserves_answers_and_selected_direction(self) -> None:
+        """Replace obsolete preparation locks without changing learning history; e.g. an existing active quiz survives the direction-index upgrade."""
+
+        db, _, engine, opts, _ = self._case("practice")
+        session = engine.start(opts, lambda _: None)
+        row = db.practice_current(session)
+        db.practice_answer(row["id"], row["correct_idx"], False, 1200)
+        with db._connect() as conn:
+            before = [dict(value) for value in conn.execute("SELECT * FROM practice_presentations ORDER BY id")]
+            conn.execute("DROP INDEX idx_practice_active")
+            conn.execute("CREATE UNIQUE INDEX idx_practice_active ON practice_sessions(status) WHERE status='active'")
+            conn.execute("DROP TABLE practice_preparation")
+            conn.execute("CREATE TABLE practice_preparation(kind TEXT PRIMARY KEY,owner TEXT,lease_until REAL,next_at REAL,error TEXT)")
+            conn.execute("DELETE FROM settings WHERE key='practice_last_track'")
+        db.set_setting("practice_last_mode", "sentences")
+        db.set_setting("sentence_options", sentence_fixtures.options(direction=practice.Direction.NL_EN).model_dump_json())
+        db.initialize()
+        self.assertEqual(db.setting("practice_last_track", ""), "sentence:nl_en")
+        self.assertEqual(db.practice_active(opts.direction.value), session)
+        with db._connect() as conn:
+            self.assertEqual([dict(value) for value in conn.execute("SELECT * FROM practice_presentations ORDER BY id")], before)
+            self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+
+    def test_opposite_directions_keep_independent_active_sessions(self) -> None:
+        """Protect the other top-level direction when starting a round; e.g. reading progress cannot be stopped by opening writing."""
+
+        for kind in ("practice", "sentence"):
+            with self.subTest(kind=kind):
+                db, _, engine, opts, _ = self._case(kind)
+                first = engine.start(opts, lambda _: None)
+                row = getattr(db, kind + "_current")(first)
+                other = practice.Direction.EN_NL if opts.direction == practice.Direction.NL_EN else practice.Direction.NL_EN
+                second = engine.start(opts.model_copy(update={"direction": other}), lambda _: None)
+                self.assertNotEqual(first, second)
+                self.assertEqual(getattr(db, kind + "_active")(opts.direction.value), first)
+                self.assertEqual(getattr(db, kind + "_active")(other.value), second)
+                self.assertEqual(getattr(db, kind + "_current")(first)["id"], row["id"])
+
+    def test_existing_sentence_cursor_moves_to_its_own_direction(self) -> None:
+        """Preserve the current question during the schema upgrade; e.g. a saved Dutch-writing draft resumes at the same rail position."""
+
+        db, _, engine, opts, _ = self._case("sentence")
+        session = engine.start(opts, lambda _: None)
+        row = db.sentence_current(session)
+        cursor = json.dumps({"session": session, "id": row["id"]})
+        db.set_setting("sentence_cursor", cursor)
+        db.sentence_save_draft(row["id"], "Mijn bestaande concept", 1000)
+        db.initialize()
+        self.assertEqual(db.setting("sentence:en_nl_cursor", ""), cursor)
+        self.assertEqual(db.sentence_draft(row["id"])["text"], "Mijn bestaande concept")
+
+    def test_unanswered_current_round_does_not_generate_an_unused_spare(self) -> None:
+        """Require actual practice before stocking another round; e.g. merely browsing a destination cannot keep spending on untouched questions."""
+
+        db, provider, engine, opts, ready = self._case("sentence")
+        session = engine.start(opts, lambda _: None)
+        db.sentence_current(session)
+        ready.prepare(lambda _: None)
         self.assertEqual(len(provider.calls), 1)
+        self.assertEqual(self._stock(db, engine, opts), [])
+
+    def test_direction_backoff_is_independent_and_cancellation_is_not_a_failure(self) -> None:
+        """Recover promptly without retry storms; e.g. a cancelled application exits without imposing an outage cooldown."""
+
+        from yt_whisper_subs import task_cancel
+
+        db, provider, engine, opts, _ = self._case("sentence")
+        with mock.patch.object(provider, "generate", side_effect=task_cancel.CancelledError()):
+            with self.assertRaises(task_cancel.CancelledError):
+                engine.start(opts, lambda _: None, background=True)
+        status = db.practice_prepare_status("sentence:en_nl")
+        self.assertEqual((status["failures"], status["error"]), (0, ""))
+        self.assertLessEqual(status["next_at"], time.time())
+        provider.available = False
+        for _ in range(2):
+            with self.assertRaises(OSError):
+                engine.start(opts, lambda _: None)
+        self.assertGreater(db.practice_prepare_status("sentence:en_nl")["next_at"], time.time() + 220)
+        provider.available = True
+        self.assertIsNotNone(engine.start(opts.model_copy(update={"direction": practice.Direction.NL_EN}), lambda _: None))
+        self.assertEqual(db.practice_prepare_status("sentence:en_nl")["failures"], 2)
+
+    def test_slow_destination_does_not_block_other_ready_rounds(self) -> None:
+        """Use available preparation capacity fairly; e.g. a slow writing request can coexist with a ready word quiz."""
+
+        db, provider, sentence_engine, opts, _ = self._case("sentence")
+        word_engine = practice_service.PracticeService(db, practice_fixtures.FakeGenerator())
+        word_opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=2)
+        ready = library_practice_ready.PracticeReady(db, modes={"sentence": (opts, sentence_engine), "practice": (word_opts, word_engine)})
+        self.addCleanup(self._stop, ready)
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        generate = provider.generate
+
+        def blocked(*args):
+            """Hold only one linguistic request; e.g. the second preparation lane must remain usable."""
+
+            entered.set()
+            release.wait(20)
+            return generate(*args)
+
+        provider.generate = blocked
+        db.set_setting("practice_last_track", "sentence:en_nl")
+        ready.check()
+        deadline = time.monotonic() + 10
+        while (not entered.is_set() or not self._stock(db, word_engine, word_opts)) and time.monotonic() < deadline:
+            QtTest.QTest.qWait(10)
+        self.assertTrue(entered.is_set())
+        self.assertEqual(len(self._stock(db, word_engine, word_opts)), 2)
+        self.assertEqual(self._stock(db, sentence_engine, opts), [])
+        release.set()

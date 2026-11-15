@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import functools
 from collections import abc
 
 import pydantic as pd
@@ -29,10 +30,13 @@ class SessionOps(pd.BaseModel):
     finish: abc.Callable
 
     @classmethod
-    def for_db(cls, db, kind: str) -> SessionOps:
+    def for_db(cls, db, kind: str, direction: str | None = None) -> SessionOps:
         """Bind the explicit operation family once; e.g. changing a mode cannot accidentally submit into another history."""
 
-        return cls(**{name: getattr(db, f"{kind}_{name}") for name in cls.model_fields})
+        operations = {name: getattr(db, f"{kind}_{name}") for name in cls.model_fields}
+        if direction:
+            operations["active"] = functools.partial(operations["active"], direction)
+        return cls(**operations)
 
 
 class Mode(pd.BaseModel):
@@ -40,6 +44,7 @@ class Mode(pd.BaseModel):
 
     model_config = pd.ConfigDict(arbitrary_types_allowed=True)
     key: str
+    settings_key: str
     label: str
     tab_name: str
     intro: str
@@ -139,7 +144,7 @@ class WrittenPanel(QtWidgets.QWidget):
         if self._task or self._run.closed:
             return
         opts = self._view.options.options()
-        self._db.set_setting(self._mode.key + "_options", opts.model_dump_json())
+        self._db.set_setting(self._mode.settings_key, opts.model_dump_json())
         if early:
             opts = opts.model_copy(update={"include_early": True})
         self._run.pending = False

@@ -65,6 +65,7 @@ class PracticeFlowTests(unittest.TestCase):
         opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=count)
         self.db.set_setting("practice_options", opts.model_dump_json())
         self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=self.engine)
+        self.quiz = self.dialog._quizzes[practice.Direction.NL_EN]
         self.dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
         self.dialog.show_page(activity)
@@ -82,7 +83,7 @@ class PracticeFlowTests(unittest.TestCase):
     def _ready(self) -> None:
         """Wait for a displayed question, not just a worker result; e.g. Activity can hold a prepared unshown round."""
 
-        self._wait(lambda: self.dialog._current is not None)
+        self._wait(lambda: self.quiz._current is not None)
 
     def _gesture_gap(self) -> None:
         """Allow a deliberate second gesture; e.g. preserve the native double-click protection in tests."""
@@ -94,13 +95,13 @@ class PracticeFlowTests(unittest.TestCase):
 
         self._open()
         self._ready()
-        first = self.dialog._current
+        first = self.quiz._current
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
         self._close()
         self._open()
         self._ready()
-        self.assertEqual(self.dialog._current["id"], first["id"])
-        self.assertEqual(self.dialog._current["choices"], first["choices"])
+        self.assertEqual(self.quiz._current["id"], first["id"])
+        self.assertEqual(self.quiz._current["choices"], first["choices"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
 
     def test_feedback_click_continues_and_double_clicks_do_not_answer_the_next_word(self) -> None:
@@ -108,22 +109,22 @@ class PracticeFlowTests(unittest.TestCase):
 
         self._open()
         self._ready()
-        first = self.dialog._current
-        button = self.dialog._answers._buttons[first["correct_idx"]]
-        positions = [button.mapTo(self.dialog, QtCore.QPoint()).y() for button in self.dialog._answers._buttons]
+        first = self.quiz._current
+        button = self.quiz._answers._buttons[first["correct_idx"]]
+        positions = [button.mapTo(self.dialog, QtCore.QPoint()).y() for button in self.quiz._answers._buttons]
         QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
         self.app.processEvents()
-        after = [button.mapTo(self.dialog, QtCore.QPoint()).y() for button in self.dialog._answers._buttons]
+        after = [button.mapTo(self.dialog, QtCore.QPoint()).y() for button in self.quiz._answers._buttons]
         self.assertEqual(positions, after)
         QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
-        self.assertEqual(self.dialog._current["id"], first["id"])
-        self.assertIn("Correct", self.dialog._result.text())
+        self.assertEqual(self.quiz._current["id"], first["id"])
+        self.assertIn("Correct", self.quiz._result.text())
         self._gesture_gap()
         QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
-        second = self.dialog._current
+        second = self.quiz._current
         self.assertNotEqual(second["word_id"], first["word_id"])
         QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
-        self.assertIsNone(self.dialog._current["outcome"])
+        self.assertIsNone(self.quiz._current["outcome"])
         data = practice_stats.snapshot(self.db)
         self.assertEqual((data["totals"]["attempts"], data["totals"]["shown"]), (1, 2))
 
@@ -132,68 +133,68 @@ class PracticeFlowTests(unittest.TestCase):
 
         self._open()
         self._ready()
-        row = self.dialog._current
-        self.dialog._answers._buttons[row["correct_idx"]].click()
+        row = self.quiz._current
+        self.quiz._answers._buttons[row["correct_idx"]].click()
         self._gesture_gap()
-        pos = self.dialog._prompt.mapTo(self.dialog._surface, self.dialog._prompt.rect().center())
-        QtTest.QTest.mouseClick(self.dialog._surface, QtCore.Qt.MouseButton.LeftButton, pos=pos)
-        self.assertNotEqual(self.dialog._current["id"], row["id"])
+        pos = self.quiz._prompt.mapTo(self.quiz._surface, self.quiz._prompt.rect().center())
+        QtTest.QTest.mouseClick(self.quiz._surface, QtCore.Qt.MouseButton.LeftButton, pos=pos)
+        self.assertNotEqual(self.quiz._current["id"], row["id"])
         for key in (QtCore.Qt.Key.Key_Space, QtCore.Qt.Key.Key_Return):
             self._gesture_gap()
-            row = self.dialog._current
-            self.dialog._answers._buttons[row["correct_idx"]].click()
+            row = self.quiz._current
+            self.quiz._answers._buttons[row["correct_idx"]].click()
             self._gesture_gap()
-            QtTest.QTest.keyClick(self.dialog._next, key)
+            QtTest.QTest.keyClick(self.quiz._next, key)
             if key == QtCore.Qt.Key.Key_Space:
-                self.assertIsNone(self.dialog._current["outcome"])
+                self.assertIsNone(self.quiz._current["outcome"])
             else:
-                self.assertIn("Round complete", self.dialog._prompt.text())
+                self.assertIn("Round complete", self.quiz._prompt.text())
 
     def test_details_reporting_and_numeric_keys_do_not_skip_feedback(self) -> None:
         """Keep auxiliary actions independent; e.g. inspect an explanation or report without advancing."""
 
         self._open()
         self._ready()
-        first = self.dialog._current
+        first = self.quiz._current
         wrong = (first["correct_idx"] + 1) % 3
-        self.dialog._answers._buttons[wrong].click()
+        self.quiz._answers._buttons[wrong].click()
         self._gesture_gap()
-        QtTest.QTest.keyClick(self.dialog._answers._buttons[wrong], QtCore.Qt.Key.Key_1)
-        self.dialog._details.click()
-        self.assertTrue(self.dialog._explanation.isVisible())
-        self.assertEqual(self.dialog._current["id"], first["id"])
-        self.dialog._flag.click()
-        self.assertEqual(self.dialog._current["id"], first["id"])
+        QtTest.QTest.keyClick(self.quiz._answers._buttons[wrong], QtCore.Qt.Key.Key_1)
+        self.quiz._details.click()
+        self.assertTrue(self.quiz._explanation.isVisible())
+        self.assertEqual(self.quiz._current["id"], first["id"])
+        self.quiz._flag.click()
+        self.assertEqual(self.quiz._current["id"], first["id"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["attempts"], 0)
         self._gesture_gap()
-        self.dialog._next.click()
-        self.assertNotEqual(self.dialog._current["id"], first["id"])
-        self.assertFalse(self.dialog._explanation.isVisible())
+        self.quiz._next.click()
+        self.assertNotEqual(self.quiz._current["id"], first["id"])
+        self.assertFalse(self.quiz._explanation.isVisible())
 
     def test_finished_round_has_one_next_action_and_ignores_held_enter(self) -> None:
         """Stop at the configured round boundary; e.g. holding Enter cannot start another round."""
 
         self._open(count=1)
         self._ready()
-        self.dialog._answers._buttons[self.dialog._current["correct_idx"]].click()
+        self.quiz._answers._buttons[self.quiz._current["correct_idx"]].click()
         self._gesture_gap()
-        self.dialog._next.click()
-        self.assertIsNone(self.dialog._session)
-        self.assertEqual(self.dialog._next.text(), "Another round")
+        self.quiz._next.click()
+        self.assertIsNone(self.quiz._session)
+        self.assertEqual(self.quiz._next.text(), "Another round")
         event = QtGui.QKeyEvent(QtCore.QEvent.Type.KeyPress, QtCore.Qt.Key.Key_Return,
                                QtCore.Qt.KeyboardModifier.NoModifier, "", True)
-        self.app.sendEvent(self.dialog._next, event)
-        self.assertIsNone(self.dialog._task)
-        QtTest.QTest.keyClick(self.dialog._next, QtCore.Qt.Key.Key_Return)
+        self.app.sendEvent(self.quiz._next, event)
+        self.assertIsNone(self.quiz._task)
+        QtTest.QTest.keyClick(self.quiz._next, QtCore.Qt.Key.Key_Return)
         self._ready()
-        self.assertIsNone(self.dialog._current["outcome"])
+        self.assertIsNone(self.quiz._current["outcome"])
 
     def test_opening_activity_does_not_prepare_or_expose_a_question(self) -> None:
         """Keep the analytics entry read-only; e.g. the reminder's Activity link must not generate a practice round."""
 
         self._open(activity=True)
         self.app.processEvents()
-        self.assertIsNone(self.dialog._task)
+        self.assertIsNone(self.quiz._task)
         self.assertIsNone(self.db.practice_active())
         self.assertEqual(self.generator.calls, [])
         self.dialog.show_page(False)
@@ -219,8 +220,8 @@ class PracticeFlowTests(unittest.TestCase):
         self._wait(entered.is_set)
         self.dialog.show_page(True)
         release.set()
-        self._wait(lambda: self.dialog._task is None)
-        self.assertIsNone(self.dialog._current)
+        self._wait(lambda: self.quiz._task is None)
+        self.assertIsNone(self.quiz._current)
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 0)
         calls = len(self.generator.calls)
         self.dialog.show_page(False)
@@ -248,12 +249,12 @@ class PracticeFlowTests(unittest.TestCase):
         while row := self.db.practice_current(session):
             self.db.practice_answer(row["id"], row["correct_idx"], False, 1200)
         self._open()
-        self._wait(lambda: self.dialog._task is None)
-        self.assertIn("caught up", self.dialog._prompt.text())
-        self.assertEqual(self.dialog._next.text(), "Practice early")
-        self.dialog._next.click()
+        self._wait(lambda: self.quiz._task is None)
+        self.assertIn("caught up", self.quiz._prompt.text())
+        self.assertEqual(self.quiz._next.text(), "Practice early")
+        self.quiz._next.click()
         self._ready()
-        self.assertFalse(self.dialog._controls.early.isChecked())
+        self.assertFalse(self.quiz._controls.early.isChecked())
         saved = practice.RoundOptions.model_validate_json(self.db.setting("practice_options", ""))
         self.assertFalse(saved.include_early)
 
@@ -262,16 +263,16 @@ class PracticeFlowTests(unittest.TestCase):
 
         self._open(count=1)
         self._ready()
-        first = self.dialog._current
+        first = self.quiz._current
         self.generator.available = False
-        self.dialog._controls.count.setValue(4)
-        self.dialog._controls.restart_requested.emit()
-        self._wait(lambda: self.dialog._task is None)
-        self.assertIn("Couldn't prepare", self.dialog._prompt.text())
-        self.assertEqual(self.dialog._next.text(), "Resume round")
-        self.dialog._next.click()
-        self.assertEqual(self.dialog._current["id"], first["id"])
-        self.assertEqual(self.dialog._current["choices"], first["choices"])
+        self.quiz._controls.count.setValue(4)
+        self.quiz._controls.restart_requested.emit()
+        self._wait(lambda: self.quiz._task is None)
+        self.assertIn("Couldn't prepare", self.quiz._prompt.text())
+        self.assertEqual(self.quiz._next.text(), "Resume round")
+        self.quiz._next.click()
+        self.assertEqual(self.quiz._current["id"], first["id"])
+        self.assertEqual(self.quiz._current["choices"], first["choices"])
 
     def test_escape_cancels_autostart_without_recording_a_hidden_question(self) -> None:
         """Treat Escape like closing the window during preparation; e.g. stop at the next cooperative checkpoint."""
@@ -290,7 +291,7 @@ class PracticeFlowTests(unittest.TestCase):
         self.generator.generate = blocked
         self._open()
         self._wait(entered.is_set)
-        task = self.dialog._task
+        task = self.quiz._task
         cancelled = []
         task.signals.cancelled.connect(lambda: cancelled.append(True))
         QtTest.QTest.keyClick(self.dialog, QtCore.Qt.Key.Key_Escape)
@@ -307,27 +308,27 @@ class PracticeFlowTests(unittest.TestCase):
         self.db.initialize()
         self.engine = practice_service.PracticeService(self.db, self.generator)
         self._open()
-        self._wait(lambda: self.dialog._task is None)
-        self.assertEqual(self.dialog._prompt.text(), "No words ready yet")
+        self._wait(lambda: self.quiz._task is None)
+        self.assertEqual(self.quiz._prompt.text(), "No words ready yet")
         self.assertEqual(self.generator.calls, [])
-        self.assertIsNone(self.dialog._current)
+        self.assertIsNone(self.quiz._current)
 
     def test_round_options_accept_typing_without_answering_or_continuing(self) -> None:
         """Preserve native editing during the exercise; e.g. enter twelve terms while a question is on screen."""
 
         self._open()
         self._ready()
-        row = self.dialog._current
-        menu = self.dialog._controls.menu
+        row = self.quiz._current
+        menu = self.quiz._controls.menu
         menu.popup(QtCore.QPoint(30, 30))
-        editor = self.dialog._controls.count.lineEdit()
+        editor = self.quiz._controls.count.lineEdit()
         editor.setFocus()
         editor.selectAll()
         QtTest.QTest.keyClicks(editor, "12")
         QtTest.QTest.keyClick(editor, QtCore.Qt.Key.Key_Return)
-        self.assertEqual(self.dialog._controls.count.value(), 12)
-        self.assertEqual(self.dialog._current["id"], row["id"])
-        self.assertIsNone(self.dialog._current["outcome"])
+        self.assertEqual(self.quiz._controls.count.value(), 12)
+        self.assertEqual(self.quiz._current["id"], row["id"])
+        self.assertIsNone(self.quiz._current["outcome"])
         menu.hide()
 
 

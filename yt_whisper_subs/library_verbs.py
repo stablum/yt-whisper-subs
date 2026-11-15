@@ -19,7 +19,7 @@ class VerbPanel(library_written.WrittenPanel):
     def __init__(self, db, *, engine: verb_service.VerbService | None = None) -> None:
         """Bind the verb domain's operations and native view; e.g. stored rounds resume with their original grammar tasks."""
 
-        mode = library_written.Mode(key="verb", label="Verb transformations", tab_name="Verbs",
+        mode = library_written.Mode(key="verb", settings_key="verb_options", label="Verb transformations", tab_name="Verbs",
                                     intro="Rewrite a Dutch sentence for a new subject, tense or situation.",
                                     view=controls.VerbView(db.setting("verb_options", "")),
                                     ops=library_written.SessionOps.for_db(db, "verb"))
