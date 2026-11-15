@@ -187,6 +187,7 @@ class AnswerButtons(QtWidgets.QWidget):
         super().__init__()
         self._guard = QtCore.QElapsedTimer()
         self._buttons = [PracticeButton() for _ in range(3)]
+        self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(12)

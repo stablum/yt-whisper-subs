@@ -1,4 +1,4 @@
-"""Name the five independent practice choices and their saved preferences.
+"""Name independent practice choices and their saved preferences.
 
 Example: English-to-Dutch sentences and Dutch-to-English sentences keep separate resumable rounds.
 """
@@ -6,6 +6,7 @@ Example: English-to-Dutch sentences and Dutch-to-English sentences keep separate
 import enum
 
 from yt_whisper_subs import practice
+from yt_whisper_subs import sentence_practice
 
 
 class Track(str, enum.Enum):
@@ -16,6 +17,7 @@ class Track(str, enum.Enum):
     VERBS = "verb"
     SENTENCE_EN_NL = "sentence:en_nl"
     SENTENCE_NL_EN = "sentence:nl_en"
+    LISTENING = "sentence:listen_nl"
 
     @property
     def kind(self) -> str:
@@ -24,16 +26,19 @@ class Track(str, enum.Enum):
         return self.value.partition(":")[0]
 
     @property
-    def direction(self) -> practice.Direction | None:
+    def direction(self) -> practice.Direction | sentence_practice.Direction | None:
         """Bind translation direction once; e.g. verb transformations operate only in Dutch."""
 
         value = self.value.partition(":")[2]
-        return practice.Direction(value) if value else None
+        direction = sentence_practice.Direction if self.kind == "sentence" else practice.Direction
+        return direction(value) if value else None
 
     @property
     def label(self) -> str:
         """Use compact two-line top-level labels; e.g. both sentence directions remain one click away."""
 
+        if self == self.LISTENING:
+            return "Listening\nDutch dictation"
         title = {"practice": "Word quiz", "sentence": "Sentences", "verb": "Verbs"}[self.kind]
         return f"{title}\n{self.direction.label}" if self.direction else "Verbs\nDutch transformations"
 

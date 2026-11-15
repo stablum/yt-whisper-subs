@@ -92,8 +92,8 @@ class SentenceQueueDbMixin:
                          "ON CONFLICT(presentation_id) DO UPDATE SET text=excluded.text,elapsed_ms=excluded.elapsed_ms",
                          (text, max(0, elapsed_ms), presentation_id))
 
-    def sentence_check_claim(self, owner: str) -> dict | None:
-        """Claim oldest durable work once, recovering dead owners; e.g. reopening a window cannot duplicate an in-flight correction."""
+    def sentence_check_claim(self, owner: str, *, local: bool = False) -> dict | None:
+        """Claim the oldest work in a local or remote lane once; e.g. reopening cannot duplicate an in-flight correction."""
 
         now = time.time()
         with self._connect() as conn:
@@ -106,7 +106,9 @@ class SentenceQueueDbMixin:
                 if row["lease_until"] <= now or not practice_ready.owner_alive(row["owner"]):
                     conn.execute("UPDATE sentence_checks SET state='queued',owner=NULL,lease_until=0 WHERE presentation_id=?", (row["presentation_id"],))
             row = conn.execute("SELECT p.id FROM sentence_presentations p JOIN sentence_checks c ON c.presentation_id=p.id "
-                               "WHERE c.state='queued' AND p.outcome IS NULL ORDER BY p.answered_at,p.id LIMIT 1").fetchone()
+                               "JOIN sentence_questions q ON q.id=p.question_id "
+                               "WHERE c.state='queued' AND p.outcome IS NULL AND (q.direction='listen_nl')=? "
+                               "ORDER BY p.answered_at,p.id LIMIT 1", (local,)).fetchone()
             if row is None:
                 return None
             conn.execute("UPDATE sentence_checks SET state='checking',owner=?,lease_until=?,attempts=attempts+1,error='' "

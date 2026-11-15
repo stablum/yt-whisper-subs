@@ -272,7 +272,7 @@ class ReadyTests(unittest.TestCase):
         self.assertEqual(db.sentence_current(session)["id"], row["id"])
         self.assertEqual(len(self._stock(db, engine, opts.model_copy(update={"count": 1}))), 1)
 
-    def test_production_defaults_describe_all_five_valid_requests(self) -> None:
+    def test_production_defaults_describe_all_six_valid_requests(self) -> None:
         """Exercise the real startup factory, not just injected modes; e.g. omitting the required word count must never silently disable all pre-preparation."""
 
         db, *_ = self._case("practice")

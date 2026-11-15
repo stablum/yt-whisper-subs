@@ -17,23 +17,26 @@ from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_select
 from yt_whisper_subs import sentence_stats
 from yt_whisper_subs import verb_practice
+from yt_whisper_subs import listening_grade
+from yt_whisper_subs import listening_tts
 
 
 class SentenceService:
     """Orchestrate language work outside transactions and UI events; e.g. slow correction leaves the first attempt durable."""
 
-    def __init__(self, db, provider: sentence_generate.Provider | None = None) -> None:
+    def __init__(self, db, provider: sentence_generate.Provider | None = None, *, speech=None) -> None:
         """Allow an offline provider for deterministic tests; e.g. no user catalog is needed for verification."""
 
         self._db = db
         self._provider = provider or sentence_generate.SentenceGenerator()
+        self._audio = listening_tts.AudioCache(db, speech)
 
-    @practice_ready.serialized("sentence", sentence_generate.PROMPT_VERSION)
+    @practice_ready.serialized("sentence", sentence_generate.PROMPT_VERSION, materialize="prepare_media")
     def start(self, opts: sentences.Options, report, *, cached_first: bool = True, background: bool = False) -> str:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
         policy, now = practice.ReviewPolicy(), time.time()
-        rows = self._db.word_candidates(opts.direction.value)
+        rows = self._db.word_candidates(sentences.Direction(opts.direction).word_direction.value)
         if background:
             rows = self._db.practice_spare_candidates("sentence", opts, rows)
         if not rows:
@@ -74,10 +77,17 @@ class SentenceService:
                                    seed={row["anchor_word_id"]: row for row in chosen},
                                    select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), now))
         questions = build.fill(plan)
-        report(f"{len(questions)} checked sentence translations ready")
+        self.prepare_media(opts, questions, report)
+        report(f"{len(questions)} checked sentences ready")
         if background:
             return self._db.practice_stage("sentence", opts, questions)
         return self._db.sentence_create(opts, questions, policy.document())
+
+    def prepare_media(self, opts, questions: list[dict], report) -> None:
+        """Finish optional listening media before publishing a ready round; e.g. approved text survives a failed voice download."""
+
+        if opts.direction == sentences.Direction.LISTEN:
+            self._audio.prepare(questions, report)
 
     def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
         """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""
@@ -154,6 +164,11 @@ class SentenceService:
         if row["outcome"] is not None:
             return row
         content = row["content"]
+        if row["direction"] == "listen_nl":
+            report("Checking your Dutch transcription…")
+            grade = listening_grade.grade(row["answer_text"], content)
+            return self._db.sentence_grade(presentation_id, grade, {"model": "local_dictation_alignment", "reasoning": "none",
+                                                                  "grade_version": listening_grade.VERSION})
         answer_key = "dutch" if row["direction"] == "en_nl" else "english"
         source_key = "english" if row["direction"] == "en_nl" else "dutch"
         # Approved alternatives may replace a saved lexeme with a synonym, which still needs per-word assessment.

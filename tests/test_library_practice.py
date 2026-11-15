@@ -128,9 +128,9 @@ class PracticeDialogTests(unittest.TestCase):
     def test_grouped_navigation_separates_practice_from_tracking_without_extra_steps(self) -> None:
         """Use actual grouped page buttons and native page state; e.g. visiting Progress records no exposure, then one Word quiz click opens a question."""
 
-        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(7)],
+        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(8)],
                          ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Verbs\nDutch transformations",
-                          "Sentences\nEnglish → Dutch", "Sentences\nDutch → English", "Progress", "Activity"])
+                          "Sentences\nEnglish → Dutch", "Sentences\nDutch → English", "Listening\nDutch dictation", "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
         self.assertEqual(labels, {"PRACTICE", "TRACKING"})

@@ -161,7 +161,7 @@ def owner_alive(owner: str) -> bool:
         return True
 
 
-def serialized(kind: str, version: int):
+def serialized(kind: str, version: int, *, materialize: str | None = None):
     """Wrap paid preparation with shared ownership; e.g. each mode keeps its own linguistic strategy and SQL transactions."""
 
     def decorate(fn):
@@ -183,9 +183,17 @@ def serialized(kind: str, version: int):
             try:
                 # Recheck under ownership: the learner may have opened a round while this job waited.
                 if session := db.practice_ready(kind, opts, policy):
+                    if materialize:
+                        with db._connect() as conn:
+                            rows = [dict(row) for row in conn.execute(
+                                f"SELECT q.* FROM {kind}_questions q JOIN {kind}_presentations p ON p.question_id=q.id "
+                                "WHERE p.session_id=? ORDER BY p.ordinal", (session,))]
+                        getattr(engine, materialize)(opts, rows, report)
                     report("Using your ready round")
                     return session
                 if questions := db.practice_stock(practice_tracks.Track(track), opts, policy):
+                    if materialize:
+                        getattr(engine, materialize)(opts, questions, report)
                     if background:
                         return track
                     report("Using your prepared round")

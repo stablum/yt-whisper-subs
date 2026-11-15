@@ -79,12 +79,9 @@ class WrittenPanel(QtWidgets.QWidget):
         self._run = _Run(session=mode.ops.active())
         self._task: library_workers.BackgroundTask | None = None
         self._view = mode.view
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setWidget(self._view)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(scroll)
+        layout.addWidget(self._view)
         self._view.action.clicked.connect(self._action)
         self._view.card.submitted.connect(self._submit)
         self._view.card.editor.textChanged.connect(self._input_changed)

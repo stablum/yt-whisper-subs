@@ -96,6 +96,9 @@ The companion library is optimized for a second workflow:
 21. Translate complete sentences between English and Dutch using saved vocabulary
     in varied everyday situations, with natural supporting words, diagnostic
     corrections and independent review of vocabulary and sentence writing.
+22. Listen to Dutch sentences built around saved vocabulary, type what you hear,
+    then review the transcript and English meaning, with local speech, slow replay,
+    adaptive word review and separate listening progress.
 
 ## Important Defaults
 
@@ -121,7 +124,9 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
-| Ready practice rounds | five independent destinations; two background workers; one bounded standby after practice starts; unused approvals consumed first |
+| Ready practice rounds | six independent destinations, including listening; two background workers; one bounded standby after practice starts; unused approvals consumed first |
+| Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
+| Listening speech | local CPU Piper 1.7.0, Dutch Netherlands `nl_NL-ronnie-medium`; cached normal and slower recordings; no speech API fees |
 | Shared vocabulary learning | lexical mistakes add both intended and genuinely confused dictionary words; quiz and sentence practice share word reviews and selection |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -181,7 +186,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
 | Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet for at least 24 hours after any submitted answer and throughout its local calendar day |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
-| Practice activity amount | submitted vocabulary, verb and sentence answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
+| Practice activity amount | submitted vocabulary, verb, translation and listening answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -220,7 +225,8 @@ python .\yt_whisper_library.pyw
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS, NumPy,
-Polars, and RapidFuzz) when needed, and relaunches with `pythonw.exe`.
+Polars, and RapidFuzz), plus the pinned Piper speech runtime when needed,
+and relaunches with `pythonw.exe`.
 The window first opens the saved catalog, then scans local downloads in the
 background and refreshes the results. An overdue channel check and the
 gently paced metadata queue then run in the background without freezing the
@@ -2126,9 +2132,10 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-The library keeps ready content for **five top-level practice destinations**:
+The library keeps ready content for **six top-level practice destinations**:
 Word quiz · Dutch → English, Word quiz · English → Dutch, Verbs · Dutch
-transformations, Sentences · English → Dutch, and Sentences · Dutch → English.
+transformations, Sentences · English → Dutch, Sentences · Dutch → English,
+and Listening · Dutch dictation.
 Each has its own round options, preparation ownership and resumable session.
 Switching direction does not end the other direction's round, replace its
 choices, or lose a typed draft. Progress and Activity remain in the separate
@@ -2262,10 +2269,12 @@ python -m unittest tests.test_shared_learning tests.test_practice tests.test_sen
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
-and both Sentences directions as **five top-level Practice buttons**, with
+both Sentences directions, and Listening as **six top-level Practice buttons**, with
 **Tracking** (Progress, Activity) separated by a labelled group and divider.
 Each page remains one click away; existing menu/tray shortcuts and native page
 navigation select the same grouped controls.
+Question content scrolls independently while the main Next and Report actions
+stay available at the bottom; the word quiz keeps a stable block of three choices.
 It opens directly on your saved question, or automatically prepares the
 first question using your saved settings. No **Start round** or **Resume round**
 click is required. **Word quiz** is a learning exercise with feedback, rather
@@ -2844,6 +2853,97 @@ Windows named-pipe access must be available
 to both test processes. The transport uses overlapped reads/writes so replies
 and seeks remain responsive even while a paused player emits no events.
 
+### Dutch Listening Practice
+
+Choose **Practice → Listening · Dutch dictation**. A prepared round opens directly
+on its first question and plays Dutch speech automatically. Type the complete
+sentence, then press Enter or **Submit & next**. The original Dutch sentence,
+saved-word clues and English meaning are concealed until feedback. Submission
+uses the existing durable asynchronous correction queue: you can continue with
+the next question, return through the question rail, and review unseen feedback
+after finishing. Closing practice preserves unfinished drafts and queued work.
+The main Submit/Next controls stay visible while question content and long
+corrections scroll, including in the other typed practice modes.
+
+**Listen again** (`Alt+P`) replays the cached recording; **Listen slowly**
+(`Alt+L`) uses separately synthesized slower speech without lowering its pitch.
+**Stop**, changing question, leaving the page or closing practice stops playback.
+Feedback highlights transcription mismatches with hover corrections, shows the
+spoken Dutch sentence in green, and provides its English translation below.
+Round options control the actual sentence count (1–50, default 10), saved targets
+per sentence (1–3, default 2), life context and early practice.
+
+Sentence construction and independent quality review use the same configured
+practice model as translation exercises (default `gpt-6-luna`, medium reasoning).
+Saved vocabulary supplies adaptive learning targets, rather than a restrictive
+list of permissible words. Subjects, tenses and other inflections vary, and
+ordinary supporting vocabulary is included naturally. Listening uses the shared
+Dutch-recognition word priorities, with the same weak-word weighting and bounded
+exact-sentence review quota. Target transcription outcomes feed that shared
+review ledger; unrelated supporting-word mistakes do not fail correct targets.
+Listening retains its own sentence, form and context history and does not count
+as English-to-Dutch translation mastery.
+
+Dictation grading is local and deterministic against the **actual spoken
+script**, so it needs no correction-model request. Its bounded local correction
+worker runs separately from the single translation API lane, so an earlier
+slow translation cannot delay listening feedback. Both lanes recover submitted
+work on application startup. Capitalization, sentence
+punctuation and extra whitespace are ignored. Spelling, missing/extra words and
+word order count; a synonym can be a good translation but is not the word spoken.
+Word-level edit similarity gives partial credit even when the complete sentence
+is wrong. The English meaning comes from the already audited bilingual pair.
+Saved-target credit measures transcription, not a separate test of English
+meaning. Mistakes on existing targets affect shared word review; this local
+grader does not guess new dictionary entries for unknown misheard words.
+
+The cached **Qwen3-TTS-12Hz-1.7B-VoiceDesign** checkpoint was investigated, but
+Dutch is absent from its [official supported language list](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign).
+The feature instead uses [Piper](https://github.com/OHF-Voice/piper1-gpl) and the
+[Dutch Netherlands Ronnie voice](https://huggingface.co/rhasspy/piper-voices/blob/main/nl/nl_NL/ronnie/medium/MODEL_CARD),
+trained for Dutch, with a CC0 dataset and 22,050 Hz mono output. Speech runs on the
+CPU, leaving the GPU available for Whisper. Piper **1.7.0** is pinned and checked
+by the existing startup dependency probe: the tested Windows 1.8 wheel exited in
+its native espeak phonemizer. Synthesis runs in a hidden, cancellable child process,
+loading the voice once per batch, so a native runtime error cannot terminate the
+library. There is no voice cloning, reference recording, speech server or cloud
+TTS request.
+
+The first listening preparation downloads about **63 MB** of voice weights plus
+configuration into `<output root>/library/practice-audio/voices/`. The upstream
+revision is pinned; the weights are checked against the published LFS SHA-256 and
+configuration/model card against their published Git blob identities. Later
+speech synthesis works offline. Sentence generation still needs the configured
+practice API whenever approved unused stock is insufficient.
+
+Both normal and slow WAVs are prepared **before** a listening round is published
+as ready, including its single bounded background standby. Approved text survives
+speech-download or synthesis failures and is reused on retry. Recordings are
+content-addressed by exact Dutch text and voice profile under
+`<output root>/library/practice-audio/sentences/`; opaque filenames do not reveal
+the script. Files are atomically published and hash-checked before playback.
+Deleted or damaged audio is repaired in a background worker without losing the
+current draft or generating another sentence.
+
+**Progress → Listening** shows partial transcription scores, whole-sentence
+accuracy, daily trends, saved targets, forms, contexts, mistakes and rounds.
+It also shows pre-answer listen/slow-listen counts for checked answers and
+accuracy after one normal listen. `listening_assets` stores each recording recipe
+and its voice/hash provenance once; `listening_audio` links immutable
+`sentence_questions` to those shared assets, so repairing a recording updates all
+its question references together. `listening_plays` relates
+timestamped playback starts to `sentence_presentations`, retaining whether
+each occurred before answering. Listening is a distinct `listen_nl` sentence skill;
+the transactional schema upgrade preserves existing translations, drafts, queued
+corrections and foreign keys. Metrics are derived from events. Only submitting an
+answer contributes to daily reminders, seven-day bars and calendar activity;
+preparation and replay do not inflate effort. Translation progress excludes
+dictation, while vocabulary priorities remain shared.
+
+```powershell
+python -m unittest tests.test_listening tests.test_library_listening tests.test_practice_ready -v
+```
+
 ## Command Line Reference
 
 ### Source Arguments
@@ -3186,6 +3286,9 @@ High-level groups:
 | `yt_whisper_subs.vocabulary` | Source snapshots, Unicode token spans, occurrence context, and structured word meanings. |
 | `yt_whisper_subs.vocabulary_db` | Relational click history, context caches, leased requests, and derived word/video counts. |
 | `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
+| `yt_whisper_subs.listening_tts` / `listening_synth` | Verified Dutch voice assets, content-addressed speech cache and isolated batch synthesis. |
+| `yt_whisper_subs.listening_grade` / `listening_db` | Local dictation alignment, relational audio provenance and timestamped replay assistance. |
+| `yt_whisper_subs.library_listening` | Native concealed listening card, normal/slow replay and background audio recovery. |
 | `yt_whisper_subs.vocabulary_worker` | Independent durable-save and translation lanes with restart recovery. |
 | `yt_whisper_subs.vocabulary_playback` | Launch-bound word selection validation and Lua/SQLite acknowledgements. |
 | `yt_whisper_subs.library_vocabulary` | Native searchable vocabulary, grouping, complete occurrence history, and replay. |
@@ -3263,7 +3366,7 @@ Other structural data models are deliberately close to their behavior:
   remote metadata to local file state.
 - `VideoRecord` adds subscription ownership, optional `LocalMedia`, and optional
   durable `PlaybackState` to that metadata.
-- `LibraryDb` is the only module that owns catalog SQL.
+- `LibraryDb` composes cohesive SQL mixins, retaining one catalog and transaction boundary.
 
 ## Future Codex Maintenance Notes
 

@@ -99,6 +99,9 @@ class SentenceGenerator(learning.LearningGenerator):
     def generate(self, plans: list[dict], direction: practice.Direction, focus: list[str]) -> list[dict]:
         """Generate natural pairs with morphological evidence, then audit them; e.g. a saved liep can appear as zullen lopen."""
 
+        # Dictation uses the same audited Dutch/English pairs; the spoken script is the sole accepted transcription.
+        if direction == sentences.Direction.LISTEN:
+            direction = practice.Direction.EN_NL
         document = {"direction": direction.value, "grammar_focus": focus, "plans": plans}
         batch = self._request(sentences.Drafts, _RULES + (
             "Return exactly one question per anchor_word_id. Include ALL its requested saved word IDs and no other "

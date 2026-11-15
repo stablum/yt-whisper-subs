@@ -1,6 +1,6 @@
 """Run durable sentence corrections independently of the practice window.
 
-Example: answers queue behind one bounded worker while the learner keeps typing the next sentence.
+Example: remote translations queue behind one worker, while local dictation runs independently.
 """
 
 import os
@@ -16,29 +16,30 @@ from yt_whisper_subs import task_cancel
 
 
 class SentenceChecks(QtCore.QObject):
-    """Own one correction lane per catalog; e.g. closing and reopening practice shares the same in-flight request."""
+    """Own one correction lane per catalog and task type; e.g. local dictation never waits for a translation API timeout."""
 
     changed = QtCore.Signal(int)
 
     @classmethod
-    def shared(cls, db):
+    def shared(cls, db, *, local: bool = False):
         """Keep lifetime with QApplication rather than a dialog; e.g. submitted answers continue correcting while practice is closed."""
 
         app = QtWidgets.QApplication.instance()
-        key = os.path.normcase(str(db.path.resolve()))
+        key = os.path.normcase(str(db.path.resolve())) + (":dictation" if local else ":translation")
         for worker in app.findChildren(cls):
             if worker.objectName() == key:
                 return worker
-        worker = cls(db, app)
+        worker = cls(db, app, local=local)
         worker.setObjectName(key)
         app.aboutToQuit.connect(worker.stop)
         return worker
 
-    def __init__(self, db, parent=None) -> None:
+    def __init__(self, db, parent=None, *, local: bool = False) -> None:
         """Construct without starting paid work; e.g. statistics-only tests and views remain read-only."""
 
         super().__init__(parent)
         self._db = db
+        self._local = local
         self._engine = sentence_service.SentenceService(db)
         self._owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
         self._task = None
@@ -71,7 +72,7 @@ class SentenceChecks(QtCore.QObject):
         if not self._db.path.exists():
             self.stop()
             return
-        self._job = self._db.sentence_check_claim(self._owner)
+        self._job = self._db.sentence_check_claim(self._owner, local=self._local)
         if self._job is None:
             return
         presentation_id, engine = self._job["id"], self._engine

@@ -53,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             service = library_service.LibraryService(out_dir, proc.venv_paths())
             window = library_gui.LibraryWindow(service)
             library_sentence_checks.SentenceChecks.shared(service.db).resume()
+            library_sentence_checks.SentenceChecks.shared(service.db, local=True).resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
             window.practice_changed.connect(preparation.check)
             qt_app.aboutToQuit.connect(preparation.stop)

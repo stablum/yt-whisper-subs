@@ -580,9 +580,16 @@ def python_runtime(python_exe: Path, modules: tuple[str, ...]) -> tuple[str | No
     if not python_exe.exists():
         return None, frozenset()
     code = (
-        "import importlib.util, json, sys\n"
+        "import importlib.util, importlib.metadata, json, sys\n"
+        f"pins = {{'piper': ('piper-tts', {cfg.PIPER_VERSION!r})}}\n"
+        "def available(name):\n"
+        "    if importlib.util.find_spec(name) is None: return False\n"
+        "    if name not in pins: return True\n"
+        "    package, version = pins[name]\n"
+        "    try: return importlib.metadata.version(package) == version\n"
+        "    except importlib.metadata.PackageNotFoundError: return False\n"
         "print(json.dumps({'version': f'{sys.version_info.major}.{sys.version_info.minor}', "
-        "'modules': [name for name in sys.argv[1:] if importlib.util.find_spec(name)]}))"
+        "'modules': [name for name in sys.argv[1:] if available(name)]}))"
     )
     result = subprocess.run(
         [str(python_exe), "-c", code, *modules],

@@ -46,7 +46,7 @@ def metrics(db, direction: str) -> dict:
     return {"forms": form_rows, "scenes": scenes, "kinds": [row["kind"] for row in kinds[:3]]}
 
 
-def snapshot(db) -> dict:
+def snapshot(db, *, listening: bool = False) -> dict:
     """Read a consistent relational snapshot, then aggregate with Polars; e.g. reported work keeps exposure but loses grading influence."""
 
     with db._connect() as conn:
@@ -66,11 +66,20 @@ def snapshot(db) -> dict:
             "FROM sentence_errors e JOIN sentence_presentations p ON p.id=e.presentation_id "
             "JOIN sentence_questions q ON q.id=p.question_id WHERE p.outcome='wrong' ORDER BY p.answered_at DESC,e.ordinal")]
         states = [dict(row) for row in conn.execute("SELECT * FROM sentence_states")]
-        due = conn.execute("SELECT COUNT(*) FROM sentence_question_states WHERE due_at<=?", (time.time(),)).fetchone()[0]
+        due = conn.execute("SELECT COUNT(*) FROM sentence_question_states s JOIN sentence_questions q ON q.id=s.question_id "
+                           "WHERE s.due_at<=? AND (q.direction='listen_nl')=?", (time.time(), listening)).fetchone()[0]
         rounds = [dict(row) for row in conn.execute(
             "SELECT s.id,s.direction,s.created_at,s.status,COUNT(p.id) AS planned,COUNT(p.answer_text) AS submitted,"
             "COALESCE(SUM(p.outcome='correct'),0) AS correct,COALESCE(SUM(p.outcome='wrong'),0) AS wrong "
             "FROM sentence_sessions s LEFT JOIN sentence_presentations p ON p.session_id=s.id GROUP BY s.id ORDER BY s.created_at DESC")]
+        plays = [dict(row) for row in conn.execute(
+            "SELECT l.presentation_id,COUNT(*) AS listens,SUM(l.speed='slow') AS slow,p.outcome "
+            "FROM listening_plays l JOIN sentence_presentations p ON p.id=l.presentation_id "
+            "WHERE l.before_answer=1 AND p.outcome IN ('correct','wrong') GROUP BY l.presentation_id")]
+    rows, exposures, assessments, forms, errors, states, rounds = (
+        [row for row in group if (row['direction'] == 'listen_nl') == listening]
+        for group in (rows, exposures, assessments, forms, errors, states, rounds))
+    plays = plays if listening else []
     graded = [{**row, "partial_score": sentence_score.partial(row["answer_text"], row["corrected"])}
               for row in rows if row["outcome"] in {"correct", "wrong"}]
     daily, contexts, form_rows = [], [], []
@@ -99,7 +108,10 @@ def snapshot(db) -> dict:
             "word_due": sum(row["due_at"] <= time.time() for row in states),
             "pending": sum(row["answer_text"] is not None and row["outcome"] is None for row in rows),
             "partial_score": partial_score, "answers": graded,
-            "daily": daily, "scenes": contexts, "forms": form_rows, "terms": terms, "errors": errors, "rounds": rounds}
+            "daily": daily, "scenes": contexts, "forms": form_rows, "terms": terms, "errors": errors, "rounds": rounds,
+            "listens": sum(row['listens'] for row in plays), "slow_listens": sum(row['slow'] for row in plays),
+            "first_listen_answers": sum(row['listens'] == 1 and not row['slow'] for row in plays),
+            "first_listen_correct": sum(row['listens'] == 1 and not row['slow'] and row['outcome'] == 'correct' for row in plays)}
 
 
 def _terms(exposures: list[dict], assessments: list[dict], states: list[dict]) -> list[dict]:

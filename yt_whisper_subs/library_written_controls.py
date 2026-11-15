@@ -203,6 +203,7 @@ class WritingCard(controls.ContinueSurface):
         self.editor.show()
         for label in (self._verdict, self._correction, self._translation, self._targets, self._details):
             label.clear()
+            label.hide()
         self._targets.hide()
         if content.draft is None:
             self.editor.setFocus()
@@ -227,12 +228,15 @@ class WritingCard(controls.ContinueSurface):
             evidence = error["evidence"] or "missing text"
             details.append(f"• {error['kind'].replace('_', ' ')}: {evidence} → {error['correction']}\n  {error['explanation']}")
         self._details.setText("\n\n".join(details))
+        for label in (self._verdict, self._correction, self._translation, self._details):
+            label.setVisible(bool(label.text()))
         self.arm()
 
     def message(self, text: str) -> None:
         """Show an inline operation message; e.g. correction failure leaves the saved answer visible."""
 
         self._verdict.setText(text)
+        self._verdict.show()
 
 
 class WritingView(QtWidgets.QWidget):
@@ -253,9 +257,14 @@ class WritingView(QtWidgets.QWidget):
         self.bar.setFixedHeight(6)
         self.bar.setTextVisible(False)
         self.card = card
-        self.question_layout = QtWidgets.QHBoxLayout()
+        questions = QtWidgets.QWidget()
+        self.question_layout = QtWidgets.QHBoxLayout(questions)
+        self.question_layout.setContentsMargins(0, 0, 0, 0)
         self.question_layout.setSpacing(12)
         self.question_layout.addWidget(self.card, 1)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(questions)
         self.action = controls.ContinueButton("Check sentence")
         self.action.setObjectName("primaryButton")
         self.action.setMinimumSize(220, 44)
@@ -272,5 +281,6 @@ class WritingView(QtWidgets.QWidget):
         body = QtWidgets.QVBoxLayout(self)
         body.addLayout(header)
         body.addWidget(self.bar)
-        body.addLayout(self.question_layout, 1)
+        # Keep submit/next available even when long feedback or audio controls need scrolling.
+        body.addWidget(scroll, 1)
         body.addLayout(footer)

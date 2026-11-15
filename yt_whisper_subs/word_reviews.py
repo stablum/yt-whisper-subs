@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from yt_whisper_subs import sentence_practice
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS word_transfers (
@@ -39,12 +41,14 @@ FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN practice_sessions s ON s.id=p.session_id JOIN vocab_lookups l ON l.id=q.lookup_id
 WHERE p.selected_idx IS NOT NULL
 UNION ALL
-SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' ELSE 'sentence' END,r.id,r.word_id,r.lookup_id,r.direction,
+SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' WHEN q.direction='listen_nl' THEN 'listening' ELSE 'sentence' END,
+       r.id,r.word_id,r.lookup_id,r.direction,
        r.answered_at,r.elapsed_ms,r.correct,0,r.scheduler_json,r.include_early,
        CASE WHEN COALESCE(s.outcome,v.outcome)='invalid' THEN 'invalid'
             WHEN r.correct=1 THEN 'correct' ELSE 'wrong' END,l.lemma
 FROM word_transfers r JOIN vocab_lookups l ON l.id=r.lookup_id
 LEFT JOIN sentence_presentations s ON s.id=r.sentence_id LEFT JOIN verb_presentations v ON v.id=r.verb_id
+LEFT JOIN sentence_questions q ON q.id=s.question_id
 """
 
 
@@ -74,7 +78,7 @@ class WordReviewDbMixin:
         from yt_whisper_subs import practice
 
         word_id = conn.execute("SELECT word_id FROM vocab_lookups WHERE id=?", (lookup_id,)).fetchone()[0]
-        direction = row.get("direction", "en_nl")
+        direction = sentence_practice.Direction(row.get("direction", "en_nl")).word_direction.value
         source = "sentence_id" if kind == "sentence" else "verb_id"
         if conn.execute(f"SELECT 1 FROM word_transfers WHERE {source}=? AND word_id=? AND direction=?",
                         (row["id"], word_id, direction)).fetchone():
@@ -112,12 +116,13 @@ class WordReviewDbMixin:
         affected = set()
         for row in rows:
             correct = bool(row["meaning_correct"]) and row["form_correct"] != 0
+            direction = sentence_practice.Direction(row["direction"]).word_direction.value
             early = json.loads(row["options_json"])["include_early"]
             conn.execute("INSERT INTO word_transfers(word_id,lookup_id,direction,sentence_id,correct,answered_at,elapsed_ms,"
                          "scheduler_json,include_early,scheduled) VALUES(?,?,?,?,?,?,?,?,?,0)",
-                         (row["word_id"],row["lookup_id"],row["direction"],row["id"],int(correct),row["answered_at"],row["elapsed_ms"],
+                         (row["word_id"],row["lookup_id"],direction,row["id"],int(correct),row["answered_at"],row["elapsed_ms"],
                           row["scheduler_json"],int(early)))
-            affected.add((row["word_id"], row["direction"]))
+            affected.add((row["word_id"], direction))
         for word_id, direction in affected:
             self._word_replay(conn, word_id, direction)
 

@@ -5,6 +5,7 @@ Example: a wrong superlative can fail form recall while preserving credit for th
 
 from __future__ import annotations
 
+import enum
 from typing import Literal
 
 import pydantic as pd
@@ -25,14 +26,34 @@ FORMS = {"base": "Base form", "person": "Subject and person", "present": "Presen
 Form = Literal["base", "person", "present", "past", "perfect", "future", "conditional", "subjunctive",
                "imperative", "singular", "plural", "comparative", "superlative", "adjective_ending", "possessive", "diminutive"]
 ErrorKind = Literal["meaning", "omission", "extra_content", "word_order", "verb_form", "agreement", "article",
-                    "preposition", "spelling", "degree", "number", "idiom", "other"]
+                    "preposition", "spelling", "degree", "number", "idiom", "transcription", "other"]
+
+
+class Direction(str, enum.Enum):
+    """Separate dictation from translation skills; e.g. hearing Dutch does not count as English-to-Dutch writing."""
+
+    EN_NL = "en_nl"
+    NL_EN = "nl_en"
+    LISTEN = "listen_nl"
+
+    @property
+    def label(self) -> str:
+        """Name the actual exercise; e.g. dictation is heard Dutch → written Dutch."""
+
+        return "Dutch dictation" if self == self.LISTEN else practice.Direction(self.value).label
+
+    @property
+    def word_direction(self) -> practice.Direction:
+        """Share recognition priorities for listening; e.g. a missed spoken target also returns in Dutch word recognition."""
+
+        return practice.Direction.NL_EN if self == self.LISTEN else practice.Direction(self.value)
 
 
 class Options(pd.BaseModel):
     """Configure whole-sentence recall; e.g. ten English-to-Dutch questions with two saved target words each."""
 
     model_config = pd.ConfigDict(extra="forbid")
-    direction: practice.Direction = practice.Direction.EN_NL
+    direction: Direction = Direction.EN_NL
     count: int = pd.Field(default=10, ge=1, le=50)
     words: int = pd.Field(default=2, ge=1, le=3)
     scene: str = "mixed"

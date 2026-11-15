@@ -20,6 +20,7 @@ from yt_whisper_subs import library_verbs
 from yt_whisper_subs import library_word_quiz
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import sentence_practice
 
 
 _STYLE = """
@@ -43,8 +44,9 @@ class Page(enum.IntEnum):
     VERBS = 2
     SENTENCE_EN_NL = 3
     SENTENCE_NL_EN = 4
-    PROGRESS = 5
-    ACTIVITY = 6
+    LISTENING = 5
+    PROGRESS = 6
+    ACTIVITY = 7
 
     @classmethod
     def for_track(cls, track: practice_tracks.Track) -> Page:
@@ -62,17 +64,18 @@ class PracticeDialog(QtWidgets.QDialog):
         """Construct direct practice destinations with one native page state; e.g. each direction keeps its draft when another is selected."""
 
         super().__init__(parent)
-        self.setWindowTitle("Practice · vocabulary, verbs and sentences")
+        self.setWindowTitle("Practice · vocabulary, verbs, sentences and listening")
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(1160, 900)
         self._db = service.db
         self._quizzes = {direction: library_word_quiz.WordQuiz(self._db, direction, engine=engine) for direction in practice.Direction}
         self._sentences = {direction: library_sentences.SentencePanel(self._db, direction=direction) for direction in practice.Direction}
         self._verbs = library_verbs.VerbPanel(self._db)
+        self._listening = library_sentences.SentencePanel(self._db, direction=sentence_practice.Direction.LISTEN)
         self._panels = {Page.WORD_NL_EN: self._quizzes[practice.Direction.NL_EN],
                         Page.WORD_EN_NL: self._quizzes[practice.Direction.EN_NL], Page.VERBS: self._verbs,
                         Page.SENTENCE_EN_NL: self._sentences[practice.Direction.EN_NL],
-                        Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN]}
+                        Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN], Page.LISTENING: self._listening}
         self._tabs = QtWidgets.QTabWidget()
         for track in practice_tracks.Track:
             panel = self._panels[Page.for_track(track)]
@@ -98,8 +101,10 @@ class PracticeDialog(QtWidgets.QDialog):
         self._progress = library_practice_progress.ProgressPanel(self._db)
         self._verb_progress = library_verb_progress.VerbProgress(self._db)
         self._sentence_progress = library_sentence_progress.SentenceProgress(self._db)
+        self._listening_progress = library_sentence_progress.SentenceProgress(self._db, listening=True)
         self._progress_tabs = QtWidgets.QTabWidget()
-        for panel, label in ((self._progress, "Vocabulary"), (self._verb_progress, "Verbs"), (self._sentence_progress, "Sentences")):
+        for panel, label in ((self._progress, "Vocabulary"), (self._verb_progress, "Verbs"), (self._sentence_progress, "Sentences"),
+                             (self._listening_progress, "Listening")):
             self._progress_tabs.addTab(panel, label)
         self._progress_tabs.currentChanged.connect(self._refresh_progress)
         self._activity = library_practice_activity.ActivityPanel(self._db)
@@ -119,6 +124,8 @@ class PracticeDialog(QtWidgets.QDialog):
         elif idx == Page.PROGRESS:
             track = self._last_track()
             mode = {"practice": 0, "verb": 1, "sentence": 2}[track.kind]
+            if track == practice_tracks.Track.LISTENING:
+                mode = 3
             if self._progress_tabs.currentIndex() == mode:
                 self._refresh_progress()
             else:
@@ -135,7 +142,7 @@ class PracticeDialog(QtWidgets.QDialog):
             return practice_tracks.Track.WORD_NL_EN
 
     def show_page(self, activity: bool = False) -> None:
-        """Route menu and reminder entry points directly; e.g. Activity opens without starting any of the five practice destinations."""
+        """Route menu and reminder entry points directly; e.g. Activity opens without starting any practice destination."""
 
         page = Page.ACTIVITY if activity else Page.for_track(self._last_track())
         self._tabs.setCurrentIndex(page)
@@ -147,7 +154,7 @@ class PracticeDialog(QtWidgets.QDialog):
     def _refresh_progress(self, *_args) -> None:
         """Refresh only visible analytics; e.g. sentence writing history remains independent of word-choice state."""
 
-        panels = (self._progress, self._verb_progress, self._sentence_progress)
+        panels = (self._progress, self._verb_progress, self._sentence_progress, self._listening_progress)
         panels[self._progress_tabs.currentIndex()].refresh()
 
     def reject(self) -> None:

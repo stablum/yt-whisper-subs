@@ -27,6 +27,7 @@ class Day(pd.BaseModel):
     sentences: int = 0
     sentence_nl_en: int = 0
     sentence_en_nl: int = 0
+    listening: int = 0
 
 
 class Activity(pd.BaseModel):
@@ -91,7 +92,8 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
             "correct": row["outcome"] == "correct", "graded": row["outcome"] in {"correct", "wrong"},
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
             "verbs": row["direction"] == "verbs",
-            "sentences": row["direction"].startswith("sentence_"),
+            "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en"},
+            "listening": row["direction"] == "sentence_listen_nl",
             "sentence_nl_en": row["direction"] == "sentence_nl_en", "sentence_en_nl": row["direction"] == "sentence_en_nl",
         })
     if not answers:
@@ -103,6 +105,7 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
         pl.col("word_id").filter(pl.col("verbs")).n_unique().alias("verb_lemmas"),
         pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
         pl.col("sentences").sum(), pl.col("sentence_nl_en").sum(), pl.col("sentence_en_nl").sum(),
+        pl.col("listening").sum(),
     ).sort("day")
     return Activity(today=now.date(), last_day=frame["day"].max(),
                     distinct_words=frame["word_ids"].explode(empty_as_null=True).drop_nulls().n_unique(),

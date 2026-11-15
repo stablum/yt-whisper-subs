@@ -127,7 +127,7 @@ def document(kind: str, row: dict) -> dict:
     grade = row["grade"]
     if kind == "verb":
         dutch, english = grade["corrected"], grade["corrected_english"]
-    elif row["direction"] == "en_nl":
+    elif row["direction"] in {"en_nl", "listen_nl"}:
         dutch, english = grade["corrected"], row["content"]["english"]
     else:
         dutch, english = row["content"]["dutch"], grade["corrected"]

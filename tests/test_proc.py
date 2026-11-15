@@ -111,6 +111,13 @@ class ChildProcessOptionsTests(unittest.TestCase):
         self.assertEqual(minor, expected)
         self.assertEqual(modules, frozenset({"json"}))
 
+    def test_runtime_probe_rejects_an_unverified_speech_version(self) -> None:
+        """Repair an importable but incompatible native speech runtime; e.g. installing Piper 1.8 cannot bypass the tested Windows pin."""
+
+        with mock.patch.object(cfg, "PIPER_VERSION", "unavailable-test-version"):
+            _, modules = proc.python_runtime(Path(sys.executable), ("json", "piper"))
+        self.assertEqual(modules, frozenset({"json"}))
+
     @mock.patch("yt_whisper_subs.proc.managed_module_available", side_effect=AssertionError("extra probe"))
     @mock.patch("yt_whisper_subs.proc.python_runtime")
     def test_library_setup_reuses_one_runtime_probe(

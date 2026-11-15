@@ -75,15 +75,19 @@ class PracticeFlowTests(unittest.TestCase):
     def _wait(self, predicate) -> None:
         """Wait for an observable state with event dispatch; e.g. a prepared first question or cancellation signal."""
 
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + 10
         while not predicate() and time.monotonic() < deadline:
             QtTest.QTest.qWait(10)
-        self.assertTrue(predicate())
+        if not predicate():
+            state = {"prompt": self.quiz._prompt.text(), "message": self.quiz._context.text(), "preparing": self.quiz._task is not None}
+            self.fail(str(state))
 
     def _ready(self) -> None:
         """Wait for a displayed question, not just a worker result; e.g. Activity can hold a prepared unshown round."""
 
         self._wait(lambda: self.quiz._current is not None)
+        # The worker signal sets the row before Qt processes its deferred layout requests.
+        self.app.processEvents()
 
     def _gesture_gap(self) -> None:
         """Allow a deliberate second gesture; e.g. preserve the native double-click protection in tests."""

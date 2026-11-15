@@ -26,7 +26,7 @@ class SentenceOptions(QtWidgets.QWidget):
     finish_requested = QtCore.Signal()
     editing = QtCore.Signal(bool)
 
-    def __init__(self, saved: str, direction: practice.Direction) -> None:
+    def __init__(self, saved: str, direction: sentences.Direction) -> None:
         """Restore next-round preferences; e.g. English-to-Dutch writing is the default direction."""
 
         super().__init__()
@@ -34,7 +34,7 @@ class SentenceOptions(QtWidgets.QWidget):
             opts = sentences.Options.model_validate_json(saved) if saved else sentences.Options()
         except ValueError:
             opts = sentences.Options()
-        self._direction = direction
+        self._direction = sentences.Direction(direction)
         self._scene = QtWidgets.QComboBox()
         for key, label in {"mixed": "Varied everyday situations", **sentences.SCENES}.items():
             self._scene.addItem(label, key)
@@ -57,6 +57,8 @@ class SentenceOptions(QtWidgets.QWidget):
         form.addRow(note)
         restart = QtWidgets.QPushButton("New sentence round")
         restart.setAutoDefault(False)
+        if self._direction == sentences.Direction.LISTEN:
+            restart.setText("New listening round")
         restart.setObjectName("primaryButton")
         restart.clicked.connect(self._restart)
         form.addRow(restart)
@@ -65,12 +67,15 @@ class SentenceOptions(QtWidgets.QWidget):
         fields.setDefaultWidget(panel)
         self.menu.addAction(fields)
         self.menu.addSeparator()
-        self._finish = self.menu.addAction("End this sentence round", self.finish_requested)
+        ending = "End this listening round" if self._direction == sentences.Direction.LISTEN else "End this sentence round"
+        self._finish = self.menu.addAction(ending, self.finish_requested)
         self.menu.aboutToShow.connect(lambda: self.editing.emit(True))
         self.menu.aboutToHide.connect(lambda: self.editing.emit(False))
         button = QtWidgets.QToolButton()
         button.setObjectName("practiceOptions")
         button.setText("Sentence round options")
+        if self._direction == sentences.Direction.LISTEN:
+            button.setText("Listening round options")
         button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(self.menu)
         layout = QtWidgets.QHBoxLayout(self)
@@ -128,20 +133,29 @@ class SentenceCard(written.WritingCard):
                                             errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
                                             vocabulary=grade.get("vocabulary", []), summary=f"Partial score: {score:.0%}"))
         self.editor.annotate(grade, row["direction"])
-        self._source.annotate(row)
+        if row["direction"] != sentences.Direction.LISTEN:
+            self._source.annotate(row)
 
 
 class SentencePanel(library_sentence_session.SentenceSession):
     """Bind sentences to the common typed-practice flow; e.g. reopening retries the same pending translation."""
 
-    def __init__(self, db, *, direction: practice.Direction = practice.Direction.EN_NL,
+    def __init__(self, db, *, direction: sentences.Direction = sentences.Direction.EN_NL,
                  engine: sentence_service.SentenceService | None = None) -> None:
         """Create the view without generation; e.g. Progress and Activity can be opened without hidden sentence exposure."""
 
+        direction = sentences.Direction(direction)
         track = practice_tracks.Track.for_options("sentence", sentences.Options(direction=direction))
         saved = db.setting(track.settings_key, db.setting("sentence_options", ""))
-        view = written.WritingView(SentenceOptions(saved, direction), SentenceCard())
-        mode = library_written.Mode(key="sentence", settings_key=track.settings_key, label="Sentence translations", tab_name=track.label.replace("\n", " · "),
+        if direction == sentences.Direction.LISTEN:
+            from yt_whisper_subs import library_listening
+
+            card = library_listening.ListeningCard(db)
+        else:
+            card = SentenceCard()
+        view = written.WritingView(SentenceOptions(saved, direction), card)
+        mode = library_written.Mode(key="sentence", settings_key=track.settings_key,
+                                    label="Listening" if direction == sentences.Direction.LISTEN else "Sentence translations", tab_name=track.label.replace("\n", " · "),
                                     intro="Use your saved vocabulary to understand and write natural sentences in everyday situations.",
                                     view=view, ops=library_written.SessionOps.for_db(db, "sentence", direction.value))
         super().__init__(db, mode, engine=engine or sentence_service.SentenceService(db))
