@@ -34,6 +34,7 @@ class Feedback(pd.BaseModel):
     errors: list[dict]
     targets: str = ""
     vocabulary: list[dict] = pd.Field(default_factory=list)
+    summary: str = ""
 
 
 class SentenceEdit(QtWidgets.QPlainTextEdit):
@@ -210,7 +211,8 @@ class WritingCard(controls.ContinueSurface):
         """Reveal a corrected full sentence and concrete teaching feedback; e.g. mouse continuation remains a separate gesture."""
 
         self.editor.setReadOnly(True)
-        self._verdict.setText("Correct" if content.correct else "Not quite · here is the correction")
+        verdict = "Correct" if content.correct else "Not quite · here is the correction"
+        self._verdict.setText(verdict + (f" · {content.summary}" if content.summary else ""))
         self._correction.setText(content.corrected)
         self._translation.setText(content.translation)
         concepts = {lexeme["lemma"]: lexeme["meaning"] for fix in content.vocabulary

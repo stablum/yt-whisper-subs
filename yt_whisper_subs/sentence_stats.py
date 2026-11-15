@@ -10,6 +10,8 @@ from datetime import datetime
 
 import polars as pl
 
+from yt_whisper_subs import sentence_score
+
 
 _FORMS = """
 SELECT f.feature,f.correct,s.direction FROM sentence_forms f
@@ -17,7 +19,8 @@ JOIN sentence_presentations p ON p.id=f.presentation_id JOIN sentence_sessions s
 WHERE p.outcome IN ('correct','wrong')
 """
 _ANSWERS = """
-SELECT p.id,p.shown_at,p.answered_at,p.answer_text,p.elapsed_ms,p.outcome,q.direction,q.scene
+SELECT p.id,p.session_id,p.shown_at,p.answered_at,p.answer_text,p.elapsed_ms,p.outcome,q.direction,q.scene,
+       json_extract(p.grade_json,'$.corrected') AS corrected
 FROM sentence_presentations p JOIN sentence_questions q ON q.id=p.question_id
 """
 
@@ -68,14 +71,23 @@ def snapshot(db) -> dict:
             "SELECT s.id,s.direction,s.created_at,s.status,COUNT(p.id) AS planned,COUNT(p.answer_text) AS submitted,"
             "COALESCE(SUM(p.outcome='correct'),0) AS correct,COALESCE(SUM(p.outcome='wrong'),0) AS wrong "
             "FROM sentence_sessions s LEFT JOIN sentence_presentations p ON p.session_id=s.id GROUP BY s.id ORDER BY s.created_at DESC")]
-    graded = [row for row in rows if row["outcome"] in {"correct", "wrong"}]
+    graded = [{**row, "partial_score": sentence_score.partial(row["answer_text"], row["corrected"])}
+              for row in rows if row["outcome"] in {"correct", "wrong"}]
     daily, contexts, form_rows = [], [], []
+    partial_score = None
     if graded:
         frame = pl.DataFrame([{"day": datetime.fromtimestamp(row["answered_at"]).date().isoformat(),
-                               "direction": row["direction"], "scene": row["scene"], "correct": row["outcome"] == "correct"}
+                               "session_id": row["session_id"], "direction": row["direction"], "scene": row["scene"],
+                               "correct": row["outcome"] == "correct", "partial_score": row["partial_score"]}
                               for row in graded])
-        daily = frame.group_by("day", "direction").agg(pl.len().alias("attempts"), pl.col("correct").sum()).sort("day", "direction").to_dicts()
-        contexts = frame.group_by("scene", "direction").agg(pl.len().alias("attempts"), pl.col("correct").sum()).to_dicts()
+        summary = [pl.len().alias("attempts"), pl.col("correct").sum(), pl.col("partial_score").mean()]
+        daily = frame.group_by("day", "direction").agg(summary).sort("day", "direction").to_dicts()
+        contexts = frame.group_by("scene", "direction").agg(summary).to_dicts()
+        partial_score = frame["partial_score"].mean()
+        round_scores = dict(frame.group_by("session_id").agg(pl.col("partial_score").mean()).iter_rows())
+        rounds = [{**row, "partial_score": round_scores.get(row["id"])} for row in rounds]
+    else:
+        rounds = [{**row, "partial_score": None} for row in rounds]
     if forms:
         form_rows = pl.DataFrame(forms, schema_overrides={"correct": pl.Int64}).group_by("feature", "direction").agg(
             pl.col("correct").count().alias("attempts"), (pl.col("correct") == 1).sum().alias("correct"),
@@ -86,6 +98,7 @@ def snapshot(db) -> dict:
             "wrong": sum(row["outcome"] == "wrong" for row in graded), "question_due": due,
             "word_due": sum(row["due_at"] <= time.time() for row in states),
             "pending": sum(row["answer_text"] is not None and row["outcome"] is None for row in rows),
+            "partial_score": partial_score, "answers": graded,
             "daily": daily, "scenes": contexts, "forms": form_rows, "terms": terms, "errors": errors, "rounds": rounds}
 
 

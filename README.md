@@ -218,7 +218,7 @@ python .\yt_whisper_library.pyw
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS, NumPy,
-and Polars) when needed, and relaunches with `pythonw.exe`.
+Polars, and RapidFuzz) when needed, and relaunches with `pythonw.exe`.
 The window first opens the saved catalog, then scans local downloads in the
 background and refreshes the results. An overdue channel check and the
 gently paced metadata queue then run in the background without freezing the
@@ -558,8 +558,8 @@ The script expects to run on Windows. It uses:
 - `PySide6-Essentials` for the native library GUI
 - `psutil` for pausing/resuming the owned pipeline process tree and distinguishing
   live pipeline owners from crashed or reused process IDs
-- `pydantic`, `fsrs`, `numpy`, and `polars` for validated practice content, spaced review,
-  and progress analytics in the native library
+- `pydantic`, `fsrs`, `numpy`, `polars`, and `rapidfuzz` for validated practice content,
+  spaced review, word-edit sentence scores, and progress analytics in the native library
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
@@ -567,7 +567,7 @@ folder and should not depend on whichever Python packages happen to be installed
 globally.
 
 The `.pyw` library launcher bootstraps only `yt-dlp[default]`,
-`PySide6-Essentials`, `psutil`, Pydantic, FSRS, and Polars, keeping a first GUI start much smaller than a Whisper/CUDA
+`PySide6-Essentials`, `psutil`, Pydantic, FSRS, NumPy, Polars, and RapidFuzz, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
 Whisper and Torch exactly as a direct CLI run would.
@@ -2347,7 +2347,7 @@ activation is idempotent. Immutable JSON snapshots preserve the exact linguistic
 content, option order, and external scheduler state inside otherwise relational
 records. Analytics use Polars; charts render natively with Qt painting, without
 requiring QtCharts, a browser, or a server. The native launcher installs Pydantic,
-FSRS, NumPy, and Polars into its managed environment automatically. These feature
+FSRS, NumPy, Polars, and RapidFuzz into its managed environment automatically. These feature
 modules load on demand so library startup and the CLI stay lean.
 
 Run the deterministic practice tests (no OpenAI calls):
@@ -2690,7 +2690,35 @@ stock still takes priority and stays cached; this does not invalidate paid conte
 The updated mix applies when preparing a new round; in-progress answers retain
 their saved questions and history.
 
-**Progress → Sentences** contains daily accuracy and checked-sentence charts,
+**Progress → Sentences** shows a **partial sentence score** alongside whole-sentence
+accuracy. Partial credit is also visible on each corrected answer, in the new
+**Sentences** history table, and in the round and life-context tables. Its daily
+chart has separate series for English → Dutch and Dutch → English, with the
+average score and checked-answer count available on hover.
+
+The partial score measures how much of your wording survives its **minimal
+correction**, across the entire answer including supporting words. One changed
+word in ten earns 90%, even when the full sentence is not yet correct. Missing
+words, extra words, spelling/inflection changes and word-order edits reduce the
+score. Accepted synonyms or paraphrases earn full credit because the comparison
+uses your own accepted correction, rather than requiring the stored example.
+Capitalization, harmless sentence punctuation and extra spaces follow the same
+normalization as grading.
+
+The deterministic calculation is `100 × (1 − d / max(n, m))`, where `d` is the
+minimum number of word insertions, deletions and substitutions, and `n`/`m` are
+the answer/correction word counts. RapidFuzz calculates this normalized
+[Levenshtein similarity](https://rapidfuzz.github.io/RapidFuzz/Usage/distance/Levenshtein.html).
+This is a word-edit progress measure: a short meaning-changing error can still
+receive a high partial score, while whole-sentence correctness records the
+meaning error. Daily, overall, context and round averages give each graded
+sentence equal weight. Pending, uncertain and reported answers are excluded;
+missing observations appear as **—**, not invented zero scores or empty days.
+Existing saved answers receive scores immediately from their immutable answer
+and correction text, without migration, regrading, or additional API usage.
+Scores are derived rather than stored in a second mutable metrics cache.
+
+The page also contains whole-sentence accuracy and checked-sentence charts,
 saved-word exposure/meaning/form/target-use counts and due dates, grammatical-form
 accuracy, life-context accuracy, detailed mistakes and round history. Unassessable
 forms are excluded from denominators: for example, Dutch adjective endings are
@@ -2718,7 +2746,7 @@ while verbs retain their existing correction/continue flow.
 Run the deterministic sentence and native integration checks without API calls:
 
 ```powershell
-python -m unittest tests.test_sentence_practice tests.test_sentence_grading tests.test_sentence_variety tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_sentence_practice tests.test_sentence_grading tests.test_sentence_scores tests.test_sentence_variety tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 ### Word Capture Verification
@@ -3111,6 +3139,7 @@ High-level groups:
 | `yt_whisper_subs.verb_practice`, `verb_syllabus` | Typed transformation contracts, constrained Dutch syllabus and error-aware NumPy selection. |
 | `yt_whisper_subs.verb_generate`, `verb_service` | Independent linguistic generation/audit, bounded repairs, durable correction orchestration and approved-answer fast path. |
 | `yt_whisper_subs.verb_schema`, `verb_db`, `verb_stats` | Relational typed history, first-attempt transactions, schedule replay and Polars diagnostics. |
+| `yt_whisper_subs.sentence_score` | Shared local word-edit partial credit from immutable answer/correction text, including historical answers. |
 | `yt_whisper_subs.verb_catalog_db`, `verb_vocabulary` | Deduplicated vocabulary-to-verb links, contextual lexical audits and incremental import policy. |
 | `yt_whisper_subs.library_verbs`, `library_verb_controls`, `library_verb_progress` | Native sentence input/correction, verb options and inspectable learning trends. |
 | `yt_whisper_subs.library_model` | Indexed sortable Qt table, in-memory channel/search/smart-view proxy, single-pass facets, and completion-aware watched presentation. |

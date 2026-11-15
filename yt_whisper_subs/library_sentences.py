@@ -15,6 +15,7 @@ from yt_whisper_subs import library_sentence_session
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_service
+from yt_whisper_subs import sentence_score
 
 
 class SentenceOptions(QtWidgets.QWidget):
@@ -122,11 +123,12 @@ class SentenceCard(written.WritingCard):
         """Explain corrections and identify practised concepts; e.g. a superlative's meaning and form stay visible after checking."""
 
         grade = row["grade"]
+        score = sentence_score.partial(row["answer_text"], grade["corrected"])
         targets = [f"{' … '.join(word['dutch_forms'])} — {' … '.join(word['english_forms'])}" for word in row["content"]["words"]]
         self.show_feedback(written.Feedback(correct=grade["correct"], corrected=grade["corrected"],
                                             translation=grade["corrected_meaning"], explanation=grade["explanation"],
                                             errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
-                                            vocabulary=grade.get("vocabulary", [])))
+                                            vocabulary=grade.get("vocabulary", []), summary=f"Partial score: {score:.0%}"))
         self.editor.annotate(grade, row["direction"])
         self._source.annotate(row)
 
