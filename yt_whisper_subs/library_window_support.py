@@ -84,7 +84,7 @@ class WindowRuntimeMixin:
         self.check_now()
 
     def _schedule_next(self, *, initial: bool = False) -> None:
-        """Schedule against the last completed check and configured interval.
+        """Schedule and summarize the last completed channel check in local time.
 
         Example: `_schedule_next(initial=True)` catches up after app launch.
         """
@@ -97,7 +97,14 @@ class WindowRuntimeMixin:
         delay = max(1, due - now)
         self._timer.start(delay * 1000)
         when = datetime.fromtimestamp(now + delay).astimezone().strftime("%a %H:%M")
-        self._ui.next_check.setText(f"Next check: {when}")
+        checked_at = datetime.fromtimestamp(last_check).astimezone() if last_check else None
+        checked = checked_at.strftime("%d %b %H:%M") if checked_at else "never"
+        self._ui.check_status.setText(f"Last check: {checked} · Next check: {when}")
+        detail = (
+            f"Last completed channel check: {checked_at:%Y-%m-%d %H:%M:%S %Z}."
+            if checked_at else "No channel check has completed yet."
+        )
+        self._ui.check_status.setToolTip(f"{detail}\nTimes are shown in your local timezone.")
 
     def _schedule_metadata_backfill(
         self,

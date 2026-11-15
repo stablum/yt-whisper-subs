@@ -94,7 +94,7 @@ class LibraryUi(NamedTuple):
     catalog: CatalogUi
     metadata_status: QtWidgets.QLabel
     queue_status: QtWidgets.QLabel
-    next_check: QtWidgets.QLabel
+    check_status: QtWidgets.QLabel
     trace: library_widgets.ActivityTrace
 
 
@@ -246,12 +246,13 @@ class LibraryWindow(
 
         metadata_status = QtWidgets.QLabel()
         queue_status = QtWidgets.QLabel()
-        next_check = QtWidgets.QLabel()
+        check_status = QtWidgets.QLabel()
+        check_status.setObjectName("statLabel")
         self.statusBar().addPermanentWidget(queue_status)
         self.statusBar().addPermanentWidget(metadata_status)
-        self.statusBar().addPermanentWidget(next_check)
+        self.statusBar().addPermanentWidget(check_status)
         self.statusBar().showMessage("Ready")
-        return LibraryUi(header, catalog, metadata_status, queue_status, next_check, trace)
+        return LibraryUi(header, catalog, metadata_status, queue_status, check_status, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
         """Create the library filters and channel-subscription list.

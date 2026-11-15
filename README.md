@@ -1225,6 +1225,12 @@ an overdue check. Checks run only while the application process is open; closing
 the window keeps it in the system tray by default. Choose **Library → Quit** to
 stop checks completely.
 
+The bottom-right status bar quietly shows **Last check** beside **Next check**,
+using local dates and times. The last completed all-channel run is saved across
+restarts; an unfinished or cancelled run keeps the previous timestamp. Before
+the first completed run it says **Last check: never**. Hover over the times for
+the full last-check date, including seconds and timezone.
+
 These scheduled flat listings are also the normal path for updating a stream
 from live or upcoming to finished; there is no extra background per-video
 live-status poll. If a fresh listing omits a previously active status, the row
