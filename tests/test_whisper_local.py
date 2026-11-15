@@ -6,12 +6,14 @@ Example: `python -m unittest tests.test_whisper_local`.
 from __future__ import annotations
 
 import argparse
+import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from yt_whisper_subs import whisper_local
+from yt_whisper_subs import srt
 
 
 class WhisperLaunchTests(unittest.TestCase):
@@ -91,6 +93,39 @@ class WhisperLaunchTests(unittest.TestCase):
                 whisper_local.run_whisper(audio, output, root, {"whisper": Path("whisper")}, args)
 
             self.assertEqual(output.read_text(encoding="utf-8"), "old")
+
+    @mock.patch("yt_whisper_subs.whisper_local.remove_invalid_whisper_model_cache")
+    @mock.patch("yt_whisper_subs.whisper_local.proc.run")
+    def test_recovers_gap_before_publishing_whisper_output(self, run: mock.Mock, _cache: mock.Mock) -> None:
+        """Exercise the actual launch boundary; e.g. confidently recovered speech reaches the final primary SRT."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            output = root / "published.srt"
+            output.write_text("Previous yield", encoding="utf-8")
+
+            def generate(command) -> None:
+                """Produce two known cues, then the missing speech; e.g. the final file stays untouched until both succeed."""
+
+                self.assertEqual(output.read_text(), "Previous yield")
+                directory = Path(command[command.index("--output_dir") + 1])
+                if command[command.index("--output_format") + 1] == "srt":
+                    text = ("1\n00:08:14,980 --> 00:08:22,120\nEerdere tekst.\n\n"
+                            "2\n00:08:44,980 --> 00:08:52,500\nLatere tekst.\n")
+                    (directory / "video.srt").write_text(text, encoding="utf-8")
+                else:
+                    segment = {"start": 517.4, "end": 522.44, "text": "Er kan opvang geregeld worden.",
+                               "words": [{"probability": 0.95}] * 5, "avg_logprob": -0.15,
+                               "no_speech_prob": 0.01, "compression_ratio": 1.5}
+                    (directory / "video.json").write_text(json.dumps({"segments": [segment]}), encoding="utf-8")
+
+            run.side_effect = generate
+            args = argparse.Namespace(task="transcribe", language="nl", model="turbo", device="cuda", compact_line_width=50)
+            whisper_local.run_whisper(root / "video.opus", output, root, {"whisper": Path("whisper")}, args)
+            cues = srt.parse_srt(output.read_text())
+            self.assertEqual(len(cues), 3)
+            self.assertEqual(cues[1], srt.SubtitleCue(517400, 522440, "Er kan opvang geregeld worden."))
+            self.assertEqual(run.call_count, 2)
 
 
 if __name__ == "__main__":

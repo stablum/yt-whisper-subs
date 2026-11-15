@@ -62,12 +62,21 @@ class TranscriptionReviewTests(unittest.TestCase):
     def _run(self, *outputs: dict | Exception) -> mock.Mock:
         """Wrap structured replies in the normal transport; e.g. a second request can fail."""
 
-        replies = []
-        for out in outputs:
+        pending = iter(outputs)
+
+        def request(_args, payload) -> dict:
+            """Fill realistic audit coverage by default; e.g. explicit bad coverage still reaches validation."""
+
+            out = next(pending)
+            if isinstance(out, Exception):
+                raise out
             if isinstance(out, dict) and "edits" in out:
-                out = {"formatting": [], **out}
-            replies.append(out if isinstance(out, Exception) else {"output_text": json.dumps(out)})
-        api = mock.Mock(side_effect=replies)
+                cues = json.loads(payload["input"])["cues"]
+                indexes = [cue["cue"] for cue in cues if cue["editable"]]
+                out = {"formatting": [], "reviewed_cues": indexes, **out}
+            return {"output_text": json.dumps(out)}
+
+        api = mock.Mock(side_effect=request)
         with mock.patch.object(openai_client, "responses_api_request", api):
             self._review.run()
         self.assertEqual(api.call_count, len(outputs))
@@ -118,7 +127,9 @@ class TranscriptionReviewTests(unittest.TestCase):
                 self._run({"edits": [proposal]})
                 self.assertEqual(self._pair.sidecar.read_text(), self._source)
         for original, replacement in (("niet", "niets"), ("kan", "kon"), ("hen", "hun"),
-                                      ("zeven", "geven"), ("Piet", "Pien")):
+                                      ("zeven", "geven"), ("Piet", "Pien"), ("haar", "daar"),
+                                      ("hem", "hen"), ("mij", "bij"), ("nee", "neef"),
+                                      ("wil", "wit"), ("their", "there")):
             cues = [srt.SubtitleCue(0, 1000, original)]
             candidate = review.Edit(**edit(word=1, original=original, replacement=replacement))
             self.assertFalse(review._safe(candidate, cues, range(1, 2)))
@@ -129,6 +140,73 @@ class TranscriptionReviewTests(unittest.TestCase):
         self._review.begin()
         self._run({"edits": [edit(), edit()]})
         self.assertEqual(self._pair.sidecar.read_text(), self._source)
+
+    def test_reported_compound_error_is_fixed_without_rewriting_speech(self) -> None:
+        """Cover the screenshot's real failure; e.g. keep disfluency but repair middelig gebruik."""
+
+        text = ("Iemand kan ook op een gegeven moment, ziet hij helemaal geen uitweg, "
+                "en beginnen aan middelig\ngebruik.")
+        source = "1\n00:03:26,860 --> 00:03:33,160\n" + text + "\n\n"
+        self._pair.sidecar.write_text(source, encoding="utf-8")
+        self._pair.sync_archive()
+        self._review.begin()
+        proposal = edit(word=16, original="middelig gebruik", replacement="middelengebruik",
+                        context_reason="Substance use is meant, confirmed by the neighboring alcohol/drugs cue.",
+                        sound_reason="A close sound-alike recognition also split the Dutch compound.")
+        self._run({"edits": [proposal]}, verdict())
+        self.assertEqual(self._pair.sidecar.read_text(), source.replace("middelig\ngebruik", "middelengebruik"))
+        self.assertEqual(self._pair.archive.read_text(), self._pair.sidecar.read_text())
+
+    def test_compound_boundaries_do_not_allow_phrase_rewrites_or_punctuation_removal(self) -> None:
+        """Keep the exception within one lexical span; e.g. no crossing commas, names or negation."""
+
+        cases = [("middelig, gebruik", "middelig gebruik", "middelengebruik"),
+                 ("heel goed", "heel goed", "zeer goed"),
+                 ("Middelen gebruik", "middelen gebruik", "middelengebruik"),
+                 ("niet goed", "niet goed", "nietgoed"),
+                 ("te veel", "te veel", "teveel"),
+                 ("middelen gebruik", "middelen gebruik", "drugsgebruik"),
+                 ("middelig", "middelig gebruik", "middelengebruik")]
+        for text, original, replacement in cases:
+            with self.subTest(text=text, replacement=replacement):
+                candidate = review.Edit(**edit(word=1, original=original, replacement=replacement))
+                self.assertFalse(review._safe(candidate, [srt.SubtitleCue(0, 1000, text)], range(1, 2)))
+
+    def test_compound_split_and_join_preserve_surrounding_cue_text(self) -> None:
+        """Permit only close boundary repairs; e.g. word positions still refer to the unedited cue."""
+
+        for old, new in (("middelen gebruik", "middelengebruik"), ("misschienmorgen", "misschien morgen")):
+            with self.subTest(old=old, new=new):
+                source = self._source.replace("leiden", old)
+                self._pair.sidecar.write_text(source, encoding="utf-8")
+                self._pair.sync_archive()
+                self._review.begin()
+                self._run({"edits": [edit(original=old, replacement=new)]}, verdict())
+                self.assertEqual(self._pair.sidecar.read_text(), source.replace(old, new))
+
+    def test_review_coverage_must_include_all_and_only_editable_cues(self) -> None:
+        """Reject skimmed or malformed audits before checkpointing; e.g. missing or repeated cue indexes."""
+
+        for coverage in ([], [1, 1], [2], [True], "1"):
+            with self.subTest(coverage=coverage):
+                self._review.begin()
+                with self.assertRaises(RuntimeError):
+                    self._run({"edits": [], "reviewed_cues": coverage})
+                state = json.loads(review.pending_path(self._pair.archive).read_text())
+                self.assertEqual(state["next_cue"], 1)
+
+    def test_older_pending_policy_restarts_all_cues_without_changing_the_source(self) -> None:
+        """Apply the revised audit to unfinished old work; e.g. a previous clean result cannot skip the new checks."""
+
+        self._review.begin()
+        path = review.pending_path(self._pair.archive)
+        state = json.loads(path.read_text())
+        state["policy"].update(version=1, batch_cues=80)
+        state["next_cue"] = 2
+        yield_files.atomic_write(path, json.dumps(state))
+        api = self._run({"edits": []})
+        document = json.loads(api.call_args.args[1]["input"])
+        self.assertEqual([cue["cue"] for cue in document["cues"] if cue["editable"]], [1])
 
     def test_independent_verifier_can_reject_candidate(self) -> None:
         """Keep the original if the second judgment doubts the edit; e.g. both words could be spoken."""
@@ -298,7 +376,7 @@ class PipelineReviewTests(recovery.YieldRecoveryFixture, unittest.TestCase):
         self.yields.primary.sync_archive()
         self.args.english_for_dutch = False
         self.args.chapters = False
-        with mock.patch.object(openai_client, "responses_api_request", return_value={"output_text": '{"edits":[],"formatting":[]}'}) as api:
+        with mock.patch.object(openai_client, "responses_api_request", return_value={"output_text": '{"edits":[],"formatting":[],"reviewed_cues":[1]}'}) as api:
             self.assertEqual(self.runner.run(), 0)
             api.assert_not_called()
             self.args.force_transcription_review = True
@@ -348,7 +426,8 @@ class PipelineReviewTests(recovery.YieldRecoveryFixture, unittest.TestCase):
         self.whisper.side_effect = lambda _audio, target, *_args: target.write_text(recovery.cue(source), encoding="utf-8")
         fmt = {"cue": 1, "original": source, "replacement": source.capitalize() + ".", "reason": "Sentence casing/end."}
         decisions = {"decisions": [{"index": i, "approve": True, "reason": "Clear correction."} for i in (1, 2)]}
-        replies = [{"output_text": json.dumps(out)} for out in ({"edits": [edit()], "formatting": [fmt]}, decisions)]
+        proposals = {"edits": [edit()], "formatting": [fmt], "reviewed_cues": [1]}
+        replies = [{"output_text": json.dumps(out)} for out in (proposals, decisions)]
 
         def translate(primary, target, args) -> None:
             """Assert the real translation boundary sees final text; e.g. no raw ASR mistake escapes."""

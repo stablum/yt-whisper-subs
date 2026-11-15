@@ -72,7 +72,7 @@ class YieldRecoveryFixture:
         self.whisper = self.enterContext(mock.patch.object(pipeline.whisper_local, "run_whisper", side_effect=self._transcribe))
         # Exercise real transcription checkpoints while isolating all existing tests from the API.
         self.enterContext(mock.patch.object(pipeline.transcription_review.openai_client, "responses_api_request",
-            return_value={"output_text": '{"edits":[],"formatting":[]}'}))
+            return_value={"output_text": '{"edits":[],"formatting":[],"reviewed_cues":[1]}'}))
 
     def _runner(self) -> pipeline.PipelineRunner:
         """Use a fresh orchestration owner with the same durable yields.

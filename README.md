@@ -28,7 +28,8 @@ The script is optimized for this workflow:
 1. Run it on a Dutch YouTube video.
 2. Keep a local lossy video file under `~/Videos/yt-whisper-subs/videos`,
    named from the YouTube video ID.
-3. Generate Dutch subtitles locally with Whisper.
+3. Generate Dutch subtitles locally with Whisper, then retry bounded internal
+   gaps for confident speech that the first decode omitted.
 4. Compact the Dutch subtitle cues so fragmented speech becomes easier to read,
    then extend cue end times slightly into following silence. Check new
    transcriptions for rare sound-alike errors plus clear punctuation/case errors
@@ -98,7 +99,7 @@ The companion library is optimized for a second workflow:
 
 ## Important Defaults
 
-These defaults live in `cfg.py` and the preference types that own each feature:
+These defaults live in `cfg.py` and the feature modules or preference types that own them:
 
 | Area | Default |
 | --- | --- |
@@ -108,10 +109,11 @@ These defaults live in `cfg.py` and the preference types that own each feature:
 | Whisper language | `nl` |
 | Primary Whisper model | `turbo` |
 | Whisper anti-loop decoding | previous-text conditioning off; word timestamps and hallucination silence skipping on |
+| Whisper gap recovery | one extra decode for up to 8 internal gaps of 8–30 seconds; only confident speech inside those gaps is inserted |
 | English translation provider | `openai` |
 | OpenAI translation model | `gpt-6-luna` |
 | OpenAI reasoning effort | `medium` |
-| Primary transcription review | enabled for new `transcribe` output; same Luna model/effort; 80 cues plus 3 neighbors per side; independent verification of candidates |
+| Primary transcription review | enabled for new `transcribe` output; same Luna model/effort; 40 cues plus 3 neighbors per side; explicit cue coverage and independent verification of candidates |
 | Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
@@ -1484,6 +1486,29 @@ The script also checks and removes corrupt or zero-byte Whisper model cache file
 when it can infer the expected SHA-256 from Whisper's model URL. This protects
 against interrupted model downloads.
 
+### Recovering Missing Speech
+
+Since `0.5.24`, Whisper's generated SRT is checked for internal gaps of 8–30
+seconds before compaction or gap extension can mask them. At most eight ranges
+are retried together in one extra Whisper process, using `--clip_timestamps`
+on the cached audio. The configured model, language and anti-loop controls stay
+the same. Normal short pauses, leading/trailing silence and longer gaps do not
+trigger this retry. The original download is reused.
+
+Only additional cues wholly inside a genuinely uncovered range are eligible;
+overlapping existing cues do not create false gaps. A recovered segment needs
+at least three words, mean word probability ≥0.8, average log probability ≥−0.5,
+no-speech probability ≤0.35, and compression ratio ≤2.0. Non-finite scores,
+overlapping recovered cues and repeated output are rejected. Existing text and
+timings remain intact. The result then follows the normal compaction, Luna
+review, translation and chapter pipeline. This recovered five omitted cues in
+the reported 8:22–8:45 interval of `OaWX4D3P6rk` in a local audio test.
+
+These are conservative decoder-confidence checks, not a guarantee of complete
+audio coverage; short or uncertain speech can remain omitted. A text-only Luna
+review cannot reconstruct missing audio. Completed cached subtitles do not
+automatically rerun Whisper when the application is upgraded.
+
 ## Conservative Transcription Review
 
 Since `0.5.15`, new primary subtitles from `--task transcribe` automatically get
@@ -1494,19 +1519,28 @@ enables this by default. The pass shares `--openai-translation-model` (default
 retry settings with translation. It runs even when English generation is off
 or uses Whisper; `--task translate` is not reviewed as an original transcript.
 
-The model reviews chronological batches of at most 80 cues, with three
-read-only neighboring cues on each side. It proposes sparse changes rather
+The model reviews chronological batches of at most 40 cues, with three
+read-only neighboring cues on each side. Every editable cue must be accounted
+for exactly once; missing, duplicate or out-of-range coverage stops the batch.
+It proposes sparse changes rather
 than a rewritten SRT. A separate, fresh verification request checks eligible
 candidates; clean batches need only one request. Both requests use strict
 [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
 with local validation of the permitted edits:
 
-- Word corrections must replace one exact, lowercase word with one close word,
+- Word corrections normally replace one exact, lowercase word with one close word,
   only when the original is clearly wrong in context and the replacement sounds
   nearly identical. Doubt means keep the original. Local guards allow at most
-  two letter edits, a spelling-distance ratio of 0.34, one changed word per cue,
-  and 1% of words per batch and whole transcript, rounded down with a minimum
-  allowance of one. Suspiciously dense batches are rejected. Names, numbers,
+  two letter edits and a spelling-distance ratio of 0.34. A narrow exception
+  permits joining two adjacent words into one compound, or splitting one into
+  two, with the same letter-distance limits after removing the space. For
+  example, `middelig gebruik` can become `middelengebruik` when the surrounding
+  substance-use discussion makes the error clear. Both words must belong to
+  the same cue, each token must have at least three letters, and no intervening
+  punctuation may be removed. General phrase replacements are rejected.
+  There is at most one correction span per cue and one span per 100 words per
+  batch and whole transcript, rounded down with a minimum allowance of one.
+  Suspiciously dense batches are rejected. Names, numbers,
   quantities, pronouns, negation and modal verbs are excluded by the prompt;
   local guards additionally protect capitalized words and common Dutch/English
   negation, pronouns, number words and modals.
@@ -1517,10 +1551,15 @@ with local validation of the permitted edits:
   boundaries may continue across cues, so a cue end alone is no reason to add
   a period. These changes do not consume the rare-word correction allowance.
 - No grammar cleanup, paraphrasing, additions, deletions, translation or factual
-  correction is allowed. The verifier defaults to rejecting doubtful changes.
+  correction is allowed. Clear malformed words are checked even when the
+  surrounding spoken grammar is rough; that surrounding grammar stays as spoken.
+  The verifier defaults to rejecting doubtful changes. A proposed compound
+  correction must resolve the complete compound instead of leaving a partial fix.
 
 Only approved changes are applied to exact original text spans. Cue count,
-timestamps, line breaks and other text stay intact. The finalized primary SRT
+timestamps and other text stay intact. Existing line breaks are preserved except
+inside an approved compound span, where joining across a wrapped line can remove
+that line break. The finalized primary SRT
 then becomes the source for OpenAI English translation and chapters. Whisper
 audio translation continues to work independently from the audio.
 
@@ -1535,6 +1574,12 @@ transcriptions. External changes to either subtitle copy are preserved and
 require an explicit fresh review. A fresh review uses the playback sidecar;
 any differing archive text is retained in its audit JSON. These files are included in the library's
 normal exact per-video removal manifest.
+
+Version `0.5.24` adds compound repairs, smaller batches and explicit cue coverage.
+Unfinished reviews from an older policy restart their audit using the stored
+original text. Completed older reviews remain cached until explicitly requested
+again. Logs now include proposed word edits and the verifier's approval or
+rejection reasons, so a missed correction can be traced.
 
 Existing completed subtitles remain cached on ordinary runs. To review an
 existing video without downloading it or running Whisper again:
@@ -2949,6 +2994,8 @@ The split is intentionally responsibility-oriented:
   downloads.
 - `media.py` owns local video paths and audio extraction.
 - `whisper_local.py` owns Whisper execution and model-cache validation.
+- `whisper_gaps.py` owns bounded uncovered-audio retries, confidence filtering,
+  and insertion without replacing existing speech.
 - `transcription_review.py` owns conservative primary word/punctuation/case
   proposals, local edit limits, independent verification and resumable auditing.
 - `srt.py` owns the subtitle cue model, SRT parsing/rendering, compaction, and
@@ -3117,6 +3164,7 @@ High-level groups:
 | `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, response text extraction, JSON cleanup, and shared usage reporting. |
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
 | `yt_whisper_subs.transcription_review` | Sparse primary word/punctuation/case correction, exact-span edits, verification, original-source audit and batch checkpoints. |
+| `yt_whisper_subs.whisper_gaps` | Bounded internal audio-gap retries with the same Whisper policy, confidence filtering and preservation of existing cues. |
 | `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
 | `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |
 | `yt_whisper_subs.subtitle_files` | `SubtitlePair` sidecar/archive hydration, syncing, backups, timing alignment, and finalization. |
@@ -3374,10 +3422,21 @@ whole-file mode, and resuming only reviewed checkpoints. They also check the
 Luna defaults and model-specific reasoning validation.
 
 Transcription tests cover verified sound-alike replacements, lexical limits,
+the reported `middelig gebruik` compound confusion, joins/splits inside one cue,
+strict cue coverage and restarting an unfinished older-policy review,
 punctuation/case isolation, quantity/whitespace protection, doubtful candidate
 rejection, exact timestamp/line-break preservation, partial publication and
 batch recovery, external edits, GUI issue invalidation, the local opt-out, and
 explicit review of cached subtitles without rerunning Whisper.
+
+Audio-gap tests cover bounded internal ranges, overlapping original cues,
+absolute retry timestamps, preservation of existing speech, reuse of decoding
+policy, confidence/no-speech checks, non-finite scores, repeated noise output,
+and skipping ordinary short pauses. Run them without CUDA with:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_whisper_local tests.test_whisper_gaps -v
+```
 
 Check compaction routing for default OpenAI mode:
 

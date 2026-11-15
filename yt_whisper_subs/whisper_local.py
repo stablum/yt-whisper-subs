@@ -15,6 +15,7 @@ from pathlib import Path
 
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
+from yt_whisper_subs import whisper_gaps
 from yt_whisper_subs import yield_files
 
 
@@ -72,6 +73,7 @@ def run_whisper(
         if issue := srt.file_issue(generated_srt):
             raise RuntimeError(f"Whisper finished, but its subtitles {issue}: {generated_srt}")
 
+        whisper_gaps.recover(generated_srt, whisper_cmd, args)
         yield_files.atomic_copy(generated_srt, srt_path)
 
 
