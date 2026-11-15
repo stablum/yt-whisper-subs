@@ -59,7 +59,7 @@ class SentenceReviewDbMixin:
             if row["flagged_at"] is not None:
                 raise ValueError("This sentence exercise has been reported")
             content = json.loads(row["body_json"])
-            grade.check(row["answer_text"], content)
+            grade.check(row["answer_text"], content, row["direction"])
             policy = practice.ReviewPolicy(row["scheduler_json"])
             self._sentence_assess(conn, row, grade, policy)
             previous = self._sentence_question_reviews(conn, row["question_id"], before=(row["answered_at"], row["id"]))

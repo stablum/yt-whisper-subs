@@ -176,6 +176,20 @@ class SentenceTests(unittest.TestCase):
         self.engine.check(row["id"], lambda _: None)
         self.assertEqual(practice_activity.read(self.db).answers, 1)
 
+    def test_source_highlight_evidence_must_belong_to_the_original_sentence(self) -> None:
+        """Reject invented source alignment before recording learning; e.g. a correction cannot highlight words absent from the prompt."""
+
+        row = self.db.sentence_current(self._round())
+        answer = fixtures.DUTCH.replace("slimste", "slimmere")
+        grade = self.provider.grade({"exercise": row["content"], "direction": row["direction"], "learner_answer": answer})
+        grade.errors[0].source_forms = ["invented source wording"]
+        self.provider.grade_result = grade
+        self.db.sentence_submit(row["id"], answer, 1000)
+        with self.assertRaisesRegex(ValueError, "original source sentence"):
+            self.engine.check(row["id"], lambda _: None)
+        self.assertIsNone(self.db.sentence_get(row["id"])["outcome"])
+        self.assertIsNone(self.db.sentence_get(row["id"])["viewed_at"])
+
     def test_report_retains_effort_and_removes_all_grading_influence(self) -> None:
         """Quarantine defective bilingual content; e.g. original typed evidence survives while word/form estimates and schedules rebuild."""
 
@@ -290,7 +304,7 @@ class SentenceTests(unittest.TestCase):
         provider = sentence_generate.SentenceGenerator()
         self.assertEqual(provider.generate([document], opts.direction, []), [item])
         result = provider.grade(grade_doc)
-        result.check(wrong, item["draft"])
+        result.check(wrong, item["draft"], "en_nl")
         self.assertEqual(request.call_count, 3)
         for call in request.call_args_list:
             args, payload = call.args

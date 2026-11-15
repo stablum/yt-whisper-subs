@@ -59,3 +59,38 @@ class SentenceReviewTests(unittest.TestCase):
         spans = review.marks("The road is certain.", grade, "nl_en")
         self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0].correction, "safer")
+
+    def test_source_highlights_use_bilingual_evidence_in_both_directions(self):
+        """Highlight corresponding source concepts without guessing translations; e.g. safer links to veiliger even for supporting vocabulary."""
+
+        content = {"english": "A safer road.", "dutch": "Een veiliger pad.",
+                   "words": [{"word_id": 1, "dutch_forms": ["veiliger"], "english_forms": ["safer"]}]}
+        for direction, source, corrected in (("en_nl", "english", "veiliger"), ("nl_en", "dutch", "safer")):
+            with self.subTest(direction=direction):
+                grade = {"errors": [{"word_ids": [1], "correction": corrected, "explanation": "Safety differs from certainty."}],
+                         "vocabulary": []}
+                row = {"direction": direction, "content": content, "grade": grade}
+                spans = review.source_marks(row)
+                expected = "safer" if direction == "en_nl" else "veiliger"
+                self.assertEqual([content[source][mark.start:mark.end] for mark in spans], [expected])
+                self.assertEqual(spans[0].correction, corrected)
+
+    def test_source_annotations_are_literal_and_clear_before_the_next_question(self):
+        """Render safe local hover links only after feedback; e.g. original angle brackets stay literal and no correction leaks into the next task."""
+
+        label = review.SourceLabel()
+        self.addCleanup(label.close)
+        source = "A <safer> & calmer road."
+        label.setText(source)
+        row = {"direction": "en_nl", "content": {"english": source, "words": []},
+               "grade": {"errors": [{"source_forms": ["safer"], "word_ids": [], "correction": "veiliger", "explanation": "Use the safety concept."}]}}
+        label.annotate(row)
+        document = QtGui.QTextDocument()
+        document.setHtml(label.text())
+        self.assertEqual(document.toPlainText(), source)
+        self.assertIn('href="error:0"', label.text())
+        label.linkHovered.emit("error:0")
+        self.assertIn("veiliger", QtWidgets.QToolTip.text())
+        label.setText("Another sentence <unchanged>.")
+        self.assertEqual(label.text(), "Another sentence <unchanged>.")
+        self.assertEqual(label.textFormat(), QtCore.Qt.TextFormat.PlainText)

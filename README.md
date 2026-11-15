@@ -2548,11 +2548,29 @@ A narrow question overview stays on the left: **○** unanswered, amber **…**
 queued, blue **↻** checking, green **✓** correct, red **✕** to revisit, orange
 **!** needing a retry, and **−** reported. Hover a marker for its full status;
 click a previously visited question to restore its exact answer and correction.
-**Next unanswered** returns to writing. Unvisited later questions remain disabled.
+A bold result with **•** means its correction has not been viewed; the dot clears
+when feedback is displayed on the active Sentences page in the focused window.
+Opening a pending answer, viewing statistics, or receiving a correction on a
+hidden tab, in a minimized window, or behind another application does not mark it
+consulted. The first-view timestamp persists across app restarts without adding
+practice activity or changing learning scores.
+
+Clicking the feedback page, its highlighted source text, or **Next question /
+Next correction** walks forward through the session's questions and answers in
+order, including later answers already reviewed. The end panel appears only
+after the last available answer, then directs you to any remaining unseen
+feedback. Unvisited later questions remain disabled until reached while writing.
 Drafts autosave and survive moving between questions, tabs and app restarts;
-submitted first attempts stay read-only. After the final answer, the overview
-remains available for review while outstanding corrections arrive. Results never
-interrupt a different question or replace what you are typing.
+submitted first attempts stay read-only. After the final submission, the first
+available unseen correction opens automatically. If none is ready, a waiting
+summary shows the current results and outstanding count, then opens new feedback
+when it arrives. It does not interrupt another answer you are already reviewing.
+Once all corrections have been viewed, **Round reviewed** shows correct,
+to-revisit and submitted counts. Failed checks have a distinct retry state.
+The sidebar remains available throughout. Reopening restores unseen feedback in
+the selected direction ahead of never-opened prepared stock; an explicit new
+round and an already-started writing round retain priority. Results never replace
+what you are typing.
 
 Both goals matter: learn the saved vocabulary and write correct Dutch across
 home, shopping, work, travel, food, appointments, social life, hobbies and public
@@ -2586,12 +2604,19 @@ Corrections cover the **whole sentence**, including supporting words, meaning,
 negation, word order, spelling, articles, agreement and inflection. Feedback
 shows the corrected sentence, its meaning back in the source language, concrete
 error spans with explanations, and the practised Dutch forms and English meanings.
-The actual mistaken words or phrases in your original answer stand out in bold
-amber with a warm background and underline. Hover them to see their specific
+The actual mistaken words or phrases in your answer, and the corresponding words
+in the **original question**, stand out in bold amber with a warm background and
+underline. Hover either text to see its specific
 correction and explanation just below the pointer. This reuses saved grammar and
 vocabulary evidence, including supporting-word confusions; no hover API call is
-made. Repeated evidence is highlighted at each whole-word occurrence. Missing text
-remains explained in the feedback rather than falsely marking a valid word.
+made. Source alignment uses saved bilingual vocabulary spans plus exact
+`source_forms` returned inside the existing correction response for grammar and
+supporting-word errors. Those spans must occur in the original source sentence
+before grading can commit. Existing feedback can reuse its saved target-word and
+lexical evidence without regrading. Repeated evidence is highlighted at each
+whole-word occurrence. Missing text remains explained in the feedback rather than
+falsely marking a valid word; genuinely global errors need no fabricated source
+span. Source highlights and hover translations remain hidden on fresh questions.
 Valid synonyms and natural alternative phrasing are accepted. In English → Dutch,
 using a different valid Dutch synonym earns sentence credit but does not certify
 recall of the saved lexeme; that word stays eligible for vocabulary review.
@@ -2635,11 +2660,11 @@ does not generate or expose questions. **Activity** and the calendar add an oran
 its distinct saved targets. A submitted answer quiets the shared reminder even
 when correction is pending, preserving the 24-hour spacing rule.
 
-Twelve relational tables share the existing SQLite catalog: `sentence_questions`,
+Thirteen relational tables share the existing SQLite catalog: `sentence_questions`,
 `sentence_question_words`, `sentence_sessions`, `sentence_presentations`,
 `sentence_assessments`, `sentence_forms`, `sentence_errors`, `sentence_error_words`,
 rebuildable `sentence_states` and `sentence_question_states`, plus durable
-`sentence_checks` and `sentence_drafts`. Foreign keys link
+`sentence_checks`, `sentence_drafts` and `sentence_feedback_views`. Foreign keys link
 targets to their original vocabulary lookups and captured-video context. Immutable
 bilingual snapshots, quality verdicts, first-display/submission/grading timestamps,
 elapsed time, exact model/prompt policy, serialized scheduler parameters and

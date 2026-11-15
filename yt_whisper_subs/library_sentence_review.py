@@ -29,6 +29,29 @@ def marks(text: str, grade: dict, direction: str) -> list[Mark]:
     evidence = [(row["evidence"], row["correction"], row["explanation"]) for row in grade["errors"]]
     target = "dutch" if direction == "en_nl" else "english"
     evidence.extend((row["typed"], " … ".join(row[target]), row["note"]) for row in grade.get("vocabulary", []))
+    return _locate(text, evidence)
+
+
+def source_marks(row: dict) -> list[Mark]:
+    """Map mistakes back to their source concepts; e.g. a wrong slimmere highlights cleverest in the English question."""
+
+    source, target = ("english", "dutch") if row["direction"] == "en_nl" else ("dutch", "english")
+    grade, content = row["grade"], row["content"]
+    words = {word["word_id"]: word for word in content["words"]}
+    evidence = []
+    for error in grade["errors"]:
+        forms = error.get("source_forms", [])
+        if not forms:
+            forms = [form for word_id in error["word_ids"] if word_id in words for form in words[word_id][source + "_forms"]]
+        evidence.extend((form, error["correction"], error["explanation"]) for form in forms)
+    for fix in grade.get("vocabulary", []):
+        evidence.extend((form, " … ".join(fix[target]), fix["note"]) for form in fix[source])
+    return _locate(content[source], evidence)
+
+
+def _locate(text: str, evidence: list[tuple[str, str, str]]) -> list[Mark]:
+    """Share exact whole-word evidence matching across both texts; e.g. zeker never marks the unrelated zekerdere."""
+
     result, seen = [], set()
     for original, correction, explanation in evidence:
         if not original:
@@ -42,6 +65,67 @@ def marks(text: str, grade: dict, direction: str) -> list[Mark]:
                 seen.add(key)
                 result.append(Mark(start=found.start(), end=found.end(), correction=correction, explanation=explanation))
     return result
+
+
+def show_tip(matching: list[Mark], global_pos, widget) -> None:
+    """Render literal teaching feedback below either text; e.g. source and answer highlights share one escaped tooltip style."""
+
+    if not matching:
+        QtWidgets.QToolTip.hideText()
+        return
+    rows = [f"<b style='color:#83e5af'>{html.escape(row.correction)}</b><br>{html.escape(row.explanation)}" for row in matching]
+    text = "<div style='max-width:440px;font-size:12pt'>" + "<br><br>".join(rows) + "</div>"
+    QtWidgets.QToolTip.showText(global_pos + QtCore.QPoint(12, 20), text, widget)
+
+
+class SourceLabel(QtWidgets.QLabel):
+    """Keep the source sentence literal until feedback, then highlight its affected concepts; e.g. no translation is exposed during writing."""
+
+    continued = QtCore.Signal()
+
+    def __init__(self) -> None:
+        """Use local hover links without opening URLs; e.g. clicking a highlighted phrase still continues the review."""
+
+        super().__init__()
+        self._plain = ""
+        self._marks: list[Mark] = []
+        self.setOpenExternalLinks(False)
+        self.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.linkHovered.connect(self._hover)
+        self.linkActivated.connect(lambda _link: self.continued.emit())
+
+    def setText(self, text: str) -> None:
+        """Reset annotations whenever another question is displayed; e.g. literal angle brackets never become markup."""
+
+        self._plain = text
+        self._marks = []
+        self.setTextFormat(QtCore.Qt.TextFormat.PlainText)
+        QtWidgets.QToolTip.hideText()
+        super().setText(text)
+
+    def annotate(self, row: dict) -> None:
+        """Render nonoverlapping rich-text regions with all relevant explanations; e.g. grammar and lexical feedback can refer to the same source word."""
+
+        self._marks = source_marks(row)
+        points = sorted({0, len(self._plain), *(mark.start for mark in self._marks), *(mark.end for mark in self._marks)})
+        parts = []
+        for start, end in zip(points, points[1:]):
+            text = html.escape(self._plain[start:end]).replace("\n", "<br>")
+            matching = [str(idx) for idx, mark in enumerate(self._marks) if mark.start <= start and mark.end >= end]
+            if matching:
+                key = ",".join(matching)
+                text = (f'<a href="error:{key}" style="color:#ffd166;background-color:#59333b;'
+                        f'text-decoration:underline;font-weight:700">{text}</a>')
+            parts.append(text)
+        self.setTextFormat(QtCore.Qt.TextFormat.RichText)
+        super().setText("".join(parts))
+
+    def _hover(self, link: str) -> None:
+        """Use the same correction popup as the answer editor; e.g. hovering cleverest teaches the expected slimste."""
+
+        indices = link.removeprefix("error:").split(",") if link else []
+        matching = [self._marks[int(idx)] for idx in indices if idx.isdigit() and int(idx) < len(self._marks)]
+        show_tip(matching, QtGui.QCursor.pos(), self)
 
 
 class ReviewEdit(written.SentenceEdit):
@@ -109,12 +193,7 @@ class ReviewEdit(written.SentenceEdit):
         encoded = self.toPlainText().encode("utf-16-le")[:offset * 2]
         idx = len(encoded.decode("utf-16-le", errors="ignore"))
         matching = [row for row in self._marks if row.start <= idx < row.end]
-        if not matching:
-            QtWidgets.QToolTip.hideText()
-            return
-        rows = [f"<b style='color:#83e5af'>{html.escape(row.correction)}</b><br>{html.escape(row.explanation)}" for row in matching]
-        text = "<div style='max-width:440px;font-size:12pt'>" + "<br><br>".join(rows) + "</div>"
-        QtWidgets.QToolTip.showText(global_pos + QtCore.QPoint(12, 20), text, self.viewport())
+        show_tip(matching, global_pos, self.viewport())
 
 
 class QuestionRail(QtWidgets.QListWidget):
@@ -149,10 +228,15 @@ class QuestionRail(QtWidgets.QListWidget):
             symbol, color, title = states.get(state, ("○", "#9aa7b7", "Not answered"))
             # A pointer keeps current-question feedback visible without replacing its outcome colour with selection blue.
             pointer = "›" if row["id"] == current else " "
-            item = QtWidgets.QListWidgetItem(f"{pointer} {row['ordinal']:02} {symbol}")
+            unseen = row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None
+            item = QtWidgets.QListWidgetItem(f"{pointer} {row['ordinal']:02} {symbol}{'•' if unseen else ''}")
             item.setData(QtCore.Qt.ItemDataRole.UserRole, row["id"])
             item.setForeground(QtGui.QColor(color))
-            item.setToolTip(f"Question {row['ordinal']} · {title}" + (f"\n{row['error']}" if row["error"] else ""))
+            consulted = " · Not viewed yet" if unseen else (" · Viewed" if row["viewed_at"] is not None else "")
+            item.setToolTip(f"Question {row['ordinal']} · {title}{consulted}" + (f"\n{row['error']}" if row["error"] else ""))
+            font = item.font()
+            font.setBold(unseen)
+            item.setFont(font)
             if row["shown_at"] is None and row["id"] != next_id:
                 item.setFlags(item.flags() & ~QtCore.Qt.ItemFlag.ItemIsEnabled)
             if row.get("session_status") != "active" and row["answer_text"] is None and row["outcome"] is None:

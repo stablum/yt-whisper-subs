@@ -140,6 +140,7 @@ class Error(practice.Content):
     evidence: str = pd.Field(max_length=2000)
     correction: str = pd.Field(min_length=1, max_length=1000)
     explanation: str = pd.Field(min_length=3, max_length=900)
+    source_forms: list[str] = pd.Field(max_length=8)
 
 
 class Grade(practice.Content):
@@ -154,7 +155,7 @@ class Grade(practice.Content):
     errors: list[Error] = pd.Field(max_length=15)
     vocabulary: list[learning.Correction] = pd.Field(max_length=10)
 
-    def check(self, answer: str, content: dict) -> None:
+    def check(self, answer: str, content: dict, direction: str) -> None:
         """Reject fabricated or inconsistent diagnostics; e.g. a whole-sentence failure cannot blindly punish unrelated words."""
 
         expected = {row["word_id"]: set(row["features"]) for row in content["words"]}
@@ -166,7 +167,10 @@ class Grade(practice.Content):
         if self.correct != (verb_practice.normalized(self.corrected) == verb_practice.normalized(answer)):
             raise ValueError("Correction contradicts the punctuation and spelling policy")
         affected = set()
+        source = content["english" if direction == "en_nl" else "dutch"]
         for error in self.errors:
+            if any(not form.strip() or form not in source for form in error.source_forms):
+                raise ValueError("Correction evidence was absent from the original source sentence")
             if error.evidence and error.evidence.casefold() not in answer.casefold():
                 raise ValueError("Correction evidence was absent from the submitted sentence")
             if len(error.word_ids) != len(set(error.word_ids)) or not set(error.word_ids) <= set(words):

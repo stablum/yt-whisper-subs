@@ -100,10 +100,12 @@ class FakeSentenceProvider:
         if degree:
             evidence, correction = ("slimmere", "slimste") if nl else ("cleverer", "cleverest")
             errors.append(sentences.Error(kind="degree", word_ids=affected, evidence=evidence, correction=correction,
+                                          source_forms=["cleverest"] if nl else ["slimste"],
                                           explanation="The source asks for the superlative, not the comparative."))
         if syntax:
             evidence, correction = ("eventueel zou", "zou eventueel") if nl else ("possibly would", "would possibly")
             errors.append(sentences.Error(kind="word_order", word_ids=[], evidence=evidence, correction=correction,
+                                          source_forms=["would possibly"] if nl else ["zou eventueel"],
                                           explanation="Correct the finite-verb position while keeping the target meanings."))
         corrected = content["dutch"] if nl else content["english"]
         return sentences.Grade(confident=True, correct=not errors, corrected=corrected if errors else answer,

@@ -129,11 +129,11 @@ class WritingCard(controls.ContinueSurface):
 
     submitted = QtCore.Signal()
 
-    def __init__(self, editor: SentenceEdit | None = None) -> None:
+    def __init__(self, editor: SentenceEdit | None = None, source: QtWidgets.QLabel | None = None) -> None:
         """Keep the answer area spacious and stable; e.g. show the original sentence above the rewrite."""
 
         super().__init__()
-        self._source = QtWidgets.QLabel()
+        self._source = source if source is not None else QtWidgets.QLabel()
         self._source.setStyleSheet("font-size: 23pt; font-weight: 600; color: #ffd166; padding: 12px 0;")
         self.meaning = SentenceMeaning()
         self._target = QtWidgets.QLabel()

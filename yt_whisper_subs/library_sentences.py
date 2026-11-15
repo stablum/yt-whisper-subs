@@ -102,7 +102,9 @@ class SentenceCard(written.WritingCard):
     def __init__(self) -> None:
         """Use an evidence-aware answer editor; e.g. graded words reveal their local correction on hover."""
 
-        super().__init__(editor=library_sentence_review.ReviewEdit())
+        super().__init__(editor=library_sentence_review.ReviewEdit(), source=library_sentence_review.SourceLabel())
+        self._source.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self._source.continued.connect(self.request_continue)
 
     def present(self, row: dict) -> None:
         """Hide both the model answer and saved-word clues; e.g. Dutch-to-English practice cannot reveal English help first."""
@@ -126,6 +128,7 @@ class SentenceCard(written.WritingCard):
                                             errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
                                             vocabulary=grade.get("vocabulary", [])))
         self.editor.annotate(grade, row["direction"])
+        self._source.annotate(row)
 
 
 class SentencePanel(library_sentence_session.SentenceSession):

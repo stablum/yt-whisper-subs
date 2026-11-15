@@ -96,6 +96,7 @@ class SharedLearningTests(unittest.TestCase):
                                  corrected_meaning=DUTCH if reverse else ENGLISH,
                                  explanation="Use the concept safe rather than certain.", words=words,
                                  errors=[sentences.Error(kind="meaning",word_ids=[],evidence="more certain" if reverse else "zekerder",
+                                                          source_forms=["veiliger"] if reverse else ["safer"],
                                                           correction="safer" if reverse else "veiliger", explanation="Safe and certain differ.")],
                                  vocabulary=[self._fix(reverse=reverse)] if capture else [])
         self.provider.grade_result = grade

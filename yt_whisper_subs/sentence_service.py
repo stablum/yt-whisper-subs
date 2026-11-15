@@ -180,7 +180,7 @@ class SentenceService:
                                      explanation=content["explanation"], words=words, errors=[], vocabulary=[])
         else:
             grade = self._provider.grade({"direction": row["direction"], "exercise": content, "learner_answer": row["answer_text"]})
-        grade.check(row["answer_text"], content)
+        grade.check(row["answer_text"], content, row["direction"])
         report("Saving sentence and vocabulary feedback…")
         return self._db.sentence_grade(presentation_id, grade, {"model": "approved_exact_match" if exact else self._provider.model,
                                                               "reasoning": "none" if exact else self._provider.reasoning,

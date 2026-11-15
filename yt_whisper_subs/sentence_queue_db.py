@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS sentence_drafts (
     text TEXT NOT NULL,
     elapsed_ms INTEGER NOT NULL CHECK(elapsed_ms>=0)
 );
+CREATE TABLE IF NOT EXISTS sentence_feedback_views (
+    presentation_id INTEGER PRIMARY KEY REFERENCES sentence_presentations(id),
+    viewed_at REAL NOT NULL
+);
 """
 
 
@@ -32,11 +36,31 @@ class SentenceQueueDbMixin:
         """Read a compact outline without exposing questions; e.g. the rail shows pending and graded answers across a whole round."""
 
         with self._connect() as conn:
-            rows = conn.execute("SELECT p.id,p.ordinal,p.shown_at,p.answer_text,p.outcome,c.state,c.error,s.status AS session_status "
+            rows = conn.execute("SELECT p.id,p.ordinal,p.shown_at,p.answer_text,p.outcome,c.state,c.error,s.status AS session_status,v.viewed_at "
                                 "FROM sentence_presentations p JOIN sentence_sessions s ON s.id=p.session_id "
                                 "LEFT JOIN sentence_checks c ON c.presentation_id=p.id "
+                                "LEFT JOIN sentence_feedback_views v ON v.presentation_id=p.id "
                                 "WHERE p.session_id=? ORDER BY p.ordinal", (session_id,))
             return [dict(row) for row in rows]
+
+    def sentence_seen(self, presentation_id: int) -> float | None:
+        """Record only visible, usable feedback, once; e.g. opening a pending answer or statistics cannot mark a correction consulted."""
+
+        with self._connect() as conn:
+            conn.execute("INSERT OR IGNORE INTO sentence_feedback_views SELECT id,? FROM sentence_presentations "
+                         "WHERE id=? AND outcome IN ('correct','wrong') AND grade_json IS NOT NULL", (time.time(), presentation_id))
+            row = conn.execute("SELECT viewed_at FROM sentence_feedback_views WHERE presentation_id=?", (presentation_id,)).fetchone()
+            return row[0] if row else None
+
+    def sentence_unseen_session(self, direction: str) -> str | None:
+        """Recover unread feedback ahead of unused stock; e.g. app restart cannot strand a completed round's unseen corrections."""
+
+        with self._connect() as conn:
+            row = conn.execute("SELECT s.id FROM sentence_sessions s WHERE s.direction=? AND EXISTS(SELECT 1 FROM sentence_presentations p "
+                               "WHERE p.session_id=s.id AND p.outcome IN ('correct','wrong') "
+                               "AND NOT EXISTS(SELECT 1 FROM sentence_feedback_views v WHERE v.presentation_id=p.id)) "
+                               "ORDER BY s.created_at DESC LIMIT 1", (direction,)).fetchone()
+            return row[0] if row else None
 
     def sentence_open(self, presentation_id: int) -> dict:
         """Mark only the explicitly opened question visible; e.g. revisiting a corrected answer never increments exposure."""

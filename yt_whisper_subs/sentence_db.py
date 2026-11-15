@@ -15,9 +15,10 @@ from yt_whisper_subs import vocabulary_db
 
 
 PRESENTATION = """
-SELECT p.*,q.body_json,q.direction,q.anchor_word_id,q.scene,q.flagged_at,s.status,s.scheduler_json,s.options_json
+SELECT p.*,q.body_json,q.direction,q.anchor_word_id,q.scene,q.flagged_at,s.status,s.scheduler_json,s.options_json,v.viewed_at
 FROM sentence_presentations p JOIN sentence_questions q ON q.id=p.question_id
 JOIN sentence_sessions s ON s.id=p.session_id
+LEFT JOIN sentence_feedback_views v ON v.presentation_id=p.id
 """
 
 

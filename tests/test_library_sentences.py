@@ -75,6 +75,7 @@ class SentenceFlowTests(unittest.TestCase):
         if not activity:
             self.dialog._tabs.setCurrentIndex(4)
         self.dialog.show()
+        self.app.setActiveWindow(self.dialog)
         self.app.processEvents()
 
     def _wait(self, predicate) -> None:
@@ -276,3 +277,134 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertEqual(self.panel._run.row["id"], current)
         self.assertEqual(self.panel._view.card.editor.toPlainText(), "Mijn nieuwe concept")
         self.assertEqual(practice_activity.read(self.db).answers, 1)
+
+    def test_final_submission_opens_unseen_feedback_and_page_clicks_walk_all_answers(self) -> None:
+        """Review automatically after writing and continue in session order; e.g. a later already-viewed answer still opens before the end summary."""
+
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
+        self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
+        self._wait(lambda: "•" in self.panel._rail.item(0).text())
+        second = self.panel._run.row["id"]
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
+        self._answer(fixtures.DUTCH)
+        self.assertEqual(self.panel._run.row["id"], first)
+        self.assertIsNotNone(self.db.sentence_get(first)["viewed_at"])
+        self.assertIn("cleverest", self.panel._view.card._source.text())
+        self.assertIn('href="error:', self.panel._view.card._source.text())
+        self._wait(lambda: self.db.sentence_get(second)["outcome"] == "correct")
+        self.assertIsNone(self.db.sentence_get(second)["viewed_at"])
+        for expected in (second, None):
+            QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
+            card = self.panel._view.card
+            QtTest.QTest.mouseClick(card, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(card.width() - 8, card.height() - 8))
+            self.assertEqual(self.panel._run.row["id"] if self.panel._run.row else None, expected)
+        self.assertEqual(self.panel._view.card._source.text(), "Round reviewed")
+        self.assertIn("1 correct", self.panel._view.card._instruction.text())
+        self.assertIn("1 to revisit", self.panel._view.card._instruction.text())
+        self.assertNotIn("•", self.panel._rail.item(1).text())
+        viewed = self.db.sentence_get(first)["viewed_at"]
+        self.panel._jump(first)
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
+        self.panel._view.card._source.linkActivated.emit("error:0")
+        self.assertEqual(self.panel._run.row["id"], second)
+        self.assertEqual(self.db.sentence_get(first)["viewed_at"], viewed)
+        self.assertEqual(practice_activity.read(self.db).answers, 2)
+
+    def test_hidden_feedback_stays_unseen_and_opens_when_returning(self) -> None:
+        """Wait meaningfully while grading and never mark hidden feedback viewed; e.g. Progress cannot consume an unread correction."""
+
+        opts = fixtures.options()
+        self.db.set_setting("sentence_options", opts.model_dump_json())
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def slow(document):
+            """Let the learner leave before the response arrives; e.g. a hidden result needs to remain unread."""
+
+            entered.set()
+            release.wait(5)
+            return original(document)
+
+        self.provider.grade = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(entered.is_set)
+        self.assertEqual(self.panel._view.card._source.text(), "Waiting for corrections")
+        self.dialog._tabs.setCurrentIndex(1)
+        release.set()
+        self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
+        self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
+        self.dialog._tabs.setCurrentIndex(4)
+        self._wait(lambda: self.panel._run.row is not None)
+        self.assertEqual(self.panel._run.row["id"], first)
+        self.assertIsNotNone(self.db.sentence_get(first)["viewed_at"])
+
+    def test_reopen_reviews_unseen_feedback_before_unused_prepared_stock(self) -> None:
+        """Resume the review backlog after restart without wasting new stock; e.g. a completed round's unseen feedback outranks a never-opened prepared round."""
+
+        opts = fixtures.options().model_copy(update={"include_early": True})
+        self.db.set_setting("sentence_options", opts.model_dump_json())
+        previous = self.engine.start(opts, lambda _: None)
+        row = self.db.sentence_current(previous)
+        self.db.sentence_submit(row["id"], fixtures.DUTCH, 1000)
+        self.engine.check(row["id"], lambda _: None)
+        following = self.engine.start(opts, lambda _: None)
+        generations = len(self.provider.calls)
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        self.assertEqual(self.panel._run.session, previous)
+        self.assertEqual(self.panel._run.row["id"], row["id"])
+        self.assertIsNotNone(self.db.sentence_get(row["id"])["viewed_at"])
+        self.assertEqual(self.db.sentence_summary(following)["shown"], 0)
+        self.assertEqual(len(self.provider.calls), generations)
+
+    def test_explicit_new_round_takes_priority_over_old_unseen_feedback(self) -> None:
+        """Respect a deliberate New round action; e.g. automatic review restoration must not return to the round just replaced."""
+
+        opts = fixtures.options().model_copy(update={"count": 2, "include_early": True})
+        self.db.set_setting("sentence_options", opts.model_dump_json())
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        previous = self.panel._run.session
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
+        self.panel._prepare(cached_first=True)
+        self._wait(lambda: self.panel._run.session != previous and self.panel._run.row is not None)
+        self.assertEqual(self.panel._run.session, self.db.sentence_active())
+        self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
+
+    def test_feedback_in_unfocused_window_stays_unseen_until_focus_returns(self) -> None:
+        """Do not confuse background rendering with consultation; e.g. a correction arriving while another app is active stays unread."""
+
+        self.db.set_setting("sentence_options", fixtures.options().model_dump_json())
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def slow(document):
+            """Let the window lose focus before feedback arrives; e.g. drawing an off-focus correction cannot count as reading it."""
+
+            entered.set()
+            release.wait(5)
+            return original(document)
+
+        self.provider.grade = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(entered.is_set)
+        self.app.setActiveWindow(None)
+        release.set()
+        self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
+        self.assertIsNone(self.db.sentence_get(first)["viewed_at"])
+        self.app.setActiveWindow(self.dialog)
+        self._wait(lambda: self.db.sentence_get(first)["viewed_at"] is not None)

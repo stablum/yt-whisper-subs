@@ -28,6 +28,7 @@ class SentenceSession(library_written.WrittenPanel):
         self._view.question_layout.insertWidget(0, self._rail)
         self._rail.hide()
         self._elapsed, self._restoring = 0, False
+        self._opening = True
         self._draft_timer = QtCore.QTimer(self)
         self._draft_timer.setSingleShot(True)
         self._draft_timer.setInterval(300)
@@ -42,11 +43,20 @@ class SentenceSession(library_written.WrittenPanel):
         if self._run.row:
             if not self._run.started:
                 self._run.started = time.monotonic()
+            self._consult()
             self._refresh()
             return
         if not self._run.pending:
+            if self._run.session:
+                self._advance()
             return
         self._run.pending = False
+        if self._opening:
+            self._opening = False
+            active = self._db.sentence_history(self._run.session) if self._run.session else []
+            if not any(row["shown_at"] is not None for row in active):
+                direction = self._view.options.options().direction.value
+                self._run.session = self._db.sentence_unseen_session(direction) or self._run.session
         if not self._run.session:
             self._prepare(cached_first=True)
             return
@@ -56,7 +66,8 @@ class SentenceSession(library_written.WrittenPanel):
             cursor = {}
         history = self._db.sentence_history(self._run.session)
         visited = {row["id"] for row in history if row["shown_at"] is not None}
-        if cursor.get("session") == self._run.session and cursor.get("id") in visited:
+        complete = all(row["answer_text"] is not None or row["outcome"] is not None for row in history)
+        if not complete and cursor.get("session") == self._run.session and cursor.get("id") in visited:
             self._jump(cursor["id"])
         else:
             self._advance()
@@ -65,19 +76,26 @@ class SentenceSession(library_written.WrittenPanel):
         """Flush an unfinished answer before applying new options; e.g. failed generation cannot discard the previous draft."""
 
         self._save_draft()
+        self._opening = False
         super()._prepare(**kwargs)
 
     def _advance(self, *, guard: bool = False) -> None:
-        """Choose an unanswered question without waiting for grading; e.g. queued question one does not block question two."""
+        """Walk forward through answers, then find unseen feedback; e.g. completing writing opens a correction instead of a generic end card."""
 
         if not self._active or not self._run.session or self._task:
             return
         rows = self._db.sentence_history(self._run.session)
-        target = next((row for row in rows if row["answer_text"] is None and row["outcome"] is None), None)
-        if target is None or self._db.sentence_active() != self._run.session:
-            self._overview()
-        else:
+        writing = self._db.sentence_active() == self._run.session
+        unanswered = next((row for row in rows if row["answer_text"] is None and row["outcome"] is None), None) if writing else None
+        current = self._run.row
+        later = [row for row in rows if current and row["ordinal"] > current["ordinal"]
+                 and (row["shown_at"] is not None or row == unanswered)]
+        unseen = [row for row in rows if row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None]
+        target = next(iter(later), None) or unanswered or next(iter(unseen), None)
+        if target:
             self._jump(target["id"], guard=guard)
+        else:
+            self._overview()
 
     def _jump(self, presentation_id: int, *, guard: bool = False) -> None:
         """Switch saved questions while protecting the current draft; e.g. checking an old correction never erases the next answer."""
@@ -114,13 +132,21 @@ class SentenceSession(library_written.WrittenPanel):
                 self._view.card.editor.setReadOnly(True)
                 self._view.card.message("Exercise reported · excluded from learning statistics")
                 self._view.flag.setEnabled(False)
-                self._view.action.setText("Next unanswered →")
+                self._view.action.setText("Next question →")
             elif row["grade"]:
                 self._view.card.feedback(row)
-                self._view.action.setText("Next unanswered →")
+                self._consult()
         finally:
             self._restoring = False
         self._input_changed()
+
+    def _consult(self) -> None:
+        """Acknowledge only feedback actually opened on the active page; e.g. a background correction on Activity remains unseen."""
+
+        row = self._run.row
+        visible = self._active and self.window().isActiveWindow() and not self.window().isMinimized()
+        if visible and row and row["outcome"] in {"correct", "wrong"} and row["grade"] and row["viewed_at"] is None:
+            row["viewed_at"] = self._db.sentence_seen(row["id"])
 
     def _input_changed(self) -> None:
         """Autosave drafts without enabling resubmission; e.g. reviewing an answered question never changes its recorded text."""
@@ -174,11 +200,17 @@ class SentenceSession(library_written.WrittenPanel):
             status = next(row for row in rows if row["id"] == current["id"])
             labels = {"checking": "Correction in progress…", "failed": "Correction unavailable · your answer is saved.", "queued": "Correction queued…"}
             self._view.card.message(labels.get(status["state"], "Correction queued…"))
-            self._view.action.setText("Retry correction" if status["state"] == "failed" else "Next unanswered →")
+            self._view.action.setText("Retry correction" if status["state"] == "failed" else "Next question →")
         summary = self._db.sentence_summary(self._run.session)
         pending = sum(row["answer_text"] is not None and row["outcome"] is None for row in rows)
+        unseen = sum(row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None for row in rows)
+        if current and current["outcome"] is not None:
+            self._view.action.setText("Next correction →" if all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
+                                      else "Next question →")
         self._view.status.setText(f"{summary['submitted']} / {summary['planned']} answered  ·  {summary['correct']} correct"
-                                  + (f"  ·  {max(0, pending)} awaiting correction" if pending else ""))
+                                  + (f"  ·  {pending} awaiting correction" if pending else "")
+                                  + (f"  ·  {unseen} unseen" if unseen else ""))
+        self._view.options.set_active(self._db.sentence_active() == self._run.session)
         self._view.bar.setRange(0, summary["planned"])
         self._view.bar.setValue(summary["submitted"])
 
@@ -193,6 +225,11 @@ class SentenceSession(library_written.WrittenPanel):
         current = self._run.row
         if current and current["id"] == presentation_id:
             self._present(self._db.sentence_get(presentation_id))
+        elif current is None and self._active and self._run.session and not self._run.pending:
+            rows = self._db.sentence_history(self._run.session)
+            complete = all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
+            if complete or (rows and rows[0]["session_status"] != "active"):
+                self._advance()
         self._refresh()
         self.activity_changed.emit()
 
@@ -203,7 +240,15 @@ class SentenceSession(library_written.WrittenPanel):
             return
         row = self._run.row
         if row is None:
-            self._prepare(early=self._run.empty == "not_due")
+            rows = self._db.sentence_history(self._run.session) if self._run.session else []
+            unseen = any(item["outcome"] in {"correct", "wrong"} and item["viewed_at"] is None for item in rows)
+            failed = next((item for item in rows if item["outcome"] is None and item["state"] == "failed"), None)
+            if unseen:
+                self._advance(guard=True)
+            elif failed:
+                self._jump(failed["id"])
+            elif not any(item["answer_text"] is not None and item["outcome"] is None for item in rows):
+                self._prepare(early=self._run.empty == "not_due")
         elif row["answer_text"] is None and row["outcome"] is None:
             self._submit()
         else:
@@ -226,9 +271,24 @@ class SentenceSession(library_written.WrittenPanel):
 
         self._save_draft()
         rows = self._db.sentence_history(self._run.session)
+        summary = self._db.sentence_summary(self._run.session)
+        pending = sum(row["answer_text"] is not None and row["outcome"] is None for row in rows)
+        unseen = sum(row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None for row in rows)
+        failed = any(row["outcome"] is None and row["state"] == "failed" for row in rows)
         complete = all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
-        self._idle("Answers submitted" if complete else "Round saved",
-                   "Corrections arrive in the background. Select a question on the left to review your answer.", "Another sentence round")
+        result = f"{summary['correct']} correct · {summary['wrong']} to revisit · {summary['submitted']} answers"
+        if unseen:
+            title, action = f"{unseen} corrections to review", "Review corrections"
+            result += "\nCorrections marked • on the left have not been viewed."
+        elif pending:
+            title = "Some corrections need a retry" if failed else "Waiting for corrections"
+            action = "Review pending corrections" if failed else "Waiting…"
+            result += f"\n{pending} awaiting correction. New feedback will open here when it arrives."
+        else:
+            title, action = ("Round reviewed" if complete else "Round saved"), "Another sentence round"
+            result += "\nAll available corrections have been viewed. Select an answer on the left to revisit it."
+        self._idle(title, result, action)
+        self._view.action.setEnabled(not pending or failed or bool(unseen))
         self._view.options.set_active(self._db.sentence_active() == self._run.session)
         self._refresh()
 
@@ -246,6 +306,19 @@ class SentenceSession(library_written.WrittenPanel):
         self._save_draft()
         self._run.started = 0
         super().hideEvent(event)
+
+    def showEvent(self, event) -> None:
+        """Observe the containing window's visibility and focus; e.g. results arriving behind another app stay unread until you return."""
+
+        self.window().installEventFilter(self)
+        super().showEvent(event)
+
+    def eventFilter(self, watched, event) -> bool:
+        """Acknowledge visible feedback on focus return; e.g. restoring a minimized practice window clears only the open correction's unread dot."""
+
+        if watched is self.window() and event.type() in {QtCore.QEvent.Type.WindowActivate, QtCore.QEvent.Type.WindowStateChange}:
+            QtCore.QTimer.singleShot(0, self, self.activate)
+        return super().eventFilter(watched, event)
 
     def shutdown(self) -> None:
         """Flush local typing while leaving the application-owned queue running; e.g. closing the dialog never loses submitted work."""
