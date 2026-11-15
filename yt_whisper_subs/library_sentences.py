@@ -10,6 +10,8 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_written
 from yt_whisper_subs import library_written_controls as written
+from yt_whisper_subs import library_sentence_review
+from yt_whisper_subs import library_sentence_session
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_service
@@ -97,6 +99,11 @@ class SentenceOptions(QtWidgets.QWidget):
 class SentenceCard(written.WritingCard):
     """Keep translated answers hidden until grading; e.g. practised forms appear alongside the correction afterward."""
 
+    def __init__(self) -> None:
+        """Use an evidence-aware answer editor; e.g. graded words reveal their local correction on hover."""
+
+        super().__init__(editor=library_sentence_review.ReviewEdit())
+
     def present(self, row: dict) -> None:
         """Hide both the model answer and saved-word clues; e.g. Dutch-to-English practice cannot reveal English help first."""
 
@@ -118,9 +125,10 @@ class SentenceCard(written.WritingCard):
                                             translation=grade["corrected_meaning"], explanation=grade["explanation"],
                                             errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
                                             vocabulary=grade.get("vocabulary", [])))
+        self.editor.annotate(grade, row["direction"])
 
 
-class SentencePanel(library_written.WrittenPanel):
+class SentencePanel(library_sentence_session.SentenceSession):
     """Bind sentences to the common typed-practice flow; e.g. reopening retries the same pending translation."""
 
     def __init__(self, db, *, engine: sentence_service.SentenceService | None = None) -> None:

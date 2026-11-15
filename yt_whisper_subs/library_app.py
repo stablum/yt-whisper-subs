@@ -13,6 +13,7 @@ from PySide6 import QtWidgets
 from yt_whisper_subs import library_gui
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_practice_ready
+from yt_whisper_subs import library_sentence_checks
 from yt_whisper_subs import pipeline
 from yt_whisper_subs import output_lock
 from yt_whisper_subs import proc
@@ -51,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
         with output_lock.OutputLock(out_dir, "library"):
             service = library_service.LibraryService(out_dir, proc.venv_paths())
             window = library_gui.LibraryWindow(service)
+            library_sentence_checks.SentenceChecks.shared(service.db).resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
             qt_app.aboutToQuit.connect(preparation.stop)
             start_in_tray = args.start_hidden and QtWidgets.QSystemTrayIcon.isSystemTrayAvailable()

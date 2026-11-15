@@ -56,14 +56,14 @@ class SentenceReviewDbMixin:
             if raw["outcome"] is not None:
                 return self._sentence_row(raw)
             row = dict(raw)
-            if row["status"] != "active" or row["flagged_at"] is not None:
-                raise ValueError("This sentence exercise is no longer active")
+            if row["flagged_at"] is not None:
+                raise ValueError("This sentence exercise has been reported")
             content = json.loads(row["body_json"])
             grade.check(row["answer_text"], content)
             policy = practice.ReviewPolicy(row["scheduler_json"])
             self._sentence_assess(conn, row, grade, policy)
-            state = conn.execute("SELECT card_json FROM sentence_question_states WHERE question_id=?", (row["question_id"],)).fetchone()
-            card = state[0] if state else policy.new_card(-row["question_id"], row["answered_at"])
+            previous = self._sentence_question_reviews(conn, row["question_id"], before=(row["answered_at"], row["id"]))
+            card = previous["after_json"] if previous else policy.new_card(-row["question_id"], row["answered_at"])
             result = policy.answer(card, correct=grade.correct, unsure=False, now=row["answered_at"], elapsed_ms=row["elapsed_ms"])
             conn.execute("INSERT INTO sentence_question_states VALUES(?,?,?) ON CONFLICT(question_id) DO UPDATE "
                          "SET card_json=excluded.card_json,due_at=excluded.due_at",
@@ -81,6 +81,10 @@ class SentenceReviewDbMixin:
             for word in grade.words:
                 if word.target_used or not word.correct:
                     self._word_observe(conn, "sentence", row, lookups[word.word_id], word.correct)
+                self._sentence_replay(conn, word.word_id, row["direction"])
+            latest = self._sentence_question_reviews(conn, row["question_id"])
+            conn.execute("UPDATE sentence_question_states SET card_json=?,due_at=? WHERE question_id=?",
+                         (latest["after_json"], latest["due_at"], row["question_id"]))
             self._sentence_complete(conn)
             return self._sentence_row(conn.execute(sentence_db.PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
 
@@ -92,8 +96,7 @@ class SentenceReviewDbMixin:
             "WHERE w.question_id=?", (row["question_id"],))}
         keys = ("rating", "recall", "due_at", "before_json", "after_json", "log_json")
         for word in grade.words:
-            state = conn.execute("SELECT * FROM sentence_states WHERE word_id=? AND direction=?",
-                                 (word.word_id, row["direction"])).fetchone()
+            state = self._sentence_replay(conn, word.word_id, row["direction"], before=(row["answered_at"], row["id"]))
             target = {**row, "word_id": word.word_id}
             result = self._sentence_word_review(policy, state, target, word.correct) if word.target_used or not word.correct else None
             values = [result[key] if result else None for key in keys]
@@ -131,8 +134,8 @@ class SentenceReviewDbMixin:
                 self._sentence_replay(conn, word[0], row["direction"])
             self._sentence_complete(conn)
 
-    def _sentence_replay(self, conn, word_id: int, direction: str) -> None:
-        """Rebuild a word's cache under each saved round policy; e.g. an excluded failure no longer shortens its interval."""
+    def _sentence_replay(self, conn, word_id: int, direction: str, *, before: tuple | None = None) -> dict | None:
+        """Replay submission order, optionally only its prefix; e.g. retrying an older failed correction cannot move learning backwards."""
 
         from yt_whisper_subs import practice
 
@@ -145,6 +148,8 @@ class SentenceReviewDbMixin:
         state = None
         for raw in rows:
             row = dict(raw)
+            if before is not None and (row["answered_at"], row["id"]) >= before:
+                break
             correct = bool(row["meaning_correct"]) and row["form_correct"] != 0
             if correct and not row["target_used"]:
                 continue
@@ -152,3 +157,22 @@ class SentenceReviewDbMixin:
             if result:
                 self._sentence_word_state(conn, row, result)
                 state = {"card_json": result["after_json"], "due_at": result["due_at"]}
+        return state
+
+    @staticmethod
+    def _sentence_question_reviews(conn, question_id: int, *, before: tuple | None = None) -> dict | None:
+        """Reconstruct a sentence's chronological skill state; e.g. corrections from stopped rounds may arrive after later answers."""
+
+        from yt_whisper_subs import practice
+
+        rows = conn.execute("SELECT p.*,s.scheduler_json FROM sentence_presentations p JOIN sentence_sessions s ON s.id=p.session_id "
+                            "WHERE p.question_id=? AND p.outcome IN ('correct','wrong') ORDER BY p.answered_at,p.id", (question_id,))
+        result = None
+        for row in rows:
+            if before is not None and (row["answered_at"], row["id"]) >= before:
+                break
+            policy = practice.ReviewPolicy(row["scheduler_json"])
+            card = result["after_json"] if result else policy.new_card(-question_id, row["answered_at"])
+            result = policy.answer(card, correct=row["outcome"] == "correct", unsure=False,
+                                   now=row["answered_at"], elapsed_ms=row["elapsed_ms"])
+        return result

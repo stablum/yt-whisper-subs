@@ -205,6 +205,11 @@ class WrittenPanel(QtWidgets.QWidget):
         if row is None:
             self._finish()
             return
+        self._present(row, guard=guard)
+
+    def _present(self, row: dict, *, guard: bool = False) -> None:
+        """Render a selected saved exercise consistently; e.g. a sentence history view can reuse normal question and footer controls."""
+
         self._run.row = row
         self._run.started = time.monotonic()
         self._run.guard_until = time.monotonic() + QtWidgets.QApplication.doubleClickInterval() / 1000 if guard else 0

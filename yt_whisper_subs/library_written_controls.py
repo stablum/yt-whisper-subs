@@ -129,7 +129,7 @@ class WritingCard(controls.ContinueSurface):
 
     submitted = QtCore.Signal()
 
-    def __init__(self) -> None:
+    def __init__(self, editor: SentenceEdit | None = None) -> None:
         """Keep the answer area spacious and stable; e.g. show the original sentence above the rewrite."""
 
         super().__init__()
@@ -140,7 +140,7 @@ class WritingCard(controls.ContinueSurface):
         self._target.setStyleSheet("font-size: 13pt; color: #c4a1ff;")
         self._instruction = QtWidgets.QLabel()
         self._instruction.setStyleSheet("font-size: 14pt; color: #dce6f2;")
-        self.editor = SentenceEdit()
+        self.editor = editor if editor is not None else SentenceEdit()
         self.editor.setPlaceholderText("Type the transformed Dutch sentence…")
         self.editor.setAccessibleName("Your transformed Dutch sentence")
         self.editor.setStyleSheet("font-size: 18pt; padding: 12px; border-radius: 8px; background: #1c2431; "
@@ -251,6 +251,9 @@ class WritingView(QtWidgets.QWidget):
         self.bar.setFixedHeight(6)
         self.bar.setTextVisible(False)
         self.card = card
+        self.question_layout = QtWidgets.QHBoxLayout()
+        self.question_layout.setSpacing(12)
+        self.question_layout.addWidget(self.card, 1)
         self.action = controls.ContinueButton("Check sentence")
         self.action.setObjectName("primaryButton")
         self.action.setMinimumSize(220, 44)
@@ -267,5 +270,5 @@ class WritingView(QtWidgets.QWidget):
         body = QtWidgets.QVBoxLayout(self)
         body.addLayout(header)
         body.addWidget(self.bar)
-        body.addWidget(self.card, 1)
+        body.addLayout(self.question_layout, 1)
         body.addLayout(footer)

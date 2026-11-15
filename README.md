@@ -2533,14 +2533,26 @@ transformed-sentence English and the main Progress statistics entry point.
 ### Whole-Sentence Translation Practice
 
 Open **Library → Practice… → Sentences**. The first question appears automatically.
-Translate the complete English sentence into Dutch, press **Enter** or **Check
-sentence**, read the correction, then use a fresh **Continue** click or Enter to
-advance. **Sentence round options** selects **English → Dutch** writing or
+Translate the complete English sentence into Dutch, then press **Enter** or
+**Submit & next**. Your first attempt is saved immediately and the next question
+opens while correction runs in the background. **Sentence round options** selects
+**English → Dutch** writing or
 **Dutch → English** comprehension, 1–50 sentences (default 10), 1–3 saved target
 words per sentence (default 2), a life context and optional early review.
 Preferences apply to the next round; **New sentence round** prepares and checks
 replacement content before ending an unfinished round. Closing or Escape pauses
-the current round. The most recently used mode opens again next time.
+the current round. Submitted corrections continue while the practice window is
+closed or another tab is open. The most recently used mode opens again next time.
+
+A narrow question overview stays on the left: **○** unanswered, amber **…**
+queued, blue **↻** checking, green **✓** correct, red **✕** to revisit, orange
+**!** needing a retry, and **−** reported. Hover a marker for its full status;
+click a previously visited question to restore its exact answer and correction.
+**Next unanswered** returns to writing. Unvisited later questions remain disabled.
+Drafts autosave and survive moving between questions, tabs and app restarts;
+submitted first attempts stay read-only. After the final answer, the overview
+remains available for review while outstanding corrections arrive. Results never
+interrupt a different question or replace what you are typing.
 
 Both goals matter: learn the saved vocabulary and write correct Dutch across
 home, shopping, work, travel, food, appointments, social life, hobbies and public
@@ -2574,6 +2586,12 @@ Corrections cover the **whole sentence**, including supporting words, meaning,
 negation, word order, spelling, articles, agreement and inflection. Feedback
 shows the corrected sentence, its meaning back in the source language, concrete
 error spans with explanations, and the practised Dutch forms and English meanings.
+The actual mistaken words or phrases in your original answer stand out in bold
+amber with a warm background and underline. Hover them to see their specific
+correction and explanation just below the pointer. This reuses saved grammar and
+vocabulary evidence, including supporting-word confusions; no hover API call is
+made. Repeated evidence is highlighted at each whole-word occurrence. Missing text
+remains explained in the feedback rather than falsely marking a valid word.
 Valid synonyms and natural alternative phrasing are accepted. In English → Dutch,
 using a different valid Dutch synonym earns sentence credit but does not certify
 recall of the saved lexeme; that word stays eligible for vocabulary review.
@@ -2582,11 +2600,19 @@ Exact approved reference answers can be graded locally; other answers, including
 approved paraphrases, receive per-word model assessment. An uncertain or failed
 correction stays pending, without recording a learning failure.
 
-The first typed attempt is committed **before** correction starts. Retry checking
-and app restarts reuse it without creating a second answer. Submission, correction
-and continuation are separate gestures; held Enter and double clicks cannot skip
-feedback. **Report exercise** quarantines a disputed pair and removes its grading
-influence while preserving submitted effort and the original evidence.
+The first typed attempt and its queue entry commit **together before correction
+starts**. One application-owned worker corrects queued sentences in submission
+order, avoiding a burst of simultaneous requests. SQLite ownership leases prevent
+duplicate in-flight checks and recover crashed workers on restart. Failed checks
+retain an explicit **Retry correction** action; there is no automatic paid retry
+loop, invented failure, or second submitted attempt. Application startup resumes
+queued work even before practice is opened. Closing the app preserves unfinished
+jobs; opening a new round or explicitly ending a round leaves submitted corrections
+eligible to finish. Learning caches replay original submission order if an older
+failed correction is retried after later answers. Held Enter and double clicks
+cannot submit the next question accidentally. **Report exercise** quarantines a
+disputed pair even during correction; a late response cannot restore its grading
+influence. Submitted effort and original evidence remain available.
 
 Adaptive selection shares its word/direction FSRS state with vocabulary practice,
 while each sentence has its own review state for complete meaning and grammar.
@@ -2609,10 +2635,11 @@ does not generate or expose questions. **Activity** and the calendar add an oran
 its distinct saved targets. A submitted answer quiets the shared reminder even
 when correction is pending, preserving the 24-hour spacing rule.
 
-Ten relational tables share the existing SQLite catalog: `sentence_questions`,
+Twelve relational tables share the existing SQLite catalog: `sentence_questions`,
 `sentence_question_words`, `sentence_sessions`, `sentence_presentations`,
 `sentence_assessments`, `sentence_forms`, `sentence_errors`, `sentence_error_words`,
-and rebuildable `sentence_states` and `sentence_question_states`. Foreign keys link
+rebuildable `sentence_states` and `sentence_question_states`, plus durable
+`sentence_checks` and `sentence_drafts`. Foreign keys link
 targets to their original vocabulary lookups and captured-video context. Immutable
 bilingual snapshots, quality verdicts, first-display/submission/grading timestamps,
 elapsed time, exact model/prompt policy, serialized scheduler parameters and
@@ -2620,12 +2647,13 @@ before/after states/review logs retain the evidence. Correction, normalized word
 form/error assessments and both scheduling levels commit in one transaction.
 Reporting rebuilds word states from remaining valid history. NumPy handles
 probabilities; Polars derives metrics. Verb and sentence modes share native typed
-input and lifecycle controls, keeping their providers and persistence separate.
+input and preparation controls; sentences add an asynchronous navigation strategy
+while verbs retain their existing correction/continue flow.
 
 Run the deterministic sentence and native integration checks without API calls:
 
 ```powershell
-python -m unittest tests.test_sentence_practice tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
+python -m unittest tests.test_sentence_practice tests.test_sentence_queue tests.test_sentence_review tests.test_library_sentences tests.test_library_verbs tests.test_practice_activity tests.test_practice_reminders -v
 ```
 
 ### Word Capture Verification

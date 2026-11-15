@@ -35,7 +35,7 @@ class ReadyDbMixin:
         now = time.time()
         with self._connect() as conn:
             row = conn.execute("SELECT owner FROM practice_preparation WHERE kind=? AND lease_until>?", (kind, now)).fetchone()
-            if row and row[0] and not _owner_alive(row[0]):
+            if row and row[0] and not owner_alive(row[0]):
                 conn.execute("UPDATE practice_preparation SET lease_until=0 WHERE kind=? AND owner=?", (kind, row[0]))
             cursor = conn.execute("INSERT INTO practice_preparation(kind,owner,lease_until) VALUES(?,?,?) "
                                   "ON CONFLICT(kind) DO UPDATE SET owner=excluded.owner,lease_until=excluded.lease_until "
@@ -104,7 +104,7 @@ class ReadyDbMixin:
             return {row[0] for row in rows}
 
 
-def _owner_alive(owner: str) -> bool:
+def owner_alive(owner: str) -> bool:
     """Check PID and process birth time together; e.g. a crash or recycled PID cannot block preparation until lease expiry."""
 
     try:

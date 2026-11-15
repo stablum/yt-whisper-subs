@@ -5,6 +5,7 @@ Example: `python -m unittest tests.test_library_sentences` needs neither persona
 
 import os
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -90,8 +91,8 @@ class SentenceFlowTests(unittest.TestCase):
         self.panel._view.card.editor.setPlainText(text)
         QtTest.QTest.keyClick(self.panel._view.card.editor, QtCore.Qt.Key.Key_Return)
 
-    def test_auto_question_feedback_and_separate_continue(self) -> None:
-        """Start with source-only English and reveal Dutch after submission; e.g. a fresh gesture advances after feedback."""
+    def test_submit_advances_and_history_restores_highlighted_feedback(self) -> None:
+        """Start source-only and continue immediately; e.g. the previous answer later exposes its actual superlative mistake."""
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
@@ -100,18 +101,22 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertFalse(card.meaning.isVisible())
         self.assertEqual((card._correction.text(), card._translation.text(), card._targets.text()), ("", "", ""))
         self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
-        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        self.assertNotEqual(self.panel._run.row["id"], first)
+        second = self.panel._run.row["id"]
+        card.editor.setPlainText("Mijn onvoltooide vertaling")
+        self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
+        self.assertEqual(card.editor.toPlainText(), "Mijn onvoltooide vertaling")
+        rail = self.panel._rail
+        QtTest.QTest.mouseClick(rail.viewport(), QtCore.Qt.MouseButton.LeftButton, pos=rail.visualItemRect(rail.item(0)).center())
         self.assertEqual(self.panel._run.row["id"], first)
         self.assertIn("superlative", card._details.text())
         self.assertEqual(card._correction.text(), fixtures.DUTCH)
         self.assertEqual(card._translation.text(), fixtures.ENGLISH)
         self.assertIn("slimste", card._targets.text())
+        self.assertEqual([item.cursor.selectedText() for item in card.editor.extraSelections()], ["slimmere"])
         self.panel._view.action.click()
-        self.assertEqual(self.panel._run.row["id"], first)
-        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
-        QtTest.QTest.keyClick(self.panel._view.action, QtCore.Qt.Key.Key_Return)
-        self.assertNotEqual(self.panel._run.row["id"], first)
-        self.assertEqual(card.editor.toPlainText(), "")
+        self.assertEqual(self.panel._run.row["id"], second)
+        self.assertEqual(card.editor.toPlainText(), "Mijn onvoltooide vertaling")
         self.assertEqual(practice_activity.read(self.db).answers, 1)
 
     def test_both_directions_reach_main_progress_and_activity(self) -> None:
@@ -127,8 +132,9 @@ class SentenceFlowTests(unittest.TestCase):
             answer = fixtures.DUTCH if direction == practice.Direction.EN_NL else fixtures.ENGLISH
             self.assertEqual(self.panel._view.card._source.text(), source)
             self.assertFalse(self.panel._view.card.meaning.isVisible())
+            presentation_id = self.panel._run.row["id"]
             self._answer(answer)
-            self._wait(lambda: self.panel._run.row["outcome"] == "correct")
+            self._wait(lambda: self.db.sentence_get(presentation_id)["outcome"] == "correct")
             self.dialog._tabs.setCurrentIndex(1)
             self.assertEqual(self.dialog._progress_tabs.currentIndex(), 2)
             self.assertIn("submitted", self.dialog._sentence_progress._totals.text())
@@ -154,11 +160,13 @@ class SentenceFlowTests(unittest.TestCase):
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
         self.provider.available = False
         text = fixtures.DUTCH.replace("slimste", "slimmere")
         self._answer(text)
-        self._wait(lambda: self.panel._task is None)
-        self.assertEqual(self.panel._view.action.text(), "Retry checking")
+        self._wait(lambda: self.db.sentence_history(self.panel._run.session)[0]["state"] == "failed")
+        self.panel._jump(first)
+        self.assertEqual(self.panel._view.action.text(), "Retry correction")
         self.assertEqual(sentence_stats.snapshot(self.db)["wrong"], 0)
         self._close()
         self._open()
@@ -168,4 +176,103 @@ class SentenceFlowTests(unittest.TestCase):
         self.provider.available = True
         self.panel._view.action.click()
         self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        self.assertEqual(practice_activity.read(self.db).answers, 1)
+
+    def test_slow_checks_queue_while_typing_and_survive_dialog_close(self) -> None:
+        """Keep one paid request in flight while later answers queue; e.g. closing practice does not cancel a submitted correction."""
+
+        opts = fixtures.options().model_copy(update={"count": 3})
+        self.db.set_setting("sentence_options", opts.model_dump_json())
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def slow(document):
+            """Hold a real grading operation at the network boundary; e.g. the GUI must keep accepting later sentences."""
+
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("Test did not release the delayed correction")
+            return original(document)
+
+        self.provider.grade = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        session = self.panel._run.session
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(entered.is_set)
+        self.assertNotEqual(self.panel._run.row["id"], first)
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
+        self._answer(fixtures.DUTCH)
+        self.assertEqual([row["state"] for row in self.db.sentence_history(session)][:2], ["checking", "queued"])
+        self.panel._view.card.editor.setPlainText("Een bewaard concept")
+        self.dialog.close()
+        self.app.processEvents()
+        release.set()
+        self._wait(lambda: self.db.sentence_summary(session)["correct"] == 1)
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        self.assertEqual(self.panel._view.card.editor.toPlainText(), "Een bewaard concept")
+        self.assertEqual(self.db.sentence_summary(session)["wrong"], 1)
+        self.assertEqual(practice_activity.read(self.db).answers, 2)
+        self.assertIn("✕", self.panel._rail.item(0).text())
+        self.assertIn("✓", self.panel._rail.item(1).text())
+
+    def test_report_pending_answer_wins_over_late_remote_result(self) -> None:
+        """Quarantine safely while correction is in flight; e.g. its remote answer cannot restore an invalid exercise or duplicate activity."""
+
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def slow(document):
+            """Delay only the remote judgment; e.g. reporting happens before the grade transaction."""
+
+            entered.set()
+            release.wait(5)
+            return original(document)
+
+        self.provider.grade = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(entered.is_set)
+        self.panel._jump(first)
+        self.panel._view.flag.click()
+        release.set()
+        self._wait(lambda: self.panel._checks._task is None)
+        self.assertEqual(self.db.sentence_get(first)["outcome"], "invalid")
+        self.assertEqual(sentence_stats.snapshot(self.db)["wrong"], 0)
+        self.assertEqual(practice_activity.read(self.db).answers, 1)
+
+    def test_new_round_keeps_previous_corrections_and_new_draft_independent(self) -> None:
+        """Correct previously submitted work after round replacement; e.g. its delayed response cannot overwrite the next round's editor."""
+
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def slow(document):
+            """Hold only correction while preparation remains available; e.g. a new round can be built concurrently."""
+
+            entered.set()
+            release.wait(5)
+            return original(document)
+
+        self.provider.grade = slow
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        previous = self.panel._run.session
+        self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
+        self._wait(entered.is_set)
+        self.panel._prepare(cached_first=True)
+        self._wait(lambda: self.panel._run.session != previous and self.panel._run.row is not None)
+        current = self.panel._run.row["id"]
+        self.panel._view.card.editor.setPlainText("Mijn nieuwe concept")
+        release.set()
+        self._wait(lambda: self.db.sentence_summary(previous)["wrong"] == 1)
+        self.assertEqual(self.panel._run.row["id"], current)
+        self.assertEqual(self.panel._view.card.editor.toPlainText(), "Mijn nieuwe concept")
         self.assertEqual(practice_activity.read(self.db).answers, 1)

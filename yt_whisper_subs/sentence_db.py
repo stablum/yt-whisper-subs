@@ -10,6 +10,7 @@ import time
 import uuid
 
 from yt_whisper_subs import sentence_review_db
+from yt_whisper_subs import sentence_queue_db
 from yt_whisper_subs import vocabulary_db
 
 
@@ -20,7 +21,7 @@ JOIN sentence_sessions s ON s.id=p.session_id
 """
 
 
-class SentenceDbMixin(sentence_review_db.SentenceReviewDbMixin):
+class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db.SentenceReviewDbMixin):
     """Own durable sentence lifecycle; e.g. resuming a pending answer needs no language-provider call."""
 
     def sentence_cached(self, plan: dict, policy: dict) -> list[dict]:
@@ -171,6 +172,8 @@ class SentenceDbMixin(sentence_review_db.SentenceReviewDbMixin):
                 raise ValueError("This sentence round has ended")
             conn.execute("UPDATE sentence_presentations SET answer_text=?,answered_at=?,elapsed_ms=? WHERE id=?",
                          (answer, time.time(), elapsed_ms, presentation_id))
+            conn.execute("DELETE FROM sentence_drafts WHERE presentation_id=?", (presentation_id,))
+            conn.execute("INSERT OR IGNORE INTO sentence_checks(presentation_id,state) VALUES(?,'queued')", (presentation_id,))
             return self._sentence_row(conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
 
     def sentence_summary(self, session_id: str) -> dict:
