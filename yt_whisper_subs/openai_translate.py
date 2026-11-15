@@ -423,6 +423,7 @@ def openai_translation_prompt(
         "across cue boundaries. If a source cue is a fragment or starts/ends with ellipses, return a "
         "matching English fragment rather than completing it with adjacent cue text. It is better to "
         "return an incomplete English fragment than to borrow words or facts from another index.\n\n"
+        f"{translation_review.FRAGMENT_RULES}\n\n"
         f"{context_note}"
         "Example alignment rule: if index 7 says \"Waar geen betaald parkeren is.\", translate index 7 "
         "as a fragment such as \"Where there is no paid parking.\", not as part of index 6.\n"

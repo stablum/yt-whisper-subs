@@ -368,7 +368,7 @@ class PipelineRunner:
         )
 
     def _prepare_existing_subtitles(self, run_yields: RunYields) -> None:
-        """Hydrate and normalize reusable subtitles before skip decisions.
+        """Hydrate reusable subtitles without repeating generation transforms.
 
         Example: `self._prepare_existing_subtitles(run_yields)`.
         """
@@ -380,23 +380,11 @@ class PipelineRunner:
         if transcription_review.pending_path(run_yields.primary.archive).exists():
             return  # Pending review owns exact text spans; defer further normalization.
 
-        run_yields.primary.ensure_compacted(
-            self._args,
-            is_english=False,
-            label="primary",
-            force=self._args.force,
-        )
-        run_yields.primary.ensure_extended_gaps(self._args, label="primary", force=self._args.force)
+        # Finalization already compacted and extended generated cues. Repeating it
+        # moves end times again and invalidates translation checkpoints on every retry.
         if not run_yields.make_english or yield_files.stale_path(run_yields.english.archive).exists():
             return
 
-        run_yields.english.ensure_compacted(
-            self._args,
-            is_english=True,
-            label="English",
-            force=self._args.force,
-        )
-        run_yields.english.ensure_extended_gaps(self._args, label="English", force=self._args.force)
         if opts.uses_openai_english_translation(self._args):
             run_yields.english.align_timings_to(
                 run_yields.primary.sidecar,

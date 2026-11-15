@@ -1634,11 +1634,21 @@ The contract is:
     are accepted; this is not a style-polishing pass.
 13. Flagged cues and one immediate neighbor on either side are corrected together
     to repair both sides of a crossed boundary. Only those spans can change.
+    Repair targets carry both their original chunk index and their output-slot
+    index, so sparse renumbering cannot confuse the finding with another cue.
+    Nearby unchanged cues supply **both current Dutch and English text** as
+    read-only context. This lets a repaired continuation fit the actual English
+    auxiliary/subject on the other side of a boundary, rather than duplicating
+    a predicate or breaking a previously repaired fragment. Generation and
+    correction share a split-predicate rule, permitting harmless active/passive
+    phrasing while preserving each cue's facts, tense and fragment boundaries.
     Their new texts and an unchanged guard cue on either side are reviewed again;
     the other texts retain their original review. There are at most two correction
     rounds per translation chunk. Unresolved errors or malformed/unavailable
     reviews stop the run before replacing the English SRT. Passed chunks remain
     reusable and the run log identifies unresolved local indexes and reasons.
+    Richer repair context does not change the acceptance rules or invalidate
+    already-reviewed chunks, so a normal retry reuses them without retranslating.
 14. The script renders a new English SRT by pairing each translated text with the
    original source cue start and end timestamps.
 
@@ -1860,6 +1870,13 @@ drop all text immediately. By default each cue is extended by up to 5 seconds
 into the following gap, capped at the next cue's start time so cues do not
 overlap. The final cue is left unchanged because there is no following cue to
 cap against. Use `--subtitle-gap-extension 0` to disable this.
+
+Compaction and gap extension run once when generated subtitles are finalized.
+Ordinary replay and pipeline retries hydrate cached copies without repeating
+those transforms. In particular, a long silent gap cannot keep extending a cue
+by another five seconds on each retry or invalidate a reviewed translation
+checkpoint by changing the primary SRT hash. Regenerate subtitles explicitly
+to apply changed compaction or gap-extension settings to existing yields.
 
 For the default OpenAI translation path, this timing extension happens on the
 primary SRT before translation. The English SRT is rendered onto those same cue

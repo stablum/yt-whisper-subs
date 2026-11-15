@@ -170,6 +170,43 @@ class ReviewFlowTests(unittest.TestCase):
 class ReviewContractTests(unittest.TestCase):
     """Keep batch indexing, malformed replies and model settings explicit; e.g. forty-cue boundaries."""
 
+    def test_repairs_receive_current_english_on_both_sides_of_the_editable_span(self) -> None:
+        """Fit repaired fragments to unchanged neighbors; e.g. fixing cue 42 must see the current English auxiliary in cue 40."""
+
+        cues = [srt.SubtitleCue(idx, idx + 1, f"Bron {idx}.") for idx in range(1, 46)]
+        texts = [f"Current English {idx}." for idx in range(1, 46)]
+        texts[39] = "That has"
+        api = mock.Mock(return_value={"output_text": json.dumps(translations("been stated by him,", "Present tense.", "Following text."))})
+        reviewer = translation_review.TranslationReview(argparse.Namespace())
+        with mock.patch.object(openai_client, "responses_api_request", api), contextlib.redirect_stdout(io.StringIO()):
+            result = reviewer._repair(cues, texts, {42: "meaning: Use present tense."}, ("Earlier source", "Later source"))
+        prompt, document = api.call_args.args[1]["input"].split("\n", 1)
+        data = json.loads(document)
+        self.assertEqual([(row["index"], row["chunk_index"]) for row in data["targets"]], [(1, 41), (2, 42), (3, 43)])
+        neighbors = {row["chunk_index"]: row for row in data["unchanged_neighbors"]}
+        self.assertEqual(set(neighbors), {39, 40, 44, 45})
+        self.assertEqual(neighbors[40], {"chunk_index": 40, "source": "Bron 40.", "translation": "That has"})
+        self.assertIn("READ-ONLY", prompt)
+        self.assertIn("Original chunk cue 42", data["targets"][1]["problems_in_this_span"][0])
+        self.assertEqual(result[:40], texts[:40])
+        self.assertEqual(result[43:], texts[43:])
+        self.assertEqual(result[40:43], ["been stated by him,", "Present tense.", "Following text."])
+
+    def test_fragment_repair_keeps_adjacent_targets_in_chronological_output_slots(self) -> None:
+        """Disambiguate sparse repair slots; e.g. original cue 40 corresponds to output slot two, not forty."""
+
+        cues = [srt.SubtitleCue(idx, idx + 1, f"Bron {idx}.") for idx in range(1, 44)]
+        texts = [f"English {idx}." for idx in range(1, 44)]
+        api = mock.Mock(return_value={"output_text": json.dumps(translations("Before.", "That has", "been said by him."))})
+        with mock.patch.object(openai_client, "responses_api_request", api), contextlib.redirect_stdout(io.StringIO()):
+            translation_review.TranslationReview(argparse.Namespace())._repair(cues, texts, {40: "alignment: Duplicated verb."}, ("", ""))
+        prompt, document = api.call_args.args[1]["input"].split("\n", 1)
+        targets = json.loads(document)["targets"]
+        self.assertEqual([row["chunk_index"] for row in targets], [39, 40, 41])
+        self.assertEqual([row["index"] for row in targets], [1, 2, 3])
+        self.assertIn("That has", prompt)
+        self.assertIn("Each output index refers only to the same target index", prompt)
+
     def test_batch_context_and_sparse_repairs_keep_original_indexes(self) -> None:
         """Check both sides of a review boundary and only replace sparse targets; e.g. cues 40 and 42."""
 

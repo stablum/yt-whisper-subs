@@ -96,6 +96,24 @@ class SubtitlePairTests(unittest.TestCase):
             self.assertFalse(any(path.exists() for path in backups))
             self.assertEqual(pair.archive.read_text(encoding="utf-8"), self._srt_text("new"))
 
+    def test_restored_backup_extends_long_gaps_once(self) -> None:
+        """Finalize rebuilt output without repeatedly transforming cached files; e.g. a twenty-second gap gets one five-second extension."""
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            pair = subtitle_files.SubtitlePair(root / "video.srt", root / "archive.srt")
+            backup = subtitle_files.uncompacted_backup_path(pair.sidecar)
+            backup.write_text("1\n00:00:00,000 --> 00:00:01,000\nFirst.\n\n"
+                              "2\n00:00:30,000 --> 00:00:31,000\nNext.\n", encoding="utf-8")
+            args = self._args(compact_subs="none")
+            args.subtitle_gap_extension = 5
+            pair.hydrate("primary", args, is_english=False, force=False)
+            self.assertEqual(srt.parse_srt(pair.sidecar.read_text(encoding="utf-8"))[0].end_ms, 6000)
+            original = pair.sidecar.read_bytes()
+            pair.hydrate("primary", args, is_english=False, force=False)
+            self.assertEqual(pair.sidecar.read_bytes(), original)
+            self.assertEqual(pair.archive.read_bytes(), original)
+
     def _args(self, *, compact_subs: str) -> argparse.Namespace:
         """Build the option namespace used by subtitle pair transforms.
 

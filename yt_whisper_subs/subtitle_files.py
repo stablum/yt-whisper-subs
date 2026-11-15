@@ -337,6 +337,8 @@ class SubtitlePair(NamedTuple):
         if not restored_content:
             return False
 
+        # A rebuilt backup is fresh output; cached canonical copies skip this transform on retries.
+        restored_content, _ = extend_subtitle_gaps_srt_content(restored_content, args)
         path.parent.mkdir(parents=True, exist_ok=True)
         yield_files.atomic_write(path, restored_content)
         print(f"{action} {label} subtitles from uncompacted backup: {path}")
