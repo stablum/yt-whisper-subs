@@ -3,8 +3,6 @@
 Example: listen, replay slowly if needed, type Dutch, then inspect Dutch corrections and English meaning.
 """
 
-import json
-
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 import shiboken6
@@ -13,6 +11,7 @@ from yt_whisper_subs import library_sentences
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_written_controls as written
 from yt_whisper_subs import listening_tts
+from yt_whisper_subs import listening_voices
 from yt_whisper_subs import sentence_practice as sentences
 
 
@@ -50,7 +49,9 @@ class WavePlayer(QtCore.QObject):
 class ListeningCard(library_sentences.SentenceCard):
     """Share draft, feedback and correction-hover behavior while concealing both texts; e.g. accessible labels cannot expose the script early."""
 
-    def __init__(self, db, *, player=None) -> None:
+    settings_changed = QtCore.Signal()
+
+    def __init__(self, db, *, player=None, audio_cache=None) -> None:
         """Attach lightweight playback controls to the shared card; e.g. native tests inject a silent player."""
 
         super().__init__()
@@ -58,6 +59,17 @@ class ListeningCard(library_sentences.SentenceCard):
         self._player = player or WavePlayer(self)
         self._row = None
         self._task = None
+        self._cache = audio_cache or (lambda: listening_tts.AudioCache(db))
+        self._presets = []
+        self._saved = None
+        self._speed = "normal"
+        self._requested = None
+        self._voices = QtWidgets.QTabBar()
+        self._voices.setExpanding(False)
+        self._voices.setUsesScrollButtons(True)
+        self._voices.setAccessibleName("Choose a voice for this sentence")
+        self._voices.setStyleSheet("QTabBar::tab {font-size:13pt;padding:10px 16px;}")
+        self._voices.currentChanged.connect(self._voice_changed)
         self._replay = QtWidgets.QPushButton("Listen again · Alt+P")
         self._replay.setShortcut("Alt+P")
         self._slow = QtWidgets.QPushButton("Listen slowly · Alt+L")
@@ -75,8 +87,9 @@ class ListeningCard(library_sentences.SentenceCard):
             button.setStyleSheet("font-size:14pt;padding:10px 18px;")
             layout.addWidget(button)
         layout.addStretch()
-        self.layout().insertWidget(1, self._controls)
-        self.layout().insertWidget(2, self._audio_note)
+        self.layout().insertWidget(1, self._voices)
+        self.layout().insertWidget(2, self._controls)
+        self.layout().insertWidget(3, self._audio_note)
         self._replay.clicked.connect(lambda: self._play("normal"))
         self._slow.clicked.connect(lambda: self._play("slow"))
         self._stop.clicked.connect(self._stopped)
@@ -88,6 +101,7 @@ class ListeningCard(library_sentences.SentenceCard):
         self._stopped()
         self._row = None
         self._controls.hide()
+        self._voices.hide()
         self._audio_note.hide()
         super().idle(title, message)
 
@@ -98,6 +112,7 @@ class ListeningCard(library_sentences.SentenceCard):
         if changed:
             self._stopped()
         self._row = row
+        self._load_voices()
         self.editor.setPlaceholderText("Type the Dutch sentence you hear…")
         self.editor.setAccessibleName("Your Dutch transcription")
         self.show_question(written.Question(source="Listen and type what you hear",
@@ -105,10 +120,48 @@ class ListeningCard(library_sentences.SentenceCard):
                                             instruction="Write the complete Dutch sentence. You can listen again or slow it down.",
                                             draft=row["answer_text"]))
         self._controls.show()
+        self._voices.show()
         self._audio_note.show()
         self._audio_note.setText("English meaning appears with the correction.")
         if changed and row["answer_text"] is None and row["outcome"] is None:
             QtCore.QTimer.singleShot(0, self, lambda: self._autoplay(row["id"]))
+
+    def _load_voices(self) -> None:
+        """Preserve selection across questions and harmless renames; e.g. a learner can keep using the conversational preset."""
+
+        saved = self._db.setting(listening_voices.SETTING, "")
+        if saved == self._saved:
+            return
+        previous = self._voices.tabData(self._voices.currentIndex())
+        self._saved = saved
+        self._presets = listening_voices.read(self._db).enabled
+        with QtCore.QSignalBlocker(self._voices):
+            while self._voices.count():
+                self._voices.removeTab(0)
+            for preset in self._presets:
+                idx = self._voices.addTab(preset.name)
+                self._voices.setTabData(idx, preset.id)
+                self._voices.setTabToolTip(idx, "Play this sentence with " + preset.name)
+                if preset.id == previous:
+                    self._voices.setCurrentIndex(idx)
+
+    def _voice_changed(self, _idx: int) -> None:
+        """Play the selected preset directly; e.g. comparing speakers needs one click and no new exercise."""
+
+        self._stopped()
+        self._play("normal")
+
+    def configure(self) -> None:
+        """Edit voices while retaining this round; e.g. new styles are prepared from the same approved sentences."""
+
+        from yt_whisper_subs import library_voice_config
+
+        self._stopped()
+        if library_voice_config.VoiceDialog(self._db, self).exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            self._load_voices()
+            self.settings_changed.emit()
+            if self._row:
+                self._repair_audio()
 
     def _autoplay(self, presentation_id: int) -> None:
         """Avoid late playback after navigation or submission; e.g. a scheduled first listen cannot speak behind Activity."""
@@ -122,13 +175,18 @@ class ListeningCard(library_sentences.SentenceCard):
         if not self._row or not self.isVisible():
             return
         try:
-            audio = self._db.listening_audio(self._row["question_id"])
+            self._speed = speed
+            self._requested = self._row["id"]
+            config = self._presets[self._voices.currentIndex()].config
+            profile = self._cache().engine(config).profile
+            audio = self._db.listening_audio(self._row["question_id"], profile)
             if not audio or not self._db.listening_audio_valid(audio):
                 self._repair_audio()
                 return
             path = self._db.listening_paths(audio["cache_key"])[speed]
             self._player.play(path, audio[f"{speed}_seconds"])
-            self._db.listening_play(self._row["id"], speed)
+            self._db.listening_play(self._row["id"], speed, cache_key=audio["cache_key"])
+            self._requested = None
             self._stop.setEnabled(True)
             self._audio_note.setText("Playing slowly…" if speed == "slow" else "Playing…")
         except (OSError, ValueError) as exc:
@@ -140,21 +198,24 @@ class ListeningCard(library_sentences.SentenceCard):
         if self._task:
             return
         row = self._row
-        question = {"id": row["question_id"], "body_json": json.dumps(row["content"])}
-        self._audio_note.setText("Preparing audio…")
-        task = library_workers.BackgroundTask(lambda report: listening_tts.AudioCache(self._db).prepare([question], report))
+        questions = self._db.listening_questions(row["session_id"])
+        self._audio_note.setText("Preparing enabled voices for this round…")
+        task = library_workers.BackgroundTask(lambda report: self._cache().prepare(questions, report))
         self._task = task
-        task.signals.finished.connect(lambda _: self._repaired(row["id"]))
+        task.signals.progress.connect(self._audio_note.setText)
+        task.signals.finished.connect(self._repaired)
         task.signals.failed.connect(lambda message: self._repair_failed(row["id"], message))
         task.signals.cancelled.connect(lambda: self._repair_failed(row["id"], "Audio preparation paused."))
         QtCore.QThreadPool.globalInstance().start(task)
 
-    def _repaired(self, presentation_id: int) -> None:
+    def _repaired(self, _result) -> None:
         """Replay only the repaired question still on screen; e.g. a late completion cannot speak the previous exercise."""
 
         self._task = None
-        if shiboken6.isValid(self) and self._row and self._row["id"] == presentation_id:
-            self._play("normal")
+        if shiboken6.isValid(self):
+            self._audio_note.setText("Voices are ready. Choose one to listen.")
+            if self._row and self._row["id"] == self._requested:
+                self._play(self._speed)
 
     def _repair_failed(self, presentation_id: int, message: str) -> None:
         """Offer a local retry without losing typed text; e.g. a voice download failure is not a wrong answer."""
@@ -167,6 +228,7 @@ class ListeningCard(library_sentences.SentenceCard):
         """Stop only owned playback; e.g. switching sentences cannot leave overlapping voices."""
 
         self._player.stop()
+        self._requested = None
         self._stop.setEnabled(False)
 
     def _playback_finished(self) -> None:

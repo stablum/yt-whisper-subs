@@ -5,6 +5,7 @@ Example: `proc.run(["python", "--version"])` prints and executes a command.
 
 from __future__ import annotations
 
+import contextlib
 import argparse
 import json
 import os
@@ -163,12 +164,13 @@ def request_process_tree_termination(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
     if os.name == "nt":
-        subprocess.Popen(
+        killer = subprocess.Popen(
             ["taskkill", "/PID", str(process.pid), "/T", "/F"],
             **child_process_kwargs(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        threading.Thread(target=killer.wait, daemon=True, name="yt-whisper-subs-process-stop").start()
         return
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -288,6 +290,7 @@ def _stream_process_output(
     *,
     capture_stdout: bool,
     silence_seconds: float | None,
+    quiet: bool = False,
 ) -> tuple[int, str | None]:
     """Drain subprocess output while reporting long periods with no text.
 
@@ -308,8 +311,13 @@ def _stream_process_output(
     last_output_time = time.monotonic()
     reader_done = False
     silence_limit = silence_seconds or 0.0
+    from yt_whisper_subs import task_cancel
+
+    control = task_cancel.current()
 
     while not reader_done or process.poll() is None:
+        if control:
+            control.checkpoint()
         try:
             chunk = output_q.get(timeout=_OUTPUT_POLL_SECONDS)
         except queue.Empty:
@@ -327,13 +335,15 @@ def _stream_process_output(
 
         if capture_stdout:
             captured_parts.append(chunk)
-        sys.stdout.write(chunk)
-        if chunk in {"\n", "\r"}:
+        if not quiet:
+            sys.stdout.write(chunk)
+        if not quiet and chunk in {"\n", "\r"}:
             sys.stdout.flush()
         last_output_time = time.monotonic()
 
     returncode = process.wait()
     reader.join(timeout=1)
+    process.stdout.close()
     stdout_text = "".join(captured_parts) if capture_stdout else None
     return returncode, stdout_text
 
@@ -346,6 +356,7 @@ def run(
     check: bool = True,
     silence_seconds: float | None = cfg.DEFAULT_SUBPROCESS_SILENCE_SECONDS,
     window: ChildWindow = ChildWindow.HIDDEN,
+    quiet: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a command while preserving live output in the run log.
 
@@ -353,8 +364,9 @@ def run(
     """
 
     configure_stdio()
-    print()
-    print(f"> {command_text(cmd)}")
+    if not quiet:
+        print()
+        print(f"> {command_text(cmd)}")
     command = [str(part) for part in cmd]
 
     if capture_stdout and not stream_stdout:
@@ -369,9 +381,13 @@ def run(
             stderr=subprocess.STDOUT,
         )
     else:
+        from yt_whisper_subs import task_cancel
+
+        control = task_cancel.current()
+        kwargs = isolated_process_kwargs(window) if control else child_process_kwargs(window)
         process = subprocess.Popen(
             command,
-            **child_process_kwargs(window),
+            **kwargs,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -379,13 +395,15 @@ def run(
             stderr=subprocess.STDOUT,
         )
         try:
-            returncode, stdout_text = _stream_process_output(
-                process,
-                capture_stdout=capture_stdout,
-                silence_seconds=silence_seconds,
-            )
+            tree = ProcessTreeControl(process.pid)
+            scope = control.controllable(lambda: request_process_tree_termination(process), tree.suspend, tree.resume) if control else contextlib.nullcontext()
+            with scope:
+                returncode, stdout_text = _stream_process_output(
+                    process, capture_stdout=capture_stdout, silence_seconds=silence_seconds, quiet=quiet,
+                )
         except BaseException:
             _terminate_process(process)
+            process.stdout.close()
             raise
         result = subprocess.CompletedProcess(command, returncode, stdout=stdout_text)
 

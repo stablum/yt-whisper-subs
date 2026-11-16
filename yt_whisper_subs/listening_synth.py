@@ -30,7 +30,8 @@ def main(manifest: str) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             temp = path.with_name(path.name + f".{uuid.uuid4().hex}.part")
             try:
-                cfg = config.SynthesisConfig(length_scale=1.3 if speed == "slow" else 1.0)
+                scale = (1.3 if speed == "slow" else 1.0) / document.get("pace", 1)
+                cfg = config.SynthesisConfig(length_scale=scale, volume=document.get("volume", 1))
                 with wave.open(str(temp), "wb") as output:
                     speaker.synthesize_wav(job["text"], output, syn_config=cfg)
                 listening_tts.duration(temp)

@@ -25,6 +25,7 @@ class SentenceOptions(QtWidgets.QWidget):
     restart_requested = QtCore.Signal()
     finish_requested = QtCore.Signal()
     editing = QtCore.Signal(bool)
+    voices_requested = QtCore.Signal()
 
     def __init__(self, saved: str, direction: sentences.Direction) -> None:
         """Restore next-round preferences; e.g. English-to-Dutch writing is the default direction."""
@@ -80,6 +81,11 @@ class SentenceOptions(QtWidgets.QWidget):
         button.setMenu(self.menu)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        if self._direction == sentences.Direction.LISTEN:
+            voices = QtWidgets.QPushButton("Voices…")
+            voices.setAutoDefault(False)
+            voices.clicked.connect(self.voices_requested)
+            layout.addWidget(voices)
         layout.addWidget(button)
 
     def _restart(self) -> None:
@@ -150,7 +156,7 @@ class SentencePanel(library_sentence_session.SentenceSession):
         if direction == sentences.Direction.LISTEN:
             from yt_whisper_subs import library_listening
 
-            card = library_listening.ListeningCard(db)
+            card = library_listening.ListeningCard(db, audio_cache=lambda: self._engine.audio)
         else:
             card = SentenceCard()
         view = written.WritingView(SentenceOptions(saved, direction), card)
@@ -159,3 +165,6 @@ class SentencePanel(library_sentence_session.SentenceSession):
                                     intro="Use your saved vocabulary to understand and write natural sentences in everyday situations.",
                                     view=view, ops=library_written.SessionOps.for_db(db, "sentence", direction.value))
         super().__init__(db, mode, engine=engine or sentence_service.SentenceService(db))
+        if direction == sentences.Direction.LISTEN:
+            card.settings_changed.connect(self.activity_changed)
+            view.options.voices_requested.connect(card.configure)

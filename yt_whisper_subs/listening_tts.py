@@ -12,11 +12,13 @@ import threading
 import urllib.request
 import uuid
 import wave
+import contextlib
 from pathlib import Path
 
 from yt_whisper_subs import task_cancel
 from yt_whisper_subs import cfg
 from yt_whisper_subs import proc
+from yt_whisper_subs import listening_voices
 
 
 VOICE = "nl_NL-ronnie-medium"
@@ -28,6 +30,7 @@ _FILES = {f"{VOICE}.onnx": ("sha256", "c6b69203247c9ff9aaadf59ec51147fffb16bb2c2
           f"{VOICE}.onnx.json": ("git", "0b7184d816827c955ec15e47f366d65effa7b1a3"),
           "MODEL_CARD": ("git", "fad44433d0cb18ae198c43ae4ba29fb960272ad4")}
 _LOCK = threading.Lock()
+_CACHE_LOCK = threading.Lock()
 
 
 def _checkpoint() -> None:
@@ -35,6 +38,19 @@ def _checkpoint() -> None:
 
     if control := task_cancel.current():
         control.checkpoint()
+
+
+@contextlib.contextmanager
+def synthesis():
+    """Share bounded CPU synthesis across engines; e.g. a preview waits cooperatively for a preparing round."""
+
+    while not _LOCK.acquire(timeout=0.25):
+        _checkpoint()
+    try:
+        _checkpoint()
+        yield
+    finally:
+        _LOCK.release()
 
 
 def digest(path: Path, algorithm: str = "sha256") -> str:
@@ -67,11 +83,13 @@ class PiperSpeech:
 
     profile = PROFILE
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, config=None) -> None:
         """Store assets beside the catalog; e.g. a custom output root has its own durable speech cache."""
 
         self._root = root
         self._model = None
+        self.config = config or listening_voices.Config()
+        self.profile = PROFILE if (self.config.pace, self.config.volume) == (1, 1) else PROFILE + ":" + self.config.identity()
 
     def _load(self, report) -> None:
         """Download only missing or corrupt pinned assets, then load offline; e.g. later app starts need no network for speech."""
@@ -108,12 +126,16 @@ class PiperSpeech:
     def render_many(self, jobs: list[tuple[str, dict[str, Path]]], report) -> None:
         """Load one voice in an isolated native worker per batch; e.g. a phonemizer exit cannot close the library application."""
 
-        while not _LOCK.acquire(timeout=0.25):
-            _checkpoint()
         manifest = self._root / f"synthesis-{uuid.uuid4().hex}.json"
+        with synthesis():
+            self._render_worker(jobs, report, manifest)
+
+    def _render_worker(self, jobs, report, manifest: Path) -> None:
+        """Isolate native phonemization and always remove its manifest; e.g. a cancelled worker leaves no sentence text behind."""
+
         try:
             self._load(report)
-            document = {"model": str(self._model.resolve()), "jobs": [
+            document = {"model": str(self._model.resolve()), "pace": self.config.pace, "volume": self.config.volume, "jobs": [
                 {"text": text, "paths": {speed: str(path.resolve()) for speed, path in paths.items()}} for text, paths in jobs]}
             manifest.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
             python = Path(sys.executable)
@@ -127,7 +149,6 @@ class PiperSpeech:
                 raise RuntimeError("Dutch speech synthesis failed: " + (result.stdout or "native worker exited")[-1400:])
         finally:
             manifest.unlink(missing_ok=True)
-            _LOCK.release()
 
 
 class AudioCache:
@@ -137,16 +158,43 @@ class AudioCache:
         """Allow deterministic speech fixtures; e.g. tests verify readiness without a model download."""
 
         self._db = db
-        self._speech = speech or PiperSpeech(db.path.parent / "practice-audio")
+        self._speech = speech
 
     def prepare(self, questions: list[dict], report) -> None:
         """Repair absent audio by content identity without regenerating text; e.g. two rounds reusing a sentence reuse its recordings."""
 
+        while not _CACHE_LOCK.acquire(timeout=0.25):
+            _checkpoint()
+        try:
+            for preset in listening_voices.read(self._db).enabled:
+                _checkpoint()
+                self._prepare_voice(self.engine(preset.config), questions, report)
+        finally:
+            _CACHE_LOCK.release()
+
+    def engine(self, config):
+        """Resolve a preset through the cache's speech strategy; e.g. offline fixtures exercise the same UI and readiness paths."""
+
+        return self._speech or listening_voices.speech(self._db, config)
+
+    def ready(self, questions: list[dict]) -> bool:
+        """Require both speeds for every enabled preset; e.g. a new character warms existing text instead of spending generation tokens."""
+
+        try:
+            profiles = {self.engine(row.config).profile for row in listening_voices.read(self._db).enabled}
+            return all((audio := self._db.listening_audio(row['id'], profile)) and self._db.listening_audio_valid(audio)
+                       for row in questions for profile in profiles)
+        except (ValueError, OSError):
+            return False
+
+    def _prepare_voice(self, engine, questions: list[dict], report) -> None:
+        """Cache each enabled sound independently; e.g. adding a conversational voice reuses Piper and already approved sentence text."""
+
         jobs, prepared = {}, []
         for row in questions:
             text = json.loads(row["body_json"])["dutch"]
-            key = hashlib.sha256((self._speech.profile + "\0" + text).encode("utf-8")).hexdigest()
-            cached = self._db.listening_audio(row["id"])
+            key = hashlib.sha256((engine.profile + "\0" + text).encode("utf-8")).hexdigest()
+            cached = self._db.listening_audio(row["id"], engine.profile)
             if cached and cached["cache_key"] == key and self._db.listening_audio_valid(cached):
                 continue
             paths = self._db.listening_paths(key)
@@ -163,6 +211,7 @@ class AudioCache:
                 jobs[key] = (text, missing)
             prepared.append((row["id"], key, paths))
         if jobs:
-            self._speech.render_many(list(jobs.values()), report)
+            engine.render_many(list(jobs.values()), report)
         for question_id, key, paths in prepared:
-            self._db.listening_store(question_id, key, self._speech.profile, paths)
+            settings = engine.config.model_dump(mode="json") if hasattr(engine, "config") else {}
+            self._db.listening_store(question_id, key, engine.profile, paths, settings=settings)

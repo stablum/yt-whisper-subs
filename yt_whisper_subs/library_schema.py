@@ -121,6 +121,7 @@ class SchemaDbMixin:
             conn.execute("PRAGMA journal_mode = WAL")
             sentence_schema.upgrade(conn)
             conn.executescript(_SCHEMA)
+            listening_db.upgrade(conn)
             self._practice_upgrade(conn)
             job_columns = {
                 str(row["name"]) for row in conn.execute("PRAGMA table_info(pipeline_jobs)")

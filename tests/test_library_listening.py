@@ -121,7 +121,7 @@ class ListeningFlowTests(unittest.TestCase):
         cached = self.db.listening_audio(row["question_id"])
         self.db.listening_paths(cached["cache_key"])["normal"].unlink()
         before = len(card._player.calls)
-        with mock.patch.object(library_listening.listening_tts, "AudioCache", return_value=self.engine._audio):
+        with mock.patch.object(card, "_cache", return_value=self.engine.audio):
             card._replay.click()
             self._wait(lambda: len(card._player.calls) > before)
         self.assertEqual(card.editor.toPlainText(), "De slimste")
@@ -174,8 +174,8 @@ class ListeningFlowTests(unittest.TestCase):
             release.wait(3)
             report("Resuming speech preparation")
 
-        cache = SimpleNamespace(prepare=blocked)
-        with mock.patch.object(library_listening.listening_tts, "AudioCache", return_value=cache):
+        cache = SimpleNamespace(prepare=blocked, engine=self.engine.audio.engine)
+        with mock.patch.object(card, "_cache", return_value=cache):
             card._replay.click()
             self._wait(entered.is_set)
             with mock.patch("sys.excepthook") as errors:

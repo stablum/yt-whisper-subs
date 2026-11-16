@@ -79,9 +79,11 @@ class PracticeReady(QtCore.QObject):
         stock = self._db.practice_stock(track, opts, policy)
         if stock:
             if track == practice_tracks.Track.LISTENING:
-                return any(not (audio := self._db.listening_audio(row["id"])) or not self._db.listening_audio_valid(audio) for row in stock)
+                return not engine.audio.ready(stock)
             return False
-        if self._db.practice_ready(track.kind, opts, policy):
+        if session := self._db.practice_ready(track.kind, opts, policy):
+            if track == practice_tracks.Track.LISTENING:
+                return not engine.audio.ready(self._db.listening_questions(session))
             return False
         active = getattr(self._db, track.kind + "_active")
         session = active(track.direction.value) if track.direction else active()

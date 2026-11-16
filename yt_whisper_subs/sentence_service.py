@@ -29,7 +29,7 @@ class SentenceService:
 
         self._db = db
         self._provider = provider or sentence_generate.SentenceGenerator()
-        self._audio = listening_tts.AudioCache(db, speech)
+        self.audio = listening_tts.AudioCache(db, speech)
 
     @practice_ready.serialized("sentence", sentence_generate.PROMPT_VERSION, materialize="prepare_media")
     def start(self, opts: sentences.Options, report, *, cached_first: bool = True, background: bool = False) -> str:
@@ -87,7 +87,7 @@ class SentenceService:
         """Finish optional listening media before publishing a ready round; e.g. approved text survives a failed voice download."""
 
         if opts.direction == sentences.Direction.LISTEN:
-            self._audio.prepare(questions, report)
+            self.audio.prepare(questions, report)
 
     def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
         """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""

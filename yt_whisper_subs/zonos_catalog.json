@@ -1,0 +1,782 @@
+{
+  "source_revision": "96d9e0ec1e39083ed336ac78f24e3dbc93721c0f",
+  "model_revision": "d2d142a86b1e6aeb4252679673c86ecd86177bf8",
+  "voices": [
+    {
+      "name": "Cillian",
+      "language": "English",
+      "style": "en-Irish",
+      "gender": "Male",
+      "file": "gguf/voices/English/Cillian_en-Irish_M_1.embedding.npy"
+    },
+    {
+      "name": "Imogen",
+      "language": "English",
+      "style": "en-British",
+      "gender": "Female",
+      "file": "gguf/voices/English/Imogen_en-British_F_1.embedding.npy"
+    },
+    {
+      "name": "Jett",
+      "language": "English",
+      "style": "en-energetic",
+      "gender": "Male",
+      "file": "gguf/voices/English/Jett_en-energetic_M_1.embedding.npy"
+    },
+    {
+      "name": "Morgana",
+      "language": "English",
+      "style": "en-witch",
+      "gender": "Female",
+      "file": "gguf/voices/English/Morgana_en-witch_F_1.embedding.npy"
+    },
+    {
+      "name": "Rupert",
+      "language": "English",
+      "style": "en-British",
+      "gender": "Male",
+      "file": "gguf/voices/English/Rupert_en-British_M_1.embedding.npy"
+    },
+    {
+      "name": "Sakura",
+      "language": "English",
+      "style": "en-anime",
+      "gender": "Female",
+      "file": "gguf/voices/English/Sakura_en-anime_F_1.embedding.npy"
+    },
+    {
+      "name": "Savannah",
+      "language": "English",
+      "style": "en-American",
+      "gender": "Female",
+      "file": "gguf/voices/English/Savannah_en-American_F_1.embedding.npy"
+    },
+    {
+      "name": "Thaddeus",
+      "language": "English",
+      "style": "en-announcervoice",
+      "gender": "Male",
+      "file": "gguf/voices/English/Thaddeus_en-announcervoice_M_1.embedding.npy"
+    },
+    {
+      "name": "Willow",
+      "language": "English",
+      "style": "en-asrm",
+      "gender": "Female",
+      "file": "gguf/voices/English/Willow_en-asrm_F_1.embedding.npy"
+    },
+    {
+      "name": "Wyatt",
+      "language": "English",
+      "style": "en-American",
+      "gender": "Male",
+      "file": "gguf/voices/English/Wyatt_en-American_M_1.embedding.npy"
+    },
+    {
+      "name": "Gaspard",
+      "language": "French",
+      "style": "fr",
+      "gender": "Male",
+      "file": "gguf/voices/French/Gaspard_fr_M_1.embedding.npy"
+    },
+    {
+      "name": "Liesel",
+      "language": "German",
+      "style": "de",
+      "gender": "Female",
+      "file": "gguf/voices/German/Liesel_de_F_1.embedding.npy"
+    },
+    {
+      "name": "Wolfgang",
+      "language": "German",
+      "style": "de",
+      "gender": "Male",
+      "file": "gguf/voices/German/Wolfgang_de_M_1.embedding.npy"
+    },
+    {
+      "name": "Ananya",
+      "language": "Hindi",
+      "style": "hi",
+      "gender": "Female",
+      "file": "gguf/voices/Hindi/Ananya_hi_F_1.embedding.npy"
+    },
+    {
+      "name": "Arjun",
+      "language": "Hindi",
+      "style": "hi",
+      "gender": "Male",
+      "file": "gguf/voices/Hindi/Arjun_hi_M_1.embedding.npy"
+    },
+    {
+      "name": "Ginevra",
+      "language": "Italian",
+      "style": "it",
+      "gender": "Female",
+      "file": "gguf/voices/Italian/Ginevra_it_F_1.embedding.npy"
+    },
+    {
+      "name": "Lorenzo",
+      "language": "Italian",
+      "style": "it",
+      "gender": "Male",
+      "file": "gguf/voices/Italian/Lorenzo_it_M_1.embedding.npy"
+    },
+    {
+      "name": "Minjun",
+      "language": "Korean",
+      "style": "ko",
+      "gender": "Male",
+      "file": "gguf/voices/Korean/Minjun_ko_M_1.embedding.npy"
+    },
+    {
+      "name": "Seoyeon",
+      "language": "Korean",
+      "style": "ko",
+      "gender": "Female",
+      "file": "gguf/voices/Korean/Seoyeon_ko_F_1.embedding.npy"
+    },
+    {
+      "name": "Haoran",
+      "language": "Mandarin Chinese",
+      "style": "zh-energetic",
+      "gender": "Male",
+      "file": "gguf/voices/Mandarin Chinese/Haoran_zh-energetic_M_1.embedding.npy"
+    },
+    {
+      "name": "Meilin",
+      "language": "Mandarin Chinese",
+      "style": "zh-energetic",
+      "gender": "Female",
+      "file": "gguf/voices/Mandarin Chinese/Meilin_zh-energetic_F_1.embedding.npy"
+    },
+    {
+      "name": "Leonor",
+      "language": "Portuguese",
+      "style": "pt",
+      "gender": "Female",
+      "file": "gguf/voices/Portuguese/Leonor_pt_F_1.embedding.npy"
+    },
+    {
+      "name": "Thiago",
+      "language": "Portuguese",
+      "style": "pt",
+      "gender": "Male",
+      "file": "gguf/voices/Portuguese/Thiago_pt_M_1.embedding.npy"
+    },
+    {
+      "name": "Rodrigo",
+      "language": "Spanish",
+      "style": "es",
+      "gender": "Male",
+      "file": "gguf/voices/Spanish/Rodrigo_es_M_1.embedding.npy"
+    },
+    {
+      "name": "Ximena",
+      "language": "Spanish",
+      "style": "es",
+      "gender": "Female",
+      "file": "gguf/voices/Spanish/Ximena_es_F_1.embedding.npy"
+    },
+    {
+      "name": "Chaitanya",
+      "language": "Telugu",
+      "style": "te",
+      "gender": "Male",
+      "file": "gguf/voices/Telugu/Chaitanya_te_M_1.embedding.npy"
+    },
+    {
+      "name": "Sravya",
+      "language": "Telugu",
+      "style": "te",
+      "gender": "Female",
+      "file": "gguf/voices/Telugu/Sravya_te_F_1.embedding.npy"
+    }
+  ],
+  "controls": [
+    {
+      "id": "identity.gender",
+      "group": "Character",
+      "label": "Gender",
+      "axis": true,
+      "negative": "male",
+      "positive": "female",
+      "scale": 1
+    },
+    {
+      "id": "identity.age",
+      "group": "Character",
+      "label": "Age",
+      "axis": true,
+      "negative": "younger",
+      "positive": "older",
+      "scale": 1
+    },
+    {
+      "id": "pitch.pitch",
+      "group": "Pitch",
+      "label": "Pitch",
+      "axis": true,
+      "negative": "lower",
+      "positive": "higher",
+      "scale": 1
+    },
+    {
+      "id": "pitch.pitch_range",
+      "group": "Pitch",
+      "label": "Pitch range",
+      "axis": true,
+      "negative": "monotone",
+      "positive": "varied",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.british",
+      "group": "English accents",
+      "label": "British",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.american",
+      "group": "English accents",
+      "label": "American",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.scottish",
+      "group": "English accents",
+      "label": "Scottish",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.irish",
+      "group": "English accents",
+      "label": "Irish",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.australian",
+      "group": "English accents",
+      "label": "Australian",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.indian",
+      "group": "English accents",
+      "label": "Indian",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_en.welsh",
+      "group": "English accents",
+      "label": "Welsh",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.hin",
+      "group": "International accents",
+      "label": "Hindi",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.spa",
+      "group": "International accents",
+      "label": "Spanish",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.fra",
+      "group": "International accents",
+      "label": "French",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.por",
+      "group": "International accents",
+      "label": "Portuguese",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.deu",
+      "group": "International accents",
+      "label": "German",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.vie",
+      "group": "International accents",
+      "label": "Vietnamese",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "accents_l1.pol",
+      "group": "International accents",
+      "label": "Polish",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "mandarin.cmn",
+      "group": "Mandarin accents",
+      "label": "Mandarin voice accent",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "mandarin_hidden.cmn",
+      "group": "Mandarin accents",
+      "label": "Mandarin delivery accent",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.deep",
+      "group": "Voice texture",
+      "label": "Deep",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.shrill",
+      "group": "Voice texture",
+      "label": "Shrill",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.husky",
+      "group": "Voice texture",
+      "label": "Husky",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.raspy",
+      "group": "Voice texture",
+      "label": "Raspy",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.soft",
+      "group": "Voice texture",
+      "label": "Soft",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "texture.authoritative",
+      "group": "Voice texture",
+      "label": "Authoritative",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "room.clean",
+      "group": "Recording character",
+      "label": "Studio clarity",
+      "axis": true,
+      "negative": "noisy / far-field",
+      "positive": "clean studio",
+      "scale": 1
+    },
+    {
+      "id": "delivery.whisper",
+      "group": "Delivery",
+      "label": "Whisper",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "delivery.loud",
+      "group": "Delivery",
+      "label": "Loud",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "delivery.tempo",
+      "group": "Delivery",
+      "label": "Tempo",
+      "axis": true,
+      "negative": "slow",
+      "positive": "fast",
+      "scale": 1
+    },
+    {
+      "id": "delivery.pitch",
+      "group": "Delivery",
+      "label": "Pitch",
+      "axis": true,
+      "negative": "low",
+      "positive": "high",
+      "scale": 1
+    },
+    {
+      "id": "delivery.conversational",
+      "group": "Delivery",
+      "label": "Conversational",
+      "axis": true,
+      "negative": "read",
+      "positive": "spontaneous",
+      "scale": 1
+    },
+    {
+      "id": "expressive.expressive",
+      "group": "Expressiveness",
+      "label": "Expressive",
+      "axis": true,
+      "negative": "flat",
+      "positive": "lively intonation",
+      "scale": 1
+    },
+    {
+      "id": "disfluency.disfluent",
+      "group": "Hesitation",
+      "label": "Hesitation",
+      "axis": true,
+      "negative": "fluent",
+      "positive": "hesitant, fillers",
+      "scale": 1
+    },
+    {
+      "id": "mood.valence",
+      "group": "Mood and clarity",
+      "label": "Mood · negative to positive",
+      "axis": true,
+      "negative": "negative",
+      "positive": "positive",
+      "scale": 4
+    },
+    {
+      "id": "mood.arousal",
+      "group": "Mood and clarity",
+      "label": "Energy",
+      "axis": true,
+      "negative": "calm",
+      "positive": "energetic",
+      "scale": 4
+    },
+    {
+      "id": "mood.dominance",
+      "group": "Mood and clarity",
+      "label": "Assertiveness",
+      "axis": true,
+      "negative": "gentle",
+      "positive": "assertive",
+      "scale": 4
+    },
+    {
+      "id": "mood.loudness",
+      "group": "Mood and clarity",
+      "label": "Loudness",
+      "axis": true,
+      "negative": "quiet",
+      "positive": "loud",
+      "scale": 2
+    },
+    {
+      "id": "mood.tempo",
+      "group": "Mood and clarity",
+      "label": "Tempo",
+      "axis": true,
+      "negative": "slow",
+      "positive": "fast",
+      "scale": 4
+    },
+    {
+      "id": "mood.clarity",
+      "group": "Mood and clarity",
+      "label": "Clarity",
+      "axis": true,
+      "negative": "soft-edged",
+      "positive": "clear",
+      "scale": 2
+    },
+    {
+      "id": "mood.articulation",
+      "group": "Mood and clarity",
+      "label": "Articulation",
+      "axis": true,
+      "negative": "relaxed",
+      "positive": "precise",
+      "scale": 4
+    },
+    {
+      "id": "emotions.angry",
+      "group": "Emotions",
+      "label": "Angry",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.sad",
+      "group": "Emotions",
+      "label": "Sad",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.happy",
+      "group": "Emotions",
+      "label": "Happy",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.fearful",
+      "group": "Emotions",
+      "label": "Fearful",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.disgusted",
+      "group": "Emotions",
+      "label": "Disgusted",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.surprised",
+      "group": "Emotions",
+      "label": "Surprised",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.adoring",
+      "group": "Emotions",
+      "label": "Adoring",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.confused",
+      "group": "Emotions",
+      "label": "Confused",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.content",
+      "group": "Emotions",
+      "label": "Content",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.cute",
+      "group": "Emotions",
+      "label": "Cute",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.desirous",
+      "group": "Emotions",
+      "label": "Desirous",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.disappointed",
+      "group": "Emotions",
+      "label": "Disappointed",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.distressed",
+      "group": "Emotions",
+      "label": "Distressed",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.embarrassed",
+      "group": "Emotions",
+      "label": "Embarrassed",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.ecstatic",
+      "group": "Emotions",
+      "label": "Ecstatic",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.guilty",
+      "group": "Emotions",
+      "label": "Guilty",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.interested",
+      "group": "Emotions",
+      "label": "Interested",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.pained",
+      "group": "Emotions",
+      "label": "Pained",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.proud",
+      "group": "Emotions",
+      "label": "Proud",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.realizing",
+      "group": "Emotions",
+      "label": "Realizing",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.relieved",
+      "group": "Emotions",
+      "label": "Relieved",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.serene",
+      "group": "Emotions",
+      "label": "Serene",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emotions.scared",
+      "group": "Emotions",
+      "label": "Scared",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    },
+    {
+      "id": "emphasis_nv_nodur.emphasis",
+      "group": "Emphasis",
+      "label": "Emphasis",
+      "axis": false,
+      "negative": "Less",
+      "positive": "More",
+      "scale": 1
+    }
+  ]
+}

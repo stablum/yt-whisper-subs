@@ -98,7 +98,8 @@ The companion library is optimized for a second workflow:
     corrections and independent review of vocabulary and sentence writing.
 22. Listen to Dutch sentences built around saved vocabulary, type what you hear,
     then review the transcript and English meaning, with local speech, slow replay,
-    adaptive word review and separate listening progress.
+    adaptive word review and separate listening progress. Compare the same sentence
+    through Piper and multiple independently configured ZONOS3-Mini voice presets.
 
 ## Important Defaults
 
@@ -126,7 +127,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | Ready practice rounds | six independent destinations, including listening; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
-| Listening speech | local CPU Piper 1.7.0, Dutch Netherlands `nl_NL-ronnie-medium`; cached normal and slower recordings; no speech API fees |
+| Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
 | Shared vocabulary learning | lexical mistakes add both intended and genuinely confused dictionary words; quiz and sentence practice share word reviews and selection |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -2902,7 +2903,7 @@ grader does not guess new dictionary entries for unknown misheard words.
 
 The cached **Qwen3-TTS-12Hz-1.7B-VoiceDesign** checkpoint was investigated, but
 Dutch is absent from its [official supported language list](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign).
-The feature instead uses [Piper](https://github.com/OHF-Voice/piper1-gpl) and the
+The default engine is [Piper](https://github.com/OHF-Voice/piper1-gpl) with the
 [Dutch Netherlands Ronnie voice](https://huggingface.co/rhasspy/piper-voices/blob/main/nl/nl_NL/ronnie/medium/MODEL_CARD),
 trained for Dutch, with a CC0 dataset and 22,050 Hz mono output. Speech runs on the
 CPU, leaving the GPU available for Whisper. Piper **1.7.0** is pinned and checked
@@ -2914,8 +2915,8 @@ the real containing data directory, preserving the complete matching dictionary
 set without copying files or reinstalling the voice. Resolving only the package
 directory does not resolve these individual file links. Synthesis runs in a hidden, cancellable child process,
 loading the voice once per batch, so a native runtime error cannot terminate the
-library. There is no voice cloning, reference recording, speech server or cloud
-TTS request.
+library. Piper needs no reference recording. The additional Zonos engine supports
+local reference recordings; neither engine needs a speech server or cloud TTS request.
 
 The first listening preparation downloads about **63 MB** of voice weights plus
 configuration into `<output root>/library/practice-audio/voices/`. The upstream
@@ -2924,24 +2925,106 @@ configuration/model card against their published Git blob identities. Later
 speech synthesis works offline. Sentence generation still needs the configured
 practice API whenever approved unused stock is insufficient.
 
-Both normal and slow WAVs are prepared **before** a listening round is published
+#### Voice presets and expression
+
+Open **Listening → Voices…**, available beside round options even before a round
+is ready. Presets have names, enable checkboxes, duplication, removal and ordering
+controls. Enable the voices you want to compare: each gets a labeled tab above
+the same listening question. Clicking a voice plays that sentence immediately
+from its own recording; **Listen slowly** uses that selected voice's slower take.
+The first enabled voice is the initial automatic choice; a later selection stays
+selected across questions. At least one preset must remain enabled.
+
+Piper is initially enabled. Two editable Zonos starters, **Zonos · clear** and
+**Zonos · conversational**, are initially unchecked. Select a preset to edit its
+engine, speaker, pace and volume. For Zonos the editor exposes all **27 published
+speaker presets** and **65 steering directions**, grouped into character, pitch,
+accents, voice texture, recording character, delivery, expressiveness, hesitation,
+mood/clarity, emotions and emphasis. Strength sliders have synchronized percentage
+entries, plain-language poles and individual/group neutral resets. Quick starting
+styles include Neutral, Clear, Conversational, Lively, Calm and Whisper; these
+replace expression settings while retaining the selected speaker. Advanced controls
+include speaker guidance, output headroom and a reproducible variation seed, plus
+**New variation**. Only controls supported by the pinned model bundle are exposed;
+it has no temporal steering-release metadata, so release/fade controls are omitted.
+
+**Preview** and **Preview slowly** audition a separate editable Dutch sample;
+they never reveal the hidden question or count as practice. Previews are cached
+by text and audible settings. You can keep adjusting settings during generation;
+a completed take plays only if it still matches the visible settings. **Save**
+persists the set; **Cancel** discards unsaved preset edits. Closing the dialog stops
+its audio and cancels its owned preparation. Optional local reference audio can
+replace a built-in speaker, enabling a Dutch reference voice without uploading it.
+Use a clean, single-speaker recording; FFmpeg must be available for decoding it.
+The released speaker list has no Dutch-native reference preset: those identities
+can speak Dutch, but accent/clarity varies. Piper remains the Dutch-native default.
+Reference content is hashed, so replacing a file changes that preset's audio identity.
+
+#### Shared ZONOS3-Mini installation
+
+[ZONOS3-Mini](https://github.com/Zyphra/ZONOS3-Mini) is an optional local engine.
+The native runtime is MIT-licensed and the published model is Apache-2.0-licensed.
+The integration uses the full native ggml implementation, since the separate HF
+Python wrapper does not expose the published steering controls. **Install / repair
+Zonos** builds the official pinned source locally and verifies each downloaded
+model/voice file against its upstream LFS SHA-256 or Git blob identity. There is
+no third-party executable download. Installation is optional and does not add
+build tools to ordinary library startup dependencies.
+
+On Windows, building needs Visual Studio 2022 C++ Build Tools and Rust/Cargo.
+The installer prepares CMake, Ninja and the Hugging Face download client in the
+managed environment. The compiled CPU runtime subsequently runs without a Python
+speech environment and leaves the GPU available for Whisper. Source revision
+`96d9e0ec1e39083ed336ac78f24e3dbc93721c0f` and model revision
+`d2d142a86b1e6aeb4252679673c86ecd86177bf8` pin the executable recipe, voices and
+control catalogue together. The selected inference files are the quantized
+backbone, decoder, speaker encoder and steering bundle, plus published voice assets.
+The 86 verified inference/voice files occupy about **1.10 GiB**; the compiled
+executable is about 18 MB, with source and build files using additional space.
+
+Everything reusable lives under the **user cache**, independently from this checkout:
+
+- `~/.cache/zonos3-mini/source/` and `build/`: official source and compiled runtime;
+  on Windows the executable is `build/Release/zonos3-cli.exe`.
+- `~/.cache/huggingface/hub/models--Zyphra--ZONOS3-Mini/`: pinned model/voice files
+  in the standard HF cache, available to other applications.
+- `~/.cache/zonos3-mini/install.json`: runtime location and canonical model paths
+  for other apps; native workers use real blob paths rather than Windows file links.
+- `~/.cache/zonos3-mini/previews/`: reusable sample recordings.
+
+**Open shared model folder** opens the install location. Installation is also
+available from the managed Python:
+
+```powershell
+.\.venv\Scripts\python.exe -m yt_whisper_subs.zonos_install
+```
+
+Both normal and slow WAVs for **every enabled preset** are prepared **before** a listening round is published
 as ready, including its single bounded background standby. Approved text survives
 speech-download or synthesis failures and is reused on retry. Recordings are
-content-addressed by exact Dutch text and voice profile under
+content-addressed by exact Dutch text and all audible settings under
 `<output root>/library/practice-audio/sentences/`; opaque filenames do not reveal
 the script. Files are atomically published and hash-checked before playback.
 Deleted or damaged audio is repaired in a background worker without losing the
 current draft or generating another sentence.
+Adding or adjusting voices warms the current round's existing sentences and the
+bounded standby round. It does not request replacement exercises. Renaming or
+reordering presets reuses their audio, as do distinct preset labels with identical
+settings. Disabled presets incur no preparation. Shared cache ownership prevents
+foreground recovery and background readiness from rendering the same missing audio
+concurrently. Strong or unusual styles may need a milder setting if the model
+cannot finish a recording; the answer and approved text remain saved.
 
 **Progress → Listening** shows partial transcription scores, whole-sentence
 accuracy, daily trends, saved targets, forms, contexts, mistakes and rounds.
 It also shows pre-answer listen/slow-listen counts for checked answers and
 accuracy after one normal listen. `listening_assets` stores each recording recipe
-and its voice/hash provenance once; `listening_audio` links immutable
+and its voice/settings/hash provenance once; `listening_audio` links immutable
 `sentence_questions` to those shared assets, so repairing a recording updates all
-its question references together. `listening_plays` relates
+its question references together, retaining multiple profiles per question and
+old profiles for historical events. `listening_plays` relates
 timestamped playback starts to `sentence_presentations`, retaining whether
-each occurred before answering. Listening is a distinct `listen_nl` sentence skill;
+each occurred before answering and the exact recording actually played. Listening is a distinct `listen_nl` sentence skill;
 the transactional schema upgrade preserves existing translations, drafts, queued
 corrections and foreign keys. Metrics are derived from events. Only submitting an
 answer contributes to daily reminders, seven-day bars and calendar activity;
@@ -2949,7 +3032,7 @@ preparation and replay do not inflate effort. Translation progress excludes
 dictation, while vocabulary priorities remain shared.
 
 ```powershell
-python -m unittest tests.test_listening tests.test_library_listening tests.test_practice_ready -v
+python -m unittest tests.test_listening tests.test_listening_voices tests.test_library_listening tests.test_practice_ready -v
 ```
 
 ## Command Line Reference
@@ -3295,6 +3378,8 @@ High-level groups:
 | `yt_whisper_subs.vocabulary_db` | Relational click history, context caches, leased requests, and derived word/video counts. |
 | `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
 | `yt_whisper_subs.listening_tts` / `listening_synth` | Verified Dutch voice assets, content-addressed speech cache and isolated batch synthesis. |
+| `yt_whisper_subs.listening_voices` / `zonos_speech` / `zonos_install` | Named sound presets, full native Zonos steering strategy and shared verified source/model installation. |
+| `yt_whisper_subs.library_voice_config` / `library_voice_controls` | Native preset management, local previews, calibrated expression sliders and quick starting styles. |
 | `yt_whisper_subs.listening_grade` / `listening_db` | Local dictation alignment, relational audio provenance and timestamped replay assistance. |
 | `yt_whisper_subs.library_listening` | Native concealed listening card, normal/slow replay and background audio recovery. |
 | `yt_whisper_subs.vocabulary_worker` | Independent durable-save and translation lanes with restart recovery. |
