@@ -29,6 +29,7 @@ from yt_whisper_subs import listening_db
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_stock
 from yt_whisper_subs import word_reviews
+from yt_whisper_subs import vocabulary_accretion_db
 
 
 _VIDEO_SELECT = """
@@ -64,6 +65,7 @@ class SnapshotResult(NamedTuple):
 
 
 class LibraryDb(
+    vocabulary_accretion_db.AccretionDbMixin,
     word_reviews.WordReviewDbMixin,
     practice_ready.ReadyDbMixin,
     practice_stock.StockDbMixin,

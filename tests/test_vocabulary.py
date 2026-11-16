@@ -14,6 +14,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests import practice_fixtures
+
 from yt_whisper_subs import library_db
 from yt_whisper_subs import cli
 from yt_whisper_subs import pipeline
@@ -149,7 +151,7 @@ class VocabularyTests(unittest.TestCase):
             return MEANING
 
         translator.translate.side_effect = blocked
-        service = vocabulary_worker.VocabularyService(self._db, translator)
+        service = vocabulary_worker.VocabularyService(self._db, translator, auditor=practice_fixtures.EmptyAuditor())
         replies = []
         try:
             service.submit(self._selection("a"), replies.append)
@@ -173,7 +175,7 @@ class VocabularyTests(unittest.TestCase):
         translator = mock.Mock(wraps=self._translator)
         translator.model, translator.reasoning = self._translator.model, self._translator.reasoning
         translator.translate.return_value = MEANING
-        service = vocabulary_worker.VocabularyService(self._db, translator)
+        service = vocabulary_worker.VocabularyService(self._db, translator, auditor=practice_fixtures.EmptyAuditor())
         for idx in range(8):
             service.submit(self._selection(str(idx)), lambda _: None)
         service.close()

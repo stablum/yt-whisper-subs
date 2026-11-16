@@ -10,10 +10,25 @@ import time
 from yt_whisper_subs import practice
 from yt_whisper_subs import vocabulary
 from yt_whisper_subs import vocabulary_translate
+from yt_whisper_subs import vocabulary_accretion
 
 
 TERMS = [("liep", "walked", "Ik liep naar huis."), ("eventueel", "possibly", "Ik kom eventueel morgen."),
          ("winkel", "shop", "De winkel is open."), ("slim", "clever", "Dat is een slim plan.")]
+
+
+class EmptyAuditor:
+    """Keep unrelated playback tests offline; e.g. their fake translator never triggers real lexical API work."""
+
+    def analyse(self, jobs):
+        """Return cached negative discoveries for fixtures; e.g. no synthetic word grows the vocabulary."""
+
+        return [vocabulary_accretion.Analysis(id=row["id"], vocabulary=[], splits=[]) for row in jobs]
+
+    def verify(self, jobs):
+        """Reject unexpected positive proposals in unrelated tests; e.g. morphology belongs to dedicated integration tests."""
+
+        raise AssertionError("Empty fixture discoveries do not need verification")
 
 
 def seed(db, terms=TERMS) -> None:

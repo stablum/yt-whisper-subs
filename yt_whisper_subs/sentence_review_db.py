@@ -75,6 +75,8 @@ class SentenceReviewDbMixin:
                           result["before_json"], result["after_json"], result["log_json"], presentation_id))
             completed = {**row, "content": content, "grade": grade.model_dump()}
             self._learning_save(conn, "sentence", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
+            if row["direction"] == "listen_nl":
+                self._accretion_mistake(conn, "listening", {**completed, "outcome": "correct" if grade.correct else "wrong"})
             lookups = {item["word_id"]: item["lookup_id"] for item in conn.execute(
                 "SELECT l.word_id,w.lookup_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
                 "WHERE w.question_id=?", (row["question_id"],))}
@@ -127,6 +129,7 @@ class SentenceReviewDbMixin:
             conn.execute("UPDATE sentence_questions SET flagged_at=? WHERE id=?", (time.time(), row["question_id"]))
             conn.execute("UPDATE sentence_presentations SET outcome='invalid' WHERE question_id=?", (row["question_id"],))
             self._word_unlink(conn, "sentence", row["question_id"])
+            self._accretion_unlink(conn, "sentence", row["question_id"])
             conn.execute("DELETE FROM sentence_question_states WHERE question_id=?", (row["question_id"],))
             words = conn.execute("SELECT l.word_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
                                  "WHERE w.question_id=?", (row["question_id"],)).fetchall()

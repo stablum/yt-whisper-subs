@@ -39,7 +39,7 @@ class VocabularyDialog(QtWidgets.QDialog):
 
         super().__init__(parent)
         self.setWindowTitle("Vocabulary · subtitles and practice")
-        self.resize(1080, 760)
+        self.resize(1180, 760)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self._service = service
         self._snapshot = None
@@ -48,9 +48,9 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._search.setPlaceholderText("Search words, meanings, or dictionary forms…")
         self._group = QtWidgets.QCheckBox("Group by dictionary form")
         self._status = QtWidgets.QLabel()
-        self._words = self._table(["Word", "Language", "Dictionary form", "Meaning", "Clicks", "Mistakes", "Videos", "Last seen", "Translation"])
+        self._words = self._table(["Word", "Language", "Dictionary form", "Meaning", "Clicks", "Mistakes", "Videos", "Compounds", "Last seen", "Translation"])
         self._history = self._table(["Recorded at", "Source", "Cue time", "Click position", "Meaning", "Translation"])
-        for col, width in enumerate((125, 75, 135, 180, 60, 70, 65, 160, 105)):
+        for col, width in enumerate((125, 75, 135, 180, 60, 70, 65, 95, 160, 105)):
             self._words.setColumnWidth(col, width)
         for col, width in enumerate((160, 245, 90, 105, 200, 105)):
             self._history.setColumnWidth(col, width)
@@ -69,7 +69,7 @@ class VocabularyDialog(QtWidgets.QDialog):
     def _arrange(self) -> None:
         """Compose resizable panels and their native actions; e.g. replay a selected occurrence."""
 
-        retry = QtWidgets.QPushButton("Retry failed translations")
+        retry = QtWidgets.QPushButton("Retry failed lookups / enrichment")
         play = QtWidgets.QPushButton("Play occurrence")
         source = QtWidgets.QPushButton("Open source")
         close = QtWidgets.QPushButton("Close")
@@ -125,7 +125,8 @@ class VocabularyDialog(QtWidgets.QDialog):
 
         rows = self._service.db.word_summary(by_lemma=self._group.isChecked())
         query = self._search.text().casefold().strip()
-        snapshot = (rows, query, self._group.isChecked())
+        enrichment = self._service.db.accretion_status()
+        snapshot = (rows, query, self._group.isChecked(), enrichment)
         if snapshot == self._snapshot:
             return
         self._snapshot = snapshot
@@ -141,7 +142,7 @@ class VocabularyDialog(QtWidgets.QDialog):
             word = row["lemma"] if self._group.isChecked() and row["lemma"] else row["surface"]
             status = f"{row['failed']} failed" if row["failed"] else (f"{row['pending']} pending" if row["pending"] else "Ready")
             values = [word, row["language"], row["lemma"] or "", row["meaning"] or "",
-                      row["clicks"], row["mistakes"], row["videos"], _when(row["occurred_at"]), status]
+                      row["clicks"], row["mistakes"], row["videos"], row["components"], _when(row["occurred_at"]), status]
             idx = self._words.rowCount()
             self._words.insertRow(idx)
             identity = (row["language"], row["word_key"])
@@ -154,8 +155,11 @@ class VocabularyDialog(QtWidgets.QDialog):
                 self._words.selectRow(idx)
         self._words.setSortingEnabled(True)
         self._words.blockSignals(False)
+        pending = sum(count for state, count in enrichment.items() if state not in {"done", "failed"})
+        failed = enrichment.get("failed", 0)
         self._status.setText(f"{len(rows):,} words · {sum(row['clicks'] for row in rows):,} clicks · "
-                             f"{sum(row['mistakes'] for row in rows):,} word confusions · each occurrence is retained")
+                             f"{sum(row['mistakes'] for row in rows):,} word confusions · "
+                             f"enrichment: {pending} pending, {failed} failed")
         self._show_history()
 
     def _show_history(self) -> None:
@@ -171,7 +175,7 @@ class VocabularyDialog(QtWidgets.QDialog):
         for idx, row in enumerate(self._events):
             cue = _time(row["cue_start_ms"] / 1000) if row["cue_start_ms"] is not None else "—"
             position = _time(row["position_seconds"]) if row["position_seconds"] is not None else "—"
-            source = row["title"] + (f" · {row['role']}" if row["role"] else "")
+            source = row["title"] + (f" · {row['role']}" if row["role"] in {"intended", "confused"} else "")
             values = [_when(row["occurred_at"]), source, cue, position, row["meaning"] or "", row["state"].capitalize()]
             for col, value in enumerate(values):
                 self._history.setItem(idx, col, QtWidgets.QTableWidgetItem(value))
@@ -203,12 +207,22 @@ class VocabularyDialog(QtWidgets.QDialog):
                  f"Dictionary form: {row['lemma'] or '—'} · {row['lemma_meaning'] or '—'}",
                  f"{row['part_of_speech'] or ''} · {row['note'] or ''}",
                  f"Expression: {row['expression'] or '—'}", "", ctx["sentence"]]
+        for split in self._service.db.word_compounds(row["lookup_id"]):
+            parts = []
+            for part in split.parts:
+                if part.word is None:
+                    parts.append(f"{part.text} (linking element)")
+                else:
+                    parts.append(f"{part.text} [{part.word.lemma}: {part.word.meaning}]")
+            lines.extend(["", f"Compound: {split.lemma} = {' + '.join(parts)}"])
         if row["origin"] == "click":
             lines.extend(["", f"Before: {ctx['before']}", f"After: {ctx['after']}",
                           f"English subtitle: {ctx['english'] or '—'}", "", f"Source: {row['url']}", f"File: {row['path']}"])
+        elif row["origin"] == "component":
+            lines.extend(["", row["title"], "Added as an unassessed constituent; no independent mistake was recorded."])
         else:
             lines.extend(["", f"{row['title']} · {row['role']} concept",
-                          f"You typed: {row['typed'] or '(omitted)'}", f"Correction: {row['correction']}",
+                          f"You selected or typed: {row['typed'] or '(omitted)'}", f"Correction: {row['correction']}",
                           f"English: {ctx['english'] or '—'}"])
         if row["ambiguous"]:
             lines.append("Meaning is ambiguous in this context.")

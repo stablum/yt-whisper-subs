@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS practice_states (
 );
 """
 
-_PRESENTATION = """
+PRESENTATION = """
 SELECT p.*,q.body_json,q.lookup_id,l.word_id,l.context_json,s.direction,s.status,s.scheduler_json,s.requested_count
 FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.session_id
@@ -188,13 +188,13 @@ class PracticeDbMixin:
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(_PRESENTATION + " WHERE p.session_id=? AND p.outcome IS NULL "
+            row = conn.execute(PRESENTATION + " WHERE p.session_id=? AND p.outcome IS NULL "
                                "AND s.status='active' ORDER BY p.ordinal LIMIT 1", (session_id,)).fetchone()
             if row is None:
                 return None
             conn.execute("UPDATE practice_presentations SET shown_at=COALESCE(shown_at,?) WHERE id=?",
                          (time.time(), row["id"]))
-            return self._practice_row(conn.execute(_PRESENTATION + " WHERE p.id=?", (row["id"],)).fetchone())
+            return self._practice_row(conn.execute(PRESENTATION + " WHERE p.id=?", (row["id"],)).fetchone())
 
     @staticmethod
     def _practice_state(conn, row: dict, result: dict) -> None:
@@ -222,7 +222,7 @@ class PracticeDbMixin:
         now = time.time()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(_PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone()
+            row = conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone()
             if row is None or row["shown_at"] is None:
                 raise ValueError("This question has not been presented")
             if row["outcome"] is not None:
@@ -243,7 +243,9 @@ class PracticeDbMixin:
                           result["recall"], result["due_at"], result["before_json"], result["after_json"],
                           result["log_json"], presentation_id))
             self._practice_complete(conn)
-            return self._practice_row(conn.execute(_PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
+            completed = conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone()
+            self._accretion_mistake(conn, "quiz", dict(completed))
+            return self._practice_row(completed)
 
     def practice_flag(self, presentation_id: int) -> None:
         """Quarantine an unclear question and remove its grading influence; e.g. report an AI synonym error."""
@@ -252,7 +254,7 @@ class PracticeDbMixin:
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(_PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone()
+            row = conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone()
             if row is None or row["shown_at"] is None:
                 raise ValueError("This question has not been presented")
             conn.execute("UPDATE practice_questions SET flagged_at=? WHERE id=?", (time.time(), row["question_id"]))
@@ -261,6 +263,7 @@ class PracticeDbMixin:
                          "answered_at=CASE WHEN shown_at IS NOT NULL THEN COALESCE(answered_at,?) ELSE answered_at END "
                          "WHERE question_id=?", (time.time(), row["question_id"]))
             self._word_replay(conn, row["word_id"], row["direction"])
+            self._accretion_unlink(conn, "quiz", row["question_id"])
             self._practice_complete(conn)
 
     def practice_finish(self, session_id: str) -> dict:

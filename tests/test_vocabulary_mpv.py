@@ -14,6 +14,8 @@ import threading
 import unittest
 from pathlib import Path
 
+from tests import practice_fixtures
+
 from yt_whisper_subs import library_db
 from yt_whisper_subs import mpv_ipc
 from yt_whisper_subs import playback
@@ -101,7 +103,7 @@ class MpvVocabularyTests(unittest.TestCase):
             db = library_db.LibraryDb(root / "catalog.sqlite3")
             db.initialize()
             gate = threading.Event()
-            service = vocabulary_worker.VocabularyService(db, FakeTranslator(gate))
+            service = vocabulary_worker.VocabularyService(db, FakeTranslator(gate), auditor=practice_fixtures.EmptyAuditor())
             capture = vocabulary_playback.WordCapture(service, words.Source.local(video))
             script = capture.prepare([en, nl], loaded, prefs)
             client = ProbeClient(capture, gate)

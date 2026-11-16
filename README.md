@@ -128,7 +128,8 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Ready practice rounds | six independent destinations, including listening; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
-| Shared vocabulary learning | lexical mistakes add both intended and genuinely confused dictionary words; quiz and sentence practice share word reviews and selection |
+| Shared vocabulary learning | all four practice modes import intended and genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
+| Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
 | OpenAI translation chunk size | `120` cues |
@@ -2268,6 +2269,64 @@ and rebuilds shared skills from all remaining valid modes, preserving the eviden
 python -m unittest tests.test_shared_learning tests.test_practice tests.test_sentence_practice tests.test_verbs -v
 ```
 
+### Compound Components And Vocabulary Accretion
+
+Version `0.6.5` covers every vocabulary entry point:
+
+| Source | Vocabulary added |
+| --- | --- |
+| Subtitle clicks in library- or CLI-launched mpv | The captured word plus verified constituents of its resolved Dutch dictionary form. |
+| Sentence translation, either direction | The intended and genuinely confused dictionary concepts from lexical mistakes, plus their compound constituents. |
+| Verb transformations | The same lexical import, including supporting words, followed by compound expansion. |
+| Word quiz, either direction | The intended concept and the genuine Dutch dictionary word represented by the **selected wrong choice**, with its own correct meaning. Unselected distractors are not imported. |
+| Listening dictation | Intended words and genuine different words written instead of the spoken script, including supporting words outside the saved targets. A real synonym still differs from what was spoken. |
+| Existing vocabulary and historical failed quiz/listening answers | A resumable background backfill uses saved lookups, answers and feedback; it never reruns question generation or grading. |
+
+For example, **kinderwagen** can add **kind** and **wagen**; the linking **-er-**
+is explained but is not a vocabulary word. Nested compounds retain the relations
+to their immediate parents. Analyses distinguish actual compound constituents,
+dictionary forms, stem changes and linking elements; affixes, arbitrary matching
+substrings and doubtful historical decompositions are excluded. Each proposed
+split must reconstruct its whole dictionary form and pass an independent
+linguistic check. Multiword expressions and ambiguous lookups are not blindly split.
+
+Components enter as **new, unassessed words**, retaining any existing review state.
+Failing a whole compound does not establish a failure on any constituent. Actual
+quiz/listening lexical confusions do produce shared failed word reviews in the
+tested direction; an original target already assessed by that answer receives
+only one failure. Typos and invented forms do not manufacture a confused word;
+pure grammar errors do not add lexical mistakes. Every source remains linked to
+its immutable answer or parent lookup. Reporting a question removes its additions
+from eligibility and rebuilds affected reviews while preserving independent sources.
+Vocabulary activity/reminder credit continues to count the submitted answer once.
+
+Enrichment runs in its own background lane, independently of click saving,
+contextual translation, and immediate local listening feedback. One request
+batches up to 12 discovery tasks; a second request checks only positive proposals.
+Morphology is shared across occurrences of the same lemma and meaning, and
+mistake analyses return compound information for imported words in the same request.
+Already checked morphology and roots assigned elsewhere in a batch are not
+requested again. Both positive and negative findings are cached; repeated identical
+confusions reuse the result while retaining separate dated review events.
+Model/reasoning policy is preserved with each leased job across restarts.
+
+Generated proposals are checkpointed **before verification**. Failures do not
+automatically repeat paid requests; **Vocabulary → Retry failed lookups / enrichment**
+retries only the unfinished stage. Closing practice leaves enrichment durable,
+and reopening the library resumes it. The first launch after upgrading also
+checks existing saved vocabulary in bounded batches. **Vocabulary** displays
+separate component-source counts, parent links, and pending/failed enrichment
+counts; derived components have no fabricated clicks, mistakes or video playback.
+
+`vocab_audits`, `vocab_audit_sources` and `vocab_additions` retain cached analyses,
+verification checkpoints, native source foreign keys and intended/confused/component
+roles. These sources feed the existing vocabulary eligibility and shared review
+ledger, rather than maintaining a second vocabulary or scheduler.
+
+```powershell
+python -m unittest tests.test_vocabulary_accretion -v
+```
+
 ### Adaptive Vocabulary Practice
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
@@ -2899,7 +2958,10 @@ Word-level edit similarity gives partial credit even when the complete sentence
 is wrong. The English meaning comes from the already audited bilingual pair.
 Saved-target credit measures transcription, not a separate test of English
 meaning. Mistakes on existing targets affect shared word review; this local
-grader does not guess new dictionary entries for unknown misheard words.
+grader does not guess new dictionary entries for unknown misheard words. Failed
+dictations then enter the separate cached vocabulary-enrichment lane described
+above, which can verify and import genuine intended/confused dictionary words
+without delaying feedback or rerunning the local grade.
 
 The cached **Qwen3-TTS-12Hz-1.7B-VoiceDesign** checkpoint was investigated, but
 Dutch is absent from its [official supported language list](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign).
@@ -3398,6 +3460,8 @@ High-level groups:
 | `yt_whisper_subs.vocabulary` | Source snapshots, Unicode token spans, occurrence context, and structured word meanings. |
 | `yt_whisper_subs.vocabulary_db` | Relational click history, context caches, leased requests, and derived word/video counts. |
 | `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
+| `yt_whisper_subs.vocabulary_accretion`, `vocabulary_accretion_worker` | Batched lexical discovery, exact compound structure checks, independent positive-proposal verification and resumable background execution. |
+| `yt_whisper_subs.vocabulary_accretion_db`, `vocabulary_accretion_schema` | Cached audit stages, source validity, derived-word provenance and transferred quiz/listening failures without duplicate target reviews. |
 | `yt_whisper_subs.listening_tts` / `listening_synth` | Verified Dutch voice assets, content-addressed speech cache and isolated batch synthesis. |
 | `yt_whisper_subs.listening_voices` / `zonos_speech` / `zonos_install` | Named sound presets, full native Zonos steering strategy and shared verified source/model installation. |
 | `yt_whisper_subs.library_voice_config` / `library_voice_controls` | Native preset management, local previews, calibrated expression sliders and quick starting styles. |

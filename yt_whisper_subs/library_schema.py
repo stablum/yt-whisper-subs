@@ -16,6 +16,7 @@ from yt_whisper_subs import practice_stock
 from yt_whisper_subs import vocabulary_learning_db
 from yt_whisper_subs import word_reviews
 from yt_whisper_subs import listening_db
+from yt_whisper_subs import vocabulary_accretion_schema
 
 
 _SCHEMA = f"""
@@ -93,6 +94,7 @@ CREATE TABLE IF NOT EXISTS video_history (
 {practice_stock.SCHEMA}
 {vocabulary_learning_db.SCHEMA}
 {word_reviews.SCHEMA}
+{vocabulary_accretion_schema.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

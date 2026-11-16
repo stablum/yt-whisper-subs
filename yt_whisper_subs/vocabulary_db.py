@@ -10,6 +10,7 @@ import time
 
 from yt_whisper_subs import vocabulary as words
 from yt_whisper_subs import vocabulary_learning_db as learning
+from yt_whisper_subs import vocabulary_accretion_schema as accretion
 
 
 SCHEMA = """
@@ -69,19 +70,21 @@ CREATE INDEX IF NOT EXISTS idx_vocab_pending ON vocab_lookups(state, lease_until
 CREATE INDEX IF NOT EXISTS idx_vocab_lookup_word ON vocab_lookups(word_id);
 """
 
+OCCURRENCES = f"{learning.OCCURRENCES} UNION ALL {accretion.OCCURRENCES}"
+
 _EVENTS = f"""
 SELECT e.*,e.event_key AS id,
        w.language, w.normalized, l.state, l.meaning, l.lemma, l.lemma_norm,
        l.lemma_meaning, l.part_of_speech, l.note, l.expression, l.ambiguous,
        l.error, l.context_json
-FROM ({learning.OCCURRENCES}) e
+FROM ({OCCURRENCES}) e
 JOIN vocab_lookups l ON l.id=e.lookup_id
 JOIN vocab_words w ON w.id=l.word_id
 """
 
 # One eligibility query is shared by word recognition and whole-sentence production.
 READY_LOOKUPS = f"""
-FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN ({learning.OCCURRENCES}) e ON e.lookup_id=l.id
+FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id JOIN ({OCCURRENCES}) e ON e.lookup_id=l.id
 WHERE w.language='nl' AND l.state='ready' AND l.ambiguous=0 AND TRIM(l.meaning)<>''
 """
 READY_WORDS = f"""
@@ -89,10 +92,11 @@ WITH ready AS (
     SELECT l.*,e.surface,ROW_NUMBER() OVER(PARTITION BY l.word_id ORDER BY e.occurred_at DESC,e.event_key DESC) AS n
     {READY_LOOKUPS}
 ), counts AS (
-    SELECT l.word_id,SUM(e.origin='click') AS clicks,COUNT(DISTINCT e.source_id) AS videos,SUM(e.origin<>'click') AS mistakes
-    FROM ({learning.OCCURRENCES}) e JOIN vocab_lookups l ON l.id=e.lookup_id GROUP BY l.word_id
+    SELECT l.word_id,SUM(e.origin='click') AS clicks,COUNT(DISTINCT e.source_id) AS videos,
+           SUM(e.origin NOT IN ('click','component')) AS mistakes,SUM(e.origin='component') AS components
+    FROM ({OCCURRENCES}) e JOIN vocab_lookups l ON l.id=e.lookup_id GROUP BY l.word_id
 ) SELECT r.id AS lookup_id,r.word_id,r.surface,r.meaning,r.note,r.context_json,r.lemma,r.lemma_meaning,r.part_of_speech,
-         c.clicks,c.videos,c.mistakes FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
+         c.clicks,c.videos,c.mistakes,c.components FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
 """
 
 
@@ -171,12 +175,14 @@ class VocabularyDbMixin(learning.LearningDbMixin):
                 conn.execute("UPDATE vocab_lookups SET state='failed',error=?,lease_until=NULL,lease_owner=NULL,updated_at=? "
                              "WHERE id=? AND state='working' AND lease_owner=?", (result, time.time(), lookup_id, owner))
             else:
-                conn.execute("UPDATE vocab_lookups SET state='ready',meaning=?,lemma=?,lemma_norm=?,"
+                cursor = conn.execute("UPDATE vocab_lookups SET state='ready',meaning=?,lemma=?,lemma_norm=?,"
                              "lemma_meaning=?,part_of_speech=?,note=?,expression=?,ambiguous=?,"
                              "error=NULL,lease_until=NULL,lease_owner=NULL,updated_at=? WHERE id=? AND state='working' AND lease_owner=?",
                              (result.meaning, result.lemma, words.normalized(result.lemma), result.lemma_meaning,
                               result.part_of_speech, result.note, result.expression, int(result.ambiguous),
                               time.time(), lookup_id, owner))
+                if cursor.rowcount:
+                    self._accretion_compound(conn, lookup_id)
 
     def word_lookup(self, lookup_id: int) -> dict:
         """Read translation state for acknowledgements; e.g. another process completed it."""
@@ -207,13 +213,14 @@ class VocabularyDbMixin(learning.LearningDbMixin):
             WITH events AS ({_EVENTS}), grouped AS (
                 SELECT *, {group} AS word_key FROM events
             ), counts AS (
-                SELECT language,word_key,SUM(origin='click') AS clicks,COUNT(DISTINCT source_id) AS videos,SUM(origin<>'click') AS mistakes,
+                SELECT language,word_key,SUM(origin='click') AS clicks,COUNT(DISTINCT source_id) AS videos,
+                       SUM(origin NOT IN ('click','component')) AS mistakes,SUM(origin='component') AS components,
                        SUM(state='failed') AS failed,SUM(state IN ('pending','working')) AS pending
                 FROM grouped GROUP BY language,word_key
             ), recent AS (
                 SELECT *,ROW_NUMBER() OVER(PARTITION BY language,word_key ORDER BY occurred_at DESC,id DESC) AS n
                 FROM grouped
-            ) SELECT r.*,c.clicks,c.videos,c.mistakes,c.failed,c.pending FROM recent r
+            ) SELECT r.*,c.clicks,c.videos,c.mistakes,c.components,c.failed,c.pending FROM recent r
               JOIN counts c USING(language,word_key) WHERE n=1 ORDER BY occurred_at DESC,id DESC
         """
         with self._connect() as conn:

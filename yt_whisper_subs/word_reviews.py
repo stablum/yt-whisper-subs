@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 
 from yt_whisper_subs import sentence_practice
+from yt_whisper_subs import vocabulary_accretion_schema as accretion
 
 
 SCHEMA = """
@@ -33,7 +34,7 @@ CREATE INDEX IF NOT EXISTS idx_word_transfers_skill ON word_transfers(word_id,di
 """
 
 # Immutable source events stay in their own tables; this is the shared chronological review ledger.
-REVIEWS = """
+REVIEWS = f"""
 SELECT 'practice' AS origin,p.id AS event_id,l.word_id,q.lookup_id,s.direction,p.answered_at,p.elapsed_ms,
        p.outcome='correct' AS correct,p.unsure,s.scheduler_json,s.include_early,p.outcome,
        json_extract(q.body_json,'$.surface') AS word
@@ -49,6 +50,13 @@ SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' WHEN q.direction='listen_nl' 
 FROM word_transfers r JOIN vocab_lookups l ON l.id=r.lookup_id
 LEFT JOIN sentence_presentations s ON s.id=r.sentence_id LEFT JOIN verb_presentations v ON v.id=r.verb_id
 LEFT JOIN sentence_questions q ON q.id=s.question_id
+WHERE NOT EXISTS (
+    SELECT 1 FROM vocab_additions d JOIN vocab_audit_sources a ON a.id=d.source_id
+    JOIN vocab_lookups x ON x.id=d.lookup_id
+    WHERE a.sentence_id=r.sentence_id AND x.word_id=r.word_id AND d.review=1 AND s.outcome='wrong'
+)
+UNION ALL
+{accretion.REVIEWS}
 """
 
 

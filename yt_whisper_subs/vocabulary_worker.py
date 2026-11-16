@@ -6,15 +6,19 @@ Example: `VocabularyService(db).submit(selection, notify)` acknowledges the SQLi
 from __future__ import annotations
 
 import json
+import os
 import queue
 import threading
 import uuid
 from collections.abc import Callable
 from typing import NamedTuple
 
+import psutil
+
 from yt_whisper_subs import library_db
 from yt_whisper_subs import vocabulary as words
 from yt_whisper_subs import vocabulary_translate
+from yt_whisper_subs import vocabulary_accretion_worker
 
 
 Notify = Callable[[dict], None]
@@ -30,7 +34,7 @@ class Capture(NamedTuple):
 class VocabularyService:
     """Own independent save and lookup lanes; e.g. an API outage never blocks clicks."""
 
-    def __init__(self, db: library_db.LibraryDb, translator: vocabulary_translate.WordTranslator | None = None) -> None:
+    def __init__(self, db: library_db.LibraryDb, translator: vocabulary_translate.WordTranslator | None = None, *, auditor=None) -> None:
         """Bind durable queues without starting idle threads; e.g. a newly opened library."""
 
         self._db = db
@@ -41,7 +45,8 @@ class VocabularyService:
         self._lock = threading.Lock()
         self._listeners: dict[int, list[Notify]] = {}
         self._threads: tuple[threading.Thread, ...] = ()
-        self._owner = uuid.uuid4().hex
+        self._owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
+        self._auditor = vocabulary_accretion_worker.Worker(db, self._owner, auditor)
 
     def start(self) -> None:
         """Start lazily and recover pending lookups; e.g. opening Vocabulary after a restart."""
@@ -52,6 +57,7 @@ class VocabularyService:
             self._threads = tuple(threading.Thread(target=fn, name=name, daemon=True)
                                   for fn, name in ((self._save_loop, "vocabulary-save"),
                                                    (self._lookup_loop, "vocabulary-lookup")))
+            self._threads += (threading.Thread(target=self._accretion_loop, name="vocabulary-accretion", daemon=True),)
             for thread in self._threads:
                 thread.start()
 
@@ -67,13 +73,13 @@ class VocabularyService:
     def resume(self) -> None:
         """Recover durable work only when it exists; e.g. no polling thread for a fresh library."""
 
-        if self._db.has_unfinished_word_lookups():
-            self.start()
+        self.start()
 
     def retry(self) -> int:
         """Wake failed translations after a user retry; e.g. repaired API credentials."""
 
         count = self._db.retry_word_lookups()
+        count += self._db.accretion_retry()
         self.start()
         self._wake.set()
         return count
@@ -95,6 +101,18 @@ class VocabularyService:
         if self._threads:
             self._threads[0].join()
             self._threads[1].join(timeout=0.1)
+            self._threads[2].join(timeout=0.1)
+
+    def _accretion_loop(self) -> None:
+        """Batch independent lexical work without delaying clicks or local dictation; e.g. recover cached compounds on restart."""
+
+        try:
+            self._db.accretion_seed()
+            while not self._stop.is_set():
+                if not self._auditor.step():
+                    self._stop.wait(2)
+        except Exception as exc:
+            print(f"Vocabulary enrichment: {exc}")
 
     @staticmethod
     def _notify(fn: Notify, result: dict) -> None:

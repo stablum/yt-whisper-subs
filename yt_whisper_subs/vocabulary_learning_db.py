@@ -88,6 +88,7 @@ class LearningDbMixin:
                 lookup_id = self._learning_lookup(conn, fix, role, capture)
                 conn.execute("INSERT INTO vocab_error_words VALUES(?,?,?)", (error, role, lookup_id))
                 self._word_observe(conn, kind, row, lookup_id, False)
+                self._accretion_compound(conn, lookup_id)
 
     @staticmethod
     def _learning_lookup(conn, fix, role: str, capture) -> int:
@@ -105,7 +106,7 @@ class LearningDbMixin:
             word_id = conn.execute("INSERT INTO vocab_words(language,normalized) VALUES('nl',?)", (norm,)).lastrowid
         sentence = document["dutch"]
         form = fix.dutch[0]
-        if role == "confused" and document["direction"] == "en_nl":
+        if role == "confused" and document["direction"] in {"en_nl", "listen_nl"}:
             sentence, form = document["answer"], fix.typed
         elif role == "confused":
             sentence = form = lexeme.lemma
@@ -114,12 +115,15 @@ class LearningDbMixin:
                    "span": [start, start + len(form)] if start >= 0 else None, "before": "", "after": "",
                    "english": document["english"] if role == "intended" else lexeme.meaning}
         key = f"learning:{document['origin']}:{word_id}:{row['id']}:{provenance['model']}:{role}:{lexeme.meaning}"
+        note = fix.note
+        if document["origin"] != "component":
+            note += f" Learner confusion: {fix.typed} → {' … '.join(fix.dutch)}."
         conn.execute("INSERT OR IGNORE INTO vocab_lookups(cache_key,word_id,context_json,model,reasoning,prompt_version,state,"
                               "meaning,lemma,lemma_norm,lemma_meaning,part_of_speech,note,expression,ambiguous,updated_at) "
                               "VALUES(?,?,?,?,?,1,'ready',?,?,?,?,?,?,?,0,?)",
                               (key, word_id, json.dumps(context, ensure_ascii=False), provenance["model"], provenance["reasoning"],
                                lexeme.meaning, lexeme.lemma, norm, lexeme.meaning, lexeme.part_of_speech,
-                               f"{fix.note} Learner confusion: {fix.typed} → {' … '.join(fix.dutch)}.", "", row["answered_at"]))
+                               note, "", row["answered_at"]))
         return conn.execute("SELECT id FROM vocab_lookups WHERE cache_key=?", (key,)).fetchone()[0]
 
     def learning_recover(self, kind: str, presentation_id: int, provider=None) -> None:
