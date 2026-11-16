@@ -27,7 +27,7 @@ class StructuredGenerator:
         self.model = getattr(self._args, "openai_practice_model", cfg.DEFAULT_PRACTICE_MODEL)
         self.reasoning = getattr(self._args, "openai_practice_reasoning", cfg.DEFAULT_PRACTICE_REASONING)
 
-    def _request[T: pd.BaseModel](self, model: type[T], prompt: str, document: dict) -> T:
+    def _request[T: pd.BaseModel](self, model: type[T], prompt: str, document: dict, *, timeout: float | None = None) -> T:
         """Validate a complete strict-schema result; e.g. refusal or truncated JSON never becomes a grade."""
 
         if control := task_cancel.current():
@@ -37,7 +37,11 @@ class StructuredGenerator:
                    "reasoning": {"effort": self.reasoning},
                    "text": {"format": {"type": "json_schema", "name": model.__name__.lower(),
                                        "strict": True, "schema": model.model_json_schema()}}}
-        result = openai_client.responses_api_request(self._args, payload)
+        args = self._args
+        if timeout is not None:
+            args = argparse.Namespace(**vars(self._args))
+            args.openai_timeout = timeout
+        result = openai_client.responses_api_request(args, payload)
         if control := task_cancel.current():
             control.checkpoint()
         return model.model_validate_json(openai_client.response_output_text(result))

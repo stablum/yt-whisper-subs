@@ -1,4 +1,4 @@
-"""Run durable sentence corrections independently of the practice window.
+"""Run durable practice corrections independently of their windows.
 
 Example: remote translations queue behind one worker, while local dictation runs independently.
 """
@@ -13,34 +13,40 @@ from PySide6 import QtWidgets
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import task_cancel
+from yt_whisper_subs import correction_queue
 
 
-class SentenceChecks(QtCore.QObject):
+class Checks(QtCore.QObject):
     """Own one correction lane per catalog and task type; e.g. local dictation never waits for a translation API timeout."""
 
     changed = QtCore.Signal(int)
 
     @classmethod
-    def shared(cls, db, *, local: bool = False):
+    def shared(cls, db, *, kind: str = "sentence", local: bool = False):
         """Keep lifetime with QApplication rather than a dialog; e.g. submitted answers continue correcting while practice is closed."""
 
         app = QtWidgets.QApplication.instance()
-        key = os.path.normcase(str(db.path.resolve())) + (":dictation" if local else ":translation")
+        key = os.path.normcase(str(db.path.resolve())) + f":{kind}:" + ("local" if local else "remote")
         for worker in app.findChildren(cls):
             if worker.objectName() == key:
                 return worker
-        worker = cls(db, app, local=local)
+        worker = cls(db, app, kind=kind, local=local)
         worker.setObjectName(key)
         app.aboutToQuit.connect(worker.stop)
         return worker
 
-    def __init__(self, db, parent=None, *, local: bool = False) -> None:
+    def __init__(self, db, parent=None, *, kind: str = "sentence", local: bool = False) -> None:
         """Construct without starting paid work; e.g. statistics-only tests and views remain read-only."""
 
         super().__init__(parent)
         self._db = db
-        self._local = local
-        self._engine = sentence_service.SentenceService(db)
+        self._queue = correction_queue.Queue(db, kind, local=local)
+        if kind == "comprehension":
+            from yt_whisper_subs import comprehension_service
+
+            self._engine = comprehension_service.ComprehensionService(db)
+        else:
+            self._engine = sentence_service.SentenceService(db)
         self._owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
         self._task = None
         self._job = None
@@ -60,7 +66,7 @@ class SentenceChecks(QtCore.QObject):
     def retry(self, presentation_id: int, engine) -> None:
         """Retry only on an explicit gesture; e.g. network failure never changes the immutable answer."""
 
-        self._db.sentence_check_retry(presentation_id)
+        self._queue.retry(presentation_id)
         self.changed.emit(presentation_id)
         self.resume(engine)
 
@@ -72,7 +78,7 @@ class SentenceChecks(QtCore.QObject):
         if not self._db.path.exists():
             self.stop()
             return
-        self._job = self._db.sentence_check_claim(self._owner, local=self._local)
+        self._job = self._queue.claim(self._owner)
         if self._job is None:
             return
         presentation_id, engine = self._job["id"], self._engine
@@ -83,19 +89,19 @@ class SentenceChecks(QtCore.QObject):
             def progress(message):
                 """Keep the lease alive at provider milestones; e.g. independent vocabulary repair needs no second worker."""
 
-                self._db.sentence_check_touch(presentation_id, self._owner)
+                self._queue.touch(presentation_id, self._owner)
                 report(message)
 
             try:
                 engine.check(presentation_id, progress)
             except task_cancel.CancelledError:
-                self._db.sentence_check_done(presentation_id, self._owner, cancelled=True)
+                self._queue.done(presentation_id, self._owner, cancelled=True)
                 raise
             except Exception as exc:
-                self._db.sentence_check_done(presentation_id, self._owner, error=str(exc))
+                self._queue.done(presentation_id, self._owner, error=str(exc))
                 raise
             else:
-                self._db.sentence_check_done(presentation_id, self._owner)
+                self._queue.done(presentation_id, self._owner)
             return presentation_id
 
         task = library_workers.BackgroundTask(check)

@@ -9,6 +9,7 @@ import json
 import time
 
 from yt_whisper_subs import vocabulary
+from yt_whisper_subs import comprehension_schema
 
 
 SCHEMA = """
@@ -36,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_vocab_error_lookup ON vocab_error_words(lookup_id
 """
 
 # Both sources expose real provenance; practice events never pretend to be video clicks.
-OCCURRENCES = """
+OCCURRENCES = f"""
 SELECT 'click:'||c.id AS event_key,'click' AS origin,c.lookup_id,c.surface,c.clicked_at AS occurred_at,
        c.source_id,s.source_key,s.video_id,s.title,s.url,s.path,c.position_seconds,c.cue_start_ms,c.cue_end_ms,
        c.token_start,c.token_end,'' AS typed,'' AS correction,'' AS role
@@ -50,6 +51,8 @@ FROM vocab_errors e JOIN vocab_enrichments x ON x.id=e.enrichment_id
 JOIN vocab_error_words w ON w.error_id=e.id JOIN vocab_lookups l ON l.id=w.lookup_id
 LEFT JOIN sentence_presentations p ON p.id=x.sentence_id LEFT JOIN verb_presentations v ON v.id=x.verb_id
 WHERE COALESCE(p.outcome,v.outcome) IN ('correct','wrong')
+UNION ALL
+{comprehension_schema.OCCURRENCES}
 """
 
 

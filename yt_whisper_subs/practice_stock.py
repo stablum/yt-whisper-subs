@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS {kind}_stock_questions (
     PRIMARY KEY(direction,ordinal),
     UNIQUE(direction,question_id)
 );
-""" for kind in practice_tracks.KINDS)
+""" for kind in practice_tracks.QUESTION_KINDS)
 
 
 class StockDbMixin:

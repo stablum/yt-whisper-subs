@@ -163,19 +163,14 @@ class AudioCache:
     def prepare(self, questions: list[dict], report, *, preset=None) -> None:
         """Repair absent audio by content identity without regenerating text; e.g. two rounds reusing a sentence reuse its recordings."""
 
-        while not _CACHE_LOCK.acquire(timeout=0.25):
+        presets = [preset] if preset else listening_voices.read(self._db).enabled
+        for row in presets:
             _checkpoint()
-        try:
-            presets = [preset] if preset else listening_voices.read(self._db).enabled
-            for row in presets:
-                _checkpoint()
-                report("Preparing voice: " + row.name)
-                try:
-                    self._prepare_voice(self.engine(row.config), questions, report)
-                except RuntimeError as exc:
-                    raise RuntimeError(f"{row.name}: {exc}") from exc
-        finally:
-            _CACHE_LOCK.release()
+            report("Preparing voice: " + row.name)
+            try:
+                self._prepare_voice(self.engine(row.config), questions, report)
+            except RuntimeError as exc:
+                raise RuntimeError(f"{row.name}: {exc}") from exc
 
     def engine(self, config):
         """Resolve a preset through the cache's speech strategy; e.g. offline fixtures exercise the same UI and readiness paths."""
@@ -195,11 +190,43 @@ class AudioCache:
     def _prepare_voice(self, engine, questions: list[dict], report) -> None:
         """Cache each enabled sound independently; e.g. adding a conversational voice reuses Piper and already approved sentence text."""
 
+        texts = {row['id']: json.loads(row['body_json'])['dutch'] for row in questions}
+        assets = Recordings(self._db).prepare(engine, list(texts.values()), report)
+        with self._db._connect() as conn:
+            conn.executemany('INSERT OR IGNORE INTO listening_audio VALUES(?,?)', [(qid, assets[text]) for qid, text in texts.items()])
+
+
+class Recordings:
+    """Own content-addressed speech independently from question persistence; e.g. dictation and long narration share integrity checks and synthesis ownership."""
+
+    def __init__(self, db) -> None:
+        """Bind one catalog's asset paths; e.g. changing the output root retains independent recording metadata."""
+
+        self._db = db
+
+    @staticmethod
+    def key(profile: str, text: str) -> str:
+        """Identify exact text and audible settings; e.g. renaming a narrator does not synthesize another clip."""
+
+        return hashlib.sha256((profile + '\0' + text).encode('utf-8')).hexdigest()
+
+    def prepare(self, engine, texts: list[str], report) -> dict[str, str]:
+        """Coalesce concurrent repair and narration work; e.g. a foreground retry rechecks stock after waiting for background synthesis."""
+
+        while not _CACHE_LOCK.acquire(timeout=.25):
+            _checkpoint()
+        try:
+            return self._prepare(engine, texts, report)
+        finally:
+            _CACHE_LOCK.release()
+
+    def _prepare(self, engine, texts, report) -> dict[str, str]:
+        """Batch only missing files and publish after validation; e.g. one broken speed reuses its intact counterpart."""
+
         jobs, prepared = {}, []
-        for row in questions:
-            text = json.loads(row["body_json"])["dutch"]
-            key = hashlib.sha256((engine.profile + "\0" + text).encode("utf-8")).hexdigest()
-            cached = self._db.listening_audio(row["id"], engine.profile)
+        result = {text: self.key(engine.profile, text) for text in texts}
+        for text, key in result.items():
+            cached = self._db.audio_asset(key)
             if cached and cached["cache_key"] == key and self._db.listening_audio_valid(cached):
                 continue
             paths = self._db.listening_paths(key)
@@ -214,9 +241,10 @@ class AudioCache:
                     missing[speed] = path
             if missing:
                 jobs[key] = (text, missing)
-            prepared.append((row["id"], key, paths))
+            prepared.append((key, paths))
         if jobs:
             engine.render_many(list(jobs.values()), report)
-        for question_id, key, paths in prepared:
+        for key, paths in prepared:
             settings = engine.config.model_dump(mode="json") if hasattr(engine, "config") else {}
-            self._db.listening_store(question_id, key, engine.profile, paths, settings=settings)
+            self._db.audio_store(key, engine.profile, paths, settings=settings)
+        return result

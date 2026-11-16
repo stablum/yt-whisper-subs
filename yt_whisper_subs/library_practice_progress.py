@@ -22,11 +22,12 @@ from yt_whisper_subs import library_practice_tables as tables
 class TrendChart(QtWidgets.QWidget):
     """Draw dated series with inspectable points; e.g. hover daily accuracy to see its sample size."""
 
-    def __init__(self, title: str, percent: bool, parent=None) -> None:
+    def __init__(self, title: str, percent: bool, parent=None, *, empty_text='Your practice history will appear here') -> None:
         """Keep plotting independent from SQL; e.g. cumulative coverage shares this renderer."""
 
         super().__init__(parent)
         self._title, self._percent = title, percent
+        self._empty_text = empty_text
         self._series: list[dict] = []
         self._hits: list[tuple[QtCore.QPointF, str]] = []
         self.setMinimumHeight(220)
@@ -51,7 +52,7 @@ class TrendChart(QtWidgets.QWidget):
         self._hits = []
         if not points:
             painter.setPen(QtGui.QColor("#99a6b8"))
-            painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, "Your practice history will appear here")
+            painter.drawText(self.rect(), QtCore.Qt.AlignmentFlag.AlignCenter, self._empty_text)
             return
         plot = QtCore.QRectF(60, 55, max(1, self.width() - 90), max(1, self.height() - 95))
         dates = sorted({point[0] for point in points})

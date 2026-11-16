@@ -100,6 +100,9 @@ The companion library is optimized for a second workflow:
     then review the transcript and English meaning, with local speech, slow replay,
     adaptive word review and separate listening progress. Compare the same sentence
     through Piper and multiple independently configured ZONOS3-Mini voice presets.
+23. Practise **Leesbegrip** and **Luisterbegrip** with longer Dutch stories,
+    fictional news or reflective texts, independently checked nuanced choices,
+    and open answers with partial comprehension credit and Dutch corrections.
 
 ## Important Defaults
 
@@ -125,10 +128,12 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
-| Ready practice rounds | six independent destinations, including listening; two background workers; one bounded standby after practice starts; unused approvals consumed first |
+| Ready practice rounds | eight independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
-| Shared vocabulary learning | all four practice modes import intended and genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
+| Comprehension | Leesbegrip and Luisterbegrip; B2; 5 paragraphs, 5 four-choice and 3 open questions; all content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
+| Comprehension narration | existing local Piper/Zonos presets; one selected narrator per passage, normal and slow clips prepared before readiness; transcript and feedback concealed until all listening answers are submitted |
+| Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -189,7 +194,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
 | Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet for at least 24 hours after any submitted answer and throughout its local calendar day |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
-| Practice activity amount | submitted vocabulary, verb, translation and listening answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
+| Practice activity amount | submitted vocabulary, verb, translation, dictation and comprehension answers, including mistakes and pending corrections; seven-day bars and monthly calendar |
 | Library column layout | resizable, reorderable, and remembered across launches |
 | Library inspector layout | vertically resizable and remembered across launches |
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
@@ -885,7 +890,7 @@ you when you have not submitted a practice answer for at least **24 hours** and
 have not answered on the current local calendar day. A late session at **23:55**
 keeps the reminder quiet until at least **23:55 the following day**, including
 after an app restart; midnight does not reset practice credit. Vocabulary,
-typed verb and sentence submissions share this rule. The activity calendar and streaks still
+typed verb, translation, dictation and comprehension submissions share this rule. The activity calendar and streaks still
 use the actual local answer dates. The reminder checks shortly after startup
 and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
@@ -907,8 +912,9 @@ When your last answer was two or more local calendar days ago, the balloon says
 how many days it has been. With no recorded answers, it invites your first
 practice without inventing an inactivity start date. The **last 7 days** chart
 shows questions answered, including zero days, with weekday/date labels and
-separate colors for vocabulary Dutch → English, vocabulary English → Dutch, verbs
-and sentence translations. It ends today rather
+separate colors for vocabulary Dutch → English, vocabulary English → Dutch, verbs,
+sentence translations, dictation and comprehension. Reading/listening comprehension
+remain separately inspectable in the selected-day details. It ends today rather
 than starting on Monday. The balloon and Activity page share the same counts.
 
 Under **Library → Settings → Daily practice reminder**, enable/disable reminders
@@ -2174,10 +2180,10 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-The library keeps ready content for **six top-level practice destinations**:
+The library keeps ready content for **eight top-level practice destinations**:
 Word quiz · Dutch → English, Word quiz · English → Dutch, Verbs · Dutch
 transformations, Sentences · English → Dutch, Sentences · Dutch → English,
-and Listening · Dutch dictation.
+Listening · Dutch dictation, **Leesbegrip** and **Luisterbegrip**.
 Each has its own round options, preparation ownership and resumable session.
 Switching direction does not end the other direction's round, replace its
 choices, or lose a typed draft. Progress and Activity remain in the separate
@@ -2201,7 +2207,7 @@ current round, expose questions, or count as practice. There is no growing queue
 of unused rounds. Restarting preserves checked stock and saved word-choice order.
 Starting the next round consumes its standby plan atomically with session creation.
 
-Standby selection uses the same adaptive probabilities, due/new balance and
+Question-based standby selection uses the same adaptive probabilities, due/new balance and
 filters as ordinary preparation. When enough other eligible targets exist,
 the current round's targets are excluded from the next plan, and questions already
 assigned to the active round cannot also be taken from cache into its spare.
@@ -2219,7 +2225,7 @@ restrictions still apply. Reported or outdated-policy questions cannot be served
 from a standby plan.
 
 The configured round size is the **actual number of questions** in all modes.
-Preparation initially attempts only that many distinct targets, retains approved
+For word, verb, translation and dictation rounds, preparation initially attempts only that many distinct targets, retains approved
 questions, and requests only missing replacements after rejection. The shared
 builder caps draft attempts at twice the requested count, without generating an
 extra reserve upfront. Quality-audit repairs reuse the same drafts. Failure to
@@ -2243,7 +2249,7 @@ remains resumable while background work is pending or has failed.
 
 ### Shared Vocabulary Learning Across Practice Modes
 
-Vocabulary choices, sentence translation and verb transformation exchange learning
+Vocabulary choices, sentence translation, dictation, verb transformation and comprehension exchange learning
 signals. Words have **one shared FSRS review state per Dutch vocabulary identity
 and translation direction**. The word quiz and sentence vocabulary selection read
 that state and use the same NumPy selection implementation. A success in one can
@@ -2251,7 +2257,7 @@ defer the word in the other; a failure brings it back through the same **Again**
 update used by a wrong quiz choice. Sentence correctness, verb conjugation and
 specific grammatical forms retain their own diagnostic history and review states.
 
-When a typed sentence or verb answer reveals a lexical mistake, its correction
+When a typed sentence, verb or comprehension answer reveals a lexical mistake, its correction
 adds the **intended Dutch dictionary word and base English meaning** to Vocabulary.
 If a different genuine word was used, that concept receives its **own correct
 meaning**, too. For example, **zekerder** for **veiliger** records **veilig ↔ safe**
@@ -2317,6 +2323,7 @@ Version `0.6.5` covers every vocabulary entry point:
 | Verb transformations | The same lexical import, including supporting words, followed by compound expansion. |
 | Word quiz, either direction | The intended concept and the genuine Dutch dictionary word represented by the **selected wrong choice**, with its own correct meaning. Unselected distractors are not imported. |
 | Listening dictation | Intended words and genuine different words written instead of the spoken script, including supporting words outside the saved targets. A real synonym still differs from what was spoken. |
+| Reading/listening comprehension | Independently verified intended and genuinely confused dictionary concepts from open-answer lexical mistakes; imported compounds enter the same constituent audit queue. |
 | Existing vocabulary and historical failed quiz/listening answers | A resumable background backfill uses saved lookups, answers and feedback; it never reruns question generation or grading. |
 
 For example, **kinderwagen** can add **kind** and **wagen**; the linking **-er-**
@@ -2386,7 +2393,7 @@ python -m unittest tests.test_vocabulary_accretion -v
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
-both Sentences directions, and Listening as **six top-level Practice buttons**, with
+both Sentences directions, Listening, Leesbegrip and Luisterbegrip as **eight top-level Practice buttons**, with
 **Tracking** (Progress, Activity) separated by a labelled group and divider.
 Each page remains one click away; existing menu/tray shortcuts and native page
 navigation select the same grouped controls.
@@ -2970,6 +2977,94 @@ Windows named-pipe access must be available
 to both test processes. The transport uses overlapped reads/writes so replies
 and seeks remain responsive even while a paused player emits no events.
 
+### Dutch Reading And Listening Comprehension
+
+Choose **Practice → Leesbegrip** or **Luisterbegrip** directly from the top-level
+practice buttons (added in **0.6.8**). These are longer-text comprehension exercises, with Dutch
+questions, answers, explanations and writing corrections throughout. They use
+the configured practice model (`gpt-6-luna`, reasoning `medium`).
+
+**Ronde-opties** configures each mode independently:
+
+- Text type: varied, story, explicitly fictional news article, or reflective essay.
+- CEFR level: B1, B2 (default), or C1.
+- Paragraphs: 2–10 (default 5, normally around 225–425 words).
+- Multiple-choice questions: 0–20 (default 5), each with four substantial buttons.
+- Open questions: 0–15 (default 3), answered in Dutch; together 1–30 questions.
+- Saved vocabulary targets: 1–20 (default 8), subject to eligible available words.
+- Optional early review; Luisterbegrip also offers the narrator and **Stemmen instellen…**.
+
+The requested question counts are exact. Independent review solves every choice
+question without the proposed answer key, checking that exactly one option is
+supported and the other plausible answers are wrong for a concrete reason.
+Questions cover detail, inference, cause, argument, tone and reference; weak
+question skills help guide future composition. Every question retains exact
+supporting quotes and paragraph references. Evidence and counts are checked
+locally as well. An ambiguous or incomplete set gets at most one repaired draft,
+using the same vocabulary, before preparation stops with its yields preserved.
+This is a quality safeguard, not a guarantee that an LLM can never make a mistake;
+**Tekst of vraag melden** excludes a problematic passage from scores and shared
+review while preserving actual submitted activity.
+
+The shared FSRS/error-weighted word selector chooses target vocabulary, allowing
+natural inflections and unrestricted supporting vocabulary. New passages use
+other contexts and recent approved titles to encourage variety. Reading and
+listening do not deliberately reuse a passage already exposed in either mode.
+Only words a question genuinely tests receive lexical assessment; an inference
+mistake never automatically fails every word in the passage. Real lexical mistakes
+in an open answer independently verify and add both the intended dictionary
+concept and any genuine inappropriate Dutch word with its own correct English
+meaning. These receive the same shared failed word review as a wrong word-quiz
+answer. Verified compounds enter the existing component-discovery pipeline.
+
+Choice answers are graded locally. Open answers are saved first and corrected in
+the application's durable background queue, so you can continue immediately.
+Partial comprehension is the proportion of fixed content criteria met; accurate
+paraphrases are accepted and grammar is tracked separately. A 50% content answer
+therefore shows real progress even when the whole answer is not yet correct.
+Pending or failed corrections have no fabricated zero score. Corrections retain
+localized hover annotations and a Dutch model answer, rubric points, explanations
+and supporting evidence. Independent dictionary-check failures retain the semantic
+grade proposal, so retrying does not repeat the completed grading request.
+
+The narrow rail shows unanswered, queued, checking, failed, correct/wrong and
+unseen-correction states. Revisit earlier questions without changing submitted
+answers. After the last submission, unseen corrections are offered first; clicking
+through an old correction walks the next question rather than skipping to the end.
+Unsubmitted drafts and review positions survive closing the window.
+
+Leesbegrip displays the passage alongside independently scrolling questions.
+Luisterbegrip uses the same local speech strategies and presets as dictation,
+preparing both normal and slower clips for **one selected narrator per passage**.
+Paragraph navigation, replay, restart and stop do not generate new text. Bounded
+fragments preserve every word and avoid an oversized expressive-speech job.
+The transcript stays absent from the browser until all answers are submitted and
+you explicitly choose **Transcript bekijken**. Feedback is also withheld until
+then so an early explanation cannot reveal a later answer. Navigating away stops
+narration. Missing recordings can be repaired without losing your current draft
+or generating another passage.
+
+Preparation uses the existing two-worker scheduler and per-destination leases,
+keeping one unexposed spare after answering begins. Generated text is saved before
+its independent audit; approved text is saved before speech. A network failure,
+restart, narrator change or missing WAV can therefore resume only its unfinished
+stage. Reading preparations do not load speech models. Changing a narrator reuses
+unused approved content. Actual question exposure, answers, feedback consultation,
+word assessments and played fragments have separate relational records.
+Shared text-pool reservation is serialized across the two comprehension modes;
+speech synthesis occurs after that reservation, allowing reading to prepare while
+a listening passage's narrator is still rendering.
+
+**Tracking → Progress → Leesbegrip / Luisterbegrip** shows partial comprehension
+trends, graded questions per day, whole-answer results, open-answer language
+accuracy, skills, shared vocabulary evidence, confusions and round history.
+**Activity**, its calendar, streaks and reminders count each submitted question
+once, including pending corrections; replaying a recording adds no answer credit.
+
+```powershell
+python -m unittest tests.test_comprehension tests.test_library_comprehension -v
+```
+
 ### Dutch Listening Practice
 
 Choose **Practice → Listening · Dutch dictation**. A prepared round opens directly
@@ -3522,6 +3617,11 @@ High-level groups:
 | `yt_whisper_subs.library_voice_config` / `library_voice_controls` | Native preset management, local previews, calibrated expression sliders and quick starting styles. |
 | `yt_whisper_subs.listening_grade` / `listening_db` | Local dictation alignment, relational audio provenance and timestamped replay assistance. |
 | `yt_whisper_subs.library_listening` | Native concealed listening card, normal/slow replay and background audio recovery. |
+| `yt_whisper_subs.comprehension`, `comprehension_generate`, `comprehension_service` | Grounded long-form Dutch passage contracts, blind independent question audits, shared adaptive vocabulary and checkpointed open grading. |
+| `yt_whisper_subs.comprehension_schema`, `comprehension_db`, `comprehension_review_db`, `comprehension_stats` | Relational passage stock, immutable answers, partial content credit, lexical evidence and Polars trends. |
+| `yt_whisper_subs.comprehension_audio`, `library_comprehension_audio` | Cached bounded narration, sequential playback, paragraph navigation and asynchronous speech repair. |
+| `yt_whisper_subs.library_comprehension`, `library_comprehension_view`, `library_comprehension_controls`, `library_comprehension_progress` | Native reading/listening destinations, concealed transcripts, mixed questions, review rail, options and analytics. |
+| `yt_whisper_subs.correction_queue`, `library_checks` | Shared durable leases and independent correction lanes for remote translation, local dictation and open comprehension. |
 | `yt_whisper_subs.vocabulary_worker` | Independent durable-save and translation lanes with restart recovery. |
 | `yt_whisper_subs.vocabulary_playback` | Launch-bound word selection validation and Lua/SQLite acknowledgements. |
 | `yt_whisper_subs.library_vocabulary` | Native searchable vocabulary, grouping, complete occurrence history, and replay. |

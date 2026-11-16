@@ -9,7 +9,7 @@ import time
 
 from PySide6 import QtCore
 
-from yt_whisper_subs import library_sentence_checks
+from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_sentence_review
 from yt_whisper_subs import library_written
 from yt_whisper_subs import sentence_practice
@@ -23,7 +23,7 @@ class SentenceSession(library_written.WrittenPanel):
 
         super().__init__(db, mode, engine=engine)
         local = mode.view.options.options().direction == sentence_practice.Direction.LISTEN
-        self._checks = library_sentence_checks.SentenceChecks.shared(db, local=local)
+        self._checks = library_checks.Checks.shared(db, local=local)
         self._checks.changed.connect(self._changed)
         self._rail = library_sentence_review.QuestionRail()
         self._rail.chosen.connect(self._jump)

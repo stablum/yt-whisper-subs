@@ -14,7 +14,7 @@ from yt_whisper_subs import library_gui
 from yt_whisper_subs import library_backup
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_practice_ready
-from yt_whisper_subs import library_sentence_checks
+from yt_whisper_subs import library_checks
 from yt_whisper_subs import pipeline
 from yt_whisper_subs import output_lock
 from yt_whisper_subs import proc
@@ -56,8 +56,9 @@ def main(argv: list[str] | None = None) -> int:
             backup = library_backup.StartupBackup(service.db.path, qt_app)
             backup.message.connect(window._ui.trace.append_message)
             qt_app.aboutToQuit.connect(backup.stop)
-            library_sentence_checks.SentenceChecks.shared(service.db).resume()
-            library_sentence_checks.SentenceChecks.shared(service.db, local=True).resume()
+            library_checks.Checks.shared(service.db).resume()
+            library_checks.Checks.shared(service.db, local=True).resume()
+            library_checks.Checks.shared(service.db, kind='comprehension').resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
             window.practice_changed.connect(preparation.check)
             qt_app.aboutToQuit.connect(preparation.stop)

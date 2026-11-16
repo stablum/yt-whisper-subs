@@ -6,6 +6,7 @@ Example: opening Sentences during background preparation waits for that job inst
 from __future__ import annotations
 
 import functools
+import contextlib
 import json
 import os
 import time
@@ -109,7 +110,7 @@ class ReadyDbMixin:
     def practice_ready(self, kind: str, opts, policy: dict) -> str | None:
         """Reuse a matching unexposed round; e.g. prefetch never marks a question shown or shuffles its saved choices."""
 
-        if kind not in practice_tracks.KINDS:
+        if kind not in practice_tracks.QUESTION_KINDS:
             raise ValueError("Unknown practice mode")
         with self._connect() as conn:
             direction = " AND direction=?" if kind != "verb" else ""
@@ -131,7 +132,7 @@ class ReadyDbMixin:
     def _practice_check_rounds(conn) -> None:
         """Return incomplete unused rounds to their cached stock; e.g. startup never offers a 34-question ready round requested as 35."""
 
-        for kind in practice_tracks.KINDS:
+        for kind in practice_tracks.QUESTION_KINDS:
             count = "s.requested_count" if kind == "practice" else "json_extract(s.options_json,'$.count')"
             conn.execute(f"UPDATE {kind}_sessions AS s SET status='stopped',finished_at=? WHERE s.status='active' "
                          f"AND (SELECT COUNT(*) FROM {kind}_presentations p WHERE p.session_id=s.id)<>{count} "
@@ -161,6 +162,36 @@ def owner_alive(owner: str) -> bool:
         return True
 
 
+@contextlib.contextmanager
+def preparing(db, track: str, report):
+    """Share generation ownership, cancellation and cooldown across round shapes; e.g. a passage audit cannot race a second foreground request."""
+
+    owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
+    while not db.practice_prepare_claim(track, owner):
+        report('Finishing background preparation for this mode…')
+        time.sleep(.25)
+    error, delay = '', 0
+
+    def progress(message):
+        """Renew only the current lease at worker milestones; e.g. a cancelled task cannot publish readiness for another owner."""
+
+        report(message)
+        if not db.practice_prepare_touch(track, owner):
+            raise RuntimeError('A newer preparation owns this mode.')
+
+    try:
+        yield progress
+    except Exception as exc:
+        from yt_whisper_subs import practice_round
+
+        error = '' if isinstance(exc, task_cancel.CancelledError) else str(exc)
+        healthy = isinstance(exc, practice_round.NothingToPractice) and exc.reason in {'not_due', 'no_words', 'not_enough'}
+        delay = 60 if healthy else 0
+        raise
+    finally:
+        db.practice_prepare_done(track, owner, error, delay=delay)
+
+
 def serialized(kind: str, version: int, *, materialize: str | None = None):
     """Wrap paid preparation with shared ownership; e.g. each mode keeps its own linguistic strategy and SQL transactions."""
 
@@ -173,14 +204,9 @@ def serialized(kind: str, version: int, *, materialize: str | None = None):
 
             db = engine._db
             track = practice_tracks.Track.for_options(kind, opts).value
-            owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"
             provider = engine._provider
             policy = {"model": provider.model, "reasoning": provider.reasoning, "prompt_version": version}
-            while not db.practice_prepare_claim(track, owner):
-                report("Finishing background preparation for this mode…")
-                time.sleep(0.25)
-            error, delay = "", 0
-            try:
+            with preparing(db, track, report) as progress:
                 # Recheck under ownership: the learner may have opened a round while this job waited.
                 if session := db.practice_ready(kind, opts, policy):
                     if materialize:
@@ -200,23 +226,7 @@ def serialized(kind: str, version: int, *, materialize: str | None = None):
                     options = opts.model_dump(mode="json") if kind == "practice" else opts
                     return getattr(db, f"{kind}_create")(options, questions, practice.ReviewPolicy().document())
 
-                def progress(message):
-                    """Keep cancellation and lease renewal together; e.g. a closed window leaves safely cached work."""
-
-                    report(message)
-                    if not db.practice_prepare_touch(track, owner):
-                        raise RuntimeError("A newer preparation owns this mode. Use its ready round.")
-
                 return fn(engine, opts, progress, background=background, **kwargs)
-            except Exception as exc:
-                from yt_whisper_subs import practice_round
-
-                error = "" if isinstance(exc, task_cancel.CancelledError) else str(exc)
-                healthy = isinstance(exc, practice_round.NothingToPractice) and exc.reason in {"not_due", "no_words", "not_enough"}
-                delay = 60 if healthy else 0
-                raise
-            finally:
-                db.practice_prepare_done(track, owner, error, delay=delay)
 
         prepare.prompt_version = version
         return prepare

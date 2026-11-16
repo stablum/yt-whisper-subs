@@ -95,8 +95,10 @@ class PracticeDbMixin:
                                "SELECT (SELECT answered_at FROM verb_presentations WHERE answered_at IS NOT NULL "
                                "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1) UNION ALL "
                                "SELECT (SELECT answered_at FROM sentence_presentations WHERE answered_at IS NOT NULL "
-                               "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1))",
-                               (until, until, until)).fetchone()
+                               "AND answer_text IS NOT NULL AND answered_at<=? ORDER BY answered_at DESC LIMIT 1) UNION ALL "
+                               "SELECT (SELECT answered_at FROM comprehension_presentations WHERE answer_text IS NOT NULL "
+                               "AND answered_at<=? ORDER BY answered_at DESC LIMIT 1))",
+                               (until, until, until, until)).fetchone()
         return row[0]
 
     def practice_activity_rows(self, since: float, until: float) -> list[dict]:
@@ -116,8 +118,12 @@ class PracticeDbMixin:
                                 "(SELECT json_group_array(l.word_id) FROM sentence_question_words w "
                                 "JOIN vocab_lookups l ON l.id=w.lookup_id WHERE w.question_id=q.id) "
                                 "FROM sentence_presentations p JOIN sentence_questions q ON q.id=p.question_id "
+                                "WHERE p.answer_text IS NOT NULL AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
+                                "SELECT p.answered_at,p.selected_idx,p.answer_text,p.outcome,'comprehension_'||s.direction,0,"
+                                "json_extract(q.body_json,'$.word_ids') FROM comprehension_presentations p "
+                                "JOIN comprehension_sessions s ON s.id=p.session_id JOIN comprehension_questions q ON q.id=p.question_id "
                                 "WHERE p.answer_text IS NOT NULL AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at",
-                                (since, until, since, until, since, until))
+                                (since, until, since, until, since, until, since, until))
             return [dict(row) for row in rows]
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:

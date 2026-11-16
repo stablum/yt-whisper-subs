@@ -28,6 +28,8 @@ class Day(pd.BaseModel):
     sentence_nl_en: int = 0
     sentence_en_nl: int = 0
     listening: int = 0
+    comprehension_read: int = 0
+    comprehension_listen: int = 0
 
 
 class Activity(pd.BaseModel):
@@ -94,6 +96,8 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
             "verbs": row["direction"] == "verbs",
             "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en"},
             "listening": row["direction"] == "sentence_listen_nl",
+            'comprehension_read': row['direction'] == 'comprehension_read',
+            'comprehension_listen': row['direction'] == 'comprehension_listen',
             "sentence_nl_en": row["direction"] == "sentence_nl_en", "sentence_en_nl": row["direction"] == "sentence_en_nl",
         })
     if not answers:
@@ -106,6 +110,7 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
         pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
         pl.col("sentences").sum(), pl.col("sentence_nl_en").sum(), pl.col("sentence_en_nl").sum(),
         pl.col("listening").sum(),
+        pl.col('comprehension_read').sum(), pl.col('comprehension_listen').sum(),
     ).sort("day")
     return Activity(today=now.date(), last_day=frame["day"].max(),
                     distinct_words=frame["word_ids"].explode(empty_as_null=True).drop_nulls().n_unique(),

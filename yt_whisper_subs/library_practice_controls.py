@@ -181,12 +181,13 @@ class AnswerButtons(QtWidgets.QWidget):
 
     selected = QtCore.Signal(int)
 
-    def __init__(self) -> None:
+    def __init__(self, count: int = 3, wrap: int = 55) -> None:
         """Tie numeric access to actual buttons; e.g. remove answer shortcuts while editing settings or reading feedback."""
 
         super().__init__()
         self._guard = QtCore.QElapsedTimer()
-        self._buttons = [PracticeButton() for _ in range(3)]
+        self._buttons = [PracticeButton() for _ in range(count)]
+        self._wrap = wrap
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Fixed)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -219,7 +220,7 @@ class AnswerButtons(QtWidgets.QWidget):
             self._guard.start()
         self.shortcuts(True)
         for idx, button in enumerate(self._buttons):
-            button.setText(f"{idx + 1}    {textwrap.fill(choices[idx]['text'], 55)}")
+            button.setText(f"{idx + 1}    {textwrap.fill(choices[idx]['text'], self._wrap)}")
             self._style(button, "")
         self.show()
 

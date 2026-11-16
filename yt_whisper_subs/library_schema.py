@@ -18,6 +18,7 @@ from yt_whisper_subs import word_reviews
 from yt_whisper_subs import listening_db
 from yt_whisper_subs import vocabulary_accretion_schema
 from yt_whisper_subs import vocabulary_cleanup
+from yt_whisper_subs import comprehension_schema
 
 
 _SCHEMA = f"""
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS video_history (
 {word_reviews.SCHEMA}
 {vocabulary_accretion_schema.SCHEMA}
 {vocabulary_cleanup.SCHEMA}
+{comprehension_schema.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

@@ -10,6 +10,7 @@ from datetime import datetime
 
 from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import vocabulary_accretion_schema as accretion
+from yt_whisper_subs import comprehension_schema
 
 
 SCHEMA = """
@@ -57,6 +58,8 @@ WHERE NOT EXISTS (
 )
 UNION ALL
 {accretion.REVIEWS}
+UNION ALL
+{comprehension_schema.REVIEWS}
 """
 
 

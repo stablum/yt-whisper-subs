@@ -7,6 +7,7 @@ import enum
 
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice
+from yt_whisper_subs import comprehension
 
 
 class Track(str, enum.Enum):
@@ -18,6 +19,8 @@ class Track(str, enum.Enum):
     SENTENCE_EN_NL = "sentence:en_nl"
     SENTENCE_NL_EN = "sentence:nl_en"
     LISTENING = "sentence:listen_nl"
+    READ_COMPREHENSION = "comprehension:read"
+    LISTEN_COMPREHENSION = "comprehension:listen"
 
     @property
     def kind(self) -> str:
@@ -26,11 +29,11 @@ class Track(str, enum.Enum):
         return self.value.partition(":")[0]
 
     @property
-    def direction(self) -> practice.Direction | sentence_practice.Direction | None:
+    def direction(self) -> practice.Direction | sentence_practice.Direction | comprehension.Direction | None:
         """Bind translation direction once; e.g. verb transformations operate only in Dutch."""
 
         value = self.value.partition(":")[2]
-        direction = sentence_practice.Direction if self.kind == "sentence" else practice.Direction
+        direction = {'sentence': sentence_practice.Direction, 'comprehension': comprehension.Direction}.get(self.kind, practice.Direction)
         return direction(value) if value else None
 
     @property
@@ -39,6 +42,8 @@ class Track(str, enum.Enum):
 
         if self == self.LISTENING:
             return "Listening\nDutch dictation"
+        if self.kind == 'comprehension':
+            return self.direction.label + '\nTekst en vragen'
         title = {"practice": "Word quiz", "sentence": "Sentences", "verb": "Verbs"}[self.kind]
         return f"{title}\n{self.direction.label}" if self.direction else "Verbs\nDutch transformations"
 
@@ -56,4 +61,4 @@ class Track(str, enum.Enum):
 
 
 # Domain kinds are shared by relational stock and generation ownership.
-KINDS = tuple(dict.fromkeys(track.kind for track in Track))
+QUESTION_KINDS = ('practice', 'verb', 'sentence')

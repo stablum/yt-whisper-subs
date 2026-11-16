@@ -15,6 +15,7 @@ from unittest import mock
 import psutil
 
 from tests import sentence_fixtures as fixtures
+from yt_whisper_subs import correction_queue
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
@@ -55,11 +56,11 @@ class SentenceQueueTests(unittest.TestCase):
         """Retain ownership across dialogs and reclaim crashes; e.g. a live request cannot be submitted twice."""
 
         self.db.sentence_submit(self.row["id"], fixtures.DUTCH, 1000)
-        self.assertEqual(self.db.sentence_check_claim(self.owner)["id"], self.row["id"])
-        self.assertIsNone(self.db.sentence_check_claim(self.owner + "-other"))
+        self.assertEqual(correction_queue.Queue(self.db).claim(self.owner)["id"], self.row["id"])
+        self.assertIsNone(correction_queue.Queue(self.db).claim(self.owner + "-other"))
         with self.db._connect() as conn:
             conn.execute("UPDATE sentence_checks SET owner='99999999:0:dead'")
-        self.assertEqual(self.db.sentence_check_claim(self.owner)["id"], self.row["id"])
+        self.assertEqual(correction_queue.Queue(self.db).claim(self.owner)["id"], self.row["id"])
         with self.db._connect() as conn:
             self.assertEqual(conn.execute("SELECT attempts FROM sentence_checks").fetchone()[0], 2)
 
@@ -67,12 +68,12 @@ class SentenceQueueTests(unittest.TestCase):
         """Avoid automatic paid retry loops; e.g. a network outage retains the first answer but adds no wrong learning result."""
 
         self.db.sentence_submit(self.row["id"], fixtures.DUTCH, 1000)
-        self.db.sentence_check_claim(self.owner)
-        self.db.sentence_check_done(self.row["id"], self.owner, error="Provider unavailable")
-        self.assertIsNone(self.db.sentence_check_claim(self.owner))
+        correction_queue.Queue(self.db).claim(self.owner)
+        correction_queue.Queue(self.db).done(self.row["id"], self.owner, error="Provider unavailable")
+        self.assertIsNone(correction_queue.Queue(self.db).claim(self.owner))
         self.assertIsNone(self.db.sentence_get(self.row["id"])["outcome"])
-        self.db.sentence_check_retry(self.row["id"])
-        self.assertEqual(self.db.sentence_check_claim(self.owner)["id"], self.row["id"])
+        correction_queue.Queue(self.db).retry(self.row["id"])
+        self.assertEqual(correction_queue.Queue(self.db).claim(self.owner)["id"], self.row["id"])
         self.assertEqual(practice_activity.read(self.db).answers, 1)
 
     def test_stopped_round_still_accepts_submitted_correction(self):

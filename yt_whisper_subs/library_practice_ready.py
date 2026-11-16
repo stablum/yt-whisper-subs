@@ -46,10 +46,13 @@ class PracticeReady(QtCore.QObject):
             from yt_whisper_subs import verb_service
             from yt_whisper_subs import sentence_practice
             from yt_whisper_subs import sentence_service
+            from yt_whisper_subs import comprehension
+            from yt_whisper_subs import comprehension_service
 
             self._modes = {"practice": (practice.RoundOptions(direction=practice.Direction.NL_EN, count=10), practice_service.PracticeService(self._db)),
                            "verb": (verb_practice.Options(), verb_service.VerbService(self._db)),
-                           "sentence": (sentence_practice.Options(), sentence_service.SentenceService(self._db))}
+                           "sentence": (sentence_practice.Options(), sentence_service.SentenceService(self._db)),
+                           'comprehension': (comprehension.Options(), comprehension_service.ComprehensionService(self._db))}
         requests = []
         for track in practice_tracks.Track:
             if track.kind not in self._modes:
@@ -74,6 +77,8 @@ class PracticeReady(QtCore.QObject):
         status = self._db.practice_prepare_status(track.value)
         if max(status["next_at"], status["lease_until"]) > time.time():
             return False
+        if track.kind == 'comprehension':
+            return engine.needs(opts)
         policy = {"model": engine._provider.model, "reasoning": engine._provider.reasoning,
                   "prompt_version": engine.start.prompt_version}
         stock = self._db.practice_stock(track, opts, policy)

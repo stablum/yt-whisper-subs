@@ -36,6 +36,7 @@ class PracticeNav(QtWidgets.QWidget):
             group.addWidget(label)
             buttons = QtWidgets.QGridLayout()
             buttons.setSpacing(5)
+            columns = 4 if len(indices) > 6 else 3
             for pos, idx in enumerate(indices):
                 button = QtWidgets.QPushButton(tabs.tabText(idx))
                 button.setObjectName("practicePageButton")
@@ -44,7 +45,7 @@ class PracticeNav(QtWidgets.QWidget):
                 button.setAutoDefault(False)
                 button.setMinimumHeight(32)
                 self._buttons.addButton(button, int(idx))
-                buttons.addWidget(button, pos // 3, pos % 3)
+                buttons.addWidget(button, pos // columns, pos % columns)
             group.addLayout(buttons)
             row.addLayout(group)
         row.addStretch()

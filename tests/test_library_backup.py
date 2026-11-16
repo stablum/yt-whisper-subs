@@ -272,7 +272,7 @@ class StartupBackupTests(unittest.TestCase):
                     mock.patch.object(library_app.library_service, "LibraryService", return_value=service),
                     mock.patch.object(library_app.library_gui, "LibraryWindow") as window,
                     mock.patch.object(library_app.library_backup, "StartupBackup") as start,
-                    mock.patch.object(library_app.library_sentence_checks, "SentenceChecks"),
+                    mock.patch.object(library_app.library_checks, "Checks"),
                     mock.patch.object(library_app.library_practice_ready, "PracticeReady"),
                     mock.patch.object(QtWidgets.QSystemTrayIcon, "isSystemTrayAvailable", return_value=True),
                     mock.patch.object(self._app, "exec", return_value=0),

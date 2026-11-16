@@ -58,6 +58,30 @@ def upgrade(conn) -> None:
 class ListeningDbMixin:
     """Keep audio provenance separate from answer grading; e.g. changing voices cannot rewrite learning history."""
 
+    def audio_asset(self, key: str) -> dict | None:
+        """Share recordings independently from exercise type; e.g. comprehension narration can reuse a listening sentence's sound."""
+
+        with self._connect() as conn:
+            row = conn.execute('SELECT * FROM listening_assets WHERE cache_key=?', (key,)).fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def _audio_publish(conn, key, profile, paths, settings) -> None:
+        """Validate both speeds before publishing shared provenance; e.g. a truncated narration chunk never becomes ready stock."""
+
+        hashes = [listening_tts.digest(paths[speed]) for speed in ('normal', 'slow')]
+        seconds = [listening_tts.duration(paths[speed]) for speed in ('normal', 'slow')]
+        conn.execute('INSERT INTO listening_assets VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(cache_key) DO UPDATE SET '
+                     'normal_sha256=excluded.normal_sha256,slow_sha256=excluded.slow_sha256,'
+                     'normal_seconds=excluded.normal_seconds,slow_seconds=excluded.slow_seconds,settings_json=excluded.settings_json',
+                     (key, profile, *hashes, *seconds, time.time(), json.dumps(settings or {})))
+
+    def audio_store(self, key, profile, paths, *, settings=None) -> None:
+        """Publish speech without pretending it belongs to a dictation question; e.g. paragraph narration references the same asset table."""
+
+        with self._connect() as conn:
+            self._audio_publish(conn, key, profile, paths, settings)
+
     def listening_questions(self, session_id: str) -> list[dict]:
         """Read existing text only for local media preparation; e.g. enabling another voice keeps every current question and draft."""
 
@@ -95,14 +119,9 @@ class ListeningDbMixin:
     def listening_store(self, question_id: int, key: str, profile: str, paths: dict, *, settings: dict | None = None) -> None:
         """Publish metadata only after both files validate; e.g. an interrupted render cannot become ready audio."""
 
-        values = [listening_tts.digest(paths[speed]) for speed in ("normal", "slow")]
-        seconds = [listening_tts.duration(paths[speed]) for speed in ("normal", "slow")]
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("INSERT INTO listening_assets VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(cache_key) DO UPDATE SET "
-                         "normal_sha256=excluded.normal_sha256,slow_sha256=excluded.slow_sha256,"
-                         "normal_seconds=excluded.normal_seconds,slow_seconds=excluded.slow_seconds,settings_json=excluded.settings_json",
-                         (key, profile, *values, *seconds, time.time(), json.dumps(settings or {})))
+            self._audio_publish(conn, key, profile, paths, settings)
             conn.execute("INSERT OR IGNORE INTO listening_audio VALUES(?,?)",
                          (question_id, key))
 

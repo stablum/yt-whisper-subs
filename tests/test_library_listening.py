@@ -24,7 +24,7 @@ from tests import sentence_fixtures as fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_practice
-from yt_whisper_subs import library_sentence_checks
+from yt_whisper_subs import library_checks
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice as sentences
@@ -150,7 +150,7 @@ class ListeningFlowTests(unittest.TestCase):
         engine = sentence_service.SentenceService(self.db, provider)
         translated = self.db.sentence_current(engine.start(fixtures.options(), lambda _: None))
         self.db.sentence_submit(translated["id"], fixtures.DUTCH.replace("slimste", "slimmere"), 1200)
-        library_sentence_checks.SentenceChecks.shared(self.db).resume(engine)
+        library_checks.Checks.shared(self.db).resume(engine)
         self._wait(entered.is_set)
         first = self.panel._run.row["id"]
         self.panel._view.card.editor.setPlainText(fixtures.DUTCH)
