@@ -32,6 +32,7 @@ class Config(pd.BaseModel):
     voice: str = "Savannah"
     reference: str = ""
     controls: dict[str, float] = pd.Field(default_factory=dict)
+    expression: float = pd.Field(default=1, ge=0, le=1)
     pace: float = pd.Field(default=1, ge=0.6, le=1.5)
     volume: float = pd.Field(default=1, ge=0.2, le=1.5)
     seed: int = pd.Field(default=1, ge=0, le=2147483647)
@@ -46,7 +47,7 @@ class Config(pd.BaseModel):
         definitions = {row["id"]: row for row in catalog()["controls"]}
         for key, strength in value.items():
             if key not in definitions or not -1 <= strength <= 1:
-                raise ValueError("Unknown voice control or strength outside its recommended range")
+                raise ValueError("Unknown voice control or strength outside the slider range")
             if strength < 0 and not definitions[key]["axis"]:
                 raise ValueError("This voice style has no negative direction")
         return {key: strength for key, strength in value.items() if strength}
@@ -64,6 +65,8 @@ class Config(pd.BaseModel):
         """Fingerprint only audio-producing choices; e.g. each custom recording's content participates in cache identity."""
 
         data = self.model_dump(mode="json")
+        data.pop("expression")
+        data["controls"] = self.steering()
         if self.engine == "piper":
             data = {key: data[key] for key in ("engine", "pace", "volume")}
         elif self.reference:
@@ -72,6 +75,11 @@ class Config(pd.BaseModel):
                 data["reference"] = hashlib.file_digest(stream, "sha256").hexdigest()
         text = json.dumps(data, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def steering(self) -> dict[str, float]:
+        """Scale a complete mix without erasing individual choices; e.g. 50% expression halves every style while leaving playback pace independent."""
+
+        return {key: value * self.expression for key, value in self.controls.items() if value * self.expression}
 
 
 class Preset(pd.BaseModel):

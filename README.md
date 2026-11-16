@@ -2941,7 +2941,13 @@ engine, speaker, pace and volume. For Zonos the editor exposes all **27 publishe
 speaker presets** and **65 steering directions**, grouped into character, pitch,
 accents, voice texture, recording character, delivery, expressiveness, hesitation,
 mood/clarity, emotions and emphasis. Strength sliders have synchronized percentage
-entries, plain-language poles and individual/group neutral resets. Quick starting
+entries (including fractional percentages), plain-language poles and individual/group neutral resets.
+**Overall expression** scales the complete mix without erasing its individual
+sliders, independently from speaking pace and playback volume. Zero removes the
+style adjustments; 100% applies the full mix. The published per-direction doses
+are starting points, and combining many strong directions can make the model skip
+words or run without reaching its end token. Try 25–50% overall expression and
+preview both speeds if a mix becomes unstable. Quick starting
 styles include Neutral, Clear, Conversational, Lively, Calm and Whisper; these
 replace expression settings while retaining the selected speaker. Advanced controls
 include speaker guidance, output headroom and a reproducible variation seed, plus
@@ -3011,7 +3017,11 @@ content-addressed by exact Dutch text and all audible settings under
 `<output root>/library/practice-audio/sentences/`; opaque filenames do not reveal
 the script. Files are atomically published and hash-checked before playback.
 Deleted or damaged audio is repaired in a background worker without losing the
-current draft or generating another sentence.
+current draft or generating another sentence. An interactive retry prepares only
+the selected voice and current question, so an unrelated experimental voice cannot
+block playback. After saving voice configuration, the app still warms the current
+round's enabled voices in the background. Switching voice or question while a
+failed render finishes honours the latest playback request.
 Adding or adjusting voices warms the current round's existing sentences and the
 bounded standby round. It does not request replacement exercises. Renaming or
 reordering presets reuses their audio, as do distinct preset labels with identical
@@ -3019,6 +3029,12 @@ settings. Disabled presets incur no preparation. Shared cache ownership prevents
 foreground recovery and background readiness from rendering the same missing audio
 concurrently. Strong or unusual styles may need a milder setting if the model
 cannot finish a recording; the answer and approved text remain saved.
+Normal and slow speech must both finish before that question's voice is marked
+ready. A successful native process exit that reports no speech end token is
+rejected, and the UI identifies the preset and affected speed with a suggestion
+to lower Overall expression. Truncated/runaway recordings are never published as
+ready audio. Equivalent audible mixes share their content identity: for example,
+halving each slider reuses the same audio as setting Overall expression to 50%.
 
 **Progress → Listening** shows partial transcription scores, whole-sentence
 accuracy, daily trends, saved targets, forms, contexts, mistakes and rounds.

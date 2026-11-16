@@ -6,6 +6,7 @@ Example: switching styles must reuse approved questions and record the exact voi
 import io
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import time
@@ -235,6 +236,80 @@ class VoiceTests(unittest.TestCase):
         self.assertNotEqual(cfg.identity(), before)
         with self.assertRaises(ValueError):
             voices.Config(controls={"emotions.happy": -.5})
+
+    def test_overall_expression_keeps_the_mix_and_cache_identity_matches_its_sound(self) -> None:
+        """Scale controls through one canonical calculation; e.g. half-strength expression equals manually halving the individual sliders."""
+
+        cfg = voices.Config(engine="zonos", controls={"mood.clarity": 1, "identity.gender": -1}, expression=.5)
+        same = voices.Config(engine="zonos", controls={"mood.clarity": .5, "identity.gender": -.5})
+        self.assertEqual(cfg.identity(), same.identity())
+        self.assertEqual(cfg.controls["mood.clarity"], 1)
+        editor = self._own(library_voice_controls.VoiceEditor())
+        editor.load(cfg)
+        self.assertEqual(editor.config(), cfg)
+        editor._expression.setValue(25)
+        self.assertEqual(editor.config().steering()["mood.clarity"], .25)
+        editor._strengths["identity.gender"].set_value(-.1725)
+        self.assertEqual(editor.config().controls["identity.gender"], -.1725)
+
+    def test_targeted_preparation_ignores_another_broken_preset(self) -> None:
+        """Let a requested voice recover independently; e.g. an experimental preset cannot block a working Piper sentence."""
+
+        settings = self._save()
+        session = self.engine.start(self.options, lambda _: None)
+        rows = self.db.listening_questions(session)
+        good, bad = [self.engine.audio.engine(row.config) for row in settings.enabled]
+        bad.available = False
+        asset = self.db.listening_audio(rows[0]["id"], good.profile)
+        self.db.listening_paths(asset["cache_key"])["normal"].unlink()
+        with mock.patch.object(bad, "render_many", side_effect=AssertionError("unrelated voice was requested")):
+            self.engine.audio.prepare(rows[:1], lambda _: None, preset=settings.enabled[0])
+        self.assertTrue(self.db.listening_audio_valid(self.db.listening_audio(rows[0]["id"], good.profile)))
+
+    def test_runaway_recording_names_the_speed_and_recommends_the_expression_control(self) -> None:
+        """Reject a native success exit without a speech end token; e.g. a 30-second runaway slow clip never becomes cached speech."""
+
+        engine = zonos_speech.ZonosSpeech(voices.Config(engine="zonos"))
+        failed = subprocess.CompletedProcess([], 0, stdout="tts: 450 frames, eos_frame=-1")
+        with mock.patch.object(zonos_speech.zonos_install, "installation", return_value={}), \
+             mock.patch.object(zonos_speech.zonos_install, "root", return_value=self.root), \
+             mock.patch.object(engine, "_command", return_value=["zonos"]), \
+             mock.patch.object(zonos_speech.proc, "run", return_value=failed):
+            with self.assertRaisesRegex(RuntimeError, "slow recording.*Overall expression"):
+                engine.render_many([("public sample", {"slow": self.root / "slow.wav"})], lambda _: None)
+        self.assertFalse((self.root / "slow.wav").exists())
+
+    def test_switching_away_from_a_failing_voice_recovers_the_requested_voice(self) -> None:
+        """Finish the latest playback request after an earlier voice fails; e.g. an unavailable experimental mix cannot strand Piper."""
+
+        settings = self._save()
+        session = self.engine.start(self.options, lambda _: None)
+        row = self.db.sentence_current(session)
+        first, second = [self.engine.audio.engine(preset.config) for preset in settings.enabled]
+        for engine in (first, second):
+            asset = self.db.listening_audio(row["question_id"], engine.profile)
+            self.db.listening_paths(asset["cache_key"])["normal"].unlink()
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def fail(_jobs, _report):
+            """Hold the first request until another voice is selected; e.g. real Qt callback ordering must recover the newer request."""
+
+            entered.set()
+            release.wait(3)
+            raise RuntimeError("Expression mix did not finish")
+
+        card = self._own(library_listening.ListeningCard(self.db, player=audio.Player(), audio_cache=lambda: self.engine.audio))
+        card.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+        with mock.patch.object(first, "render_many", side_effect=fail):
+            card.present(row)
+            card.show()
+            self._wait(entered.is_set)
+            card._voices.setCurrentIndex(1)
+            release.set()
+            self._wait(lambda: bool(card._player.calls))
+        asset = self.db.listening_audio(row["question_id"], second.profile)
+        self.assertEqual(card._player.calls[-1][0], self.db.listening_paths(asset["cache_key"])["normal"])
 
     def test_native_controls_are_calibrated_and_do_not_request_missing_release_bundle(self) -> None:
         """Build supported native arguments only; e.g. the published bundle has no temporal steering release data."""

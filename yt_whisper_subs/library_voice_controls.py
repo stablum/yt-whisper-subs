@@ -22,7 +22,9 @@ class Strength(QtWidgets.QWidget):
         super().__init__()
         self.key = definition["id"]
         self._slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-        self._spin = QtWidgets.QSpinBox()
+        self._spin = QtWidgets.QDoubleSpinBox()
+        self._spin.setDecimals(2)
+        self._spin.setSingleStep(1)
         minimum = -100 if definition["axis"] else 0
         for widget in (self._slider, self._spin):
             widget.setRange(minimum, 100)
@@ -31,9 +33,8 @@ class Strength(QtWidgets.QWidget):
         self._slider.setSingleStep(5)
         self._slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
         self._slider.setTickInterval(50)
-        self._slider.valueChanged.connect(self._spin.setValue)
-        self._spin.valueChanged.connect(self._slider.setValue)
-        self._spin.valueChanged.connect(self.changed)
+        self._slider.valueChanged.connect(lambda: self._sync(self._slider))
+        self._spin.valueChanged.connect(lambda: self._sync(self._spin))
         poles = f"{definition['negative']}  ←  neutral  →  {definition['positive']}" if minimum else "Neutral  →  stronger"
         title = QtWidgets.QLabel(definition["label"])
         title.setStyleSheet("font-weight:600")
@@ -60,10 +61,18 @@ class Strength(QtWidgets.QWidget):
 
         return self._spin.value() / 100
 
+    def _sync(self, source) -> None:
+        """Keep slider dragging and precise entries consistent without rounding the saved mix; e.g. a quarter of 69% remains 17.25%."""
+
+        target = self._spin if source is self._slider else self._slider
+        with QtCore.QSignalBlocker(target):
+            target.setValue(source.value() if target is self._spin else round(source.value()))
+        self.changed.emit()
+
     def set_value(self, value: float) -> None:
         """Restore a saved strength without interpreting a voice label; e.g. duplicate presets reproduce all their sliders."""
 
-        self._spin.setValue(round(value * 100))
+        self._spin.setValue(round(value * 100, 2))
 
 
 class VoiceEditor(QtWidgets.QWidget):
@@ -98,6 +107,8 @@ class VoiceEditor(QtWidgets.QWidget):
         self._seed.setRange(0, 2147483647)
         self._seed.setToolTip("The same variation number and settings reproduce the same take.")
         self._numbers = {"guidance": self._number(1, 3, 1), "headroom": self._number(0, 24, 3, " dB")}
+        self._expression = self._number(0, 100, 100, " %")
+        self._expression.setToolTip("Scale all expression sliders together. Try 25–50% if a strong mix cannot finish speaking. Pace and volume stay independent.")
         form = QtWidgets.QFormLayout()
         form.addRow("Speech engine", self._engine)
         self._zonos = QtWidgets.QWidget()
@@ -111,6 +122,7 @@ class VoiceEditor(QtWidgets.QWidget):
         note.setStyleSheet("color:#b8c7d9;")
         details.addRow(note)
         details.addRow("Clone from recording", ref_row)
+        details.addRow("Overall expression", self._expression)
         form.addRow(self._zonos)
         form.addRow("Speaking pace", self._pace)
         form.addRow("Playback volume", self._volume)
@@ -148,7 +160,7 @@ class VoiceEditor(QtWidgets.QWidget):
             widget.currentIndexChanged.connect(self.changed)
         self._reference.textChanged.connect(self.changed)
         self._reference.textChanged.connect(self._visibility)
-        for widget in (self._pace, self._volume, self._seed, *self._numbers.values()):
+        for widget in (self._pace, self._volume, self._seed, self._expression, *self._numbers.values()):
             widget.valueChanged.connect(self.changed)
         self._visibility()
 
@@ -202,8 +214,8 @@ class VoiceEditor(QtWidgets.QWidget):
         for key, note in {"guidance": "Higher values follow the speaker reference more closely; 1 is the neutral model default.",
                           "headroom": "Leave this much output level below clipping. Higher values are quieter."}.items():
             self._numbers[key].setToolTip(note)
-        note = QtWidgets.QLabel("Style strengths are calibrated to the published model settings. Zero is neutral. "
-                               "Preview your changes: combining strong styles can make speech less clear. "
+        note = QtWidgets.QLabel("Style strengths use the published model doses. Zero is neutral; individual ranges do not guarantee a safe combined mix. "
+                               "Lower Overall expression if speech becomes unclear or cannot finish. "
                                "Reference recordings stay on this computer.")
         note.setWordWrap(True)
         form.addRow(note)
@@ -251,6 +263,7 @@ class VoiceEditor(QtWidgets.QWidget):
         self._reference.setText(cfg.reference)
         self._pace.setValue(cfg.pace * 100)
         self._volume.setValue(cfg.volume * 100)
+        self._expression.setValue(cfg.expression * 100)
         self._seed.setValue(cfg.seed)
         for key, spin in self._numbers.items():
             spin.setValue(getattr(cfg, key))
@@ -265,7 +278,8 @@ class VoiceEditor(QtWidgets.QWidget):
         controls = {key: widget.value() for key, widget in self._strengths.items() if widget.value()}
         return listening_voices.Config(engine=self._engine.currentData(), voice=self._voice.currentData(),
                                        reference=self._reference.text().strip(), pace=self._pace.value() / 100,
-                                       volume=self._volume.value() / 100, seed=self._seed.value(), controls=controls, **values)
+                                       volume=self._volume.value() / 100, expression=self._expression.value() / 100,
+                                       seed=self._seed.value(), controls=controls, **values)
 
     def neutral(self) -> None:
         """Remove expressive adjustments while keeping speaker identity; e.g. compare a stylized voice with its neutral version."""

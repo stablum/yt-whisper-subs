@@ -160,15 +160,20 @@ class AudioCache:
         self._db = db
         self._speech = speech
 
-    def prepare(self, questions: list[dict], report) -> None:
+    def prepare(self, questions: list[dict], report, *, preset=None) -> None:
         """Repair absent audio by content identity without regenerating text; e.g. two rounds reusing a sentence reuse its recordings."""
 
         while not _CACHE_LOCK.acquire(timeout=0.25):
             _checkpoint()
         try:
-            for preset in listening_voices.read(self._db).enabled:
+            presets = [preset] if preset else listening_voices.read(self._db).enabled
+            for row in presets:
                 _checkpoint()
-                self._prepare_voice(self.engine(preset.config), questions, report)
+                report("Preparing voice: " + row.name)
+                try:
+                    self._prepare_voice(self.engine(row.config), questions, report)
+                except RuntimeError as exc:
+                    raise RuntimeError(f"{row.name}: {exc}") from exc
         finally:
             _CACHE_LOCK.release()
 

@@ -121,9 +121,12 @@ class ListeningFlowTests(unittest.TestCase):
         cached = self.db.listening_audio(row["question_id"])
         self.db.listening_paths(cached["cache_key"])["normal"].unlink()
         before = len(card._player.calls)
-        with mock.patch.object(card, "_cache", return_value=self.engine.audio):
+        with mock.patch.object(card, "_cache", return_value=self.engine.audio), \
+             mock.patch.object(self.engine.audio, "prepare", wraps=self.engine.audio.prepare) as prepare:
             card._replay.click()
             self._wait(lambda: len(card._player.calls) > before)
+            self.assertEqual(len(prepare.call_args.args[0]), 1)
+            self.assertEqual(prepare.call_args.kwargs["preset"].id, "piper")
         self.assertEqual(card.editor.toPlainText(), "De slimste")
         self.assertEqual(self.panel._run.row["id"], row["id"])
         self.assertEqual(practice_activity.read(self.db).answers, 0)
@@ -167,7 +170,7 @@ class ListeningFlowTests(unittest.TestCase):
         entered, release = threading.Event(), threading.Event()
         self.addCleanup(release.set)
 
-        def blocked(_questions, report):
+        def blocked(_questions, report, **_kwargs):
             """Wait at a cooperative synthesis boundary; e.g. cancellation must be observed before publishing speech."""
 
             entered.set()

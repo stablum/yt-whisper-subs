@@ -3,6 +3,8 @@
 Example: listen, replay slowly if needed, type Dutch, then inspect Dutch corrections and English meaning.
 """
 
+import json
+
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 import shiboken6
@@ -161,7 +163,7 @@ class ListeningCard(library_sentences.SentenceCard):
             self._load_voices()
             self.settings_changed.emit()
             if self._row:
-                self._repair_audio()
+                self._repair_audio(all_voices=True)
 
     def _autoplay(self, presentation_id: int) -> None:
         """Avoid late playback after navigation or submission; e.g. a scheduled first listen cannot speak behind Activity."""
@@ -192,19 +194,20 @@ class ListeningCard(library_sentences.SentenceCard):
         except (OSError, ValueError) as exc:
             self._audio_note.setText(f"Could not play audio: {exc}")
 
-    def _repair_audio(self) -> None:
+    def _repair_audio(self, *, all_voices=False) -> None:
         """Rebuild missing speech off the GUI thread without changing drafts; e.g. clearing a cache is recoverable inside an active round."""
 
         if self._task:
             return
         row = self._row
-        questions = self._db.listening_questions(row["session_id"])
-        self._audio_note.setText("Preparing enabled voices for this round…")
-        task = library_workers.BackgroundTask(lambda report: self._cache().prepare(questions, report))
+        preset = None if all_voices else self._presets[self._voices.currentIndex()]
+        questions = self._db.listening_questions(row["session_id"]) if all_voices else [{"id": row["question_id"], "body_json": json.dumps(row["content"])}]
+        self._audio_note.setText("Preparing enabled voices for this round…" if all_voices else f"Preparing {preset.name} for this sentence…")
+        task = library_workers.BackgroundTask(lambda report: self._cache().prepare(questions, report, preset=preset))
         self._task = task
         task.signals.progress.connect(self._audio_note.setText)
         task.signals.finished.connect(self._repaired)
-        task.signals.failed.connect(lambda message: self._repair_failed(row["id"], message))
+        task.signals.failed.connect(lambda message: self._repair_failed(row["id"], message, preset.id if preset else None))
         task.signals.cancelled.connect(lambda: self._repair_failed(row["id"], "Audio preparation paused."))
         QtCore.QThreadPool.globalInstance().start(task)
 
@@ -217,12 +220,17 @@ class ListeningCard(library_sentences.SentenceCard):
             if self._row and self._row["id"] == self._requested:
                 self._play(self._speed)
 
-    def _repair_failed(self, presentation_id: int, message: str) -> None:
+    def _repair_failed(self, presentation_id: int, message: str, preset_id=None) -> None:
         """Offer a local retry without losing typed text; e.g. a voice download failure is not a wrong answer."""
 
         self._task = None
-        if shiboken6.isValid(self) and self._row and self._row["id"] == presentation_id:
-            self._audio_note.setText("Could not prepare audio. Click Listen again to retry. " + message.rsplit("\n", 1)[-1])
+        if shiboken6.isValid(self) and self._row:
+            switched = presentation_id != self._row["id"] or (preset_id and preset_id != self._presets[self._voices.currentIndex()].id)
+            if switched and self._requested == self._row["id"]:
+                self._play(self._speed)
+                return
+            if self._row["id"] == presentation_id:
+                self._audio_note.setText("Could not prepare audio. Click Listen again to retry. " + message.rsplit("\n", 1)[-1])
 
     def _stopped(self) -> None:
         """Stop only owned playback; e.g. switching sentences cannot leave overlapping voices."""

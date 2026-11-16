@@ -33,7 +33,7 @@ class ZonosSpeech:
         else:
             voice = next(row for row in listening_voices.catalog()["voices"] if row["name"] == cfg.voice)
             cmd.extend(["--speaker-embedding", files[voice["file"]]])
-        controls = dict(cfg.controls)
+        controls = cfg.steering()
         # Tempo is a measured style axis: slowing speech keeps its pitch and character.
         adjustment = -0.6 if speed == "slow" else 0
         if cfg.pace != 1 or adjustment:
@@ -59,7 +59,11 @@ class ZonosSpeech:
                         if result.returncode or "eos_frame=-1" in (result.stdout or ""):
                             log = zonos_install.root() / "last-error.log"
                             log.write_text(result.stdout or "Native speech worker failed.", encoding="utf-8")
-                            raise RuntimeError("Zonos could not finish this recording. Check the voice preview or use milder expression settings.")
+                            if "eos_frame=-1" in (result.stdout or ""):
+                                raise RuntimeError(f"Zonos could not finish the {speed} recording with this expression mix. "
+                                                   "Lower Overall expression in Voices (try 25–50%) and preview again. "
+                                                   "Your answer and preset are saved.")
+                            raise RuntimeError("Zonos speech synthesis failed. Check the voice preview; diagnostics are in the shared model folder's last-error.log.")
                         listening_tts.duration(temp)
                         self._gain(temp)
                         temp.replace(path)
