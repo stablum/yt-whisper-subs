@@ -72,15 +72,17 @@ class VoiceEditor(QtWidgets.QWidget):
     changed = QtCore.Signal()
 
     def __init__(self) -> None:
-        """Group the complete catalogue into scrollable native tabs; e.g. accents do not crowd everyday pace and mood controls."""
+        """Group the complete catalogue into native pages; e.g. reference speaker identity stays separate from the Dutch exercise language."""
 
         super().__init__()
         self._engine = QtWidgets.QComboBox()
         self._engine.addItem("Piper · Dutch Ronnie", "piper")
         self._engine.addItem("ZONOS3-Mini", "zonos")
         self._voice = QtWidgets.QComboBox()
+        self._voice.setAccessibleName("Reference speaker")
+        self._voice.setToolTip("The listed language belongs to the reference recording. It does not change the exercise language.")
         for row in listening_voices.catalog()["voices"]:
-            self._voice.addItem(f"{row['name']} · {row['language']} · {row['gender']} · {row['style']}", row["name"])
+            self._voice.addItem(f"{row['name']} · {row['language']} reference · {row['gender']} · {row['style']}", row["name"])
         self._reference = QtWidgets.QLineEdit()
         self._reference.setPlaceholderText("Optional local voice recording")
         self._reference.setClearButtonEnabled(True)
@@ -101,7 +103,13 @@ class VoiceEditor(QtWidgets.QWidget):
         self._zonos = QtWidgets.QWidget()
         details = QtWidgets.QFormLayout(self._zonos)
         details.setContentsMargins(0, 0, 0, 0)
-        details.addRow("Voice", self._voice)
+        details.addRow("Reference speaker", self._voice)
+        note = QtWidgets.QLabel("Listening sentences are Dutch. Zonos has no built-in Dutch reference speaker; "
+                               "these speakers can speak Dutch, but their accent may vary. "
+                               "Use a Dutch recording below as a reference, or choose Piper · Dutch Ronnie.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color:#b8c7d9;")
+        details.addRow(note)
         details.addRow("Clone from recording", ref_row)
         form.addRow(self._zonos)
         form.addRow("Speaking pace", self._pace)
@@ -139,6 +147,7 @@ class VoiceEditor(QtWidgets.QWidget):
         for widget in (self._engine, self._voice):
             widget.currentIndexChanged.connect(self.changed)
         self._reference.textChanged.connect(self.changed)
+        self._reference.textChanged.connect(self._visibility)
         for widget in (self._pace, self._volume, self._seed, *self._numbers.values()):
             widget.valueChanged.connect(self.changed)
         self._visibility()
@@ -206,6 +215,7 @@ class VoiceEditor(QtWidgets.QWidget):
 
         enabled = self._engine.currentData() == "zonos"
         self._zonos.setVisible(enabled)
+        self._voice.setEnabled(not self._reference.text().strip())
         self._tabs.setVisible(enabled)
         self._quick.setVisible(enabled)
 

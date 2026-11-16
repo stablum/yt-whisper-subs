@@ -2956,8 +2956,13 @@ persists the set; **Cancel** discards unsaved preset edits. Closing the dialog s
 its audio and cancels its owned preparation. Optional local reference audio can
 replace a built-in speaker, enabling a Dutch reference voice without uploading it.
 Use a clean, single-speaker recording; FFmpeg must be available for decoding it.
-The released speaker list has no Dutch-native reference preset: those identities
-can speak Dutch, but accent/clarity varies. Piper remains the Dutch-native default.
+The **Reference speaker** dropdown labels the reference recording's language,
+not the exercise's spoken language. Listening sentences remain Dutch. The
+released speaker list has no Dutch-native reference preset: those identities
+can speak Dutch, but accent/clarity varies. The editor states this alongside
+the selector and points to a Dutch reference recording or **Piper · Dutch Ronnie**,
+which remains the Dutch-native default. Choosing a local reference recording
+disables the built-in speaker selector until the reference field is cleared.
 Reference content is hashed, so replacing a file changes that preset's audio identity.
 
 #### Shared ZONOS3-Mini installation
