@@ -5,7 +5,6 @@ Example: `library_bootstrap.main()` is called by the `.pyw` launcher.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from pathlib import Path
 
@@ -23,15 +22,13 @@ def main() -> int:
     paths = proc.venv_paths()
     current = Path(sys.executable).resolve()
     managed_executables = {paths["python"].resolve(), paths["python_gui"].resolve()}
-    if current in managed_executables and all(
-        importlib.util.find_spec(module) is not None
-        for module in cfg.LIBRARY_REQUIRED_MODULES
-    ):
+    # Validate pinned versions even when launched directly with managed pythonw.
+    proc.ensure_library_deps(paths, cfg.DEFAULT_PYTHON_VERSION)
+    if current in managed_executables:
         from yt_whisper_subs import library_app
 
         return library_app.main(sys.argv[1:])
 
-    proc.ensure_library_deps(paths, cfg.DEFAULT_PYTHON_VERSION)
     gui_python = paths["python_gui"] if paths["python_gui"].exists() else paths["python"]
     cmd = [str(gui_python), "-m", "yt_whisper_subs.library_app", *sys.argv[1:]]
     try:

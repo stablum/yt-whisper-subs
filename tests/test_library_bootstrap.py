@@ -85,6 +85,24 @@ class LibraryBootstrapTests(unittest.TestCase):
         self.assertTrue(library_app.parse_args(["--start-hidden"]).start_hidden)
         self.assertFalse(library_app.parse_args([]).start_hidden)
 
+    def test_managed_launch_validates_pinned_deps_before_entering_the_gui(self) -> None:
+        """Use the same version checks for a direct pythonw launch; e.g. importable Piper cannot bypass dependency repair."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = self._paths(Path(tmp))
+            order = []
+            with (
+                mock.patch.object(sys, "executable", str(paths["python_gui"])),
+                mock.patch.object(proc, "venv_paths", return_value=paths),
+                mock.patch.object(proc, "configure_stdio"),
+                mock.patch.object(proc, "ensure_library_deps", side_effect=lambda *_: order.append("validate")) as ensure,
+                mock.patch.object(library_app, "main", side_effect=lambda _: order.append("gui") or 0),
+                mock.patch.object(proc, "run", side_effect=AssertionError("unneeded relaunch")),
+            ):
+                self.assertEqual(library_bootstrap.main(), 0)
+            self.assertEqual(order, ["validate", "gui"])
+            ensure.assert_called_once()
+
     @staticmethod
     def _paths(root: Path) -> dict[str, Path]:
         """Build isolated managed executable paths for bootstrap tests.

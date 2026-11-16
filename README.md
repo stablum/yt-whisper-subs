@@ -568,6 +568,7 @@ The script expects to run on Windows. It uses:
   live pipeline owners from crashed or reused process IDs
 - `pydantic`, `fsrs`, `numpy`, `polars`, and `rapidfuzz` for validated practice content,
   spaced review, word-edit sentence scores, and progress analytics in the native library
+- `piper-tts==1.7.0` for local Dutch listening speech
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
@@ -575,10 +576,12 @@ folder and should not depend on whichever Python packages happen to be installed
 globally.
 
 The `.pyw` library launcher bootstraps only `yt-dlp[default]`,
-`PySide6-Essentials`, `psutil`, Pydantic, FSRS, NumPy, Polars, and RapidFuzz, keeping a first GUI start much smaller than a Whisper/CUDA
+`PySide6-Essentials`, `psutil`, Pydantic, FSRS, NumPy, Polars, RapidFuzz, and Piper, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
-Whisper and Torch exactly as a direct CLI run would.
+Whisper and Torch exactly as a direct CLI run would. The launcher checks Piper's
+pinned version even when invoked directly with the managed `python.exe` or `pythonw.exe`,
+so an already importable speech package cannot bypass its version pin.
 
 The repository also includes a tracked `.python-version` file set to `3.14` so
 local Python tooling and the script-managed environment share the same project
@@ -2903,8 +2906,13 @@ The feature instead uses [Piper](https://github.com/OHF-Voice/piper1-gpl) and th
 [Dutch Netherlands Ronnie voice](https://huggingface.co/rhasspy/piper-voices/blob/main/nl/nl_NL/ronnie/medium/MODEL_CARD),
 trained for Dutch, with a CC0 dataset and 22,050 Hz mono output. Speech runs on the
 CPU, leaving the GPU available for Whisper. Piper **1.7.0** is pinned and checked
-by the existing startup dependency probe: the tested Windows 1.8 wheel exited in
-its native espeak phonemizer. Synthesis runs in a hidden, cancellable child process,
+by the existing startup dependency probe. On Windows, uv may install individual
+dictionary files as symlinks; eSpeak's native file-size check can treat them as
+empty and report `Wrong version of espeak-ng-data ... got 0x0` even when the
+package and data versions match. The worker resolves `phondata` itself and uses
+the real containing data directory, preserving the complete matching dictionary
+set without copying files or reinstalling the voice. Resolving only the package
+directory does not resolve these individual file links. Synthesis runs in a hidden, cancellable child process,
 loading the voice once per batch, so a native runtime error cannot terminate the
 library. There is no voice cloning, reference recording, speech server or cloud
 TTS request.
