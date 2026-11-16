@@ -170,6 +170,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Metadata queue pause before other ready work after failure | `15` minutes |
 | Retention metadata memory | durable info sidecars prevent old videos from re-queuing |
 | Library close behavior | keep running in the system tray; explicit Quit closes owned mpv/workers |
+| Library database backups | one asynchronous verified snapshot per startup; newest `10` retained under `<output root>/library/backups` |
 | Start with Windows | disabled; optional per-user quiet tray launch |
 | Library activity trace | hidden by default; last `5,000` lines retained per session |
 | Library pipeline display | segmented per-video phase bar with live stage wording |
@@ -379,6 +380,8 @@ yt-whisper-subs\
     youtube_id.chapters.ffmetadata
   library\
     catalog.sqlite3
+    backups\
+      catalog-YYYYMMDDTHHMMSSffffffZ.sqlite3
 ```
 
 The application-owned `.tmp` directory is the explicit working directory for
@@ -769,6 +772,40 @@ It contains:
 The native title bar includes the current application version. That value comes
 directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
 it is not duplicated in the window code.
+
+### Automatic Database Backups
+
+Every library startup, including a quiet Windows tray launch, schedules one
+database backup on its own background worker. The window opens without waiting
+for the copy, and channel checks, downloads, and playback keep their own workers.
+Backups live in `<output root>/library/backups`, beside `catalog.sqlite3`; custom
+output roots use their own backup folder. The catalog contains subscriptions,
+watch history, settings, vocabulary, and all practice modes and answer history.
+
+The SQLite online backup API includes committed WAL changes while the library
+continues using its database. Each snapshot is checked with SQLite's full
+integrity check and published as a standalone timestamped `.sqlite3` file only
+after it succeeds. The newest **10 automatic backups** are retained; older
+automatic snapshots are deleted after the new one is verified. Other filenames
+are left alone. At the current catalog size, ten snapshots use about 155 MiB;
+space scales with the size of the database. Media and cached speech are not copied.
+
+Failures appear in **View → Activity trace** without a blocking dialog. Failed
+or cancelled copies are removed, and unfinished copies from a crashed process
+are cleaned up at the next startup. Backup work times out after two minutes;
+Quit requests cooperative cancellation without waiting on the GUI thread.
+A failed copy or integrity check preserves the previous successful backups.
+
+To restore a snapshot, quit the library and any CLI process using that output
+root. Preserve the current catalog and any `catalog.sqlite3-wal` and
+`catalog.sqlite3-shm` companions elsewhere, then copy the chosen snapshot to
+`library/catalog.sqlite3` with no old WAL/SHM files alongside it. Reopen the library.
+
+Run the isolated backup and background-startup checks:
+
+```powershell
+python -m unittest tests.test_library_backup -v
+```
 
 ### Channel Groups
 
@@ -3478,6 +3515,7 @@ High-level groups:
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
 | `yt_whisper_subs.library_schema` | Startup catalog tables, indexes, and schema changes. |
+| `yt_whisper_subs.library_backup` | Verified online catalog snapshots, ten-file rotation, partial cleanup, and an independent cancellable startup worker. |
 | `yt_whisper_subs.library_media_db` | Batched local-file reconciliation and durable sidecar metadata updates. |
 | `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
 | `yt_whisper_subs.yield_files` | Atomic staged yield replacement and durable dependency-marker paths. |

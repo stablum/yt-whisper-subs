@@ -11,6 +11,7 @@ import sys
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_gui
+from yt_whisper_subs import library_backup
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_practice_ready
 from yt_whisper_subs import library_sentence_checks
@@ -52,6 +53,9 @@ def main(argv: list[str] | None = None) -> int:
         with output_lock.OutputLock(out_dir, "library"):
             service = library_service.LibraryService(out_dir, proc.venv_paths())
             window = library_gui.LibraryWindow(service)
+            backup = library_backup.StartupBackup(service.db.path, qt_app)
+            backup.message.connect(window._ui.trace.append_message)
+            qt_app.aboutToQuit.connect(backup.stop)
             library_sentence_checks.SentenceChecks.shared(service.db).resume()
             library_sentence_checks.SentenceChecks.shared(service.db, local=True).resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
