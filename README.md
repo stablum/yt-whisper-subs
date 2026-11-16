@@ -132,7 +132,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
 | Comprehension | Leesbegrip and Luisterbegrip; B2; 5 paragraphs, 5 four-choice and 3 open questions; all content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
-| Comprehension narration | existing local Piper/Zonos presets; one selected narrator per passage, normal and slow clips prepared before readiness; transcript and feedback concealed until all listening answers are submitted |
+| Comprehension narration | existing local Piper/Zonos presets; live voice switching on the same passage, normal and slow clips cached per sound configuration; transcript and feedback concealed until all listening answers are submitted |
 | Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
 | OpenAI timeout | `900` seconds |
@@ -2992,7 +2992,7 @@ the configured practice model (`gpt-6-luna`, reasoning `medium`).
 - Multiple-choice questions: 0–20 (default 5), each with four substantial buttons.
 - Open questions: 0–15 (default 3), answered in Dutch; together 1–30 questions.
 - Saved vocabulary targets: 1–20 (default 8), subject to eligible available words.
-- Optional early review; Luisterbegrip also offers the narrator and **Stemmen instellen…**.
+- Optional early review. Luisterbegrip's **Stem** selector and **Stemmen instellen…** sit beside its playback controls and apply to the current passage.
 
 The requested question counts are exact. Independent review solves every choice
 question without the proposed answer key, checking that exactly one option is
@@ -3035,7 +3035,14 @@ Unsubmitted drafts and review positions survive closing the window.
 
 Leesbegrip displays the passage alongside independently scrolling questions.
 Luisterbegrip uses the same local speech strategies and presets as dictation,
-preparing both normal and slower clips for **one selected narrator per passage**.
+preparing both normal and slower clips for **one selected narrator at a time**.
+Select **Stem** beside playback to hear the **same passage** through a different
+preset immediately, without starting a new round or losing a draft. Uncached
+voices show their preparation progress, then play from the current fragment;
+already cached voices switch directly. The selected voice is saved for this
+round and future rounds. **Stemmen instellen…** opens the existing full preset
+editor; saving new sound parameters refreshes that voice's recordings too.
+Obsolete or cancelled voice jobs cannot change the new selection or its status.
 Paragraph navigation, replay, restart and stop do not generate new text. Bounded
 fragments preserve every word and avoid an oversized expressive-speech job.
 The transcript stays absent from the browser until all answers are submitted and

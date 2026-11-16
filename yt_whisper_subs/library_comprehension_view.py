@@ -29,7 +29,7 @@ class PassagePane(QtWidgets.QWidget):
         self.title.setWordWrap(True)
         self.title.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self.title.setStyleSheet('font-size:18pt;font-weight:600;color:#ffd166;')
-        self.audio = library_comprehension_audio.Narration(audio)
+        self.audio = library_comprehension_audio.Narration(db, audio)
         self.browser = QtWidgets.QTextBrowser()
         self.browser.setOpenExternalLinks(False)
         self.browser.setAccessibleName('Nederlandse tekst')

@@ -3,6 +3,8 @@
 Example: normal and slow narration share paragraph navigation without placing transcript text in any label.
 """
 
+import re
+
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 import shiboken6
@@ -10,17 +12,18 @@ import shiboken6
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import listening_voices
 
 
 class Narration(QtWidgets.QWidget):
     """Own sequential playback and repair, independent from question submission; e.g. answering a question never restarts the article."""
 
-    def __init__(self, audio, *, player=None) -> None:
+    def __init__(self, db, audio, *, player=None) -> None:
         """Use the existing nonblocking WAV player; e.g. no speech subprocess runs on the GUI thread."""
 
         super().__init__()
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Maximum)
-        self._audio = audio
+        self._db, self._audio = db, audio
         self._player = player or library_listening.WavePlayer(self)
         self._player.finished.connect(self._next)
         self._session = None
@@ -28,8 +31,16 @@ class Narration(QtWidgets.QWidget):
         self._rows = []
         self._index, self._speed, self._playing = 0, 'normal', False
         self._task = None
-        self._task_session = None
         self._wanted = False
+        self._voice = QtWidgets.QComboBox()
+        self._voice.setAccessibleName('Stem voor deze luistertekst')
+        self._voice.activated.connect(lambda _: self._select_voice(self._voice.currentData()))
+        configure = QtWidgets.QPushButton('Stemmen instellen…')
+        configure.setAutoDefault(False)
+        configure.clicked.connect(self._configure_voices)
+        voices = QtWidgets.QFormLayout()
+        voices.addRow('Stem', self._voice)
+        voices.addRow(configure)
         self._note = QtWidgets.QLabel('Luister naar de tekst en beantwoord de vragen.')
         self._note.setWordWrap(True)
         self._note.setTextFormat(QtCore.Qt.TextFormat.PlainText)
@@ -48,25 +59,67 @@ class Narration(QtWidgets.QWidget):
         controls.addWidget(self._paragraph, 2, 0, 1, 2)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addLayout(voices)
         layout.addLayout(controls)
         layout.addWidget(self._note)
 
-    def load(self, session: dict) -> None:
+    def load(self, session: dict, *, refresh=False) -> None:
         """Bind saved modality and narrator choices; e.g. revisiting a correction does not interrupt already playing speech."""
 
-        if self._session and self._session['id'] == session['id']:
+        same = self._session is not None and self._session['id'] == session['id']
+        opts = comp.Options.model_validate_json(session['options_json'])
+        if same and self._opts.voice_id == opts.voice_id and not refresh:
             return
-        self.stop()
-        if self._task:
-            self._task.cancel()
-        self._task, self._task_session = None, None
-        self._session, self._index, self._rows = session, 0, []
-        self._opts = comp.Options.model_validate_json(session['options_json'])
+        self.shutdown()
+        self._session, self._rows, self._opts = session, [], opts
+        if not same:
+            self._index = 0
+        self._voices()
         try:
             self._rows = self._audio.rows(session['passage_id'], self._opts)
+            self._note.setText(f'Stem klaar: {self._voice.currentText()}. Kies Luisteren om af te spelen.')
         except (ValueError, OSError):
-            self._note.setText('Spraak ontbreekt. Klik op Luisteren om de fragmenten te herstellen.')
+            self._note.setText(f'Stem: {self._voice.currentText()}. Klik op Luisteren om de spraak voor te bereiden.')
         self._paragraphs()
+
+    def _voices(self) -> None:
+        """Refresh shared presets without emitting an accidental selection; e.g. renaming a voice does not reset the passage."""
+
+        self._voice.clear()
+        for preset in listening_voices.read(self._db).presets:
+            if preset.enabled or preset.id == self._opts.voice_id:
+                self._voice.addItem(preset.name, preset.id)
+        self._voice.setCurrentIndex(self._voice.findData(self._opts.voice_id))
+
+    def _select_voice(self, voice_id: str) -> None:
+        """Apply a voice immediately to the same text and remember it; e.g. comparing Piper and Zonos preserves the typed answer and paragraph."""
+
+        if not self._session or not voice_id:
+            return
+        speed = self._speed
+        self.shutdown()
+        try:
+            opts = self._opts.model_copy(update=dict(voice_id=voice_id))
+            self._audio.preset(opts)
+            session = self._db.comprehension_voice(self._session['id'], voice_id)
+            self.load(session, refresh=True)
+            self.play(speed)
+        except (ValueError, OSError) as exc:
+            self._voices()
+            self._note.setText('Stem wijzigen is niet gelukt: ' + str(exc))
+
+    def _configure_voices(self) -> None:
+        """Edit the existing sound presets where they are played; e.g. saving changed Zonos sliders refreshes the same voice ID's recording."""
+
+        from yt_whisper_subs import library_voice_config
+
+        self.stop()
+        if library_voice_config.VoiceDialog(self._db, self).exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            voices = listening_voices.read(self._db)
+            selected = self._opts.voice_id
+            if not any(p.id == selected for p in voices.presets):
+                selected = voices.enabled[0].id
+            self._select_voice(selected)
 
     def _paragraphs(self) -> None:
         """Refresh available paragraph jumps after loading or repair; e.g. deleted initial audio can recover its navigation too."""
@@ -99,7 +152,7 @@ class Narration(QtWidgets.QWidget):
             self._player.play(path, row[speed + '_seconds'])
             self._audio.played(self._session['id'], row, speed)
             self._playing = True
-            self._note.setText(f"Alinea {row['paragraph']} · fragment {self._index + 1}/{len(self._rows)} · {'langzaam' if speed == 'slow' else 'normaal'}")
+            self._note.setText(f"{self._voice.currentText()} · alinea {row['paragraph']} · fragment {self._index + 1}/{len(self._rows)} · {'langzaam' if speed == 'slow' else 'normaal'}")
         except (ValueError, OSError, RuntimeError) as exc:
             self.stop()
             self._note.setText('Afspelen is niet gelukt: ' + str(exc))
@@ -140,36 +193,43 @@ class Narration(QtWidgets.QWidget):
     def _repair(self) -> None:
         """Recover cached media without generating another passage; e.g. deleting a WAV does not lose typed answers."""
 
-        session_id = self._session['id']
         passage_id, opts = self._session['passage_id'], self._opts
         task = library_workers.BackgroundTask(lambda report: self._audio.prepare(passage_id, opts, report))
         self._task = task
-        self._task_session = session_id
-        task.signals.progress.connect(self._note.setText)
-        task.signals.finished.connect(lambda _: self._repaired(session_id))
-        task.signals.failed.connect(lambda message: self._failed(session_id, message))
-        task.signals.cancelled.connect(lambda: self._failed(session_id, 'Spraakvoorbereiding gepauzeerd.'))
+        self._note.setText(f'Stem voorbereiden: {self._voice.currentText()}…')
+        task.signals.progress.connect(lambda message: self._progress(task, message))
+        task.signals.finished.connect(lambda _: self._repaired(task))
+        task.signals.failed.connect(lambda message: self._failed(task, message))
+        task.signals.cancelled.connect(lambda: self._failed(task, 'Spraakvoorbereiding gepauzeerd.'))
         QtCore.QThreadPool.globalInstance().start(task)
 
-    def _repaired(self, session_id: str) -> None:
+    def _progress(self, task, message) -> None:
+        """Ignore obsolete voice progress as well as obsolete results; e.g. an old Zonos task cannot overwrite Piper's playback label."""
+
+        if shiboken6.isValid(self) and self._task is task:
+            count = re.search(r'(\d+/\d+)$', message.strip())
+            progress = ' · fragment ' + count.group(1) if count else '…'
+            self._note.setText(f'Stem voorbereiden: {self._voice.currentText()}{progress}')
+
+    def _repaired(self, task) -> None:
         """Use repaired audio only for the same visible passage; e.g. a late completion cannot speak over another practice mode."""
 
-        if shiboken6.isValid(self) and self._task_session == session_id:
+        if shiboken6.isValid(self) and self._task is task:
             try:
                 self._rows = self._audio.rows(self._session['passage_id'], self._opts)
             except (ValueError, OSError) as exc:
-                self._failed(session_id, str(exc))
+                self._failed(task, str(exc))
                 return
-            self._task, self._task_session = None, None
+            self._task = None
             self._paragraphs()
             if self._wanted:
                 self.play(self._speed)
 
-    def _failed(self, session_id, message) -> None:
+    def _failed(self, task, message) -> None:
         """Show an operational error without changing the learner's score; e.g. a failed expressive narrator is not a comprehension mistake."""
 
-        if shiboken6.isValid(self) and self._task_session == session_id:
-            self._task, self._task_session = None, None
+        if shiboken6.isValid(self) and self._task is task:
+            self._task = None
             self._note.setText('Spraak niet beschikbaar: ' + message)
 
     def hideEvent(self, event) -> None:
@@ -184,3 +244,4 @@ class Narration(QtWidgets.QWidget):
         self.stop()
         if self._task:
             self._task.cancel()
+            self._task = None

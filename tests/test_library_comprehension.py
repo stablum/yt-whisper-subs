@@ -26,6 +26,7 @@ from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_comprehension
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_listening
+from yt_whisper_subs import listening_voices
 from yt_whisper_subs import practice_activity
 
 
@@ -224,6 +225,99 @@ class ComprehensionFlowTests(unittest.TestCase):
         panel = self._panel(mc=2, open=0)
         self.assertEqual(panel._run.session, session)
         self.assertEqual(panel._run.row['id'], rows[1]['id'])
+
+    def test_voice_picker_changes_current_audio_and_persists_without_losing_draft(self):
+        """Switch distinct cached speech strategies on one passage; e.g. the next play uses a different file while the answer stays intact."""
+
+        voices = listening_voices.Voices(presets=[listening_voices.Preset(id='piper', name='Piper'),
+            listening_voices.Preset(id='second', name='Second voice', config=listening_voices.Config(pace=.8))])
+        self.db.set_setting(listening_voices.SETTING, voices.model_dump_json())
+        engines = {}
+
+        def engine(_db, cfg):
+            """Give each audible configuration its own recording identity; e.g. changing pace requires another WAV."""
+
+            key = cfg.identity()
+            if key not in engines:
+                engines[key] = speech.Speech()
+                engines[key].profile = key
+            return engines[key]
+
+        self.engine.audio._speech = None
+        with mock.patch.object(listening_voices, 'speech', side_effect=engine):
+            panel = self._panel(direction=comp.Direction.LISTEN, mc=0, open=2)
+            audio = panel._view.source.audio
+            self._wait(lambda: bool(audio._player.calls))
+            panel._view.card.editor.setPlainText('Mijn voorlopige antwoord')
+            row_id, session = panel._run.row['id'], panel._run.session
+            first = audio._player.calls[-1][0]
+            audio._player.finished.emit()
+            position = audio._index
+            audio._voice.setCurrentIndex(audio._voice.findData('second'))
+            audio._voice.activated.emit(audio._voice.currentIndex())
+            self._wait(lambda: audio._task is None and audio._playing and audio._player.calls[-1][0] != first)
+            self.assertEqual(audio._index, position)
+            self.assertIn('Second voice', audio._note.text())
+            self.assertEqual(panel._run.row['id'], row_id)
+            self.assertEqual(panel._view.card.editor.toPlainText(), 'Mijn voorlopige antwoord')
+            self.assertEqual(comp.Options.model_validate_json(self.db.comprehension_session(session)['options_json']).voice_id, 'second')
+            self.assertEqual(panel._view.options.options().voice_id, 'second')
+            self.assertEqual(len(self.provider.generated), 1)
+            self.assertEqual(practice_activity.read(self.db).answers, 0)
+            self.assertEqual(panel._view.source.browser.toPlainText(), '')
+            previous = audio._player.calls[-1][0]
+            voices.presets[1].config.pace = .9
+            self.db.set_setting(listening_voices.SETTING, voices.model_dump_json())
+            audio._select_voice('second')
+            self._wait(lambda: audio._task is None and audio._playing and audio._player.calls[-1][0] != previous)
+            calls = len(audio._player.calls)
+            audio._voice.setCurrentIndex(audio._voice.findData('piper'))
+            audio._voice.activated.emit(audio._voice.currentIndex())
+            self.assertEqual(len(audio._player.calls), calls + 1)
+            self.assertIsNone(audio._task)
+            self.assertEqual(len(engines), 3)
+
+    def test_switching_back_while_voice_prepares_ignores_obsolete_results(self):
+        """Bind callbacks to the actual job rather than the session alone; e.g. an old voice failure cannot overwrite a newer successful playback."""
+
+        voices = listening_voices.Voices(presets=[listening_voices.Preset(id='piper', name='Piper'),
+                                                 listening_voices.Preset(id='second', name='Second voice')])
+        self.db.set_setting(listening_voices.SETTING, voices.model_dump_json())
+        panel = self._panel(direction=comp.Direction.LISTEN)
+        audio = panel._view.source.audio
+        self._wait(lambda: bool(audio._player.calls))
+        entered = threading.Event()
+
+        def missing(passage_id, opts):
+            """Make only the second narrator require synthesis; e.g. returning to the original narrator is already cached."""
+
+            if opts.voice_id == 'second':
+                raise ValueError('Not cached')
+            return rows(passage_id, opts)
+
+        def blocked(_passage_id, _opts, report):
+            """Keep the obsolete worker alive across a selection change; e.g. its late error must not affect the current sound."""
+
+            entered.set()
+            self.release.wait(4)
+            raise OSError('Obsolete voice failed')
+
+        rows = self.engine.audio.rows
+        with mock.patch.object(self.engine.audio, 'rows', side_effect=missing), \
+             mock.patch.object(self.engine.audio, 'prepare', side_effect=blocked):
+            audio._select_voice('second')
+            self._wait(entered.is_set)
+            obsolete = audio._task
+            audio._select_voice('piper')
+            self.assertTrue(audio._playing)
+            self.release.set()
+            QtCore.QThreadPool.globalInstance().waitForDone(5000)
+            self.app.processEvents()
+            audio._progress(obsolete, 'Obsolete progress')
+            audio._failed(obsolete, 'Obsolete failure')
+            self.assertTrue(audio._playing)
+            self.assertIn('Piper', audio._note.text())
+            self.assertNotIn('Obsolete', audio._note.text())
 
 
 if __name__ == '__main__':

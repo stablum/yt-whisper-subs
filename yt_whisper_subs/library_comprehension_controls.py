@@ -10,7 +10,6 @@ from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_practice_controls
 from yt_whisper_subs import library_sentence_review
 from yt_whisper_subs import library_written_controls as written
-from yt_whisper_subs import listening_voices
 
 
 class Options(QtWidgets.QWidget):
@@ -53,17 +52,6 @@ class Options(QtWidgets.QWidget):
         self._early = QtWidgets.QCheckBox('Ook woorden oefenen die nog niet aan herhaling toe zijn')
         self._early.setChecked(opts.include_early)
         form.addRow(self._early)
-        self._voice = QtWidgets.QComboBox()
-        for preset in listening_voices.read(db).enabled:
-            self._voice.addItem(preset.name, preset.id)
-        if self._voice.findData(opts.voice_id) >= 0:
-            self._voice.setCurrentIndex(self._voice.findData(opts.voice_id))
-        if self.direction == comp.Direction.LISTEN:
-            form.addRow('Verteller voor de volgende ronde', self._voice)
-            voices = QtWidgets.QPushButton('Stemmen instellen…')
-            voices.setAutoDefault(False)
-            voices.clicked.connect(self._configure_voices)
-            form.addRow(voices)
         note = QtWidgets.QLabel('Samen 1–30 vragen. Eén antwoord per meerkeuzevraag is juist.\nOpen antwoorden krijgen ook deelpunten voor begrip.')
         note.setWordWrap(True)
         form.addRow(note)
@@ -91,27 +79,18 @@ class Options(QtWidgets.QWidget):
         """Validate the complete next-round request; e.g. zero choices and eight open questions is a supported exercise."""
 
         values = {key: spin.value() for key, spin in self._numbers.items()}
+        try:
+            voice_id = comp.Options.model_validate_json(self._db.setting(self.key, '{}')).voice_id
+        except ValueError:
+            voice_id = ''
         return comp.Options(direction=self.direction, genre=self._genre.currentData(), level=self._level.currentText(),
-                            include_early=self._early.isChecked(), voice_id=self._voice.currentData() or '', **values)
+                            include_early=self._early.isChecked(), voice_id=voice_id, **values)
 
     def _restart(self) -> None:
         """Close the popover before exposing content; e.g. Enter in a count field cannot accidentally submit a question."""
 
         self.menu.close()
         self.restart_requested.emit()
-
-    def _configure_voices(self) -> None:
-        """Reuse the complete existing voice editor; e.g. a new Zonos preset becomes selectable without reopening practice."""
-
-        from yt_whisper_subs import library_voice_config
-
-        self.menu.close()
-        selected = self._voice.currentData()
-        if library_voice_config.VoiceDialog(self._db, self).exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            self._voice.clear()
-            for preset in listening_voices.read(self._db).enabled:
-                self._voice.addItem(preset.name, preset.id)
-            self._voice.setCurrentIndex(max(0, self._voice.findData(selected)))
 
     def set_active(self, active: bool) -> None:
         """Offer ending only for an actual active round; e.g. a prepared spare does not count as started practice."""
