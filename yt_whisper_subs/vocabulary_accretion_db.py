@@ -37,7 +37,7 @@ class AccretionDbMixin:
         if row["language"] != "nl" or row["state"] != "ready" or row["ambiguous"] or not row["lemma"]:
             return
         lemma = vocabulary.normalized(row["lemma"].strip())
-        if len(lemma) < 4 or not lemma.replace("-", "").isalpha():
+        if len(lemma) < 4 or not lemma.replace("-", "").isalpha() or not self._word_allowed(conn, "nl", lemma):
             return
         lexeme = dict(lemma=lemma, meaning=row["lemma_meaning"] or row["meaning"], part_of_speech=row["part_of_speech"] or "word")
         document = {"kind": "compound", "lexemes": [lexeme]}
@@ -84,7 +84,7 @@ class AccretionDbMixin:
             for row in rows:
                 self._accretion_mistake(conn, "listening", self._sentence_row(row))
 
-    def accretion_claim(self, owner: str) -> list[dict]:
+    def accretion_claim(self, owner: str, *, kind: str | None = None) -> list[dict]:
         """Lease one stage of a bounded batch across processes; e.g. verifier retry never regenerates saved proposals."""
 
         now = time.time()
@@ -97,9 +97,11 @@ class AccretionDbMixin:
                     conn.execute("UPDATE vocab_audits SET state=?,owner=NULL WHERE id=?",
                                  ("pending" if row["proposal_json"] is None else "verify", row["id"]))
             # Verification is cheaper and publishes already generated work before taking another batch.
-            state = "verify" if conn.execute(f"SELECT 1 FROM vocab_audits job WHERE state='verify' AND {schema.ACTIVE_JOB} LIMIT 1").fetchone() else "pending"
-            rows = conn.execute(f"SELECT * FROM vocab_audits job WHERE state=? AND {schema.ACTIVE_JOB} ORDER BY id LIMIT ?",
-                                (state, accretion.BATCH_SIZE)).fetchall()
+            scope = "(? IS NULL OR json_extract(job.document_json,'$.kind')=?)"
+            state = "verify" if conn.execute(f"SELECT 1 FROM vocab_audits job WHERE state='verify' AND {schema.ACTIVE_JOB} AND {scope} LIMIT 1",
+                                             (kind, kind)).fetchone() else "pending"
+            rows = conn.execute(f"SELECT * FROM vocab_audits job WHERE state=? AND {schema.ACTIVE_JOB} AND {scope} ORDER BY id LIMIT ?",
+                                (state, kind, kind, accretion.BATCH_SIZE)).fetchall()
             if rows:
                 policy = rows[0]["model"], rows[0]["reasoning"], rows[0]["version"]
                 rows = [row for row in rows if (row["model"], row["reasoning"], row["version"]) == policy]
@@ -115,6 +117,7 @@ class AccretionDbMixin:
                     if conn.execute("SELECT 1 FROM vocab_audits WHERE cache_key=? AND state='done'", (key,)).fetchone():
                         known.append(word["lemma"])
                 jobs.append({**dict(row), "document": document, "known_morphology": known,
+                             "repair": json.loads(row["repair_json"]) if row["repair_json"] else None,
                              "proposal": json.loads(row["proposal_json"]) if row["proposal_json"] else None})
             return jobs
 
@@ -128,9 +131,15 @@ class AccretionDbMixin:
                                    (proposal.id, owner)).fetchone()
                 if row is None:
                     continue
-                proposal.check(json.loads(row[0]))
+                try:
+                    proposal.check(json.loads(row[0]))
+                except ValueError as exc:
+                    repair = dict(previous_rejection=str(exc), previous_proposal=proposal.model_dump())
+                    conn.execute("UPDATE vocab_audits SET state='failed',repair_json=?,error=?,owner=NULL,lease_until=0 WHERE id=?",
+                                 (json.dumps(repair, ensure_ascii=False), str(exc), proposal.id))
+                    continue
                 positive = bool(proposal.vocabulary or proposal.splits)
-                conn.execute("UPDATE vocab_audits SET proposal_json=?,result_json=?,state=?,owner=NULL,lease_until=0 WHERE id=?",
+                conn.execute("UPDATE vocab_audits SET proposal_json=?,result_json=?,state=?,repair_json=NULL,error='',owner=NULL,lease_until=0 WHERE id=?",
                              (proposal.model_dump_json(), None if positive else proposal.model_dump_json(),
                               "verify" if positive else "done", proposal.id))
 
@@ -151,12 +160,13 @@ class AccretionDbMixin:
             conn.execute("UPDATE vocab_audits SET state='failed',error=?,owner=NULL,lease_until=0 WHERE owner=?",
                          (error[:2000], owner))
 
-    def accretion_retry(self) -> int:
+    def accretion_retry(self, *, kind: str | None = None) -> int:
         """Retry the unfinished stage only; e.g. verification reuses its durable proposal."""
 
         with self._connect() as conn:
             return conn.execute("UPDATE vocab_audits SET state=CASE WHEN proposal_json IS NULL THEN 'pending' ELSE 'verify' END,"
-                                "error='' WHERE state='failed'").rowcount
+                                "error='' WHERE state='failed' AND (? IS NULL OR json_extract(document_json,'$.kind')=?)",
+                                (kind, kind)).rowcount
 
     def accretion_status(self) -> dict[str, int]:
         """Expose bounded work and failures for the vocabulary window; e.g. background errors remain discoverable."""
@@ -200,6 +210,8 @@ class AccretionDbMixin:
         # Mistake proposals seed the morphology cache below; their root lookup owns component evidence.
         components = result.components() if document["kind"] == "compound" else []
         for parent, word in components:
+            if not self._word_allowed(conn, "nl", word.lemma):
+                continue
             note = f"Constituent of {parent}."
             fix = learning.Correction(typed="", dutch=[word.lemma], english=[word.meaning], intended=word, confused=None, note=note)
             component = learning.Capture(row=source, provenance=provenance,
@@ -224,7 +236,8 @@ class AccretionDbMixin:
         source, added = capture.row, []
         for fix in result.vocabulary:
             for role in ("intended", "confused"):
-                if getattr(fix, role) is None:
+                word = getattr(fix, role)
+                if word is None or not self._word_allowed(conn, "nl", word.lemma):
                     continue
                 lookup_id = self._learning_lookup(conn, fix, role, capture)
                 word_id = conn.execute("SELECT word_id FROM vocab_lookups WHERE id=?", (lookup_id,)).fetchone()[0]

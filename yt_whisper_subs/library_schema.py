@@ -17,6 +17,7 @@ from yt_whisper_subs import vocabulary_learning_db
 from yt_whisper_subs import word_reviews
 from yt_whisper_subs import listening_db
 from yt_whisper_subs import vocabulary_accretion_schema
+from yt_whisper_subs import vocabulary_cleanup
 
 
 _SCHEMA = f"""
@@ -95,6 +96,7 @@ CREATE TABLE IF NOT EXISTS video_history (
 {vocabulary_learning_db.SCHEMA}
 {word_reviews.SCHEMA}
 {vocabulary_accretion_schema.SCHEMA}
+{vocabulary_cleanup.SCHEMA}
 
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -123,6 +125,9 @@ class SchemaDbMixin:
             conn.execute("PRAGMA journal_mode = WAL")
             sentence_schema.upgrade(conn)
             conn.executescript(_SCHEMA)
+            audit_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vocab_audits)")}
+            if "repair_json" not in audit_columns:
+                conn.execute("ALTER TABLE vocab_audits ADD COLUMN repair_json TEXT")
             listening_db.upgrade(conn)
             self._practice_upgrade(conn)
             job_columns = {

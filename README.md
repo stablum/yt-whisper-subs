@@ -2355,6 +2355,23 @@ checks existing saved vocabulary in bounded batches. **Vocabulary** displays
 separate component-source counts, parent links, and pending/failed enrichment
 counts; derived components have no fabricated clicks, mistakes or video playback.
 
+Version `0.6.7` checkpoints each structurally valid discovery independently.
+One malformed split no longer fails the other words in its batch. Rejected
+structures retain the exact proposal and local rejection for a focused repair;
+retrying does not regenerate already completed items. Maintenance workers can
+scope claims and retries to compounds without processing unrelated answer jobs.
+
+Reviewed cleanup uses `repair_vocabulary` for established spelling or dictionary-form
+corrections, preserving word IDs, review state and original evidence in a repair
+journal. Only entries with no trustworthy single-word correction use
+`remove_vocabulary`: their source links are archived in `vocab_exclusions`, they
+disappear from active vocabulary, and cached exercises using them are retired.
+Answered exercises and their timestamps are preserved. Automatic imports respect
+these exclusions. Valid constituents can be independently retained in
+`vocab_retained_components` when their original parent entry was erroneous.
+Take a consistent SQLite backup before a maintenance sweep and retain a dated
+report of corrections, removals and supporting evidence.
+
 `vocab_audits`, `vocab_audit_sources` and `vocab_additions` retain cached analyses,
 verification checkpoints, native source foreign keys and intended/confused/component
 roles. These sources feed the existing vocabulary eligibility and shared review
@@ -3499,6 +3516,7 @@ High-level groups:
 | `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
 | `yt_whisper_subs.vocabulary_accretion`, `vocabulary_accretion_worker` | Batched lexical discovery, exact compound structure checks, independent positive-proposal verification and resumable background execution. |
 | `yt_whisper_subs.vocabulary_accretion_db`, `vocabulary_accretion_schema` | Cached audit stages, source validity, derived-word provenance and transferred quiz/listening failures without duplicate target reviews. |
+| `yt_whisper_subs.vocabulary_cleanup` | Reviewed spelling repairs, reversible exclusions, independently retained constituents and retirement of affected cached teaching material. |
 | `yt_whisper_subs.listening_tts` / `listening_synth` | Verified Dutch voice assets, content-addressed speech cache and isolated batch synthesis. |
 | `yt_whisper_subs.listening_voices` / `zonos_speech` / `zonos_install` | Named sound presets, full native Zonos steering strategy and shared verified source/model installation. |
 | `yt_whisper_subs.library_voice_config` / `library_voice_controls` | Native preset management, local previews, calibrated expression sliders and quick starting styles. |

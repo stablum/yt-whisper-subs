@@ -11,6 +11,7 @@ import time
 from yt_whisper_subs import vocabulary as words
 from yt_whisper_subs import vocabulary_learning_db as learning
 from yt_whisper_subs import vocabulary_accretion_schema as accretion
+from yt_whisper_subs import vocabulary_cleanup as cleanup
 
 
 SCHEMA = """
@@ -70,7 +71,11 @@ CREATE INDEX IF NOT EXISTS idx_vocab_pending ON vocab_lookups(state, lease_until
 CREATE INDEX IF NOT EXISTS idx_vocab_lookup_word ON vocab_lookups(word_id);
 """
 
-OCCURRENCES = f"{learning.OCCURRENCES} UNION ALL {accretion.OCCURRENCES}"
+OCCURRENCES = f"""
+SELECT e.* FROM ({learning.OCCURRENCES} UNION ALL {accretion.OCCURRENCES} UNION ALL {cleanup.OCCURRENCES}) e
+JOIN vocab_lookups l ON l.id=e.lookup_id JOIN vocab_words w ON w.id=l.word_id
+WHERE {cleanup.ELIGIBLE}
+"""
 
 _EVENTS = f"""
 SELECT e.*,e.event_key AS id,
@@ -100,7 +105,7 @@ WITH ready AS (
 """
 
 
-class VocabularyDbMixin(learning.LearningDbMixin):
+class VocabularyDbMixin(learning.LearningDbMixin, cleanup.CleanupDbMixin):
     """Keep vocabulary transactions independent from channel queries; e.g. CLI capture."""
 
     def has_unfinished_word_lookups(self) -> bool:

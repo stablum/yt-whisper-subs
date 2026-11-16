@@ -83,7 +83,7 @@ class LearningDbMixin:
                                  (enrichment_id, ordinal, fix.typed, " … ".join(fix.dutch), " … ".join(fix.english), fix.note)).lastrowid
             for role in ("intended", "confused"):
                 lexeme = getattr(fix, role)
-                if lexeme is None:
+                if lexeme is None or not self._word_allowed(conn, "nl", lexeme.lemma):
                     continue
                 lookup_id = self._learning_lookup(conn, fix, role, capture)
                 conn.execute("INSERT INTO vocab_error_words VALUES(?,?,?)", (error, role, lookup_id))

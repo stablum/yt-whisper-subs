@@ -4,6 +4,7 @@ Example: reporting a quiz removes its confused-word and compound evidence from e
 """
 
 from yt_whisper_subs import vocabulary_learning_db as learning
+from yt_whisper_subs import vocabulary_cleanup as cleanup
 
 
 SCHEMA = """
@@ -11,7 +12,7 @@ CREATE TABLE IF NOT EXISTS vocab_audits (
     id INTEGER PRIMARY KEY, cache_key TEXT NOT NULL UNIQUE, document_json TEXT NOT NULL,
     model TEXT NOT NULL, reasoning TEXT NOT NULL, version INTEGER NOT NULL,
     state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','working','verify','verifying','done','failed')),
-    proposal_json TEXT, result_json TEXT, error TEXT NOT NULL DEFAULT '',
+    proposal_json TEXT, result_json TEXT, repair_json TEXT, error TEXT NOT NULL DEFAULT '',
     owner TEXT, lease_until REAL NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS vocab_audit_sources (
@@ -45,10 +46,15 @@ LEFT JOIN vocab_lookups root ON root.id=a.lookup_id
 """
 MISTAKE_VALID = "COALESCE(p.outcome,s.outcome)='wrong'"
 LIVE_LOOKUPS = f"""
-SELECT lookup_id FROM ({learning.OCCURRENCES})
-UNION
-SELECT d.lookup_id {SOURCE} JOIN vocab_additions d ON d.source_id=a.id
-WHERE d.role<>'component' AND {MISTAKE_VALID}
+SELECT e.lookup_id FROM (
+    SELECT lookup_id FROM ({learning.OCCURRENCES})
+    UNION
+    SELECT lookup_id FROM vocab_retained_components
+    UNION
+    SELECT d.lookup_id {SOURCE} JOIN vocab_additions d ON d.source_id=a.id
+    WHERE d.role<>'component' AND {MISTAKE_VALID}
+) e JOIN vocab_lookups l ON l.id=e.lookup_id JOIN vocab_words w ON w.id=l.word_id
+WHERE {cleanup.ELIGIBLE}
 """
 VALID = f"({MISTAKE_VALID} OR a.lookup_id IN ({LIVE_LOOKUPS}))"
 ACTIVE_JOB = f"EXISTS(SELECT 1 {SOURCE} WHERE a.audit_id=job.id AND {VALID})"

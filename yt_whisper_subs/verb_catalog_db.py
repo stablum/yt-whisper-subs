@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import time
 
-from yt_whisper_subs import vocabulary_learning_db as learning
+from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import word_reviews
 
 
@@ -48,7 +48,7 @@ class VerbCatalogDbMixin:
                 "l.note,l.updated_at AS source_stamp FROM vocab_lookups l JOIN vocab_words w ON w.id=l.word_id "
                 "LEFT JOIN verb_vocab_links x ON x.lookup_id=l.id WHERE w.language='nl' AND l.state='ready' "
                 "AND l.ambiguous=0 AND TRIM(COALESCE(l.lemma,''))<>'' "
-                f"AND EXISTS(SELECT 1 FROM ({learning.OCCURRENCES}) e WHERE e.lookup_id=l.id) "
+                f"AND EXISTS(SELECT 1 FROM ({vocabulary_db.OCCURRENCES}) e WHERE e.lookup_id=l.id) "
                 "AND (x.lookup_id IS NULL OR x.source_stamp<>l.updated_at OR x.model<>:model "
                 "OR x.reasoning<>:reasoning OR x.prompt_version<>:prompt_version "
                 "OR (json_extract(x.evidence_json,'$.verdict.valid')=0 AND x.checked_at<:retry_before)) ORDER BY l.id",

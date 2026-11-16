@@ -141,6 +141,8 @@ _MORPHOLOGY = (
     "parents before children. Skip roots in known_morphology (already cached or assigned to another task in "
     "this batch). Every split must connect to an input/imported lexeme. Components keep their own "
     "correct standalone meanings; a compound can have a nonliteral meaning. Omit doubtful analyses. "
+    "If previous_rejection is supplied, repair that exact structural defect using previous_proposal, or "
+    "omit the doubtful split. Never force a decomposition just because a repair was requested. "
 )
 
 
@@ -174,13 +176,14 @@ class Generator(practice_ai.StructuredGenerator):
             known = set(row.get("known_morphology", []))
             if row["document"]["kind"] != "compound":
                 known.update(compound_roots)
-            tasks.append({"id": row["id"], **row["document"], "known_morphology": sorted(known)})
+            task = {"id": row["id"], **row["document"], "known_morphology": sorted(known)}
+            if row.get("repair"):
+                task.update(row["repair"])
+            tasks.append(task)
         result = self._request(Analyses, prompt, {"tasks": tasks})
         expected = {row["id"]: row["document"] for row in jobs}
         if len(result.items) != len(expected) or {item.id for item in result.items} != set(expected):
             raise ValueError("Incomplete vocabulary discovery batch")
-        for item in result.items:
-            item.check(expected[item.id])
         return result.items
 
     def verify(self, jobs: list[dict]) -> dict[int, bool]:

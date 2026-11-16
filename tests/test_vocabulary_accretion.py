@@ -363,3 +363,73 @@ class AccretionTests(unittest.TestCase):
         good.splits[0].lemma = "anders"
         with self.assertRaisesRegex(ValueError, "disconnected"):
             good.check(document)
+
+    def test_one_invalid_proposal_preserves_other_batch_results_and_focused_repair(self) -> None:
+        """Checkpoint per item before repair; e.g. one broken winkel split does not purchase anders twice."""
+
+        practice_fixtures.seed(self.db, [("winkel", "shop", "De winkel is open."), ("anders", "different", "Het is anders.")])
+        jobs = self.db.accretion_claim("batch")
+        proposals = self.provider.analyse(jobs)
+        bad = next(item for item in proposals if item.id == jobs[0]["id"])
+        bad.splits = [accretion.Split(lemma="winkel", parts=[
+            accretion.Part(text="win", word=lexeme("win", "profit")),
+            accretion.Part(text="kl", word=lexeme("kl", "invalid"))])]
+        self.db.accretion_proposed("batch", proposals)
+        self.assertEqual(self.db.accretion_status(), {"done": 1, "failed": 1})
+        self.db.accretion_retry()
+        repairs = self.db.accretion_claim("repair")
+        self.assertEqual([row["id"] for row in repairs], [bad.id])
+        self.assertIn("previous_proposal", repairs[0]["repair"])
+        self.db.accretion_proposed("repair", [accretion.Analysis(id=bad.id, vocabulary=[], splits=[])])
+        self._drain()
+        self.assertEqual(self.db.accretion_status(), {"done": 2})
+
+    def test_cleanup_archives_sources_and_preserves_answers_without_reimport(self) -> None:
+        """Remove reviewed errors from active vocabulary only; e.g. a saved quiz answer remains in activity history."""
+
+        row = self._quiz()
+        removed = self.db.remove_vocabulary([dict(language="nl", lemma="winkel", reason="Reviewed synthetic incorrect source word.",
+                                                   evidence=dict(context="Synthetic cleanup fixture"))])
+        self.assertEqual(removed, ["winkel"])
+        self._drain()
+        self.assertNotIn("winkel", {word["lemma"] for word in self.db.word_candidates("en_nl")})
+        self.assertEqual(practice_activity.read(self.db).answers, 1)
+        with self.db._connect() as conn:
+            archive = conn.execute("SELECT archived_json FROM vocab_exclusions WHERE lemma_norm='winkel'").fetchone()[0]
+            self.assertTrue(json.loads(archive)["vocab_clicks"])
+            self.assertEqual(conn.execute("SELECT outcome FROM practice_presentations WHERE id=?", (row["id"],)).fetchone()[0], "wrong")
+            self.assertFalse(conn.execute("PRAGMA foreign_key_check").fetchall())
+
+    def test_cleanup_can_independently_retain_valid_constituents(self) -> None:
+        """Avoid losing good vocabulary when its parent was bogus; e.g. verified fiets and band remain unassessed."""
+
+        self.test_clicked_nested_compound_adds_unassessed_components_with_real_parent_history()
+        self.db.remove_vocabulary([dict(language="nl", lemma="fietsbandventiel", reason="Synthetic invalid parent for cleanup verification.",
+                                       evidence=dict(context="Synthetic fixture"), keep_components=["fietsband", "fiets", "band", "ventiel"])])
+        words = {word["lemma"]: word for word in self.db.word_candidates("en_nl")}
+        self.assertEqual(set(words), {"fietsband", "fiets", "band", "ventiel"})
+        self.assertTrue(all(word["failures"] == 0 for word in words.values()))
+
+    def test_spelling_correction_restores_quarantine_and_preserves_progress(self) -> None:
+        """Correct a clear typo instead of losing its history; e.g. eindordeel becomes eindoordeel with an exact updated span."""
+
+        practice_fixtures.seed(self.db, [("eindordeel", "final judgment", "Dat is het eindordeel.")])
+        word = self.db.word_candidates("nl_en")[0]
+        policy = practice.ReviewPolicy()
+        result = policy.answer(None, correct=False, unsure=False, now=time.time(), elapsed_ms=1000)
+        with self.db._connect() as conn:
+            self.db._practice_state(conn, dict(word_id=word["word_id"], direction="nl_en"), result)
+        self.db.remove_vocabulary([dict(language="nl", lemma="eindordeel", reason="Clearly misspelled final-judgment compound.",
+                                       evidence=dict(sentence="Dat is het eindordeel."))])
+        fixed = self.db.repair_vocabulary([dict(language="nl", old="eindordeel", new="eindoordeel", reason="Established compound spelling.",
+                                                surfaces={"eindordeel": "eindoordeel"})])
+        after = self.db.word_candidates("nl_en")[0]
+        self.assertEqual((after["word_id"], after["surface"], after["lemma"], after["clicks"]),
+                         (word["word_id"], "eindoordeel", "eindoordeel", 1))
+        self.assertEqual(after["card_json"], result["after_json"])
+        context = json.loads(after["context_json"])
+        start, end = context["span"]
+        self.assertEqual(context["sentence"][start:end], "eindoordeel")
+        self.assertEqual(fixed[0]["new"], "eindoordeel")
+        with self.db._connect() as conn:
+            self.assertFalse(conn.execute("PRAGMA foreign_key_check").fetchall())
