@@ -8,6 +8,7 @@ import html
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_comprehension_audio
 from yt_whisper_subs import library_comprehension_controls
@@ -32,12 +33,12 @@ class PassagePane(QtWidgets.QWidget):
         self.audio = library_comprehension_audio.Narration(db, audio)
         self.browser = QtWidgets.QTextBrowser()
         self.browser.setOpenExternalLinks(False)
-        self.browser.setAccessibleName('Nederlandse tekst')
+        self.browser.setAccessibleName(i18n.tr('Dutch text'))
         self.browser.setStyleSheet('font-size:15pt;padding:10px;background:#1b202a;border:1px solid #384356;border-radius:8px;')
-        self.reveal = QtWidgets.QPushButton('Transcript bekijken')
+        self.reveal = QtWidgets.QPushButton(i18n.tr('View transcript'))
         self.reveal.setAutoDefault(False)
         self.reveal.clicked.connect(self._reveal)
-        self.note = QtWidgets.QLabel('De tekst blijft verborgen tot alle antwoorden zijn ingediend.')
+        self.note = QtWidgets.QLabel(i18n.tr('The text stays hidden until all answers are submitted.'))
         self.note.setWordWrap(True)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
@@ -79,7 +80,7 @@ class PassagePane(QtWidgets.QWidget):
         self.reveal.setEnabled(self._allowed)
         self.note.setVisible(listen and not self._revealed)
         self.layout().setStretch(5, int(listen and not self._revealed))
-        self.title.setText(self._content['title'] if self._revealed else 'Luister naar de tekst')
+        self.title.setText(self._content['title'] if self._revealed else i18n.tr('Listen to the text'))
         if self._revealed:
             if changed or not self.browser.toPlainText():
                 self._show_text()
@@ -91,7 +92,7 @@ class PassagePane(QtWidgets.QWidget):
     def _show_text(self) -> None:
         """Escape every model-supplied string before rich rendering; e.g. an angle bracket in the story cannot become an interactive link."""
 
-        genre = html.escape(comp.GENRES[self._content['genre']])
+        genre = html.escape(i18n.tr(comp.GENRES[self._content['genre']]))
         paragraphs = ''.join(f"<p><span style='color:#8fa2b9;font-size:10pt'>{idx}</span> {html.escape(text)}</p>"
                              for idx, text in enumerate(self._content['paragraphs'], 1))
         self.browser.setHtml(f'<p style="color:#a9b9cc">{genre}</p>{paragraphs}')
@@ -128,7 +129,7 @@ class View(QtWidgets.QWidget):
         self.bar.setTextVisible(False)
         self.source = PassagePane(db, direction, audio)
         self.card = library_comprehension_controls.Card()
-        self.rail = library_sentence_review.QuestionRail(dutch=True)
+        self.rail = library_sentence_review.QuestionRail(comprehension=True)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self.card)
@@ -142,13 +143,13 @@ class View(QtWidgets.QWidget):
         split.addWidget(question)
         split.setSizes([480, 650])
         split.setChildrenCollapsible(False)
-        self.action = library_practice_controls.ContinueButton('Antwoord indienen')
+        self.action = library_practice_controls.ContinueButton(i18n.tr('Submit answer'))
         self.action.setObjectName('primaryButton')
         self.action.setMinimumSize(200, 44)
         self.action.setAutoDefault(False)
-        self.retry = QtWidgets.QPushButton('Beoordeling opnieuw proberen')
-        self.flag = QtWidgets.QPushButton('Tekst of vraag melden')
-        self.cancel = QtWidgets.QPushButton('Voorbereiding annuleren')
+        self.retry = QtWidgets.QPushButton(i18n.tr('Retry correction'))
+        self.flag = QtWidgets.QPushButton(i18n.tr('Report text or question'))
+        self.cancel = QtWidgets.QPushButton(i18n.tr('Cancel preparation'))
         footer = QtWidgets.QHBoxLayout()
         for button in (self.flag, self.retry, self.cancel):
             button.setAutoDefault(False)

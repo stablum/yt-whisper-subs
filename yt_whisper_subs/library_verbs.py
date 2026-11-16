@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_written
 from yt_whisper_subs import library_verb_controls as controls
 from yt_whisper_subs import library_workers
@@ -19,8 +20,8 @@ class VerbPanel(library_written.WrittenPanel):
     def __init__(self, db, *, engine: verb_service.VerbService | None = None) -> None:
         """Bind the verb domain's operations and native view; e.g. stored rounds resume with their original grammar tasks."""
 
-        mode = library_written.Mode(key="verb", settings_key="verb_options", label="Verb transformations", tab_name="Verbs",
-                                    intro="Rewrite a Dutch sentence for a new subject, tense or situation.",
+        mode = library_written.Mode(key="verb", settings_key="verb_options", label=i18n.tr('Verb transformations'), tab_name=i18n.tr('Verbs'),
+                                    intro=i18n.tr('Rewrite a Dutch sentence for a new subject, tense or situation.'),
                                     view=controls.VerbView(db.setting("verb_options", "")),
                                     ops=library_written.SessionOps.for_db(db, "verb"))
         super().__init__(db, mode, engine=engine or verb_service.VerbService(db))

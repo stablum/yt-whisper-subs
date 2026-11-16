@@ -14,41 +14,19 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import cfg
+from yt_whisper_subs import library_window_menus
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import playback_progress
 from yt_whisper_subs import pipeline_progress as progress
 
 
-class WindowRuntimeMixin:
+class WindowRuntimeMixin(library_window_menus.MenusMixin):
     """Separate periodic and asynchronous runtime behavior from GUI layout.
 
     Example: `LibraryWindow` mixes this concern into the native main window.
     """
-
-    def _build_tray(self) -> QtWidgets.QSystemTrayIcon:
-        """Create the system-tray lifetime needed for unattended checks.
-
-        Example: closing the window leaves `_build_tray()` visible by default.
-        """
-
-        icon = self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay)
-        self.setWindowIcon(icon)
-        tray = QtWidgets.QSystemTrayIcon(icon, self)
-        tray.setToolTip("yt-whisper-subs YouTube Library")
-        menu = QtWidgets.QMenu(self)
-        menu.addAction("Show library", self._show_window)
-        menu.addAction("Practice…", self._show_practice)
-        menu.addAction("Practice activity…", lambda: self._show_practice(True))
-        menu.addAction("Check now", self.check_now)
-        menu.addSeparator()
-        menu.addAction("Quit", self._quit)
-        self._tray_menu = menu
-        tray.setContextMenu(menu)
-        tray.activated.connect(self._tray_activated)
-        if QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
-            tray.show()
-        return tray
 
     def check_now(self) -> None:
         """Start a manual all-channel discovery check.
@@ -59,7 +37,7 @@ class WindowRuntimeMixin:
         task = library_workers.ChannelCheckTask(self._service)
         task.signals.channel_checking.connect(self._ui.catalog.channels.set_checking)
         task.signals.videos_discovered.connect(self._notifications.add, QtCore.Qt.ConnectionType.QueuedConnection)
-        self._run_task("Checking channels…", task, self._check_finished)
+        self._run_task(i18n.tr('Checking channels…'), task, self._check_finished)
 
     def _check_finished(self, new_count: object) -> None:
         """Refresh and reschedule after downloads finish; discoveries notify earlier.
@@ -70,7 +48,7 @@ class WindowRuntimeMixin:
         self.refresh()
         self._schedule_next()
         count = int(new_count or 0)
-        self.statusBar().showMessage(f"Check complete · {count} auto-download attempt(s)", 8000)
+        self.statusBar().showMessage(i18n.tr('Check complete · {count} auto-download attempt(s)', count=count), 8000)
 
     def _scheduled_check(self) -> None:
         """Run an overdue check or defer briefly when another task is active.
@@ -96,15 +74,15 @@ class WindowRuntimeMixin:
         due = last_check + interval if last_check else now + (1 if initial else interval)
         delay = max(1, due - now)
         self._timer.start(delay * 1000)
-        when = datetime.fromtimestamp(now + delay).astimezone().strftime("%a %H:%M")
+        when = i18n.date_text(datetime.fromtimestamp(now + delay).astimezone(), '%a %H:%M')
         checked_at = datetime.fromtimestamp(last_check).astimezone() if last_check else None
-        checked = checked_at.strftime("%d %b %H:%M") if checked_at else "never"
-        self._ui.check_status.setText(f"Last check: {checked} · Next check: {when}")
+        checked = i18n.date_text(checked_at, '%d %b %H:%M') if checked_at else i18n.tr("never")
+        self._ui.check_status.setText(i18n.tr('Last check: {checked} · Next check: {when}', checked=checked, when=when))
         detail = (
-            f"Last completed channel check: {checked_at:%Y-%m-%d %H:%M:%S %Z}."
-            if checked_at else "No channel check has completed yet."
+            i18n.tr('Last completed channel check: {checked_at:%Y-%m-%d %H:%M:%S %Z}.', checked_at=checked_at)
+            if checked_at else i18n.tr('No channel check has completed yet.')
         )
-        self._ui.check_status.setToolTip(f"{detail}\nTimes are shown in your local timezone.")
+        self._ui.check_status.setToolTip(i18n.tr('{detail}\nTimes are shown in your local timezone.', detail=detail))
 
     def _schedule_metadata_backfill(
         self,
@@ -159,7 +137,7 @@ class WindowRuntimeMixin:
             if attempted and not completed:
                 minutes = cfg.DEFAULT_LIBRARY_METADATA_IDLE_SECONDS // 60
                 self._ui.trace.append_message(
-                    f"Metadata · Queue paused for {minutes} minutes after a failed lookup"
+                    i18n.tr('Metadata · Queue paused for {minutes} minutes after a failed lookup', minutes=minutes)
                 )
             wait = getattr(result, "retry_after_seconds", None)
             if wait:
@@ -175,7 +153,7 @@ class WindowRuntimeMixin:
 
             self._metadata_active = False
             self._metadata_task = None
-            self._ui.trace.append_message(f"✗ Metadata maintenance · {message}")
+            self._ui.trace.append_message(i18n.tr('✗ Metadata maintenance · {message}', message=message))
             self._ui.trace.append_message(trace)
             self._schedule_metadata_backfill(idle=True)
 
@@ -219,7 +197,7 @@ class WindowRuntimeMixin:
 
             self._media_active = False
             self._media_task = None
-            self._ui.trace.append_message(f"Local media scan failed · {message}")
+            self._ui.trace.append_message(i18n.tr('Local media scan failed · {message}', message=message))
 
         task.signals.finished.connect(done)
         task.signals.failed.connect(failed)
@@ -231,7 +209,7 @@ class WindowRuntimeMixin:
         Example: a deferred lookup is visible without disturbing playback status.
         """
 
-        self._ui.trace.append_message(f"Metadata · {message}")
+        self._ui.trace.append_message(i18n.tr('Metadata · {message}', message=message))
 
     def _queue_channel_task(
         self,
@@ -250,7 +228,7 @@ class WindowRuntimeMixin:
         task.signals.progress.connect(self._report_channel)
         task.signals.channel_checking.connect(self._ui.catalog.channels.set_checking)
         if queued:
-            self._ui.trace.append_message(f"○ Channel queued · {label}")
+            self._ui.trace.append_message(i18n.tr('○ Channel queued · {label}', label=label))
 
         def started() -> None:
             """Mark the moment this channel reaches its serial worker slot.
@@ -270,7 +248,7 @@ class WindowRuntimeMixin:
             self._ui.trace.append_message(f"✓ {label}")
             self.refresh()
             if not self._busy:
-                self.statusBar().showMessage("Channel added", 3_000)
+                self.statusBar().showMessage(i18n.tr('Channel added'), 3_000)
             self._schedule_metadata_backfill()
 
         def failed(message: str, trace: str) -> None:
@@ -285,14 +263,14 @@ class WindowRuntimeMixin:
             self._ui.trace.append_message(trace)
             box = QtWidgets.QMessageBox(
                 QtWidgets.QMessageBox.Icon.Warning,
-                "Could not initialize channel",
+                i18n.tr('Could not initialize channel'),
                 message,
                 parent=self,
             )
             box.setDetailedText(trace)
             box.open()
             if not self._busy:
-                self.statusBar().showMessage(f"Channel error: {message}", 10_000)
+                self.statusBar().showMessage(i18n.tr('Channel error: {message}', message=message), 10_000)
             self._schedule_metadata_backfill(idle=True)
 
         task.signals.started.connect(started)
@@ -306,7 +284,7 @@ class WindowRuntimeMixin:
         Example: yt-dlp channel output appears as `Channel · ...` in the trace.
         """
 
-        self._ui.trace.append_message(f"Channel · {message}")
+        self._ui.trace.append_message(i18n.tr('Channel · {message}', message=message))
 
     def _run_task(
         self,
@@ -320,7 +298,7 @@ class WindowRuntimeMixin:
         """
 
         if self._busy:
-            self.statusBar().showMessage("Another library task is already running", 5000)
+            self.statusBar().showMessage(i18n.tr('Another library task is already running'), 5000)
             return
         self._metadata_timer.stop()
         self._busy = True
@@ -345,7 +323,7 @@ class WindowRuntimeMixin:
             self._release_video_slot(succeeded=True)
             self._active_progress = None
             self._paused_progress = None
-            self.statusBar().showMessage("Ready", 3000)
+            self.statusBar().showMessage(i18n.tr('Ready'), 3000)
             self._ui.trace.append_message(f"✓ {label}")
             if finished:
                 finished(result)
@@ -368,13 +346,13 @@ class WindowRuntimeMixin:
             self._ui.trace.append_message(trace)
             box = QtWidgets.QMessageBox(
                 QtWidgets.QMessageBox.Icon.Critical,
-                "Library task failed",
+                i18n.tr('Library task failed'),
                 message,
                 parent=self,
             )
             box.setDetailedText(trace)
             box.open()
-            self.statusBar().showMessage(f"Error: {message}", 10000)
+            self.statusBar().showMessage(i18n.tr('Error: {message}', message=message), 10000)
             self._continue_video_queue()
 
         task.signals.finished.connect(done)
@@ -401,8 +379,8 @@ class WindowRuntimeMixin:
                 self._ui.catalog.model.set_progress(cancelled_update)
             self._active_progress = None
             self._paused_progress = None
-            self.statusBar().showMessage("Operation cancelled", 8_000)
-            self._ui.trace.append_message(f"■ Cancelled · {label}")
+            self.statusBar().showMessage(i18n.tr('Operation cancelled'), 8_000)
+            self._ui.trace.append_message(i18n.tr('■ Cancelled · {label}', label=label))
             self._continue_video_queue()
 
         task.signals.cancelled.connect(cancelled)
@@ -430,11 +408,11 @@ class WindowRuntimeMixin:
                 original.video_id,
                 original.stage,
                 original.fraction,
-                f"Resuming · {progress.stage_label(original.stage)}",
+                i18n.tr('Resuming · {value}', value=i18n.tr(progress.stage_label(original.stage))),
             )
             self._ui.catalog.model.set_progress(resuming)
             self.statusBar().showMessage(resuming.label)
-            self._ui.trace.append_message("▶ Pipeline resumed")
+            self._ui.trace.append_message(i18n.tr('▶ Pipeline resumed'))
         else:
             if not task.pause():
                 return
@@ -444,11 +422,11 @@ class WindowRuntimeMixin:
                 update.video_id,
                 progress.Stage.PAUSED,
                 progress.overall_fraction(update),
-                f"Paused · {progress.stage_label(update.stage)}",
+                i18n.tr('Paused · {value}', value=i18n.tr(progress.stage_label(update.stage))),
             )
             self._ui.catalog.model.set_progress(paused)
             self.statusBar().showMessage(paused.label)
-            self._ui.trace.append_message("Ⅱ Pipeline paused")
+            self._ui.trace.append_message(i18n.tr('Ⅱ Pipeline paused'))
         self._update_actions()
 
     def _restore_interrupted_pipelines(self) -> None:
@@ -459,7 +437,7 @@ class WindowRuntimeMixin:
 
         jobs = self._service.recover_pipeline_jobs()
         for job in jobs:
-            label = f"Interrupted · {job.label} · click Resume"
+            label = i18n.tr('Interrupted · {label} · click Resume', label=job.label)
             interrupted = progress.make(
                 job.video_id,
                 progress.Stage.INTERRUPTED,
@@ -469,7 +447,7 @@ class WindowRuntimeMixin:
             self._ui.catalog.model.set_progress(interrupted)
         if jobs:
             self._ui.trace.append_message(
-                f"Recovery · {len(jobs)} interrupted pipeline(s) ready to resume"
+                i18n.tr('Recovery · {len} interrupted pipeline(s) ready to resume', len=len(jobs))
             )
             self._update_actions()
 
@@ -482,14 +460,14 @@ class WindowRuntimeMixin:
         task = self._active_task
         if not task or not task.cancel():
             return
-        self.statusBar().showMessage("Cancelling current operation…")
-        self._ui.trace.append_message("■ Cancellation requested")
+        self.statusBar().showMessage(i18n.tr('Cancelling current operation…'))
+        self._ui.trace.append_message(i18n.tr('■ Cancellation requested'))
         if update := self._active_progress:
             cancelling = progress.make(
                 update.video_id,
                 update.stage,
                 update.fraction,
-                f"Cancelling · {progress.stage_label(update.stage)}",
+                i18n.tr('Cancelling · {value}', value=i18n.tr(progress.stage_label(update.stage))),
             )
             self._ui.catalog.model.set_progress(cancelling)
         self._update_actions()
@@ -521,7 +499,7 @@ class WindowRuntimeMixin:
             self._playback_tasks.pop(task_id, None)
             self._ui.trace.append_message(f"✓ {label}")
             if not self._busy:
-                self.statusBar().showMessage("Ready", 3_000)
+                self.statusBar().showMessage(i18n.tr('Ready'), 3_000)
             if finished:
                 finished(result)
 
@@ -536,14 +514,14 @@ class WindowRuntimeMixin:
             self._ui.trace.append_message(trace)
             box = QtWidgets.QMessageBox(
                 QtWidgets.QMessageBox.Icon.Critical,
-                "Playback failed",
+                i18n.tr('Playback failed'),
                 message,
                 parent=self,
             )
             box.setDetailedText(trace)
             box.open()
             if not self._busy:
-                self.statusBar().showMessage(f"Playback error: {message}", 10_000)
+                self.statusBar().showMessage(i18n.tr('Playback error: {message}', message=message), 10_000)
 
         task.signals.progress.connect(self._report_playback)
         task.signals.finished.connect(done)
@@ -561,7 +539,7 @@ class WindowRuntimeMixin:
             return
         if not self._busy:
             self.statusBar().showMessage(message)
-        self._ui.trace.append_message(f"Playback · {message}")
+        self._ui.trace.append_message(i18n.tr('Playback · {message}', message=message))
 
     def _show_watched_progress(
         self,
@@ -577,11 +555,11 @@ class WindowRuntimeMixin:
         became_watched = self._ui.catalog.model.set_watched_progress(watched)
         title = self._ui.catalog.model.title_for(watched.video_id)
         fraction = playback_progress.fraction(watched)
-        label = "Watched" if watched.completed else f"Watching · {fraction:.0%}"
+        label = i18n.tr('Watched') if watched.completed else i18n.tr('Watching · {fraction:.0%}', fraction=fraction)
         if update_status:
             self.statusBar().showMessage(f"{label} · {title}")
         if became_watched:
-            self._ui.trace.append_message(f"◆ {title} · Marked watched")
+            self._ui.trace.append_message(i18n.tr('◆ {title} · Marked watched', title=title))
 
     def _report_progress(self, message: str) -> None:
         """Route structured stages to the GUI and raw output to the trace.
@@ -610,8 +588,8 @@ class WindowRuntimeMixin:
             percent = ""
             terminal = {progress.Stage.READY, progress.Stage.FAILED, progress.Stage.CANCELLED}
             if update.fraction is not None or update.stage in terminal:
-                percent = f" · {progress.overall_fraction(update):.0%} overall"
-            self.statusBar().showMessage(f"{update.label}{percent} · {title}")
+                percent = i18n.tr(' · {value:.0%} overall', value=progress.overall_fraction(update))
+            self.statusBar().showMessage(f"{i18n.tr(update.label)}{percent} · {title}")
             stage_key = (update.video_id, update.stage)
             if stage_key != self._reported_stage_key:
                 self._ui.trace.append_message(f"◆ {title} · {update.label}")
@@ -692,8 +670,8 @@ class WindowRuntimeMixin:
             self.hide()
             if self._service.db.setting("tray_hint_shown", "0") != "1":
                 self._tray.showMessage(
-                    "YouTube Library is still running",
-                    "Automatic channel checks continue in the tray.",
+                    i18n.tr('YouTube Library is still running'),
+                    i18n.tr('Automatic channel checks continue in the tray.'),
                 )
                 self._service.db.set_setting("tray_hint_shown", 1)
             return

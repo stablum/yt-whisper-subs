@@ -9,6 +9,7 @@ import json
 import operator
 import time
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ready
@@ -40,7 +41,7 @@ class SentenceService:
         if background:
             rows = self._db.practice_spare_candidates("sentence", opts, rows)
         if not rows:
-            raise practice_round.NothingToPractice("no_words", "Save and translate some Dutch vocabulary words before sentence practice.")
+            raise practice_round.NothingToPractice("no_words", i18n.tr('Save and translate some Dutch vocabulary words before sentence practice.'))
         generation = {"direction": opts.direction.value, "model": self._provider.model,
                       "reasoning": self._provider.reasoning, "prompt_version": sentence_generate.PROMPT_VERSION}
         selector = sentence_select.Selector(policy)
@@ -56,7 +57,7 @@ class SentenceService:
             reviews = [row for row in reviews if row["anchor_word_id"] in targets and row["id"] not in reserved]
         chosen, selected = selector.targets(rows, reviews, opts, now)
         if not chosen and not selected:
-            raise practice_round.NothingToPractice("not_due", "Your sentence targets and writing reviews are not due yet. Try early practice if you wish.")
+            raise practice_round.NothingToPractice("not_due", i18n.tr('Your sentence targets and writing reviews are not due yet. Try early practice if you wish.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
 
         def load(anchors, job):
@@ -78,7 +79,7 @@ class SentenceService:
                                    select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), now))
         questions = build.fill(plan)
         self.prepare_media(opts, questions, report)
-        report(f"{len(questions)} checked sentences ready")
+        report(i18n.tr('{len} checked sentences ready', len=len(questions)))
         if background:
             return self._db.practice_stage("sentence", opts, questions)
         return self._db.sentence_create(opts, questions, policy.document())
@@ -108,7 +109,7 @@ class SentenceService:
                 break
             document = [self._document(plan) for plan in batch]
             originals = {plan["anchor_word_id"]: plan for plan in batch}
-            build.report(f"Preparing and checking {len(document)} sentence pairs…")
+            build.report(i18n.tr('Preparing and checking {len} sentence pairs…', len=len(document)))
             try:
                 generated = self._provider.generate(document, build.opts.direction, metrics["kinds"])
                 approved, rejected = self._cache(generated, originals, policy)
@@ -165,7 +166,7 @@ class SentenceService:
             return row
         content = row["content"]
         if row["direction"] == "listen_nl":
-            report("Checking your Dutch transcription…")
+            report(i18n.tr('Checking your Dutch transcription…'))
             grade = listening_grade.grade(row["answer_text"], content)
             return self._db.sentence_grade(presentation_id, grade, {"model": "local_dictation_alignment", "reasoning": "none",
                                                                   "grade_version": listening_grade.VERSION})
@@ -173,7 +174,7 @@ class SentenceService:
         source_key = "english" if row["direction"] == "en_nl" else "dutch"
         # Approved alternatives may replace a saved lexeme with a synonym, which still needs per-word assessment.
         exact = verb_practice.normalized(row["answer_text"]) == verb_practice.normalized(content[answer_key])
-        report("Checking your translation…")
+        report(i18n.tr('Checking your translation…'))
         if exact:
             words = []
             for item in content["words"]:
@@ -189,7 +190,7 @@ class SentenceService:
         else:
             grade = self._provider.grade({"direction": row["direction"], "exercise": content, "learner_answer": row["answer_text"]})
         grade.check(row["answer_text"], content, row["direction"])
-        report("Saving sentence and vocabulary feedback…")
+        report(i18n.tr('Saving sentence and vocabulary feedback…'))
         return self._db.sentence_grade(presentation_id, grade, {"model": "approved_exact_match" if exact else self._provider.model,
                                                               "reasoning": "none" if exact else self._provider.reasoning,
                                                               "grade_version": sentence_generate.GRADE_VERSION})

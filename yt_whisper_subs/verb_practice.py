@@ -12,6 +12,7 @@ from typing import Literal
 
 import pydantic as pd
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import vocabulary_learning as learning
 
@@ -35,37 +36,37 @@ class Tense(enum.StrEnum):
     def label(self) -> str:
         """Explain the requested form in learner language; e.g. Past perfect · voltooid verleden tijd."""
 
-        return TENSE_LABELS[self.value]
+        return i18n.tr(TENSE_LABELS[self.value])
 
 
 TENSE_LABELS = {
-    "present": "Present · tegenwoordige tijd",
-    "past": "Simple past · onvoltooid verleden tijd",
-    "perfect": "Present perfect · voltooid tegenwoordige tijd",
-    "pluperfect": "Past perfect · voltooid verleden tijd",
-    "future": "Future · zullen + infinitive",
-    "future_perfect": "Future perfect · zullen + perfect infinitive",
-    "conditional": "Conditional · zouden + infinitive",
-    "conditional_perfect": "Conditional perfect · zouden + perfect infinitive",
-    "subjunctive": "Present subjunctive · aanvoegende wijs",
-    "subjunctive_past": "Past subjunctive · ware",
-    "imperative": "Imperative · gebiedende wijs",
+    "present": i18n.mark('Present · tegenwoordige tijd'),
+    "past": i18n.mark('Simple past · onvoltooid verleden tijd'),
+    "perfect": i18n.mark('Present perfect · voltooid tegenwoordige tijd'),
+    "pluperfect": i18n.mark('Past perfect · voltooid verleden tijd'),
+    "future": i18n.mark('Future · zullen + infinitive'),
+    "future_perfect": i18n.mark('Future perfect · zullen + perfect infinitive'),
+    "conditional": i18n.mark('Conditional · zouden + infinitive'),
+    "conditional_perfect": i18n.mark('Conditional perfect · zouden + perfect infinitive'),
+    "subjunctive": i18n.mark('Present subjunctive · aanvoegende wijs'),
+    "subjunctive_past": i18n.mark('Past subjunctive · ware'),
+    "imperative": i18n.mark('Imperative · gebiedende wijs'),
 }
-SUBJECTS = {"ik": "ik", "jij": "jij", "u": "u (polite)", "hij": "hij",
-            "zij_sg": "zij (she)", "het": "het", "wij": "wij", "jullie": "jullie",
-            "zij_pl": "zij (they)", "men": "men", "de_koning": "de koning (third-person singular)",
-            "de_jarigen": "de jarigen (third-person plural)"}
-STRUCTURES = {"statement": "Statement", "question": "Yes/no question · inversion",
-              "subordinate": "Subordinate clause · begin with ‘omdat’",
-              "negative": "Negative sentence", "passive": "Passive voice",
-              "if_clause": "Hypothetical ‘als’ clause + result",
-              "wish": "Formal wish or fixed expression", "formal": "Formal unreal comparison or hypothesis",
-              "command": "Direct command"}
-FOCUSES = {"all": "All forms · adaptive", "everyday": "Everyday tenses",
-           "conditionals": "Conditionals · present and perfect",
-           "subjunctives": "Subjunctives · present and past",
-           "imperatives": "Imperatives"}
-SOURCES = {"all": "My vocabulary + starter verbs", "vocabulary": "My vocabulary only", "starter": "Starter verbs only"}
+SUBJECTS = {"ik": "ik", "jij": "jij", "u": i18n.mark('u (polite)'), "hij": "hij",
+            "zij_sg": i18n.mark('zij (she)'), "het": "het", "wij": "wij", "jullie": "jullie",
+            "zij_pl": i18n.mark('zij (they)'), "men": "men", "de_koning": i18n.mark('de koning (third-person singular)'),
+            "de_jarigen": i18n.mark('de jarigen (third-person plural)')}
+STRUCTURES = {"statement": i18n.mark('Statement'), "question": i18n.mark('Yes/no question · inversion'),
+              "subordinate": i18n.mark('Subordinate clause · begin with ‘omdat’'),
+              "negative": i18n.mark('Negative sentence'), "passive": i18n.mark('Passive voice'),
+              "if_clause": i18n.mark('Hypothetical ‘als’ clause + result'),
+              "wish": i18n.mark('Formal wish or fixed expression'), "formal": i18n.mark('Formal unreal comparison or hypothesis'),
+              "command": i18n.mark('Direct command')}
+FOCUSES = {"all": i18n.mark('All forms · adaptive'), "everyday": i18n.mark('Everyday tenses'),
+           "conditionals": i18n.mark('Conditionals · present and perfect'),
+           "subjunctives": i18n.mark('Subjunctives · present and past'),
+           "imperatives": i18n.mark('Imperatives')}
+SOURCES = {"all": i18n.mark('My vocabulary + starter verbs'), "vocabulary": i18n.mark('My vocabulary only'), "starter": i18n.mark('Starter verbs only')}
 AXES = ("tense", "subject", "structure", "verb")
 AxisName = Literal["tense", "subject", "structure", "verb"]
 ErrorKind = Literal["tense", "agreement", "verb_spelling", "auxiliary", "participle", "infinitive",
@@ -255,4 +256,4 @@ def normalized(text: str) -> str:
 def target_label(row: dict) -> str:
     """Present locally owned requirements; e.g. subject, tense and inversion cannot be silently changed by AI."""
 
-    return f"{SUBJECTS[row['subject']]}  ·  {TENSE_LABELS[row['tense']]}  ·  {STRUCTURES[row['structure']]}"
+    return f"{i18n.tr(SUBJECTS[row['subject']])}  ·  {i18n.tr(TENSE_LABELS[row['tense']])}  ·  {i18n.tr(STRUCTURES[row['structure']])}"

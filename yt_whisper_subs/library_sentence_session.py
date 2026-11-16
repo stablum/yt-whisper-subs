@@ -9,6 +9,7 @@ import time
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_sentence_review
 from yt_whisper_subs import library_written
@@ -129,12 +130,12 @@ class SentenceSession(library_written.WrittenPanel):
                 draft = self._db.sentence_draft(row["id"])
                 self._elapsed = draft["elapsed_ms"]
                 self._view.card.editor.setPlainText(draft["text"])
-                self._view.action.setText("Submit & next →")
+                self._view.action.setText(i18n.tr('Submit & next →'))
             elif row["outcome"] == "invalid":
                 self._view.card.editor.setReadOnly(True)
-                self._view.card.message("Exercise reported · excluded from learning statistics")
+                self._view.card.message(i18n.tr('Exercise reported · excluded from learning statistics'))
                 self._view.flag.setEnabled(False)
-                self._view.action.setText("Next question →")
+                self._view.action.setText(i18n.tr('Next question →'))
             elif row["grade"]:
                 self._view.card.feedback(row)
                 self._consult()
@@ -200,18 +201,23 @@ class SentenceSession(library_written.WrittenPanel):
         self._rail.show()
         if current and current["answer_text"] is not None and current["outcome"] is None:
             status = next(row for row in rows if row["id"] == current["id"])
-            labels = {"checking": "Correction in progress…", "failed": "Correction unavailable · your answer is saved.", "queued": "Correction queued…"}
+            labels = {"checking": i18n.tr('Correction in progress…'), "failed": i18n.tr('Correction unavailable · your answer is saved.'), "queued": i18n.tr('Correction queued…')}
             self._view.card.message(labels.get(status["state"], "Correction queued…"))
-            self._view.action.setText("Retry correction" if status["state"] == "failed" else "Next question →")
+            self._view.action.setText(i18n.tr('Retry correction') if status["state"] == "failed" else i18n.tr('Next question →'))
         summary = self._db.sentence_summary(self._run.session)
         pending = sum(row["answer_text"] is not None and row["outcome"] is None for row in rows)
         unseen = sum(row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None for row in rows)
         if current and current["outcome"] is not None:
-            self._view.action.setText("Next correction →" if all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
-                                      else "Next question →")
-        self._view.status.setText(f"{summary['submitted']} / {summary['planned']} answered  ·  {summary['correct']} correct"
-                                  + (f"  ·  {pending} awaiting correction" if pending else "")
-                                  + (f"  ·  {unseen} unseen" if unseen else ""))
+            self._view.action.setText(i18n.tr('Next correction →') if all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
+                                      else i18n.tr('Next question →'))
+        self._view.status.setText(i18n.tr(
+            '{submitted} / {planned} answered  ·  {correct} correct',
+            submitted=summary['submitted'],
+            planned=summary['planned'],
+            correct=summary['correct'],
+        )
+                                  + (i18n.tr('  ·  {pending} awaiting correction', pending=pending) if pending else "")
+                                  + (i18n.tr('  ·  {unseen} unseen', unseen=unseen) if unseen else ""))
         self._view.options.set_active(self._mode.ops.active() == self._run.session)
         self._view.bar.setRange(0, summary["planned"])
         self._view.bar.setValue(summary["submitted"])
@@ -278,17 +284,17 @@ class SentenceSession(library_written.WrittenPanel):
         unseen = sum(row["outcome"] in {"correct", "wrong"} and row["viewed_at"] is None for row in rows)
         failed = any(row["outcome"] is None and row["state"] == "failed" for row in rows)
         complete = all(row["answer_text"] is not None or row["outcome"] is not None for row in rows)
-        result = f"{summary['correct']} correct · {summary['wrong']} to revisit · {summary['submitted']} answers"
+        result = i18n.tr('{correct} correct · {wrong} to revisit · {submitted} answers', correct=summary['correct'], wrong=summary['wrong'], submitted=summary['submitted'])
         if unseen:
-            title, action = f"{unseen} corrections to review", "Review corrections"
-            result += "\nCorrections marked • on the left have not been viewed."
+            title, action = i18n.tr('{unseen} corrections to review', unseen=unseen), i18n.tr('Review corrections')
+            result += i18n.tr('\nCorrections marked • on the left have not been viewed.')
         elif pending:
-            title = "Some corrections need a retry" if failed else "Waiting for corrections"
-            action = "Review pending corrections" if failed else "Waiting…"
-            result += f"\n{pending} awaiting correction. New feedback will open here when it arrives."
+            title = i18n.tr('Some corrections need a retry') if failed else i18n.tr('Waiting for corrections')
+            action = i18n.tr('Review pending corrections') if failed else i18n.tr('Waiting…')
+            result += i18n.tr('\n{pending} awaiting correction. New feedback will open here when it arrives.', pending=pending)
         else:
-            title, action = ("Round reviewed" if complete else "Round saved"), "Another sentence round"
-            result += "\nAll available corrections have been viewed. Select an answer on the left to revisit it."
+            title, action = (i18n.tr('Round reviewed') if complete else i18n.tr('Round saved')), i18n.tr('Another sentence round')
+            result += i18n.tr('\nAll available corrections have been viewed. Select an answer on the left to revisit it.')
         self._idle(title, result, action)
         self._view.action.setEnabled(not pending or failed or bool(unseen))
         self._view.options.set_active(self._mode.ops.active() == self._run.session)

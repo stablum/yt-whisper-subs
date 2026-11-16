@@ -110,6 +110,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 
 | Area | Default |
 | --- | --- |
+| Library/practice interface language | English; English, Dutch, French and Italian selectable in Library Settings; applied on restart |
 | Output root | `~/Videos/yt-whisper-subs` |
 | Pipeline scratch directory | `.tmp` under the configured output root |
 | Managed virtual environment | `.venv` beside the script |
@@ -131,7 +132,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Ready practice rounds | eight independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
-| Comprehension | Leesbegrip and Luisterbegrip; B2; 5 paragraphs, 5 four-choice and 3 open questions; all content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
+| Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); B2; 5 paragraphs, 5 four-choice and 3 open questions; learning content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
 | Comprehension narration | existing local Piper/Zonos presets; live voice switching on the same passage, normal and slow clips cached per sound configuration; transcript and feedback concealed until all listening answers are submitted |
 | Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
@@ -233,7 +234,7 @@ python .\yt_whisper_library.pyw
 
 The launcher creates or reuses `.venv`, installs `yt-dlp[default]` and
 `PySide6-Essentials`, `psutil`, and the practice dependencies (Pydantic, FSRS, NumPy,
-Polars, and RapidFuzz), plus the pinned Piper speech runtime when needed,
+Polars, RapidFuzz, and Babel), plus the pinned Piper speech runtime when needed,
 and relaunches with `pythonw.exe`.
 The window first opens the saved catalog, then scans local downloads in the
 background and refreshes the results. An overdue channel check and the
@@ -579,6 +580,7 @@ The script expects to run on Windows. It uses:
 - `pydantic`, `fsrs`, `numpy`, `polars`, and `rapidfuzz` for validated practice content,
   spaced review, word-edit sentence scores, and progress analytics in the native library
 - `piper-tts==1.7.0` for local Dutch listening speech
+- `Babel>=2.17,<3` for interface date/number formatting and gettext catalog maintenance
 
 Python dependencies are installed into `.venv` beside the script. This choice
 was made because the script is intended to be portable as a single project
@@ -586,7 +588,7 @@ folder and should not depend on whichever Python packages happen to be installed
 globally.
 
 The `.pyw` library launcher bootstraps only `yt-dlp[default]`,
-`PySide6-Essentials`, `psutil`, Pydantic, FSRS, NumPy, Polars, RapidFuzz, and Piper, keeping a first GUI start much smaller than a Whisper/CUDA
+`PySide6-Essentials`, `psutil`, Pydantic, FSRS, NumPy, Polars, RapidFuzz, Piper, and Babel, keeping a first GUI start much smaller than a Whisper/CUDA
 installation. If the user downloads a remote catalog entry, the library invokes
 `yt_whisper_subs.py --no-play`; that existing pipeline then installs or validates
 Whisper and Torch exactly as a direct CLI run would. The launcher checks Piper's
@@ -777,6 +779,75 @@ It contains:
 The native title bar includes the current application version. That value comes
 directly from `yt_whisper_subs.__version__`, the single source used by the GUI;
 it is not duplicated in the window code.
+
+### Interface Languages
+
+Version **0.6.10** adds **English**, **Nederlands**, **Français**, and **Italiano**
+under **Library → Settings → Interface language**. English is the initial default.
+Language names always appear in their own language so the selector remains
+recognizable. Save the preference, then quit and reopen the library to apply it;
+closing to the tray alone does not restart it. The restart notice appears only
+when the saved language changes. The preference belongs to the output root's
+catalog, alongside other library settings.
+
+The interface choice covers library menus, filters, table headings, dialogs,
+notifications, vocabulary tools, practice navigation, exercise controls,
+comprehension options, correction states, and progress/activity labels. Native
+Qt buttons and calendar controls use Qt's matching translation catalog. Month
+and weekday names and formatted numeric metrics follow the selected language
+without changing the process-wide locale used by background tools. Navigation
+wraps longer captions and Settings wraps long form rows.
+
+This is an **interface language**, independent of the learning languages.
+Dutch/English vocabulary and translation directions, Dutch dictation, Dutch
+passages/questions, saved answers and model-generated teaching feedback keep
+their original content. In English, the former **Leesbegrip / Luisterbegrip**
+destinations read **Reading comprehension / Listening comprehension**; Dutch
+still uses their Dutch names. Video titles, subtitle/chapter content, voice
+preset names, model-supplied voice terminology, and raw external tool diagnostics
+also retain their source text. Changing the interface does not regenerate any
+exercise, translation, narration, or subtitle.
+
+Translations use Python's standard [gettext catalogs](https://docs.python.org/3/library/gettext.html):
+English source messages in code, a shared `yt_whisper_subs/locales/ui.pot`, and
+editable UTF-8 `locales/{nl,fr,it}/LC_MESSAGES/ui.po` files with shipped compiled
+`ui.mo` catalogs. Babel supplies catalog validation/compilation and locale
+formatting; Qt supplies [native control translations](https://doc.qt.io/qt-6/localization.html).
+No translation API or runtime internet access is needed. Missing messages or
+unsupported language codes fall back to English.
+
+For maintenance, wrap complete literal UI messages with `i18n.tr()`, interpolate
+named fields **after** translation, and use `i18n.nt()` for singular/plural
+messages. Use a gettext context (`ctx="voice style"`, for example) when identical
+English words have different meanings, such as Clear in a log versus a voice.
+Mark shared source labels with `i18n.mark()` and translate them when
+displayed, so importing modules before locale initialization cannot freeze
+English labels. Keep persisted keys, model prompts and exercise text separate
+from presentation. The extractor reads literal calls from the Python AST;
+dynamic dictionary lookups are never mistaken for translatable storage keys.
+The supported-language registry lives in `i18n.LANGUAGES`.
+
+After editing UI messages, update catalogs, edit any new translations with a
+gettext editor such as Poedit, then compile and validate:
+
+```powershell
+.venv\Scripts\python.exe tools\update_translations.py
+.venv\Scripts\python.exe tools\update_translations.py --check
+.venv\Scripts\python.exe -m unittest tests.test_i18n -v
+```
+
+The update command reports missing/fuzzy entries and rejects changed placeholder
+names, conversions or format specifications. `--check` also verifies that the
+shipped compiled catalogs match their editable sources. The regression tests
+render every catalog message, exercise language-specific plurals and separators,
+construct the actual settings/practice widgets in all four languages, check
+native Save captions and stable exercise identities, and persist a language
+through the real Settings save path without restarting in-flight work.
+
+Release verification for **0.6.10**: all 893 catalog messages validate; the
+629-test suite has 626 passes, two skips and one existing offscreen Qt Alt+E
+verb-help failure (`test_source_english_reveal_is_instant_scoped_and_preserves_typing`).
+That same test also fails unchanged on the preceding `0.6.9` commit.
 
 ### Automatic Database Backups
 
@@ -2981,10 +3052,11 @@ and seeks remain responsive even while a paused player emits no events.
 
 Choose **Practice → Leesbegrip** or **Luisterbegrip** directly from the top-level
 practice buttons (added in **0.6.8**). These are longer-text comprehension exercises, with Dutch
-questions, answers, explanations and writing corrections throughout. They use
+questions, answers, explanations and writing corrections. Their interface controls
+follow the selected library language. They use
 the configured practice model (`gpt-6-luna`, reasoning `medium`).
 
-**Ronde-opties** configures each mode independently:
+**Round options** (**Ronde-opties** in Dutch) configures each mode independently:
 
 - Text type: varied, story, explicitly fictional news article, or reflective essay.
 - CEFR level: B1, B2 (default), or C1.
@@ -3638,6 +3710,9 @@ High-level groups:
 | `yt_whisper_subs.library_pipeline` | Controlled CLI pipeline launch, process-tree pause/resume, trace forwarding, and durable progress checkpointing. |
 | `yt_whisper_subs.app` | Top-level CLI, logging, error handling, and pipeline wiring. |
 | `yt_whisper_subs.library_types` | Compositional channel, video metadata, local media, playback, and catalog records. |
+| `yt_whisper_subs.i18n`, `library_locale` | Gettext interface catalogs, named/plural messages, locale formatting and native Qt translations. |
+| `yt_whisper_subs.library_practice_labels` | Localized presentation of stable practice status and grammar/error codes. |
+| `tools/update_translations.py`, `yt_whisper_subs/locales/` | Extracted English message template, editable translations, validation and compiled runtime catalogs. |
 | `yt_whisper_subs.library_db` | Thread-safe SQLite subscriptions, complete-snapshot retention, metadata, settings, local downloads, and playback state. |
 | `yt_whisper_subs.library_schema` | Startup catalog tables, indexes, and schema changes. |
 | `yt_whisper_subs.library_backup` | Verified online catalog snapshots, ten-file rotation, partial cleanup, and an independent cancellable startup worker. |
@@ -3671,7 +3746,7 @@ High-level groups:
 | `yt_whisper_subs.library_layout` | Default, persisted, and resettable table-column and video-inspector geometry. |
 | `yt_whisper_subs.library_widgets` | Native smart-filter shelf, dialogs, scroll-bounded bilingual chapter inspector, selected-video details, and activity trace. |
 | `yt_whisper_subs.library_chapter_actions` | GUI chapter generation, live-player seeking, and timestamp-aware playback fallback. |
-| `yt_whisper_subs.library_window_actions` | Selection, settings, and download/repair actions. |
+| `yt_whisper_subs.library_window_actions`, `library_window_menus` | Selection, settings, download/repair actions, and translated menu/tray construction. |
 | `yt_whisper_subs.library_removal_actions` | Selected/filtered scope capture, shared exact-file confirmation, and cleanup worker dispatch. |
 | `yt_whisper_subs.library_removal` | Locked removal batches, pending/playback protection, durable history, and cancellation-safe reconciliation. |
 | `yt_whisper_subs.library_yields` | Single-pass exact yield inventory, validated manifests, and non-recursive individual-file removal. |

@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_written_controls as written
 from yt_whisper_subs import verb_practice as verbs
 
@@ -26,19 +27,19 @@ class VerbOptions(QtWidgets.QWidget):
         super().__init__()
         self._focus = QtWidgets.QComboBox()
         for value, label in {**verbs.FOCUSES, **verbs.TENSE_LABELS}.items():
-            self._focus.addItem(label, value)
+            self._focus.addItem(i18n.tr(label), value)
         self._subject = QtWidgets.QComboBox()
         self._structure = QtWidgets.QComboBox()
         self._source = QtWidgets.QComboBox()
         for value, label in verbs.SOURCES.items():
-            self._source.addItem(label, value)
+            self._source.addItem(i18n.tr(label), value)
         for combo, choices in ((self._subject, verbs.SUBJECTS), (self._structure, verbs.STRUCTURES)):
-            combo.addItem("All · adaptive", "all")
+            combo.addItem(i18n.tr('All · adaptive'), "all")
             for value, label in choices.items():
-                combo.addItem(label, value)
+                combo.addItem(i18n.tr(label), value)
         self._count = QtWidgets.QSpinBox()
         self._count.setRange(1, 50)
-        self._early = QtWidgets.QCheckBox("Include forms not due yet")
+        self._early = QtWidgets.QCheckBox(i18n.tr('Include forms not due yet'))
         try:
             opts = verbs.Options.model_validate_json(saved) if saved else verbs.Options()
         except ValueError:
@@ -50,14 +51,14 @@ class VerbOptions(QtWidgets.QWidget):
             combo.setCurrentIndex(combo.findData(value))
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        for label, widget in (("Verbs", self._source), ("Focus", self._focus), ("Subject", self._subject), ("Situation", self._structure),
-                              ("Exercises", self._count)):
+        for label, widget in ((i18n.tr('Verbs'), self._source), (i18n.tr('Focus'), self._focus), (i18n.tr('Subject'), self._subject), (i18n.tr('Situation'), self._structure),
+                              (i18n.tr('Exercises'), self._count)):
             form.addRow(label, widget)
         form.addRow(self._early)
-        note = QtWidgets.QLabel("Subjunctives use established formal expressions.\nOnly grammatically valid combinations are offered.")
+        note = QtWidgets.QLabel(i18n.tr('Subjunctives use established formal expressions.\nOnly grammatically valid combinations are offered.'))
         note.setObjectName("settingsNote")
         form.addRow(note)
-        restart = QtWidgets.QPushButton("New verb round")
+        restart = QtWidgets.QPushButton(i18n.tr('New verb round'))
         restart.setAutoDefault(False)
         restart.setObjectName("primaryButton")
         restart.clicked.connect(self._restart)
@@ -67,12 +68,12 @@ class VerbOptions(QtWidgets.QWidget):
         action.setDefaultWidget(panel)
         self.menu.addAction(action)
         self.menu.addSeparator()
-        self._finish = self.menu.addAction("End this verb round", self.finish_requested)
+        self._finish = self.menu.addAction(i18n.tr('End this verb round'), self.finish_requested)
         self.menu.aboutToShow.connect(lambda: self.editing.emit(True))
         self.menu.aboutToHide.connect(lambda: self.editing.emit(False))
         button = QtWidgets.QToolButton()
         button.setObjectName("practiceOptions")
-        button.setText("Verb round options")
+        button.setText(i18n.tr('Verb round options'))
         button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(self.menu)
         layout = QtWidgets.QHBoxLayout(self)

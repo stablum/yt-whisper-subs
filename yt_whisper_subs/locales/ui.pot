@@ -1,0 +1,3961 @@
+# Translations template for yt-whisper-subs.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the yt-whisper-subs project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: yt-whisper-subs VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-11-17 00:58+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: yt_whisper_subs/library_sentence_session.py:297
+msgid ""
+"\n"
+"All available corrections have been viewed. Select an answer on the left to revisit it."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:290
+msgid ""
+"\n"
+"Corrections marked • on the left have not been viewed."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:98
+#, python-brace-format
+msgid ""
+"\n"
+"{listens} listens · {slow_listens} slow listens for checked answers · {first} correct after one "
+"normal listen"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:294
+#, python-brace-format
+msgid ""
+"\n"
+"{pending} awaiting correction. New feedback will open here when it arrives."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:219
+#, python-brace-format
+msgid "  ·  {pending} awaiting correction"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:220
+#, python-brace-format
+msgid "  ·  {unseen} unseen"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:96
+msgid " + starter"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:112
+msgid " Playing videos and pending or interrupted pipelines are skipped."
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:74
+#, python-brace-format
+msgid " Skipped {len} active or pending video(s)."
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:126
+#, python-brace-format
+msgid " Skipped {skipped} active or pending video(s)."
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:111
+msgid " This uses the filter matches captured when you clicked, including rows outside the viewport."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:524
+msgid " per section"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:499
+#, python-brace-format
+msgid " · Last removed {format_timestamp}"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:271
+msgid " · Not viewed yet"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:271
+msgid " · Viewed"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:101
+#, python-brace-format
+msgid " · approximately {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:219
+msgid " · clip "
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:162
+msgid " · copy"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:151
+msgid " · language correct"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:151
+msgid " · language errors corrected"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:50
+#, python-brace-format
+msgid " · {deferred:,} deferred"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:428
+#, python-brace-format
+msgid " · {invalid} reported"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:591
+#, python-brace-format
+msgid " · {value:.0%} overall"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:95
+msgid "0 videos"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:321
+msgid "1 / 2 / 3 to answer · Close anytime to pause"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:56
+msgid ""
+"1–30 questions in total. Each multiple-choice question has one correct answer.\n"
+"Open answers also receive partial comprehension credit."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:94
+msgid "A correct guess gets a shorter review interval. Response speed does not affect grading."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:131
+msgid "A short round with your saved words?"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_practice_progress.py:123
+msgid "Accuracy"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:38 yt_whisper_subs/library_sentence_progress.py:39
+#: yt_whisper_subs/library_sentence_progress.py:40 yt_whisper_subs/library_verb_progress.py:34
+#: yt_whisper_subs/library_verb_progress.py:35
+msgid "Accuracy %"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:107
+msgid "Actions for all videos matching the current filters"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:127
+msgid "Activity"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:105
+msgid "Activity && calendar"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:202
+msgid ""
+"Activity counts submitted answers, including mistakes and answers to later-reported questions. "
+"Opening a round or reporting before answering adds no activity. Accuracy excludes reported "
+"questions. Each day uses your local calendar date."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:341 yt_whisper_subs/library_window_menus.py:79
+msgid "Activity trace"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:410
+msgid "Add a channel"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:75
+msgid "Add voice"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:238
+msgid "Added as an unassessed constituent; no independent mistake was recorded."
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:588
+#, python-brace-format
+msgid "Adding {title}…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:25
+msgid "Adjective endings"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:195
+msgid "Adjust your round"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:233
+msgid "Advanced"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:36
+msgid "Affected answers"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:226
+#, python-brace-format
+msgid "After: {after}"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:17
+msgid "Agreement"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:63
+msgid "All"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:195
+msgid "All caught up"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:65
+msgid "All forms · adaptive"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:37
+msgid "All · adaptive"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:509
+msgid "Allow higher resolution when preferred is unavailable"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:49
+#, python-brace-format
+msgid "Already queued or processing · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:301
+msgid "Another library task is already running"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:429
+msgid "Another round"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:296
+msgid "Another sentence round"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:376
+#, python-brace-format
+msgid "Another {key} round"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:172
+msgid "Answer saved · correction queued."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:169
+msgid "Answer saved. Explanations appear after all answers are submitted."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:132
+msgid "Answer the question in Dutch. You may use your own wording."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:123
+msgid "Answer time"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
+msgid "Answers"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:48
+msgid "Answers · last 7 days"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:20
+msgid "Appointments and services"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:33
+msgid "Arguments"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:24
+msgid "Article"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37 yt_whisper_subs/library_sentence_progress.py:39
+#: yt_whisper_subs/library_verb_progress.py:34
+msgid "Assessed"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:212
+msgid "Audio preparation paused."
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:674
+msgid "Automatic channel checks continue in the tray."
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:619
+msgid "Automatic download"
+msgstr ""
+
+#: yt_whisper_subs/library_channels.py:97
+msgid "Automatic download enabled"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:418
+msgid "Automatically download future videos"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:18
+msgid "Auxiliary"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:116
+msgid "Availability unconfirmed"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:65 yt_whisper_subs/pipeline_progress.py:105
+msgid "Available"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:542
+msgid "Available only on Windows"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:551
+msgid "Background"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:22
+msgid "Base form"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:226
+#, python-brace-format
+msgid "Before: {before}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:506
+msgid "Best available"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:106
+msgid "Browse…"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:212 yt_whisper_subs/library_widgets.py:252
+#: yt_whisper_subs/library_widgets.py:291 yt_whisper_subs/library_widgets.py:297
+msgid "CHAPTERS"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:303
+#, python-brace-format
+msgid "CHAPTERS  ·  {len}"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Calm"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:277
+msgid "Cancel"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:50
+msgid "Cancel current operation"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:152 yt_whisper_subs/library_word_quiz.py:137
+msgid "Cancel preparation"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:110
+msgid "Cancelled"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:415 yt_whisper_subs/library_written.py:357
+msgid "Cancelling after the current request…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:463
+msgid "Cancelling current operation…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:470
+#, python-brace-format
+msgid "Cancelling · {value}"
+msgstr ""
+
+#: yt_whisper_subs/practice_service.py:41
+msgid "Capture Dutch words in mpv and let their translations finish first."
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:32
+msgid "Cause and effect"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:223 yt_whisper_subs/library_window_menus.py:32
+msgid "Channel"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:251
+msgid "Channel added"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:273
+#, python-brace-format
+msgid "Channel error: {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:287
+#, python-brace-format
+msgid "Channel · {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:51
+#, python-brace-format
+msgid "Check complete · {count} auto-download attempt(s)"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:543
+msgid "Check every"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:81
+msgid ""
+"Check every voice you want to hear. Each enabled preset gets its own button on the same sentence."
+" The first enabled voice plays automatically."
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:98
+msgid "Check now"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:236 yt_whisper_subs/library_written_controls.py:271
+msgid "Check sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:81
+msgid "Checked answers"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:14
+msgid "Checking"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:332
+msgid "Checking cancelled."
+msgstr ""
+
+#: yt_whisper_subs/library_channels.py:93
+msgid "Checking channel for new videos…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:40
+msgid "Checking channels…"
+msgstr ""
+
+#: yt_whisper_subs/verb_vocabulary.py:56
+#, python-brace-format
+msgid "Checking saved vocabulary verbs {value}–{value2} / {len}…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:169
+msgid "Checking your Dutch transcription…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:136
+msgid "Checking your answer and the meanings of words used…"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:144
+msgid "Checking your sentence…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:177
+msgid "Checking your translation…"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:266
+msgid "Checking…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:51
+msgid "Choose a paragraph without revealing the transcript."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:254
+msgid "Choose a smaller round"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:73
+msgid "Choose a voice for this sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:314
+msgid "Choose an answer"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:132
+msgid "Choose one answer."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:265
+msgid "Choose voice reference"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:97 yt_whisper_subs/library_widgets.py:358
+msgid "Clear"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Clear"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:71
+msgid "Clear filters"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:53
+msgid "Click position"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:362
+msgid "Click the card"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:362
+msgid "Click the card or an answer again"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Clicks"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:133
+msgid "Clone from recording"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:76
+msgid "Close"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:69
+#, python-brace-format
+msgid ""
+"Closing the balloon snoozes it. Submitted answers keep reminders quiet for at least "
+"{MIN_PRACTICE_HOURS} hours. Reminders run while the library is open or in the system tray."
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:90
+msgid ""
+"Collect completed checks for this long, then show one list. Each check always groups all its "
+"channels; 0 shows it immediately."
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:24
+msgid "Comparatives"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:10
+msgid "Completed"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:177
+msgid "Completed parts remain available."
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:224
+#, python-brace-format
+msgid "Compound: {lemma} = {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Compounds"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+#: yt_whisper_subs/library_comprehension_progress.py:40
+#: yt_whisper_subs/library_comprehension_progress.py:43 yt_whisper_subs/library_practice_activity.py:50
+msgid "Comprehension"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:373
+#, python-brace-format
+msgid ""
+"Comprehension {score} · {correct} fully correct. Choose an earlier question on the left or start "
+"a new text."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:260
+#, python-brace-format
+msgid "Comprehension {score} · {correct}/{graded} fully correct · {unseen} unseen corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:36
+msgid "Comprehension · partial credit"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:50
+msgid "Conditional perfect · zouden + perfect infinitive"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:49
+msgid "Conditional · zouden + infinitive"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:23
+msgid "Conditionals"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:66
+msgid "Conditionals · present and perfect"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:39
+msgid "Configure voices…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:33
+msgid "Connections and references"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentence_progress.py:40
+#: yt_whisper_subs/library_sentence_progress.py:41
+msgid "Context"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:69 yt_whisper_subs/library_word_quiz.py:43
+#: yt_whisper_subs/library_written.py:95
+msgid "Continue"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:260 yt_whisper_subs/library_written.py:199
+msgid "Continue round"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:364 yt_whisper_subs/library_written.py:288
+#: yt_whisper_subs/library_written.py:344
+msgid "Continue →"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Conversational"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:21
+msgid "Conversations and plans"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:546
+msgid "Cookies from browser"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:357
+msgid "Copy all"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_practice_labels.py:12
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_practice_progress.py:123
+#: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
+#: yt_whisper_subs/library_sentence_progress.py:42 yt_whisper_subs/library_verb_progress.py:34
+#: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_verb_progress.py:38
+#: yt_whisper_subs/library_word_quiz.py:345 yt_whisper_subs/library_written_controls.py:217
+msgid "Correct"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:42 yt_whisper_subs/library_sentence_progress.py:36
+#: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_verb_progress.py:37
+msgid "Correction"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:171
+msgid "Correction failed. Your answer is saved; retry the correction."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:255 yt_whisper_subs/library_sentence_review.py:259
+msgid "Correction in progress"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:204
+msgid "Correction in progress…"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:256
+msgid "Correction needs retry"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:256 yt_whisper_subs/library_sentence_review.py:259
+msgid "Correction queued"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:204
+msgid "Correction queued…"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:261
+msgid "Correction ready"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:254
+msgid "Correction ready · Correct"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:254
+msgid "Correction ready · To revisit"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:287
+msgid "Correction saved · read it, then click Continue or press Enter"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:204
+msgid "Correction unavailable · your answer is saved."
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:241
+#, python-brace-format
+msgid "Correction: {correction}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:110
+msgid "Could not change voice: "
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:317
+#, python-brace-format
+msgid ""
+"Could not check your sentence: {message}\n"
+"Your first attempt is saved; no failure was recorded."
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:266
+msgid "Could not initialize channel"
+msgstr ""
+
+#: yt_whisper_subs/library_app.py:79
+msgid "Could not open YouTube Library"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:196
+#, python-brace-format
+msgid "Could not play audio: {exc}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:166
+msgid "Could not play: "
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:234
+msgid "Could not prepare audio. Click Listen again to retry. "
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:254 yt_whisper_subs/library_written.py:327
+msgid "Could not prepare this round"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:336
+#, python-brace-format
+msgid "Could not save your answer: {exc}"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:125
+#, python-brace-format
+msgid "Could not translate: {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:150
+msgid "Could not update Windows startup"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:269
+msgid "Couldn't prepare this round"
+msgstr ""
+
+#: yt_whisper_subs/library_chapter_actions.py:43
+msgid "Creating bilingual chapters…"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:65
+msgid "Creating chapters"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:53
+msgid "Cue time"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:115
+msgid "Cumulative distinct words practiced"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:503
+msgid "Current availability could not be confirmed. Double-click to check again."
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:68
+msgid "Current or previous downloads not watched yet"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:114
+msgid "Daily answer accuracy"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:57
+msgid "Daily practice reminder"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+#: yt_whisper_subs/library_comprehension_progress.py:42 yt_whisper_subs/library_sentence_progress.py:36
+#: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_verb_progress.py:37
+msgid "Date"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:26
+msgid "Degree"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:32
+msgid "Details"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Dictionary form"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:214
+#, python-brace-format
+msgid "Dictionary form: {value} · {value2}"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:34
+msgid "Dimension"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:26
+msgid "Diminutives"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:64
+msgid "Direct command"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_practice_progress.py:123
+#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentence_progress.py:37
+#: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
+#: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_sentence_progress.py:42
+msgid "Direction"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:443
+msgid "Disable automatic download"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:107
+msgid "Dismiss after"
+msgstr ""
+
+#: yt_whisper_subs/library_balloon.py:56
+msgid "Dismiss notification"
+msgstr ""
+
+#: yt_whisper_subs/library_balloon.py:57
+msgid "Dismiss notification (Escape)"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:304
+msgid "Double-click a chapter to jump to that moment"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:39
+msgid "Download or repair selected"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:292
+msgid "Download this video to create chapters"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:303
+msgid "Download, repair, or queue the selected video"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:225
+msgid "Downloaded"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:64
+msgid "Downloaded videos ready to play"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:61
+msgid "Downloading"
+msgstr ""
+
+#: yt_whisper_subs/listening_tts.py:108
+msgid "Downloading verified Dutch speech voice (first use only)…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:75
+msgid "Duplicate"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:226
+msgid "Duration"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:124
+msgid "Dutch"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:44
+msgid "Dutch dictation"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:122
+#, python-brace-format
+msgid "Dutch dictation  ·  {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:36
+msgid "Dutch text"
+msgstr ""
+
+#: yt_whisper_subs/practice.py:28
+msgid "Dutch → English"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:443
+msgid "Enable automatic download"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:72
+msgid "End this listening round"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:68
+#: yt_whisper_subs/library_practice_controls.py:138
+msgid "End this round"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:72
+msgid "End this sentence round"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:71
+msgid "End this verb round"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:124
+msgid "English"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:128
+msgid "English meaning appears with the correction."
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:227
+#, python-brace-format
+msgid "English subtitle: {value}"
+msgstr ""
+
+#: yt_whisper_subs/practice.py:28
+msgid "English → Dutch"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:242
+#, python-brace-format
+msgid "English: {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:413
+msgid ""
+"Enter an @handle or channel URL. Recent uploads become browsable; automatic download starts only "
+"for videos discovered by later checks."
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:109
+msgid ""
+"Entries are marked Removed. Catalog entries, download and watch history stay, and you can "
+"download again."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_verb_progress.py:36
+#: yt_whisper_subs/library_verb_progress.py:37
+msgid "Error"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:36
+msgid "Error types"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:355
+#, python-brace-format
+msgid "Error: {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:63
+msgid "Every video in the current library or channel"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:65
+msgid "Everyday tenses"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:282
+msgid "Excluded from grading and adaptive review."
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:341
+msgid "Excluded from grading and adaptive review. Your submitted effort stays recorded."
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:282 yt_whisper_subs/library_written.py:341
+msgid "Exercise reported"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:136
+msgid "Exercise reported · excluded from learning statistics"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:55
+msgid "Exercises"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:42 yt_whisper_subs/library_sentence_progress.py:41
+#: yt_whisper_subs/library_verb_progress.py:37
+msgid "Explanation"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:216
+#, python-brace-format
+msgid "Expression: {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:23
+msgid "Extra content"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:62
+msgid "Extracting audio"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:14 yt_whisper_subs/pipeline_progress.py:109
+msgid "Failed"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:191
+#, python-brace-format
+msgid "Failed · {download_error}"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:31
+msgid "Fictional news article"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:233
+#, python-brace-format
+msgid "File: {path}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:108
+msgid "Filtered video actions"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:66
+msgid "Finalizing"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:54
+msgid "Focus"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:68
+msgid "Focus search"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:20
+msgid "Food and cafés"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_verb_progress.py:34
+msgid "Form"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:47
+msgid ""
+"Form accuracy assesses tense/mood, subject, structure and verb formation separately. One wrong "
+"sentence can contain several errors. Pending and reported answers do not affect mastery. Weak "
+"dimensions influence future targets; successful exact combinations receive longer review "
+"intervals."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:38
+msgid "Form assessed"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:38
+msgid "Form mistakes"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:63
+msgid "Formal unreal comparison or hypothesis"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:63
+msgid "Formal wish or fixed expression"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_verb_progress.py:34
+msgid "Forms"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:54
+msgid "From the beginning"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:79
+msgid "Full sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:40
+msgid "Fully correct"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:459
+msgid "Furthest observed position; 100% requires mpv to reach end-of-file"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:23
+msgid "Future"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:48
+msgid "Future perfect · zullen + perfect infinitive"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:47
+msgid "Future · zullen + infinitive"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:41
+msgid "Generate chapters"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:150
+msgid "Getting natural sentences ready and checking them."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:215
+msgid "Getting the choices ready."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:43
+msgid "Getting your next word ready…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:40
+#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_verb_progress.py:35
+msgid "Graded"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:106
+msgid "Group arrivals for"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:50
+msgid "Group by dictionary form"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:104
+msgid "Hide English · Alt+E"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:520
+msgid ""
+"Higher resolutions are tried only after the preferred resolution and next lower option. Turn off "
+"to keep the preferred resolution as a ceiling."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:223
+msgid "Higher values follow the speaker reference more closely; 1 is the neutral model default."
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:21
+msgid "Hobbies and free time"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:19
+msgid "Home and family"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:62
+msgid "Hypothetical ‘als’ clause + result"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:90
+msgid "I'm unsure / guessing"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:27
+msgid "Idiom"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:24
+msgid "Imperative"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:53
+msgid "Imperative · gebiedende wijs"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:68
+msgid "Imperatives"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:10
+msgid "In progress"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:42
+msgid "Include forms not due yet"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:53
+#: yt_whisper_subs/library_practice_controls.py:118 yt_whisper_subs/library_sentences.py:49
+msgid "Include words not due yet"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:194
+#, python-brace-format
+msgid "Incomplete · {resolved}"
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:154
+msgid "Independently checking new word meanings…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:32
+msgid "Inferences"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:19
+msgid "Infinitive"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:66
+msgid "Inspecting filtered downloads…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:99
+msgid "Install / repair Zonos"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:474
+msgid "Interface language"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:184
+msgid "Interface language saved"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:112
+msgid "Interrupted · ready to resume"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:513 yt_whisper_subs/library_window_support.py:440
+#, python-brace-format
+msgid "Interrupted · {label} · click Resume"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:71
+msgid "Issues"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:133
+#, python-brace-format
+msgid "It's been {gap} days since you last practiced."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:311
+#, python-brace-format
+msgid "Jump to {timestamp}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:535
+msgid "Keep checking when the window is closed"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Language"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+msgid "Language correct"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:45
+msgid "Language level"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:80
+#, python-brace-format
+msgid "Last check: {checked} · Next check: {when}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:82
+#, python-brace-format
+msgid "Last completed channel check: {checked_at:%Y-%m-%d %H:%M:%S %Z}."
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:497
+#, python-brace-format
+msgid "Last downloaded {format_timestamp}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:265
+#, python-brace-format
+msgid "Last downloaded {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:270
+#, python-brace-format
+msgid "Last error: {download_error}"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Last seen"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:224
+msgid "Leave this much output level below clipping. Higher values are quieter."
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:21
+msgid "Library"
+msgstr ""
+
+#: yt_whisper_subs/library_app.py:74
+msgid "Library is already running"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:461 yt_whisper_subs/library_widgets.py:464
+msgid "Library settings"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:168
+#, python-brace-format
+msgid "Library started · output root: {out_dir}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:349
+msgid "Library task failed"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:53
+msgid "Life context"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:40
+msgid "Life contexts"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:247
+msgid "Listen again if you need to."
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:254
+msgid "Listen again while comparing your transcription."
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:76
+msgid "Listen again · Alt+P"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:121
+msgid "Listen and type what you hear"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:78
+msgid "Listen slowly · Alt+L"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:83
+msgid "Listen to the text"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:45
+msgid "Listen to the text and answer the questions."
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:117 yt_whisper_subs/library_practice_activity.py:50
+#: yt_whisper_subs/library_sentences.py:165
+msgid "Listening"
+msgstr ""
+
+#: yt_whisper_subs/practice_tracks.py:45
+msgid ""
+"Listening\n"
+"Dutch dictation"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:119
+msgid "Listening comprehension"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:80
+msgid "Listening round options"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:60
+msgid ""
+"Listening scores compare your transcription with the actual spoken Dutch script. Capitalization "
+"and sentence punctuation are ignored; spelling and word order count. Partial score measures word "
+"edits. Saved-target results measure transcription, not a separate meaning test. Replays and slow "
+"listens are recorded separately; only submitted answers count as practice activity. "
+"Writing/translation totals stay separate."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:125
+msgid ""
+"Listening sentences are Dutch. Zonos has no built-in Dutch reference speaker; these speakers can "
+"speak Dutch, but their accent may vary. Use a Dutch recording below as a reference, or choose "
+"Piper · Dutch Ronnie."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:33
+msgid "Listening voices"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:113
+msgid "Live now"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:355
+msgid "Live output is retained while this panel is hidden."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Lively"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:200
+#, python-brace-format
+msgid "Local media scan failed · {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:43
+msgid "Mark as watched"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:45
+msgid "Mark the selected video watched without changing its playback percentage"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:487
+msgid ""
+"Mark watched after more than this percentage is reached, or at the end of the video. Already "
+"watched entries keep their status."
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:136
+#, python-brace-format
+msgid "Marked watched {format_timestamp}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:233
+#, python-brace-format
+msgid "Marked watched · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:22 yt_whisper_subs/library_vocabulary.py:52
+#: yt_whisper_subs/library_vocabulary.py:53
+msgid "Meaning"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37
+msgid "Meaning correct"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:244
+msgid "Meaning is ambiguous in this context."
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:35
+msgid "Median seconds"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:117
+msgid "Median time"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:48
+msgid "Metadata lookup queue: empty"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:140
+#, python-brace-format
+msgid "Metadata · Queue paused for {minutes} minutes after a failed lookup"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:174
+#, python-brace-format
+msgid "Metadata · Retrying {released:,} deferred item(s) with updated browser cookies"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:212
+#, python-brace-format
+msgid "Metadata · {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:54
+#, python-brace-format
+msgid "Metadata: {deferred:,} deferred · retry {retry}"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:51
+#, python-brace-format
+msgid "Metadata: {ready:,} queued{deferred} · ≤1/min"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:156
+msgid "Missing"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_sentence_progress.py:39
+#: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_verb_progress.py:34
+#: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_verb_progress.py:37
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Mistakes"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:31
+msgid "Mixed"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:21
+msgid "Mood"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:79 yt_whisper_subs/library_widgets.py:80
+msgid "More video filters"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:76
+msgid "Move down"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:76
+msgid "Move up"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:76
+#: yt_whisper_subs/library_comprehension_progress.py:82
+msgid "Multiple choice"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:46
+msgid "Multiple-choice questions"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:94
+msgid "My vocabulary"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:69
+msgid "My vocabulary + starter verbs"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:69
+msgid "My vocabulary only"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:21
+msgid "Negation"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:61
+msgid "Negative sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Neutral"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:39
+msgid "Neutral  →  stronger"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:63
+msgid "New listening round"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_controls.py:119
+msgid "New round"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:60
+msgid "New sentence round"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:379
+msgid "New text"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:219
+msgid "New variation"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:61
+msgid "New verb round"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:137
+msgid "New videos from pinned channels"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:21
+msgid "News and public life"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:225
+msgid "Next"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:211
+msgid "Next correction →"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:138 yt_whisper_subs/library_sentence_session.py:206
+#: yt_whisper_subs/library_sentence_session.py:212
+msgid "Next question →"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_sentence_progress.py:38
+msgid "Next review"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:83
+#: yt_whisper_subs/library_sentence_progress.py:158
+msgid "No"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:259
+msgid "No answers on this day."
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:83
+msgid "No channel check has completed yet."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:298
+msgid "No chapter plan yet · generated from your subtitles"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:42
+msgid "No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:532
+msgid "No cutoff"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:266
+msgid "No graded answers"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:72
+msgid "No removable downloads or generated files matched the captured filters."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:157
+msgid "No round available yet"
+msgstr ""
+
+#: yt_whisper_subs/practice_service.py:50
+msgid "No terms are due yet. Try the other direction, capture more words, or enable early review."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:253
+msgid "No words ready yet"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:264
+msgid "Not answered"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:185
+msgid "Not graded"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:345
+msgid "Not quite"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:217
+msgid "Not quite · here is the correction"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:132
+msgid "Not watched yet"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:81
+msgid "Notify me about new videos"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:26
+msgid "Number"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:542
+msgid "OTHER CHANNELS"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:36
+msgid "Occurrences"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:23
+msgid "Omission"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:64
+msgid "On device"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:99
+msgid "Only while hidden or minimized"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:82
+msgid "Open"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:146
+msgid "Open library"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:42
+msgid "Open on YouTube"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:47
+#: yt_whisper_subs/library_comprehension_progress.py:76
+msgid "Open questions"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:101
+msgid "Open shared model folder"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:75
+msgid "Open source"
+msgstr ""
+
+#: yt_whisper_subs/library_chapter_actions.py:99
+msgid "Opening chapter in mpv…"
+msgstr ""
+
+#: yt_whisper_subs/library_chapter_actions.py:99
+msgid "Opening mpv…"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:440
+msgid "Opening saved word in mpv…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:382
+msgid "Operation cancelled"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:103
+msgid "Optional local voice recording"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:22
+msgid "Other"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:216
+msgid "Output headroom"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:134
+msgid "Overall expression"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:132
+#, python-brace-format
+msgid "Paragraph {paragraph}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:157
+#, python-brace-format
+msgid "Paragraph {paragraph}: ‘{quote}’"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:46
+msgid "Paragraphs"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentence_progress.py:40
+#: yt_whisper_subs/library_sentence_progress.py:42
+msgid "Partial score %"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:50
+msgid ""
+"Partial score measures word edits needed to reach your minimally corrected sentence, including "
+"supporting words, omissions and word order. Accepted alternative wording earns full credit. Each "
+"checked sentence counts equally in averages. Whole-sentence accuracy counts fully correct "
+"answers. Pending and reported answers are excluded; saved-word meaning and form remain separate "
+"skills."
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:141
+#, python-brace-format
+msgid "Partial score: {score:.0%}"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:33
+msgid "Partial sentence score"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:18
+msgid "Participle"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:150
+msgid "Partly understood"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:61
+msgid "Passive voice"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:46
+msgid "Past perfect · voltooid verleden tijd"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:52
+msgid "Past subjunctive · ware"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:22
+msgid "Past tense"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:401 yt_whisper_subs/library_window_menus.py:48
+msgid "Pause current pipeline"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:111
+msgid "Paused"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:425
+#, python-brace-format
+msgid "Paused · {value}"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:23
+msgid "Perfect tenses"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:409 yt_whisper_subs/library_window_menus.py:34
+msgid "Pin selected channel"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:440
+msgid "Pin to quick access"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:419
+msgid "Pinned channels"
+msgstr ""
+
+#: yt_whisper_subs/library_channels.py:95
+msgid "Pinned for quick access"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:78
+msgid "Pinned-channel notifications"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:220 yt_whisper_subs/library_views.py:67
+msgid "Pipeline"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:149
+#, python-brace-format
+msgid "Pipeline queue: 1 active · {waiting} waiting"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:153
+#, python-brace-format
+msgid "Pipeline queue: {waiting} waiting"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:151
+msgid "Pipeline: active"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:89
+msgid "Piper · Dutch Ronnie"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:42 yt_whisper_subs/library_verb_progress.py:38
+msgid "Planned"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:74
+msgid "Play occurrence"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:40
+msgid "Play selected"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:147
+msgid "Play this sentence with "
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:524
+#, python-brace-format
+msgid "Playback error: {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:517
+msgid "Playback failed"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:137
+msgid "Playback volume"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:542
+#, python-brace-format
+msgid "Playback · {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:274
+msgid "Playing preview · practice questions and statistics are unchanged"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:194
+msgid "Playing slowly…"
+msgstr ""
+
+#: yt_whisper_subs/library_chapter_actions.py:96
+#, python-brace-format
+msgid "Playing {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:194
+msgid "Playing…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:24
+msgid "Plural"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:25
+msgid "Possessives"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:95 yt_whisper_subs/library_practice.py:98
+msgid "Practice"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:122
+msgid "Practice activity calendar, stronger teal means more answers"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:30
+msgid "Practice activity over the last seven days, in questions answered"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:28 yt_whisper_subs/library_window_menus.py:97
+msgid "Practice activity…"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:255 yt_whisper_subs/library_written.py:194
+msgid "Practice early"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:117
+msgid "Practice now"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:277
+msgid "Practice paused"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:73
+msgid "Practice · vocabulary, verbs, sentences and comprehension"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:77 yt_whisper_subs/library_window_menus.py:26
+#: yt_whisper_subs/library_window_menus.py:96
+msgid "Practice…"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:140
+msgid "Practised: "
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:547
+msgid "Preferred video resolution"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:332
+msgid "Preparation cancelled."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:170
+msgid "Preparation failed"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:177
+msgid "Preparation paused"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:59
+msgid "Prepare new text"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:60
+msgid "Preparing"
+msgstr ""
+
+#: yt_whisper_subs/listening_tts.py:146
+msgid "Preparing Dutch listening audio…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:113
+msgid "Preparing a Dutch text with exactly the requested questions…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:122
+msgid "Preparing and checking speech clips…"
+msgstr ""
+
+#: yt_whisper_subs/practice_service.py:88
+#, python-brace-format
+msgid "Preparing and checking {len} choices…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:112
+#, python-brace-format
+msgid "Preparing and checking {len} sentence pairs…"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:95
+#, python-brace-format
+msgid "Preparing and checking {len} verb exercises…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:170
+msgid "Preparing correction…"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:206
+msgid "Preparing enabled voices for this round…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:122
+msgid "Preparing text…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:252
+msgid "Preparing voice preview…"
+msgstr ""
+
+#: yt_whisper_subs/listening_tts.py:170
+msgid "Preparing voice: "
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:220
+#, python-brace-format
+msgid "Preparing voice: {value}{progress}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:207
+#, python-brace-format
+msgid "Preparing voice: {value}…"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:215
+msgid "Preparing your round…"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:206
+#, python-brace-format
+msgid "Preparing {name} for this sentence…"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:150
+#, python-brace-format
+msgid "Preparing {value}…"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:453
+msgid "Preparing · Download · Audio · Speech-to-text · Translation · Final files"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:215 yt_whisper_subs/library_written.py:150
+msgid "Preparing…"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:25
+msgid "Preposition"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:45
+msgid "Present perfect · voltooid tegenwoordige tijd"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:51
+msgid "Present subjunctive · aanvoegende wijs"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:22
+msgid "Present tense"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:43
+msgid "Present · tegenwoordige tijd"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:47
+msgid "Preset name"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:110
+msgid "Preview sentence · separate from your hidden practice question"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:94
+msgid "Previous vocabulary"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:267
+msgid "Previously removed"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:126
+msgid "Progress"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:224
+msgid "Published"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:550
+msgid "Published since"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:260
+#, python-brace-format
+msgid "Published {published}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+msgid "Question"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:398
+msgid "Question reported · excluded from grading"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:272
+#, python-brace-format
+msgid "Question {ordinal} · {title}{consulted}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:43
+msgid "Questions"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:240
+msgid "Questions and corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:37
+msgid "Questions graded per day"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:13 yt_whisper_subs/pipeline_progress.py:107
+msgid "Queued"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:143
+#, python-brace-format
+msgid "Queued · #{position}"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:143
+msgid "Queued · next"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:30 yt_whisper_subs/library_window_menus.py:100
+msgid "Quit"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:68
+msgid "Read or listen to a Dutch text and answer the questions."
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:118
+msgid "Reading comprehension"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:98
+msgid "Reading time pauses while the pointer is over the balloon."
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:257 yt_whisper_subs/library_practice_labels.py:11
+#: yt_whisper_subs/library_vocabulary.py:144 yt_whisper_subs/library_window_support.py:326
+#: yt_whisper_subs/library_window_support.py:502
+msgid "Ready"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:108
+msgid "Ready to play"
+msgstr ""
+
+#: yt_whisper_subs/practice_service.py:64
+#, python-brace-format
+msgid "Ready · {len} distinct terms"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:549
+msgid "Recent history"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:53
+msgid "Recorded at"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:450
+#, python-brace-format
+msgid "Recovery · {len} interrupted pipeline(s) ready to resume"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:92 yt_whisper_subs/library_voice_controls.py:124
+msgid "Reference speaker"
+msgstr ""
+
+#: yt_whisper_subs/verb_vocabulary.py:77
+#, python-brace-format
+msgid "Refining {len} unconfirmed vocabulary verb mappings…"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:31
+msgid "Reflective essay"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:20
+msgid "Reflexive"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:42
+msgid "Refresh insights"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:59
+msgid "Refresh listening statistics"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:44
+msgid "Refresh sentence statistics"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:45
+msgid "Refresh statistics"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:59
+msgid "Remind me on days I haven't practiced"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:75
+msgid "Remove"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:97
+msgid "Remove download and yields?"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:52
+msgid "Remove download and yields…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:64
+msgid ""
+"Remove downloads and generated files for all current filter matches. Choose Watched to reclaim "
+"space while keeping watch history."
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:99
+#, python-brace-format
+msgid ""
+"Remove downloads and generated files for {scope}?\n"
+"{file_count} managed file(s)"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:75
+msgid "Remove filtered downloads"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:97
+msgid "Remove filtered downloads?"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:61
+msgid "Remove filtered downloads…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:56
+msgid ""
+"Remove the selected download and all generated files (Shift+Delete). Download and watch history "
+"stay in the catalog."
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:66
+msgid "Removed"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:124
+#, python-brace-format
+msgid "Removed {videos} download(s) and {files} file(s)."
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:54
+msgid "Remove…"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:43
+msgid "Removing download…"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:86
+msgid "Removing filtered downloads…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:74
+msgid "Repairing pipeline…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:159
+msgid "Replace expression settings with this starting point; speaker identity stays the same."
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:115
+msgid "Replay processing"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:275
+msgid "Report exercise / correction"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:135
+msgid "Report question"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:416 yt_whisper_subs/library_comprehension_view.py:151
+msgid "Report text or question"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:83 yt_whisper_subs/library_practice_labels.py:13
+#: yt_whisper_subs/library_sentence_review.py:255 yt_whisper_subs/library_sentence_review.py:258
+msgid "Reported"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:75
+msgid "Reset column layout"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:47
+msgid "Reset this control to neutral"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:204
+msgid "Reset this group"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:76
+msgid "Reset video inspector size"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:548
+msgid "Resolution fallback"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:473
+msgid "Restart the library to apply the interface language. Exercises stay in Dutch."
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:185
+msgid "Restart the library to apply the interface language. Your progress and current work are saved."
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:401
+msgid "Resume current pipeline"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:190
+msgid "Resume previous round"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:256 yt_whisper_subs/library_word_quiz.py:269
+#: yt_whisper_subs/library_word_quiz.py:277 yt_whisper_subs/library_written.py:194
+#: yt_whisper_subs/library_written.py:327
+msgid "Resume round"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:53
+msgid "Resuming interrupted pipeline…"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:411
+#, python-brace-format
+msgid "Resuming · {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:179
+#, python-brace-format
+msgid "Retention · Removed {pruned:,} dated remote-only video(s)"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:124
+msgid "Retry English · Alt+E"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:236 yt_whisper_subs/library_written.py:318
+msgid "Retry checking"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:150 yt_whisper_subs/library_sentence_review.py:259
+#: yt_whisper_subs/library_sentence_session.py:206
+msgid "Retry correction"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:73
+msgid "Retry failed lookups / enrichment"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:260
+msgid "Return to Word quiz to continue."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:163
+msgid "Return to begin."
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:199
+#, python-brace-format
+msgid "Return to {tab_name} to continue."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:289
+msgid "Review corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:293
+msgid "Review pending corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:150
+msgid "Review the explanation"
+msgstr ""
+
+#: yt_whisper_subs/library_verbs.py:24
+msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:372 yt_whisper_subs/library_word_quiz.py:429
+msgid "Round complete"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_controls.py:129
+msgid "Round length"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:73
+#: yt_whisper_subs/library_practice_controls.py:144
+msgid "Round options"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:296
+msgid "Round reviewed"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:296 yt_whisper_subs/library_word_quiz.py:429
+msgid "Round saved"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:43
+#: yt_whisper_subs/library_practice_progress.py:130 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_verb_progress.py:38
+msgid "Rounds"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:65
+msgid "SHOW"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:44
+msgid "Save and translate some Dutch vocabulary words before sentence practice."
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:100
+msgid "Save some Dutch words with translations first."
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:35
+msgid "Saved clicks"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37
+msgid "Saved meaning"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:57
+msgid ""
+"Saved words appear in new forms and situations.\n"
+"Other words are included naturally."
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:54
+msgid "Saved words per sentence"
+msgstr ""
+
+#: yt_whisper_subs/verb_vocabulary.py:70
+msgid "Saving checked vocabulary verbs…"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:154
+msgid "Saving correction…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:193
+msgid "Saving sentence and vocabulary feedback…"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:171
+msgid "Saving sentence translation…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:118
+msgid ""
+"Scale all expression sliders together. Try 25–50% if a strong mix cannot finish speaking. Pace "
+"and volume stay independent."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:558
+msgid ""
+"Scheduled checks run while the app is open or living in the system tray. Start with Windows is "
+"per-user and needs no administrator rights. Recent history applies independently to Videos and "
+"Streams; Shorts are ignored. Older untouched remote entries are removed; download, watch, and "
+"removal history are always preserved."
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:298
+msgid "Search title, channel, or YouTube ID…"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:49
+msgid "Search words, meanings, or dictionary forms…"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:497
+msgid "Seconds to seek backward/forward with mpv's Left/Right arrows. Applies to newly opened players."
+msgstr ""
+
+#: yt_whisper_subs/library_chapter_actions.py:67
+#, python-brace-format
+msgid "Seek → {timestamp} · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:220 yt_whisper_subs/library_widgets.py:253
+msgid "Select a downloaded video"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:598 yt_whisper_subs/library_gui.py:619
+#: yt_whisper_subs/library_window_actions.py:419
+msgid "Select a tracked channel first."
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:175 yt_whisper_subs/library_widgets.py:249
+msgid "Select a video"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:61
+msgid "Select a word and an occurrence to inspect its original sentence and meaning."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_review.py:240
+msgid "Sentence question history"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:78
+msgid "Sentence round options"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:165
+msgid "Sentence translations"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:116 yt_whisper_subs/library_practice_activity.py:50
+#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentences.py:54
+#: yt_whisper_subs/practice_tracks.py:48
+msgid "Sentences"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:34
+msgid "Sentences checked per day"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:20
+msgid "Separable prefix"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:271
+msgid "Settings changed. Preview again to hear the new version."
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:144 yt_whisper_subs/library_practice_reminders.py:108
+#: yt_whisper_subs/library_window_menus.py:22
+msgid "Settings…"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:19
+msgid "Shopping"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:69 yt_whisper_subs/library_written_controls.py:91
+#: yt_whisper_subs/library_written_controls.py:104
+msgid "Show English · Alt+E"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:95
+msgid "Show library"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:549
+msgid "Show videos from other channels"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:548
+msgid "Show videos from pinned channels"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_practice_progress.py:123
+#: yt_whisper_subs/library_sentence_progress.py:37 yt_whisper_subs/library_verb_progress.py:35
+msgid "Shown"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:44
+msgid "Simple past · onvoltooid verleden tijd"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:24
+msgid "Singular"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:54
+msgid "Situation"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:227
+msgid "Size"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+#: yt_whisper_subs/library_comprehension_progress.py:40
+msgid "Skill"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:40
+msgid "Skills"
+msgstr ""
+
+#: yt_whisper_subs/library_removal_actions.py:116
+msgid "Skipped active or pending videos:\n"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:79
+msgid "Snooze for"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:140
+#, python-brace-format
+msgid "Snooze for {snooze_hours} hours (Escape)"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:141
+#, python-brace-format
+msgid "Snooze practice reminder for {snooze_hours} hours"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:138
+#, python-brace-format
+msgid "Snooze {snooze_hours}h"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:292
+msgid "Some corrections need a retry"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_vocabulary.py:53
+msgid "Source"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:230
+#, python-brace-format
+msgid "Source: {url}"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:136
+msgid "Speaking pace"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:120
+msgid "Speech engine"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:211
+msgid "Speech preparation paused."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:241
+msgid "Speech unavailable: "
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:63
+msgid "Speech-to-text"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:25
+msgid "Spelling"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:49
+msgid "Start at a paragraph"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:537
+msgid "Start quietly in the system tray when I sign in"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:43 yt_whisper_subs/library_model.py:128
+#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_verb_progress.py:38
+msgid "Started"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:69
+msgid "Started videos still unfinished"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:94
+msgid "Starter"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:69
+msgid "Starter verbs only"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:74
+msgid "Starting download…"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:156
+msgid "Starting style"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:59
+msgid "Statement"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:43
+#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_verb_progress.py:38
+msgid "Status"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:54 yt_whisper_subs/library_listening.py:80
+#: yt_whisper_subs/library_voice_config.py:57
+msgid "Stop"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:598 yt_whisper_subs/library_window_actions.py:447
+#: yt_whisper_subs/library_window_menus.py:37
+msgid "Stop tracking"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:602
+msgid "Stop tracking channel?"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:603
+#, python-brace-format
+msgid "Stop tracking {title}? Downloaded videos remain in the library."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:11
+msgid "Stopped"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:31
+msgid "Story"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:16
+msgid "Structure"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:226
+msgid ""
+"Style strengths use the published model doses. Zero is neutral; individual ranges do not "
+"guarantee a safe combined mix. Lower Overall expression if speech becomes unclear or cannot "
+"finish. Reference recordings stay on this computer."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:15 yt_whisper_subs/library_verb_controls.py:54
+#: yt_whisper_subs/library_verb_progress.py:37
+msgid "Subject"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:22
+msgid "Subject and person"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:23
+msgid "Subjunctive"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:58
+msgid ""
+"Subjunctives use established formal expressions.\n"
+"Only grammatically valid combinations are offered."
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:67
+msgid "Subjunctives · present and past"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:133
+msgid "Submit & next →"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:146
+msgid "Submit answer"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:225
+msgid "Submit answer and continue"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:43 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_verb_progress.py:38
+msgid "Submitted"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:60
+msgid "Subordinate clause · begin with ‘omdat’"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:25
+msgid "Superlatives"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37
+msgid "Target used"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:15 yt_whisper_subs/library_verb_progress.py:37
+msgid "Tense"
+msgstr ""
+
+#: yt_whisper_subs/practice_tracks.py:47
+msgid "Text and questions"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:422
+msgid "Text reported"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:44
+msgid "Text type"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:93
+msgid "The listed language belongs to the reference recording. It does not change the exercise language."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:115
+msgid "The same variation number and settings reproduce the same take."
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:253
+msgid "The sentence you heard"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:122
+msgid "The text and all questions are independently checked."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:177
+msgid "The text has ended. You can listen again."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:41
+msgid "The text stays hidden until all answers are submitted."
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:43
+msgid "These filters have no valid Dutch forms. Change the round options."
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:53
+msgid "These verb forms are not due yet. Try other forms or practise early."
+msgstr ""
+
+#: yt_whisper_subs/comprehension_service.py:104
+msgid "These words are not due yet. Enable early review to continue."
+msgstr ""
+
+#: yt_whisper_subs/library_app.py:75
+msgid "This library is already open. Use its window or system tray icon."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:233
+#, python-brace-format
+msgid ""
+"This week · {sum} answers · {active}/7 active days · {current} day streak\n"
+"All time · {answers} answers · {len} active days · {distinct_words} words · {distinct_verbs} "
+"verbs · longest streak {longest} days"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:99
+msgid "Time for practice"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:222
+msgid "Title"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:12 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_sentence_review.py:258 yt_whisper_subs/library_verb_progress.py:38
+msgid "To revisit"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:188
+msgid "Today"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:36
+msgid "Toggle automatic download"
+msgstr ""
+
+#: yt_whisper_subs/comprehension.py:33
+msgid "Tone and intent"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:407
+msgid "Track a YouTube channel"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:579
+msgid "Track channel"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:33
+msgid "Track channel…"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:95
+msgid "Tracking"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37
+msgid "Transcribed"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:27
+msgid "Transcription"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:33
+msgid "Transcription word score"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:130
+#, python-brace-format
+msgid "Translate the whole sentence into {target}."
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:64
+msgid "Translating"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:169
+msgid "Translating the original sentence…"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:107
+msgid "Translating…"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:52 yt_whisper_subs/library_vocabulary.py:53
+msgid "Translation"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:246
+#, python-brace-format
+msgid "Translation error: {error}"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:213
+msgid "Translation pending"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:20
+msgid "Travel and directions"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:190 yt_whisper_subs/library_word_quiz.py:255
+#: yt_whisper_subs/library_word_quiz.py:269 yt_whisper_subs/library_word_quiz.py:277
+#: yt_whisper_subs/library_written.py:194 yt_whisper_subs/library_written.py:327
+msgid "Try again"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:517
+msgid ""
+"Try this resolution, the next lower option, higher resolutions, then remaining lower ones. "
+"Applies to future downloads; existing videos are reused."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+msgid "Type"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:119
+msgid "Type the Dutch sentence you hear…"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:126
+#, python-brace-format
+msgid "Type the complete {target} translation…"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:147
+msgid "Type the transformed Dutch sentence…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:42
+msgid "Typed"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:440
+msgid "Unpin from quick access"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:409
+msgid "Unpin selected channel"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:96
+msgid "Until dismissed"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:68
+msgid "Unwatched"
+msgstr ""
+
+#: yt_whisper_subs/pipeline_progress.py:114
+msgid "Upcoming"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:105
+msgid ""
+"Use a short, clean recording of one speaker. Leave empty to use the selected built-in voice. "
+"Audio stays local."
+msgstr ""
+
+#: yt_whisper_subs/library_practice_controls.py:123
+msgid "Use these settings for a new round. Your answers so far stay saved."
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:166
+msgid "Use your saved vocabulary to understand and write natural sentences in everyday situations."
+msgstr ""
+
+#: yt_whisper_subs/practice_service.py:98
+msgid "Using previously checked choices while generation is unavailable."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:222
+msgid "Variation number"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:41
+msgid "Varied everyday situations"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:16 yt_whisper_subs/library_verb_progress.py:35
+#: yt_whisper_subs/library_verb_progress.py:37
+msgid "Verb"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:32
+msgid "Verb answers checked per day"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:24
+msgid "Verb form"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_controls.py:76
+msgid "Verb round options"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:17
+msgid "Verb spelling"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:31
+msgid "Verb transformation accuracy"
+msgstr ""
+
+#: yt_whisper_subs/library_verbs.py:23
+msgid "Verb transformations"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:116 yt_whisper_subs/library_practice_activity.py:49
+#: yt_whisper_subs/library_verb_controls.py:54 yt_whisper_subs/library_verb_progress.py:35
+#: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:48
+msgid "Verbs"
+msgstr ""
+
+#: yt_whisper_subs/practice_tracks.py:49
+msgid ""
+"Verbs\n"
+"Dutch transformations"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:38
+msgid "Video"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:267 yt_whisper_subs/pipeline_progress.py:106
+msgid "Video + yields removed"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:495
+#, python-brace-format
+msgid "Video and yields removed {format_timestamp}; history retained"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_vocabulary.py:52
+msgid "Videos"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:70
+msgid "Videos marked watched manually, by the configured threshold, or at the end"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:67
+msgid "Videos queued or currently being processed"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:71
+msgid "Videos whose latest download or processing attempt failed"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:66
+msgid "Videos whose local video and yields were deliberately removed"
+msgstr ""
+
+#: yt_whisper_subs/library_views.py:65
+msgid "Videos without a local download, including removed videos"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:67
+msgid "View"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_view.py:38
+msgid "View transcript"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:228
+msgid "Views"
+msgstr ""
+
+#: yt_whisper_subs/library_practice.py:116
+msgid "Vocabulary"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:225
+msgid "Vocabulary review: "
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:42
+msgid "Vocabulary · subtitles and practice"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:24
+msgid "Vocabulary…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:43
+msgid "Voice"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:215
+msgid "Voice fidelity"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:37
+msgid "Voice for this listening text"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:52
+msgid "Voice preview sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:81
+#, python-brace-format
+msgid "Voice ready: {value}. Choose Listen to play."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:83
+#, python-brace-format
+msgid "Voice: {value}. Click Listen to prepare speech."
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:220
+msgid "Voices are ready. Choose one to listen."
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:72
+msgid "Voices available during practice"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:86
+msgid "Voices…"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:292
+msgid "Waiting for corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:293
+msgid "Waiting…"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:274
+msgid "Watch · track · subtitle"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:221 yt_whisper_subs/library_views.py:70
+#: yt_whisper_subs/library_window_support.py:558
+msgid "Watched"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:544
+msgid "Watched threshold"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:126
+#, python-brace-format
+msgid "Watched to {format_duration} of {format_duration2}"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:129
+#, python-brace-format
+msgid "Watched to {format_duration}; duration unavailable"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:138
+#, python-brace-format
+msgid "Watched: more than {percent:g}% reached or mpv reported the end"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:558
+#, python-brace-format
+msgid "Watching · {fraction:.0%}"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:150 yt_whisper_subs/library_sentence_review.py:258
+msgid "Well understood"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:416
+msgid "What is wrong?"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:157
+msgctxt "voice style"
+msgid "Whisper"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:36
+msgid "Whole sentence correct"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:32
+msgid "Whole-sentence accuracy"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:106
+msgid "Why this answer?"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:89
+#, python-brace-format
+msgid "Will play when processing finishes · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:552
+msgid "Windows"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_sentence_progress.py:37
+#: yt_whisper_subs/library_vocabulary.py:52
+msgid "Word"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:42
+msgid "Word confusions"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:37
+msgid "Word correct"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_labels.py:19
+msgid "Word order"
+msgstr ""
+
+#: yt_whisper_subs/practice_tracks.py:48
+msgid "Word quiz"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:131
+msgid ""
+"Word reviews combine vocabulary choices with assessed words and lexical mistakes from typed "
+"practice. Activity counts each submitted exercise once. Accuracy reflects changing review "
+"difficulty. Established = 3+ correct answers, latest correct, and review stability of 21+ days. "
+"Reported questions do not affect accuracy or scheduling. Dates use local time."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:41
+#: yt_whisper_subs/library_practice_progress.py:129 yt_whisper_subs/library_sentence_progress.py:37
+msgid "Words"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:173
+msgid "Words explored"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:47
+msgid "Words from your vocabulary"
+msgstr ""
+
+#: yt_whisper_subs/sentence_practice.py:19
+msgid "Work and study"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:123
+msgid "Write the complete Dutch sentence. You can listen again or slow it down."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:117
+msgid "Write your answer in Dutch…"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:117 yt_whisper_subs/library_practice_progress.py:123
+msgid "Wrong"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:83
+#: yt_whisper_subs/library_sentence_progress.py:158
+msgid "Yes"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:59
+msgid "Yes/no question · inversion"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:241
+#, python-brace-format
+msgid "You selected or typed: {value}"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:253
+msgid "You're all caught up"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:260
+#, python-brace-format
+msgid "YouTube ID {video_id}"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:271
+msgid "YouTube Library"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:673
+msgid "YouTube Library is still running"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:38
+#, python-brace-format
+msgid "YouTube Library · yt-whisper-subs v{version}"
+msgstr ""
+
+#: yt_whisper_subs/library_listening.py:120
+msgid "Your Dutch transcription"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:39
+msgid "Your answer"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:372
+msgid "Your answers are saved"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:173
+msgid "Your answers are saved as you go."
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:127
+#, python-brace-format
+msgid "Your complete {target} translation"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:241
+msgid "Your first attempt is saved. Retry checking it to get the correction."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:118
+msgid "Your open answer"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:36
+#: yt_whisper_subs/library_comprehension_progress.py:37 yt_whisper_subs/library_practice_progress.py:32
+msgid "Your practice history will appear here"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:170
+msgid "Your previous answers and prepared text are saved. Try again."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:277
+msgid "Your progress is saved."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:260 yt_whisper_subs/library_written.py:199
+msgid "Your round is ready"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_reminders.py:135
+msgid "Your saved words are ready for your first practice."
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentence_progress.py:41
+msgid "Your sentence"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:60
+msgid "Your sentence targets and writing reviews are not due yet. Try early practice if you wish."
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:422
+msgid "Your submitted answers remain in your activity but no longer count toward scores."
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:37
+msgid "Your text"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:163
+msgid "Your text is ready"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:148
+msgid "Your transformed Dutch sentence"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:201
+msgid "ZONOS3-Mini installed · shared user cache · local CPU runtime"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:153
+#, python-brace-format
+msgid "Zonos voice {len}"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:58
+msgid "de jarigen (third-person plural)"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:57
+msgid "de koning (third-person singular)"
+msgstr ""
+
+#: yt_whisper_subs/library_written_controls.py:230
+msgid "missing text"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:545
+msgid "mpv seek step"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:79
+msgid "never"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:162
+msgid "normal"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:162
+msgid "slow"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:55
+msgid "u (polite)"
+msgstr ""
+
+#: yt_whisper_subs/library_window_menus.py:93
+msgid "yt-whisper-subs YouTube Library"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:56
+msgid "zij (she)"
+msgstr ""
+
+#: yt_whisper_subs/verb_practice.py:57
+msgid "zij (they)"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:267
+#, python-brace-format
+msgid ""
+"{answers} answers · {words} words · {verb_lemmas} verbs\n"
+"\n"
+"Words Dutch → English: {nl_en}\n"
+"Words English → Dutch: {en_nl}\n"
+"Verb transformations: {verbs}\n"
+"Sentences English → Dutch: {sentence_en_nl}\n"
+"Sentences Dutch → English: {sentence_nl_en}\n"
+"Listening: {listening}\n"
+"Reading comprehension: {comprehension_read} · Listening comprehension: {comprehension_listen}\n"
+"\n"
+"{accuracy}\n"
+"{value} not graded (pending or reported)"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:77
+#, python-brace-format
+msgid "{answers} graded · comprehension {score:.0%}"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:80
+#, python-brace-format
+msgid "{attempts} checked answers"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:426
+#, python-brace-format
+msgid "{correct} correct · {wrong} to revisit"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:287
+#, python-brace-format
+msgid "{correct} correct · {wrong} to revisit · {submitted} answers"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:369
+#, python-brace-format
+msgid "{correct} correct · {wrong} to revisit · {submitted} submitted"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:168 yt_whisper_subs/library_sentence_progress.py:133
+#: yt_whisper_subs/library_verb_progress.py:78
+#, python-brace-format
+msgid "{correct}/{attempts} correct"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:146
+#, python-brace-format
+msgid "{count:,} match"
+msgid_plural "{count:,} matches"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_widgets.py:147
+#, python-brace-format
+msgid "{count:,} video"
+msgid_plural "{count:,} videos"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_removal_actions.py:98
+#, python-brace-format
+msgid "{count} matching video(s)"
+msgstr ""
+
+#: yt_whisper_subs/library_notifications.py:165
+#, python-brace-format
+msgid "{count} new video · Pinned channels"
+msgid_plural "{count} new videos · Pinned channels"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_practice_activity.py:293
+#, python-brace-format
+msgid ""
+"{date:%B %Y}\n"
+"{sum} answers · {len} active days"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:82
+#, python-brace-format
+msgid ""
+"{day:%A, %d %B %Y}\n"
+"{answers} answers · {words} words · {verb_lemmas} verbs\n"
+"NL → EN: {nl_en} · EN → NL: {en_nl} · Verbs: {verbs}\n"
+"Sentences EN → NL: {sentence_en_nl} · NL → EN: {sentence_nl_en}\n"
+"Listening: {listening}\n"
+"Reading comprehension: {comprehension_read} · Listening comprehension: {comprehension_listen}"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:37
+#, python-brace-format
+msgid "{day}: {count} answer"
+msgid_plural "{day}: {count} answers"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_window_support.py:85
+#, python-brace-format
+msgid ""
+"{detail}\n"
+"Times are shown in your local timezone."
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:353
+#, python-brace-format
+msgid ""
+"{explanation}\n"
+"Next review: {due}"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:292 yt_whisper_subs/library_written.py:221
+#, python-brace-format
+msgid "{label}    ·    {ordinal} / {planned}    ·    {correct} correct"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:128
+#, python-brace-format
+msgid "{label} · close anytime to pause"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_progress.py:60
+#, python-brace-format
+msgid ""
+"{label} · comprehension {percent} · {correct}/{graded} fully correct\n"
+"{submitted} submitted · {pending} pending · language correct {percent7} ({language_answers} open "
+"answers) · {plays} clips played"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:505
+#, python-brace-format
+msgid "{label} · overall {overall:.0%}"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:161
+#, python-brace-format
+msgid ""
+"{len:,} words · {sum:,} clicks · {sum3:,} word confusions · enrichment: {pending} pending, "
+"{failed} failed"
+msgstr ""
+
+#: yt_whisper_subs/sentence_service.py:82
+#, python-brace-format
+msgid "{len} checked sentences ready"
+msgstr ""
+
+#: yt_whisper_subs/verb_service.py:71
+#, python-brace-format
+msgid "{len} checked verb exercises ready"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:95
+#, python-brace-format
+msgid "{name} · {language} reference · {gender} · {style}"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_controls.py:39
+#, python-brace-format
+msgid "{negative}  ←  neutral  →  {positive}"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:140
+#, python-brace-format
+msgid "{partial_score:.1%} average partial score · {attempts} checked sentences"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_progress.py:82
+#, python-brace-format
+msgid ""
+"{partial} partial score · {accuracy} whole-sentence accuracy\n"
+"{submitted} submitted · {correct} correct · {wrong} to revisit · {words} saved words practised\n"
+"{question_due} sentences due · {word_due} word skills due · {pending} awaiting correction"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_progress.py:155
+#, python-brace-format
+msgid ""
+"{shown} presentations    ·    {attempts} graded answers    ·    {accuracy} correct    ·    {due} "
+"due reviews    ·    {established} established words (per direction)    ·    {streak} day streak"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:213
+#, python-brace-format
+msgid "{submitted} / {planned} answered  ·  {correct} correct"
+msgstr ""
+
+#: yt_whisper_subs/library_verb_progress.py:67
+#, python-brace-format
+msgid ""
+"{submitted} submitted · {correct} correct · {wrong} to revisit · {accuracy} accuracy · {due} "
+"forms due · {pending} awaiting correction"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension.py:268
+#, python-brace-format
+msgid "{submitted}/{planned} submitted · {value} pending · {unseen} unseen corrections"
+msgstr ""
+
+#: yt_whisper_subs/library_word_quiz.py:363
+#, python-brace-format
+msgid "{target} · Space / Enter to continue"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:221
+#, python-brace-format
+msgid "{text} (linking element)"
+msgstr ""
+
+#: yt_whisper_subs/library_channels.py:87
+#, python-brace-format
+msgid ""
+"{title}\n"
+"Checking…"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_controls.py:152
+#, python-brace-format
+msgid "{title} · comprehension {score:.0%}{language}"
+msgstr ""
+
+#: yt_whisper_subs/library_vocabulary.py:240
+#, python-brace-format
+msgid "{title} · {role} concept"
+msgstr ""
+
+#: yt_whisper_subs/library_sentence_session.py:289
+#, python-brace-format
+msgid "{unseen} corrections to review"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_activity.py:261
+#, python-brace-format
+msgid "{value:.0%} correct ({correct}/{graded} graded)"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:370
+#, python-brace-format
+msgid "{value} round complete"
+msgstr ""
+
+#: yt_whisper_subs/library_written.py:373
+#, python-brace-format
+msgid "{value} round saved"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:156
+#, python-brace-format
+msgid "{value} · paragraph {paragraph} · clip {value3}/{len} · {value5}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:149
+#, python-brace-format
+msgid "{visible:,} of {count:,} match"
+msgid_plural "{visible:,} of {count:,} matches"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_widgets.py:150
+#, python-brace-format
+msgid "{visible:,} of {count:,} video"
+msgid_plural "{visible:,} of {count:,} videos"
+msgstr[0] ""
+msgstr[1] ""
+
+#: yt_whisper_subs/library_practice_progress.py:172
+#, python-brace-format
+msgid "{words} distinct words"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:311 yt_whisper_subs/library_window_actions.py:395
+msgid "Ⅱ  Pause"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:429
+msgid "Ⅱ Pipeline paused"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:302 yt_whisper_subs/library_window_actions.py:387
+msgid "↓  Download"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:301
+msgid "↻  Check now"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:305
+msgid "↻  Regenerate"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:387
+msgid "↻  Repair"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:313
+msgid "■  Cancel"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:464
+msgid "■ Cancellation requested"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:383
+#, python-brace-format
+msgid "■ Cancelled · {label}"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:532
+msgid "▦  All videos"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:304
+msgid "▶  Play"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:387 yt_whisper_subs/library_window_actions.py:395
+msgid "▶  Resume"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:53
+msgid "▶ Listen"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:415
+msgid "▶ Pipeline resumed"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:53
+msgid "▶ Preview"
+msgstr ""
+
+#: yt_whisper_subs/library_voice_config.py:55
+msgid "▶ Preview slowly"
+msgstr ""
+
+#: yt_whisper_subs/library_comprehension_audio.py:53
+msgid "▶ Slower"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:562
+#, python-brace-format
+msgid "◆ {title} · Marked watched"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:385
+msgid "○  Queued"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:231
+#, python-brace-format
+msgid "○ Channel queued · {label}"
+msgstr ""
+
+#: yt_whisper_subs/library_video_queue.py:57
+#, python-brace-format
+msgid "○ Pipeline queued · #{position} · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_window_actions.py:383
+msgid "●  Processing"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:542
+msgid "★  PINNED"
+msgstr ""
+
+#: yt_whisper_subs/library_model.py:134
+msgid "✓ Watched"
+msgstr ""
+
+#: yt_whisper_subs/library_window_support.py:156
+#, python-brace-format
+msgid "✗ Metadata maintenance · {message}"
+msgstr ""
+
+#: yt_whisper_subs/library_widgets.py:214 yt_whisper_subs/library_widgets.py:254
+#: yt_whisper_subs/library_widgets.py:293 yt_whisper_subs/library_widgets.py:299
+msgid "✦  Generate"
+msgstr ""
+
+#: yt_whisper_subs/library_gui.py:279
+msgid "＋  Track channel"
+msgstr ""

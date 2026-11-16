@@ -8,6 +8,8 @@ from __future__ import annotations
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
+
 
 class MetricItem(QtWidgets.QTableWidgetItem):
     """Separate human labels from comparable values; e.g. missing numeric observations sort below measured scores."""
@@ -41,7 +43,7 @@ class StatsTables(QtWidgets.QTabWidget):
             table.verticalHeader().hide()
             table.horizontalHeader().setStretchLastSection(True)
             self.tables[name] = table
-            self.addTab(table, name)
+            self.addTab(table, i18n.tr(name))
 
     def fill(self, name: str, rows: list[list]) -> None:
         """Normalize labels and date/numeric keys once; e.g. missing textual cells never collide with numeric sentinel types."""
@@ -58,6 +60,8 @@ class StatsTables(QtWidgets.QTabWidget):
         for idx, row in enumerate(rows):
             for col, value in enumerate(row):
                 label, key = value if isinstance(value, tuple) else ("—" if value is None else str(value), value)
+                if not isinstance(value, tuple) and isinstance(value, (int, float)):
+                    label = i18n.number(value)
                 if label == "—" or key is None:
                     key = float("-inf") if col in numeric else ""
                 item = MetricItem(label, key)

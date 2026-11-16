@@ -10,19 +10,20 @@ from typing import Literal
 
 import pydantic as pd
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import verb_practice
 from yt_whisper_subs import vocabulary_learning as learning
 
 
-SCENES = {"home": "Home and family", "shopping": "Shopping", "work": "Work and study",
-          "travel": "Travel and directions", "food": "Food and cafés", "appointments": "Appointments and services",
-          "social": "Conversations and plans", "hobbies": "Hobbies and free time", "public_life": "News and public life"}
-FORMS = {"base": "Base form", "person": "Subject and person", "present": "Present tense", "past": "Past tense",
-         "perfect": "Perfect tenses", "future": "Future", "conditional": "Conditionals", "subjunctive": "Subjunctive",
-         "imperative": "Imperative", "singular": "Singular", "plural": "Plural", "comparative": "Comparatives",
-         "superlative": "Superlatives", "adjective_ending": "Adjective endings", "possessive": "Possessives",
-         "diminutive": "Diminutives"}
+SCENES = {"home": i18n.mark('Home and family'), "shopping": i18n.mark('Shopping'), "work": i18n.mark('Work and study'),
+          "travel": i18n.mark('Travel and directions'), "food": i18n.mark('Food and cafés'), "appointments": i18n.mark('Appointments and services'),
+          "social": i18n.mark('Conversations and plans'), "hobbies": i18n.mark('Hobbies and free time'), "public_life": i18n.mark('News and public life')}
+FORMS = {"base": i18n.mark('Base form'), "person": i18n.mark('Subject and person'), "present": i18n.mark('Present tense'), "past": i18n.mark('Past tense'),
+         "perfect": i18n.mark('Perfect tenses'), "future": i18n.mark('Future'), "conditional": i18n.mark('Conditionals'), "subjunctive": i18n.mark('Subjunctive'),
+         "imperative": i18n.mark('Imperative'), "singular": i18n.mark('Singular'), "plural": i18n.mark('Plural'), "comparative": i18n.mark('Comparatives'),
+         "superlative": i18n.mark('Superlatives'), "adjective_ending": i18n.mark('Adjective endings'), "possessive": i18n.mark('Possessives'),
+         "diminutive": i18n.mark('Diminutives')}
 Form = Literal["base", "person", "present", "past", "perfect", "future", "conditional", "subjunctive",
                "imperative", "singular", "plural", "comparative", "superlative", "adjective_ending", "possessive", "diminutive"]
 ErrorKind = Literal["meaning", "omission", "extra_content", "word_order", "verb_form", "agreement", "article",
@@ -40,7 +41,7 @@ class Direction(str, enum.Enum):
     def label(self) -> str:
         """Name the actual exercise; e.g. dictation is heard Dutch → written Dutch."""
 
-        return "Dutch dictation" if self == self.LISTEN else practice.Direction(self.value).label
+        return i18n.tr('Dutch dictation') if self == self.LISTEN else practice.Direction(self.value).label
 
     @property
     def word_direction(self) -> practice.Direction:

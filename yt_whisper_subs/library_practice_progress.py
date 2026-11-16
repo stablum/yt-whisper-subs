@@ -12,6 +12,8 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import library_practice_labels as labels
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_stats
 from yt_whisper_subs import library_practice_tables as tables
@@ -22,12 +24,12 @@ from yt_whisper_subs import library_practice_tables as tables
 class TrendChart(QtWidgets.QWidget):
     """Draw dated series with inspectable points; e.g. hover daily accuracy to see its sample size."""
 
-    def __init__(self, title: str, percent: bool, parent=None, *, empty_text='Your practice history will appear here') -> None:
+    def __init__(self, title: str, percent: bool, parent=None, *, empty_text: str | None = None) -> None:
         """Keep plotting independent from SQL; e.g. cumulative coverage shares this renderer."""
 
         super().__init__(parent)
         self._title, self._percent = title, percent
-        self._empty_text = empty_text
+        self._empty_text = empty_text if empty_text is not None else i18n.tr('Your practice history will appear here')
         self._series: list[dict] = []
         self._hits: list[tuple[QtCore.QPointF, str]] = []
         self.setMinimumHeight(220)
@@ -65,7 +67,7 @@ class TrendChart(QtWidgets.QWidget):
             painter.setPen(QtGui.QColor("#333c4a"))
             painter.drawLine(QtCore.QPointF(plot.left(), y), QtCore.QPointF(plot.right(), y))
             painter.setPen(QtGui.QColor("#98a6b8"))
-            label = f"{top * ratio:.0f}" + ("%" if self._percent else "")
+            label = i18n.number(top * ratio, '.0f') + ("%" if self._percent else "")
             painter.drawText(QtCore.QRectF(2, y - 10, 50, 20), QtCore.Qt.AlignmentFlag.AlignRight, label)
         painter.drawText(QtCore.QRectF(plot.left(), plot.bottom() + 12, 120, 24), dates[0])
         if len(dates) > 1:
@@ -109,27 +111,30 @@ class ProgressPanel(QtWidgets.QWidget):
         self._totals = QtWidgets.QLabel()
         self._totals.setObjectName("practiceStats")
         self._totals.setWordWrap(True)
-        self._accuracy = TrendChart("Daily answer accuracy", True)
-        self._coverage = TrendChart("Cumulative distinct words practiced", False)
+        self._accuracy = TrendChart(i18n.tr('Daily answer accuracy'), True)
+        self._coverage = TrendChart(i18n.tr('Cumulative distinct words practiced'), False)
         self._terms = QtWidgets.QTableWidget(0, 8)
-        self._terms.setHorizontalHeaderLabels(["Word", "Direction", "Shown", "Correct", "Wrong", "Accuracy", "Median time", "Next review"])
+        self._terms.setHorizontalHeaderLabels([i18n.tr('Word'), i18n.tr('Direction'), i18n.tr('Shown'), i18n.tr('Correct'), i18n.tr('Wrong'), i18n.tr('Accuracy'), i18n.tr('Median time'), i18n.tr('Next review')])
         self._terms.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self._terms.setAlternatingRowColors(True)
         self._terms.verticalHeader().hide()
         self._terms.horizontalHeader().setStretchLastSection(True)
         self._rounds = QtWidgets.QTableWidget(0, 8)
-        self._rounds.setHorizontalHeaderLabels(["Started", "Direction", "Shown", "Correct", "Wrong", "Accuracy", "Answer time", "Status"])
+        self._rounds.setHorizontalHeaderLabels([i18n.tr('Started'), i18n.tr('Direction'), i18n.tr('Shown'), i18n.tr('Correct'), i18n.tr('Wrong'), i18n.tr('Accuracy'), i18n.tr('Answer time'), i18n.tr('Status')])
         self._rounds.setEditTriggers(QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers)
         self._rounds.setAlternatingRowColors(True)
         self._rounds.verticalHeader().hide()
         self._rounds.horizontalHeader().setStretchLastSection(True)
         history = QtWidgets.QTabWidget()
-        history.addTab(self._terms, "Words")
-        history.addTab(self._rounds, "Rounds")
-        note = QtWidgets.QLabel("Word reviews combine vocabulary choices with assessed words and lexical mistakes from typed practice. "
-                               "Activity counts each submitted exercise once. Accuracy reflects changing review difficulty. "
-                               "Established = 3+ correct answers, latest correct, and review stability of 21+ days. "
-                               "Reported questions do not affect accuracy or scheduling. Dates use local time.")
+        history.addTab(self._terms, i18n.tr('Words'))
+        history.addTab(self._rounds, i18n.tr('Rounds'))
+        note = QtWidgets.QLabel(i18n.tr(
+            'Word reviews combine vocabulary choices with assessed words and lexical mistakes from '
+            'typed practice. Activity counts each submitted exercise once. Accuracy reflects changing'
+            ' review difficulty. Established = 3+ correct answers, latest correct, and review '
+            'stability of 21+ days. Reported questions do not affect accuracy or scheduling. Dates '
+            'use local time.',
+        ))
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
         charts = QtWidgets.QHBoxLayout()
@@ -146,18 +151,26 @@ class ProgressPanel(QtWidgets.QWidget):
 
         data = practice_stats.snapshot(self._db)
         totals = data["totals"]
-        accuracy = f"{totals['accuracy']:.0%}" if totals["accuracy"] is not None else "—"
-        self._totals.setText(f"{totals['shown']} presentations    ·    {totals['attempts']} graded answers    ·    "
-                             f"{accuracy} correct    ·    {data['due']} due reviews    ·    "
-                             f"{data['established']} established words (per direction)    ·    {data['streak']} day streak")
+        accuracy = i18n.number(totals['accuracy'], '.0%') if totals["accuracy"] is not None else "—"
+        self._totals.setText(i18n.tr(
+            '{shown} presentations    ·    {attempts} graded answers    ·    {accuracy} correct    ·'
+            '    {due} due reviews    ·    {established} established words (per direction)    ·    '
+            '{streak} day streak',
+            shown=totals['shown'],
+            attempts=totals['attempts'],
+            accuracy=accuracy,
+            due=data['due'],
+            established=data['established'],
+            streak=data['streak'],
+        ))
         series = []
         for direction, tint in ((practice.Direction.NL_EN, "#66d9ef"), (practice.Direction.EN_NL, "#ffd166")):
-            points = [(row["day"], row["accuracy"] * 100, f"{row['correct']}/{row['attempts']} correct")
+            points = [(row["day"], row["accuracy"] * 100, i18n.tr('{correct}/{attempts} correct', correct=row['correct'], attempts=row['attempts']))
                       for row in data["daily"] if row["direction"] == direction.value and row["accuracy"] is not None]
             series.append({"label": direction.label, "color": tint, "points": points})
         self._accuracy.set_series(series)
-        points = [(row["day"], row["words"], f"{row['words']} distinct words") for row in data["coverage"]]
-        self._coverage.set_series([{"label": "Words explored", "color": "#9ae78f", "points": points}])
+        points = [(row["day"], row["words"], i18n.tr('{words} distinct words', words=row['words'])) for row in data["coverage"]]
+        self._coverage.set_series([{"label": i18n.tr('Words explored'), "color": "#9ae78f", "points": points}])
         self._show_terms(data["terms"])
         self._show_rounds(data["rounds"])
 
@@ -167,9 +180,9 @@ class ProgressPanel(QtWidgets.QWidget):
         self._terms.setSortingEnabled(False)
         self._terms.setRowCount(len(terms))
         for idx, row in enumerate(sorted(terms, key=lambda item: (-item["wrong"], item["word"]))):
-            accuracy = f"{row['accuracy']:.0%}" if row["accuracy"] is not None else "—"
+            accuracy = i18n.number(row['accuracy'], '.0%') if row["accuracy"] is not None else "—"
             elapsed = f"{row['median_ms'] / 1000:.1f}s" if row["median_ms"] is not None else "—"
-            due = datetime.fromtimestamp(row["due_at"]).strftime("%d %b %H:%M") if row["due_at"] else "Not graded"
+            due = i18n.date_text(datetime.fromtimestamp(row['due_at']), '%d %b %H:%M') if row["due_at"] else i18n.tr('Not graded')
             values = [row["word"], practice.Direction(row["direction"]).label, row["shown"], row["correct"],
                       row["wrong"], accuracy, elapsed, due]
             keys = [row["word"].casefold(), row["direction"], row["shown"], row["correct"], row["wrong"],
@@ -187,12 +200,12 @@ class ProgressPanel(QtWidgets.QWidget):
         self._rounds.setRowCount(len(rounds))
         for idx, row in enumerate(rounds):
             attempts = row["correct"] + row["wrong"]
-            accuracy = f"{row['correct'] / attempts:.0%}" if attempts else "—"
-            values = [datetime.fromtimestamp(row["created_at"]).strftime("%d %b %Y %H:%M"),
+            accuracy = i18n.number(row['correct'] / attempts, '.0%') if attempts else "—"
+            values = [i18n.date_text(datetime.fromtimestamp(row['created_at']), '%d %b %Y %H:%M'),
                       practice.Direction(row["direction"]).label, row["shown"], row["correct"], row["wrong"],
-                      accuracy, f"{row['answer_ms'] / 1000:.1f}s", row["status"].capitalize()]
+                      accuracy, f"{row['answer_ms'] / 1000:.1f}s", labels.term(row["status"]).capitalize()]
             keys = [row["created_at"], row["direction"], row["shown"], row["correct"], row["wrong"],
-                    row["correct"] / attempts if attempts else -1, row["answer_ms"], row["status"]]
+                    row["correct"] / attempts if attempts else -1, row["answer_ms"], labels.term(row["status"])]
             for col, (value, key) in enumerate(zip(values, keys)):
                 self._rounds.setItem(idx, col, tables.MetricItem(value, key))
         self._rounds.resizeColumnsToContents()

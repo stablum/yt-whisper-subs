@@ -11,6 +11,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_written_controls as written
 
 
@@ -230,13 +231,13 @@ class QuestionRail(QtWidgets.QListWidget):
 
     chosen = QtCore.Signal(int)
 
-    def __init__(self, *, dutch: bool = False) -> None:
+    def __init__(self, *, comprehension: bool = False) -> None:
         """Keep the overview beside the question; e.g. fifty answers scroll independently of their feedback."""
 
         super().__init__()
         self.setFixedWidth(82)
-        self._dutch = dutch
-        self.setAccessibleName('Vragen en beoordelingen' if dutch else "Sentence question history")
+        self._comprehension = comprehension
+        self.setAccessibleName(i18n.tr('Questions and corrections') if comprehension else i18n.tr('Sentence question history'))
         self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet("QListWidget {background:#171e29;border:0;border-radius:8px;font-size:12pt;} "
@@ -250,27 +251,26 @@ class QuestionRail(QtWidgets.QListWidget):
         scroll = self.verticalScrollBar().value()
         self.clear()
         next_id = next((row["id"] for row in rows if row["answer_text"] is None and row["outcome"] is None), None)
-        states = {"correct": ("✓", "#83e5af", "Correction ready · Correct"), "wrong": ("✕", "#ff8b9e", "Correction ready · To revisit"),
-                  "invalid": ("−", "#9aa7b7", "Reported"), "checking": ("↻", "#7fdbff", "Correction in progress"),
-                  "queued": ("…", "#ffd166", "Correction queued"), "failed": ("!", "#ffb16b", "Correction needs retry")}
-        if self._dutch:
-            titles = dict(correct='Goed begrepen', wrong='Opnieuw oefenen', invalid='Gemeld', checking='Beoordeling bezig',
-                          queued='Beoordeling in wachtrij', failed='Beoordeling opnieuw proberen')
+        states = {"correct": ("✓", "#83e5af", i18n.tr('Correction ready · Correct')), "wrong": ("✕", "#ff8b9e", i18n.tr('Correction ready · To revisit')),
+                  "invalid": ("−", "#9aa7b7", i18n.tr('Reported')), "checking": ("↻", "#7fdbff", i18n.tr('Correction in progress')),
+                  "queued": ("…", "#ffd166", i18n.tr('Correction queued')), "failed": ("!", "#ffb16b", i18n.tr('Correction needs retry'))}
+        if self._comprehension:
+            titles = dict(correct=i18n.tr('Well understood'), wrong=i18n.tr('To revisit'), invalid=i18n.tr('Reported'),
+                          checking=i18n.tr('Correction in progress'), queued=i18n.tr('Correction queued'), failed=i18n.tr('Retry correction'))
             states = {key: (symbol, color, titles[key]) for key, (symbol, color, _) in states.items()}
-        states['ready'] = ('●', '#7fdbff', 'Beoordeling gereed' if self._dutch else 'Correction ready')
+        states['ready'] = ('●', '#7fdbff', i18n.tr('Correction ready'))
         for row in rows:
             state = row["outcome"] or row["state"] or ("queued" if row["answer_text"] is not None else "")
-            symbol, color, title = states.get(state, ("○", "#9aa7b7", 'Nog niet beantwoord' if self._dutch else "Not answered"))
+            symbol, color, title = states.get(state, ("○", "#9aa7b7", i18n.tr('Not answered')))
             # A pointer keeps current-question feedback visible without replacing its outcome colour with selection blue.
             pointer = "›" if row["id"] == current else " "
             unseen = bool(row["outcome"] in {"correct", "wrong"} or row.get('feedback_ready')) and row["viewed_at"] is None
             item = QtWidgets.QListWidgetItem(f"{pointer} {row['ordinal']:02} {symbol}{'•' if unseen else ''}")
             item.setData(QtCore.Qt.ItemDataRole.UserRole, row["id"])
             item.setForeground(QtGui.QColor(color))
-            consulted = " · Not viewed yet" if unseen else (" · Viewed" if row["viewed_at"] is not None else "")
-            if self._dutch:
-                consulted = ' · Nog niet bekeken' if unseen else (' · Bekeken' if row['viewed_at'] is not None else '')
-            item.setToolTip(f"{'Vraag' if self._dutch else 'Question'} {row['ordinal']} · {title}{consulted}" + (f"\n{row['error']}" if row["error"] else ""))
+            consulted = i18n.tr(' · Not viewed yet') if unseen else (i18n.tr(' · Viewed') if row["viewed_at"] is not None else "")
+            hint = i18n.tr('Question {ordinal} · {title}{consulted}', ordinal=row['ordinal'], title=title, consulted=consulted)
+            item.setToolTip(hint + (f"\n{row['error']}" if row['error'] else ""))
             font = item.font()
             font.setBold(unseen)
             item.setFont(font)

@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from PySide6 import QtWidgets
 import shiboken6
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_workers
@@ -33,24 +34,24 @@ class Narration(QtWidgets.QWidget):
         self._task = None
         self._wanted = False
         self._voice = QtWidgets.QComboBox()
-        self._voice.setAccessibleName('Stem voor deze luistertekst')
+        self._voice.setAccessibleName(i18n.tr('Voice for this listening text'))
         self._voice.activated.connect(lambda _: self._select_voice(self._voice.currentData()))
-        configure = QtWidgets.QPushButton('Stemmen instellen…')
+        configure = QtWidgets.QPushButton(i18n.tr('Configure voices…'))
         configure.setAutoDefault(False)
         configure.clicked.connect(self._configure_voices)
         voices = QtWidgets.QFormLayout()
-        voices.addRow('Stem', self._voice)
+        voices.addRow(i18n.tr('Voice'), self._voice)
         voices.addRow(configure)
-        self._note = QtWidgets.QLabel('Luister naar de tekst en beantwoord de vragen.')
+        self._note = QtWidgets.QLabel(i18n.tr('Listen to the text and answer the questions.'))
         self._note.setWordWrap(True)
         self._note.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         self._paragraph = QtWidgets.QComboBox()
-        self._paragraph.setAccessibleName('Begin bij een alinea')
+        self._paragraph.setAccessibleName(i18n.tr('Start at a paragraph'))
         self._paragraph.activated.connect(self._jump)
-        self._paragraph.setToolTip('Kies een alinea zonder het transcript te tonen.')
+        self._paragraph.setToolTip(i18n.tr('Choose a paragraph without revealing the transcript.'))
         controls = QtWidgets.QGridLayout()
-        actions = (('▶ Luisteren', lambda: self.play('normal')), ('▶ Langzamer', lambda: self.play('slow')),
-                   ('Vanaf het begin', self.restart), ('Stop', self.stop))
+        actions = ((i18n.tr('▶ Listen'), lambda: self.play('normal')), (i18n.tr('▶ Slower'), lambda: self.play('slow')),
+                   (i18n.tr('From the beginning'), self.restart), (i18n.tr('Stop'), self.stop))
         for idx, (label, fn) in enumerate(actions):
             button = QtWidgets.QPushButton(label)
             button.setAutoDefault(False)
@@ -77,9 +78,9 @@ class Narration(QtWidgets.QWidget):
         self._voices()
         try:
             self._rows = self._audio.rows(session['passage_id'], self._opts)
-            self._note.setText(f'Stem klaar: {self._voice.currentText()}. Kies Luisteren om af te spelen.')
+            self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._voice.currentText()))
         except (ValueError, OSError):
-            self._note.setText(f'Stem: {self._voice.currentText()}. Klik op Luisteren om de spraak voor te bereiden.')
+            self._note.setText(i18n.tr('Voice: {value}. Click Listen to prepare speech.', value=self._voice.currentText()))
         self._paragraphs()
 
     def _voices(self) -> None:
@@ -106,7 +107,7 @@ class Narration(QtWidgets.QWidget):
             self.play(speed)
         except (ValueError, OSError) as exc:
             self._voices()
-            self._note.setText('Stem wijzigen is niet gelukt: ' + str(exc))
+            self._note.setText(i18n.tr('Could not change voice: ') + str(exc))
 
     def _configure_voices(self) -> None:
         """Edit the existing sound presets where they are played; e.g. saving changed Zonos sliders refreshes the same voice ID's recording."""
@@ -128,7 +129,7 @@ class Narration(QtWidgets.QWidget):
         seen = set()
         for row in self._rows:
             if row['paragraph'] not in seen:
-                self._paragraph.addItem(f"Alinea {row['paragraph']}", row['index'])
+                self._paragraph.addItem(i18n.tr('Paragraph {paragraph}', paragraph=row['paragraph']), row['index'])
                 seen.add(row['paragraph'])
 
     def play(self, speed='normal') -> None:
@@ -152,10 +153,17 @@ class Narration(QtWidgets.QWidget):
             self._player.play(path, row[speed + '_seconds'])
             self._audio.played(self._session['id'], row, speed)
             self._playing = True
-            self._note.setText(f"{self._voice.currentText()} · alinea {row['paragraph']} · fragment {self._index + 1}/{len(self._rows)} · {'langzaam' if speed == 'slow' else 'normaal'}")
+            self._note.setText(i18n.tr(
+                '{value} · paragraph {paragraph} · clip {value3}/{len} · {value5}',
+                value=self._voice.currentText(),
+                paragraph=row['paragraph'],
+                value3=self._index + 1,
+                len=len(self._rows),
+                value5=i18n.tr('slow') if speed == 'slow' else i18n.tr('normal'),
+            ))
         except (ValueError, OSError, RuntimeError) as exc:
             self.stop()
-            self._note.setText('Afspelen is niet gelukt: ' + str(exc))
+            self._note.setText(i18n.tr('Could not play: ') + str(exc))
 
     def _next(self) -> None:
         """Continue only owned visible narration; e.g. closing practice between fragments prevents late playback."""
@@ -166,7 +174,7 @@ class Narration(QtWidgets.QWidget):
         if self._index >= len(self._rows):
             self.stop()
             self._index = 0
-            self._note.setText('De tekst is afgelopen. Je kunt opnieuw luisteren.')
+            self._note.setText(i18n.tr('The text has ended. You can listen again.'))
         else:
             self.play(self._speed)
 
@@ -196,11 +204,11 @@ class Narration(QtWidgets.QWidget):
         passage_id, opts = self._session['passage_id'], self._opts
         task = library_workers.BackgroundTask(lambda report: self._audio.prepare(passage_id, opts, report))
         self._task = task
-        self._note.setText(f'Stem voorbereiden: {self._voice.currentText()}…')
+        self._note.setText(i18n.tr('Preparing voice: {value}…', value=self._voice.currentText()))
         task.signals.progress.connect(lambda message: self._progress(task, message))
         task.signals.finished.connect(lambda _: self._repaired(task))
         task.signals.failed.connect(lambda message: self._failed(task, message))
-        task.signals.cancelled.connect(lambda: self._failed(task, 'Spraakvoorbereiding gepauzeerd.'))
+        task.signals.cancelled.connect(lambda: self._failed(task, i18n.tr('Speech preparation paused.')))
         QtCore.QThreadPool.globalInstance().start(task)
 
     def _progress(self, task, message) -> None:
@@ -208,8 +216,8 @@ class Narration(QtWidgets.QWidget):
 
         if shiboken6.isValid(self) and self._task is task:
             count = re.search(r'(\d+/\d+)$', message.strip())
-            progress = ' · fragment ' + count.group(1) if count else '…'
-            self._note.setText(f'Stem voorbereiden: {self._voice.currentText()}{progress}')
+            progress = i18n.tr(' · clip ') + count.group(1) if count else '…'
+            self._note.setText(i18n.tr('Preparing voice: {value}{progress}', value=self._voice.currentText(), progress=progress))
 
     def _repaired(self, task) -> None:
         """Use repaired audio only for the same visible passage; e.g. a late completion cannot speak over another practice mode."""
@@ -230,7 +238,7 @@ class Narration(QtWidgets.QWidget):
 
         if shiboken6.isValid(self) and self._task is task:
             self._task = None
-            self._note.setText('Spraak niet beschikbaar: ' + message)
+            self._note.setText(i18n.tr('Speech unavailable: ') + message)
 
     def hideEvent(self, event) -> None:
         """Stop playback and owned repair on navigation; e.g. hidden listening content cannot autoplay."""

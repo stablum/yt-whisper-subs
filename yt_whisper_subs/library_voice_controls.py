@@ -8,6 +8,7 @@ import secrets
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import listening_voices
 
 
@@ -35,7 +36,7 @@ class Strength(QtWidgets.QWidget):
         self._slider.setTickInterval(50)
         self._slider.valueChanged.connect(lambda: self._sync(self._slider))
         self._spin.valueChanged.connect(lambda: self._sync(self._spin))
-        poles = f"{definition['negative']}  ←  neutral  →  {definition['positive']}" if minimum else "Neutral  →  stronger"
+        poles = i18n.tr('{negative}  ←  neutral  →  {positive}', negative=definition['negative'], positive=definition['positive']) if minimum else i18n.tr('Neutral  →  stronger')
         title = QtWidgets.QLabel(definition["label"])
         title.setStyleSheet("font-weight:600")
         note = QtWidgets.QLabel(poles)
@@ -43,7 +44,7 @@ class Strength(QtWidgets.QWidget):
         note.setWordWrap(True)
         reset = QtWidgets.QToolButton()
         reset.setText("↺")
-        reset.setToolTip("Reset this control to neutral")
+        reset.setToolTip(i18n.tr('Reset this control to neutral'))
         reset.clicked.connect(lambda: self._spin.setValue(0))
         row = QtWidgets.QHBoxLayout()
         row.addWidget(self._slider, 1)
@@ -85,18 +86,24 @@ class VoiceEditor(QtWidgets.QWidget):
 
         super().__init__()
         self._engine = QtWidgets.QComboBox()
-        self._engine.addItem("Piper · Dutch Ronnie", "piper")
+        self._engine.addItem(i18n.tr('Piper · Dutch Ronnie'), "piper")
         self._engine.addItem("ZONOS3-Mini", "zonos")
         self._voice = QtWidgets.QComboBox()
-        self._voice.setAccessibleName("Reference speaker")
-        self._voice.setToolTip("The listed language belongs to the reference recording. It does not change the exercise language.")
+        self._voice.setAccessibleName(i18n.tr('Reference speaker'))
+        self._voice.setToolTip(i18n.tr('The listed language belongs to the reference recording. It does not change the exercise language.'))
         for row in listening_voices.catalog()["voices"]:
-            self._voice.addItem(f"{row['name']} · {row['language']} reference · {row['gender']} · {row['style']}", row["name"])
+            self._voice.addItem(i18n.tr(
+                '{name} · {language} reference · {gender} · {style}',
+                name=row['name'],
+                language=row['language'],
+                gender=row['gender'],
+                style=row['style'],
+            ), row["name"])
         self._reference = QtWidgets.QLineEdit()
-        self._reference.setPlaceholderText("Optional local voice recording")
+        self._reference.setPlaceholderText(i18n.tr('Optional local voice recording'))
         self._reference.setClearButtonEnabled(True)
-        self._reference.setToolTip("Use a short, clean recording of one speaker. Leave empty to use the selected built-in voice. Audio stays local.")
-        browse = QtWidgets.QPushButton("Browse…")
+        self._reference.setToolTip(i18n.tr('Use a short, clean recording of one speaker. Leave empty to use the selected built-in voice. Audio stays local.'))
+        browse = QtWidgets.QPushButton(i18n.tr('Browse…'))
         browse.clicked.connect(self._browse)
         ref_row = QtWidgets.QHBoxLayout()
         ref_row.addWidget(self._reference, 1)
@@ -105,27 +112,29 @@ class VoiceEditor(QtWidgets.QWidget):
         self._volume = self._number(20, 150, 100, " %")
         self._seed = QtWidgets.QSpinBox()
         self._seed.setRange(0, 2147483647)
-        self._seed.setToolTip("The same variation number and settings reproduce the same take.")
+        self._seed.setToolTip(i18n.tr('The same variation number and settings reproduce the same take.'))
         self._numbers = {"guidance": self._number(1, 3, 1), "headroom": self._number(0, 24, 3, " dB")}
         self._expression = self._number(0, 100, 100, " %")
-        self._expression.setToolTip("Scale all expression sliders together. Try 25–50% if a strong mix cannot finish speaking. Pace and volume stay independent.")
+        self._expression.setToolTip(i18n.tr('Scale all expression sliders together. Try 25–50% if a strong mix cannot finish speaking. Pace and volume stay independent.'))
         form = QtWidgets.QFormLayout()
-        form.addRow("Speech engine", self._engine)
+        form.addRow(i18n.tr('Speech engine'), self._engine)
         self._zonos = QtWidgets.QWidget()
         details = QtWidgets.QFormLayout(self._zonos)
         details.setContentsMargins(0, 0, 0, 0)
-        details.addRow("Reference speaker", self._voice)
-        note = QtWidgets.QLabel("Listening sentences are Dutch. Zonos has no built-in Dutch reference speaker; "
-                               "these speakers can speak Dutch, but their accent may vary. "
-                               "Use a Dutch recording below as a reference, or choose Piper · Dutch Ronnie.")
+        details.addRow(i18n.tr('Reference speaker'), self._voice)
+        note = QtWidgets.QLabel(i18n.tr(
+            'Listening sentences are Dutch. Zonos has no built-in Dutch reference speaker; these '
+            'speakers can speak Dutch, but their accent may vary. Use a Dutch recording below as a '
+            'reference, or choose Piper · Dutch Ronnie.',
+        ))
         note.setWordWrap(True)
         note.setStyleSheet("color:#b8c7d9;")
         details.addRow(note)
-        details.addRow("Clone from recording", ref_row)
-        details.addRow("Overall expression", self._expression)
+        details.addRow(i18n.tr('Clone from recording'), ref_row)
+        details.addRow(i18n.tr('Overall expression'), self._expression)
         form.addRow(self._zonos)
-        form.addRow("Speaking pace", self._pace)
-        form.addRow("Playback volume", self._volume)
+        form.addRow(i18n.tr('Speaking pace'), self._pace)
+        form.addRow(i18n.tr('Playback volume'), self._volume)
         self._tabs = QtWidgets.QWidget()
         self._groups = QtWidgets.QListWidget()
         self._groups.setFixedWidth(190)
@@ -144,10 +153,10 @@ class VoiceEditor(QtWidgets.QWidget):
         self._quick = QtWidgets.QWidget()
         quick = QtWidgets.QHBoxLayout(self._quick)
         quick.setContentsMargins(0, 0, 0, 0)
-        quick.addWidget(QtWidgets.QLabel("Starting style"))
-        for name in ("Neutral", "Clear", "Conversational", "Lively", "Calm", "Whisper"):
-            button = QtWidgets.QPushButton(name)
-            button.setToolTip("Replace expression settings with this starting point; speaker identity stays the same.")
+        quick.addWidget(QtWidgets.QLabel(i18n.tr('Starting style')))
+        for name in (i18n.mark('Neutral', ctx="voice style"), i18n.mark('Clear', ctx="voice style"), i18n.mark('Conversational', ctx="voice style"), i18n.mark('Lively', ctx="voice style"), i18n.mark('Calm', ctx="voice style"), i18n.mark('Whisper', ctx="voice style")):
+            button = QtWidgets.QPushButton(i18n.tr(name, ctx="voice style"))
+            button.setToolTip(i18n.tr('Replace expression settings with this starting point; speaker identity stays the same.'))
             button.clicked.connect(lambda _=False, style=name: self._style(style))
             quick.addWidget(button)
         layout = QtWidgets.QVBoxLayout(self)
@@ -192,7 +201,7 @@ class VoiceEditor(QtWidgets.QWidget):
                 self._strengths[widget.key] = widget
                 controls.append(widget)
                 layout.addWidget(widget)
-            reset = QtWidgets.QPushButton("Reset this group")
+            reset = QtWidgets.QPushButton(i18n.tr('Reset this group'))
             reset.clicked.connect(lambda _=False, rows=controls: self._reset(rows))
             layout.addWidget(reset)
             layout.addStretch()
@@ -203,23 +212,25 @@ class VoiceEditor(QtWidgets.QWidget):
             self._pages.addWidget(scroll)
         advanced = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(advanced)
-        form.addRow("Voice fidelity", self._numbers["guidance"])
-        form.addRow("Output headroom", self._numbers["headroom"])
+        form.addRow(i18n.tr('Voice fidelity'), self._numbers["guidance"])
+        form.addRow(i18n.tr('Output headroom'), self._numbers["headroom"])
         variation = QtWidgets.QHBoxLayout()
         variation.addWidget(self._seed)
-        randomize = QtWidgets.QPushButton("New variation")
+        randomize = QtWidgets.QPushButton(i18n.tr('New variation'))
         randomize.clicked.connect(lambda: self._seed.setValue(secrets.randbelow(2147483648)))
         variation.addWidget(randomize)
-        form.addRow("Variation number", variation)
-        for key, note in {"guidance": "Higher values follow the speaker reference more closely; 1 is the neutral model default.",
-                          "headroom": "Leave this much output level below clipping. Higher values are quieter."}.items():
+        form.addRow(i18n.tr('Variation number'), variation)
+        for key, note in {"guidance": i18n.tr('Higher values follow the speaker reference more closely; 1 is the neutral model default.'),
+                          "headroom": i18n.tr('Leave this much output level below clipping. Higher values are quieter.')}.items():
             self._numbers[key].setToolTip(note)
-        note = QtWidgets.QLabel("Style strengths use the published model doses. Zero is neutral; individual ranges do not guarantee a safe combined mix. "
-                               "Lower Overall expression if speech becomes unclear or cannot finish. "
-                               "Reference recordings stay on this computer.")
+        note = QtWidgets.QLabel(i18n.tr(
+            'Style strengths use the published model doses. Zero is neutral; individual ranges do not'
+            ' guarantee a safe combined mix. Lower Overall expression if speech becomes unclear or '
+            'cannot finish. Reference recordings stay on this computer.',
+        ))
         note.setWordWrap(True)
         form.addRow(note)
-        self._groups.addItem("Advanced")
+        self._groups.addItem(i18n.tr('Advanced'))
         self._pages.addWidget(advanced)
 
     def _visibility(self, *_args) -> None:
@@ -241,17 +252,17 @@ class VoiceEditor(QtWidgets.QWidget):
     def _style(self, name: str) -> None:
         """Offer mild editable starting points; e.g. Clear combines articulation and clarity without changing the speaker."""
 
-        styles = {"Neutral": {}, "Clear": {"mood.clarity": .35, "mood.articulation": .2},
-                  "Conversational": {"delivery.conversational": .5},
-                  "Lively": {"expressive.expressive": .25, "emotions.happy": .2},
-                  "Calm": {"emotions.serene": .25, "mood.arousal": -.15}, "Whisper": {"delivery.whisper": .35}}
+        styles = {'Neutral': {}, 'Clear': {"mood.clarity": .35, "mood.articulation": .2},
+                  'Conversational': {"delivery.conversational": .5},
+                  'Lively': {"expressive.expressive": .25, "emotions.happy": .2},
+                  'Calm': {"emotions.serene": .25, "mood.arousal": -.15}, 'Whisper': {"delivery.whisper": .35}}
         for key, widget in self._strengths.items():
             widget.set_value(styles[name].get(key, 0))
 
     def _browse(self) -> None:
         """Select a local speaker reference without upload; e.g. a Dutch voice recording can be reused across all exercises."""
 
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Choose voice reference", "", "Audio (*.wav *.mp3 *.flac *.m4a *.ogg);;All files (*)")
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, i18n.tr('Choose voice reference'), "", "Audio (*.wav *.mp3 *.flac *.m4a *.ogg);;All files (*)")
         if path:
             self._reference.setText(path)
 

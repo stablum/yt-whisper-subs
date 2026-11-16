@@ -13,6 +13,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 
 
@@ -113,19 +114,19 @@ class RoundControls(QtWidgets.QWidget):
         self.count = QtWidgets.QSpinBox()
         self.count.setRange(1, 50)
         self.count.setValue(10)
-        self.count.setSuffix(" terms")
-        self.early = QtWidgets.QCheckBox("Include words not due yet")
-        apply = QtWidgets.QPushButton("New round")
+        self.count.setSuffix("")
+        self.early = QtWidgets.QCheckBox(i18n.tr('Include words not due yet'))
+        apply = QtWidgets.QPushButton(i18n.tr('New round'))
         apply.setAutoDefault(False)
         apply.setObjectName("primaryButton")
         apply.clicked.connect(self._restart)
-        note = QtWidgets.QLabel("Use these settings for a new round. Your answers so far stay saved.")
+        note = QtWidgets.QLabel(i18n.tr('Use these settings for a new round. Your answers so far stay saved.'))
         note.setObjectName("settingsNote")
         note.setWordWrap(True)
         panel = QtWidgets.QWidget()
         panel.setMinimumWidth(330)
         form = QtWidgets.QFormLayout(panel)
-        form.addRow("Round length", self.count)
+        form.addRow(i18n.tr('Round length'), self.count)
         form.addRow(self.early)
         form.addRow(note)
         form.addRow(apply)
@@ -134,13 +135,13 @@ class RoundControls(QtWidgets.QWidget):
         fields.setDefaultWidget(panel)
         self.menu.addAction(fields)
         self.menu.addSeparator()
-        self._finish = self.menu.addAction("End this round", self.finish_requested)
+        self._finish = self.menu.addAction(i18n.tr('End this round'), self.finish_requested)
         self._finish.setEnabled(False)
         self.menu.aboutToShow.connect(lambda: self.editing.emit(True))
         self.menu.aboutToHide.connect(lambda: self.editing.emit(False))
         button = QtWidgets.QToolButton()
         button.setObjectName("practiceOptions")
-        button.setText("Round options")
+        button.setText(i18n.tr('Round options'))
         button.setMinimumHeight(32)
         button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(self.menu)

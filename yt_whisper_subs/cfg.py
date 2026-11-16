@@ -73,10 +73,10 @@ AUDIO_FORMAT_CHOICES = ("opus", "m4a", "mp3")
 MEDIA_SUFFIXES = (".mkv", ".mp4", ".webm")
 YT_DLP_PYTHON_PACKAGE = "yt-dlp[default]"
 YT_DLP_JS_RUNTIMES = ("deno", "node")
-LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil", "pydantic", "fsrs", "polars", "numpy", "rapidfuzz", "piper")
+LIBRARY_REQUIRED_MODULES = ("PySide6", "psutil", "pydantic", "fsrs", "polars", "numpy", "rapidfuzz", "piper", "babel")
 PIPER_VERSION = "1.7.0"  # Tested speech runtime; its native worker resolves uv-linked dictionary files.
 LIBRARY_PYTHON_PACKAGES = ("PySide6-Essentials", "psutil", "pydantic>=2.12,<3", "fsrs==6.3.1", "polars>=1.30,<2", "numpy>=2,<3",
-                           "rapidfuzz>=3.14,<4", f"piper-tts=={PIPER_VERSION}")
+                           "rapidfuzz>=3.14,<4", f"piper-tts=={PIPER_VERSION}", "Babel>=2.17,<3")
 
 
 def output_scratch_dir(out_dir: Path) -> Path:

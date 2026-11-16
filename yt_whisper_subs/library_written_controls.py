@@ -10,6 +10,8 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
+from yt_whisper_subs import library_practice_labels
 from yt_whisper_subs import library_practice_controls as controls
 
 
@@ -64,7 +66,7 @@ class SentenceMeaning(QtWidgets.QWidget):
         super().__init__()
         self._text: str | None = None
         self._button = QtWidgets.QToolButton()
-        self._button.setText("Show English · Alt+E")
+        self._button.setText(i18n.tr('Show English · Alt+E'))
         self._button.setCheckable(True)
         self._button.setFocusPolicy(QtCore.Qt.FocusPolicy.NoFocus)
         self._button.setAutoRepeat(False)
@@ -86,7 +88,7 @@ class SentenceMeaning(QtWidgets.QWidget):
         self._text = text
         self._button.setEnabled(True)
         self._button.setChecked(False)
-        self._button.setText("Show English · Alt+E")
+        self._button.setText(i18n.tr('Show English · Alt+E'))
         self._label.clear()
         self._label.hide()
 
@@ -99,10 +101,10 @@ class SentenceMeaning(QtWidgets.QWidget):
     def _toggle(self, shown: bool) -> None:
         """Reveal immediately when available; e.g. newly prepared exercises need no extra API call."""
 
-        self._button.setText("Hide English · Alt+E" if shown else "Show English · Alt+E")
+        self._button.setText(i18n.tr('Hide English · Alt+E') if shown else i18n.tr('Show English · Alt+E'))
         self._label.setVisible(shown)
         if shown:
-            self._label.setText(self._text or "Translating…")
+            self._label.setText(self._text or i18n.tr('Translating…'))
             if not self._text:
                 self._button.setEnabled(False)
                 self.requested.emit()
@@ -119,8 +121,8 @@ class SentenceMeaning(QtWidgets.QWidget):
 
         self._button.setChecked(False)
         self._button.setEnabled(True)
-        self._button.setText("Retry English · Alt+E")
-        self._label.setText(f"Could not translate: {message}")
+        self._button.setText(i18n.tr('Retry English · Alt+E'))
+        self._label.setText(i18n.tr('Could not translate: {message}', message=message))
         self._label.show()
 
 
@@ -142,8 +144,8 @@ class WritingCard(controls.ContinueSurface):
         self._instruction = QtWidgets.QLabel()
         self._instruction.setStyleSheet("font-size: 14pt; color: #dce6f2;")
         self.editor = editor if editor is not None else SentenceEdit()
-        self.editor.setPlaceholderText("Type the transformed Dutch sentence…")
-        self.editor.setAccessibleName("Your transformed Dutch sentence")
+        self.editor.setPlaceholderText(i18n.tr('Type the transformed Dutch sentence…'))
+        self.editor.setAccessibleName(i18n.tr('Your transformed Dutch sentence'))
         self.editor.setStyleSheet("font-size: 18pt; padding: 12px; border-radius: 8px; background: #1c2431; "
                                  "color: #eef2f7; border: 1px solid #42536c; selection-background-color: #356198;")
         self.editor.setMinimumHeight(120)
@@ -212,7 +214,7 @@ class WritingCard(controls.ContinueSurface):
         """Reveal a corrected full sentence and concrete teaching feedback; e.g. mouse continuation remains a separate gesture."""
 
         self.editor.setReadOnly(True)
-        verdict = "Correct" if content.correct else "Not quite · here is the correction"
+        verdict = i18n.tr('Correct') if content.correct else i18n.tr('Not quite · here is the correction')
         self._verdict.setText(verdict + (f" · {content.summary}" if content.summary else ""))
         self._correction.setText(content.corrected)
         self._translation.setText(content.translation)
@@ -220,13 +222,14 @@ class WritingCard(controls.ContinueSurface):
                     for role in ("intended", "confused") if (lexeme := fix[role]) is not None}
         labels = [content.targets] if content.targets else []
         if concepts:
-            labels.append("Vocabulary review: " + ";  ".join(f"{word} — {meaning}" for word, meaning in concepts.items()))
+            labels.append(i18n.tr('Vocabulary review: ') + ";  ".join(f"{word} — {meaning}" for word, meaning in concepts.items()))
         self._targets.setText("\n".join(labels))
         self._targets.setVisible(bool(labels))
         details = [content.explanation]
         for error in content.errors:
-            evidence = error["evidence"] or "missing text"
-            details.append(f"• {error['kind'].replace('_', ' ')}: {evidence} → {error['correction']}\n  {error['explanation']}")
+            evidence = error["evidence"] or i18n.tr('missing text')
+            kind = library_practice_labels.term(error['kind'])
+            details.append(f"• {kind}: {evidence} → {error['correction']}\n  {error['explanation']}")
         self._details.setText("\n\n".join(details))
         for label in (self._verdict, self._correction, self._translation, self._details):
             label.setVisible(bool(label.text()))
@@ -265,13 +268,13 @@ class WritingView(QtWidgets.QWidget):
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(questions)
-        self.action = controls.ContinueButton("Check sentence")
+        self.action = controls.ContinueButton(i18n.tr('Check sentence'))
         self.action.setObjectName("primaryButton")
         self.action.setMinimumSize(220, 44)
         self.action.setAutoDefault(False)
-        self.flag = QtWidgets.QPushButton("Report exercise / correction")
+        self.flag = QtWidgets.QPushButton(i18n.tr('Report exercise / correction'))
         self.flag.setAutoDefault(False)
-        self.cancel = QtWidgets.QPushButton("Cancel")
+        self.cancel = QtWidgets.QPushButton(i18n.tr('Cancel'))
         self.cancel.setAutoDefault(False)
         footer = QtWidgets.QHBoxLayout()
         footer.addWidget(self.flag)

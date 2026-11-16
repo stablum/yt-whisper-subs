@@ -9,6 +9,7 @@ import enum
 from typing import NamedTuple
 
 
+from yt_whisper_subs import i18n
 class VideoView(enum.IntEnum):
     """Name each mutually exclusive task-oriented catalog view.
 
@@ -59,13 +60,13 @@ class VideoViewSpec(NamedTuple):
 
 
 VIDEO_VIEWS = (
-    VideoViewSpec(VideoView.ALL, "All", "Every video in the current library or channel"),
-    VideoViewSpec(VideoView.ON_DEVICE, "On device", "Downloaded videos ready to play"),
-    VideoViewSpec(VideoView.AVAILABLE, "Available", "Videos without a local download, including removed videos"),
-    VideoViewSpec(VideoView.REMOVED, "Removed", "Videos whose local video and yields were deliberately removed"),
-    VideoViewSpec(VideoView.PIPELINE, "Pipeline", "Videos queued or currently being processed"),
-    VideoViewSpec(VideoView.UNWATCHED, "Unwatched", "Current or previous downloads not watched yet"),
-    VideoViewSpec(VideoView.CONTINUE, "Continue", "Started videos still unfinished"),
-    VideoViewSpec(VideoView.WATCHED, "Watched", "Videos marked watched manually, by the configured threshold, or at the end"),
-    VideoViewSpec(VideoView.ISSUES, "Issues", "Videos whose latest download or processing attempt failed"),
+    VideoViewSpec(VideoView.ALL, i18n.mark('All'), i18n.mark('Every video in the current library or channel')),
+    VideoViewSpec(VideoView.ON_DEVICE, i18n.mark('On device'), i18n.mark('Downloaded videos ready to play')),
+    VideoViewSpec(VideoView.AVAILABLE, i18n.mark('Available'), i18n.mark('Videos without a local download, including removed videos')),
+    VideoViewSpec(VideoView.REMOVED, i18n.mark('Removed'), i18n.mark('Videos whose local video and yields were deliberately removed')),
+    VideoViewSpec(VideoView.PIPELINE, i18n.mark('Pipeline'), i18n.mark('Videos queued or currently being processed')),
+    VideoViewSpec(VideoView.UNWATCHED, i18n.mark('Unwatched'), i18n.mark('Current or previous downloads not watched yet')),
+    VideoViewSpec(VideoView.CONTINUE, i18n.mark('Continue'), i18n.mark('Started videos still unfinished')),
+    VideoViewSpec(VideoView.WATCHED, i18n.mark('Watched'), i18n.mark('Videos marked watched manually, by the configured threshold, or at the end')),
+    VideoViewSpec(VideoView.ISSUES, i18n.mark('Issues'), i18n.mark('Videos whose latest download or processing attempt failed')),
 )

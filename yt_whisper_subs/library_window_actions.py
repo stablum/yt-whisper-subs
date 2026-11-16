@@ -11,6 +11,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import cfg
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_notifications
@@ -49,7 +50,7 @@ class WindowActionsMixin:
 
             self._queue_video_task(
                 video_id,
-                "Resuming interrupted pipeline…",
+                i18n.tr('Resuming interrupted pipeline…'),
                 resume,
                 lambda _: self.refresh(),
             )
@@ -70,7 +71,7 @@ class WindowActionsMixin:
             else:
                 self._service.download(video_id, report)
 
-        label = "Repairing pipeline…" if record.downloaded else "Starting download…"
+        label = i18n.tr('Repairing pipeline…') if record.downloaded else i18n.tr('Starting download…')
         self._queue_video_task(video_id, label, download, lambda _: self.refresh())
 
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
@@ -85,7 +86,7 @@ class WindowActionsMixin:
         record = self._record_from_proxy_index(index)
         if record and self._is_video_pending(record.meta.identity.video_id):
             video_id = record.meta.identity.video_id
-            message = f"Will play when processing finishes · {record.meta.identity.title}"
+            message = i18n.tr('Will play when processing finishes · {title}', title=record.meta.identity.title)
             if video_id not in self._play_after_pipeline:
                 self._play_after_pipeline.add(video_id)
                 self._ui.trace.append_message(message)
@@ -132,6 +133,7 @@ class WindowActionsMixin:
             library_notifications.NotificationPrefs.load(self._service.db),
             playback=self._service.playback_prefs(),
             practice_reminders=library_practice_reminders.ReminderPrefs.load(self._service.db),
+            ui_language=self._service.db.setting("ui_language", "en"),
         )
         dialog = library_widgets.SettingsDialog(current, self)
         if dialog.exec() != QtWidgets.QDialog.DialogCode.Accepted:
@@ -145,11 +147,12 @@ class WindowActionsMixin:
         except (OSError, RuntimeError) as exc:
             QtWidgets.QMessageBox.warning(
                 self,
-                "Could not update Windows startup",
+                i18n.tr('Could not update Windows startup'),
                 str(exc),
             )
             return
         self._service.db.set_setting("check_hours", values.check_hours)
+        self._service.db.set_setting("ui_language", values.ui_language)
         self._service.db.set_setting("cookies_from_browser", values.cookies_from_browser)
         self._service.db.set_setting("minimize_to_tray", int(values.minimize_to_tray))
         self._service.db.set_setting("channel_recent_limit", values.channel_recent_limit)
@@ -168,14 +171,19 @@ class WindowActionsMixin:
             released = self._service.db.reset_metadata_attempts()
             if released:
                 self._ui.trace.append_message(
-                    f"Metadata · Retrying {released:,} deferred item(s) with updated browser cookies"
+                    i18n.tr('Metadata · Retrying {released:,} deferred item(s) with updated browser cookies', released=released)
                 )
                 self._schedule_metadata_backfill(immediate=True)
         pruned = self._service.apply_retention()
         if pruned:
-            self._ui.trace.append_message(f"Retention · Removed {pruned:,} dated remote-only video(s)")
+            self._ui.trace.append_message(i18n.tr('Retention · Removed {pruned:,} dated remote-only video(s)', pruned=pruned))
             self.refresh()
         self._schedule_next()
+        if values.ui_language != current.ui_language:
+            QtWidgets.QMessageBox.information(
+                self, i18n.tr("Interface language saved"),
+                i18n.tr("Restart the library to apply the interface language. Your progress and current work are saved."),
+            )
 
     @QtCore.Slot(str)
     def _notification_video(self, video_id: str) -> None:
@@ -222,7 +230,7 @@ class WindowActionsMixin:
             return
         self._service.db.mark_watched(record.meta.identity.video_id)
         self.refresh()
-        message = f"Marked watched · {record.meta.identity.title}"
+        message = i18n.tr('Marked watched · {title}', title=record.meta.identity.title)
         self._ui.trace.append_message(message)
         self.statusBar().showMessage(message, 5000)
 
@@ -372,11 +380,11 @@ class WindowActionsMixin:
         self._ui.catalog.detail.set_busy(pending)
         needs_repair = bool(record and record.downloaded and (issue or record.download_error))
         if active:
-            process_text = "●  Processing"
+            process_text = i18n.tr('●  Processing')
         elif pending:
-            process_text = "○  Queued"
+            process_text = i18n.tr('○  Queued')
         else:
-            process_text = "▶  Resume" if recoverable else ("↻  Repair" if needs_repair else "↓  Download")
+            process_text = i18n.tr('▶  Resume') if recoverable else (i18n.tr('↻  Repair') if needs_repair else i18n.tr('↓  Download'))
         self._ui.header.download.setText(process_text)
         self._ui.header.download.setEnabled(can_process)
         self._ui.header.play.setEnabled(can_play)
@@ -384,13 +392,13 @@ class WindowActionsMixin:
         pipeline_active = bool(self._busy and self._active_progress and self._active_task)
         paused = bool(self._active_task and self._active_task.paused)
         self._ui.header.pause.setVisible(pipeline_active)
-        self._ui.header.pause.setText("▶  Resume" if paused else "Ⅱ  Pause")
+        self._ui.header.pause.setText(i18n.tr('▶  Resume') if paused else i18n.tr('Ⅱ  Pause'))
         self._ui.header.pause.setEnabled(pipeline_active)
         self._ui.header.cancel.setVisible(self._busy)
         task = self._active_task
         self._ui.header.cancel.setEnabled(bool(task and not task.cancel_requested))
         self._cancel_action.setEnabled(bool(task and not task.cancel_requested))
-        self._pause_action.setText("Resume current pipeline" if paused else "Pause current pipeline")
+        self._pause_action.setText(i18n.tr('Resume current pipeline') if paused else i18n.tr('Pause current pipeline'))
         self._pause_action.setEnabled(pipeline_active)
         self._remove_action.setEnabled(bool(record and record.downloaded and not self._busy))
         self._remove_filtered_action.setEnabled(not self._busy)
@@ -398,7 +406,7 @@ class WindowActionsMixin:
         if pin_action:
             channel = self._selected_channel()
             pin_action.setEnabled(channel is not None)
-            pin_action.setText("Unpin selected channel" if channel and channel.pinned else "Pin selected channel")
+            pin_action.setText(i18n.tr('Unpin selected channel') if channel and channel.pinned else i18n.tr('Pin selected channel'))
 
     def _toggle_channel_pin(self) -> None:
         """Move the selected subscription into or out of quick access.
@@ -408,7 +416,7 @@ class WindowActionsMixin:
 
         channel = self._selected_channel()
         if not channel:
-            QtWidgets.QMessageBox.information(self, "Pinned channels", "Select a tracked channel first.")
+            QtWidgets.QMessageBox.information(self, i18n.tr('Pinned channels'), i18n.tr('Select a tracked channel first.'))
             return
         self._service.db.set_channel_pinned(channel.channel_id, not channel.pinned)
         self._refresh_channels()
@@ -429,13 +437,13 @@ class WindowActionsMixin:
         if not channel:
             return
         menu = QtWidgets.QMenu(widget)
-        pin = menu.addAction("Unpin from quick access" if channel.pinned else "Pin to quick access")
+        pin = menu.addAction(i18n.tr('Unpin from quick access') if channel.pinned else i18n.tr('Pin to quick access'))
         pin.triggered.connect(self._toggle_channel_pin)
         auto = menu.addAction(
-            "Disable automatic download" if channel.auto_download else "Enable automatic download"
+            i18n.tr('Disable automatic download') if channel.auto_download else i18n.tr('Enable automatic download')
         )
         auto.triggered.connect(self._toggle_channel_auto)
         menu.addSeparator()
-        remove = menu.addAction("Stop tracking")
+        remove = menu.addAction(i18n.tr('Stop tracking'))
         remove.triggered.connect(self._remove_channel)
         menu.exec(widget.mapToGlobal(position))

@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from PySide6 import QtWidgets
 import shiboken6
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_sentences
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_written_controls as written
@@ -69,14 +70,14 @@ class ListeningCard(library_sentences.SentenceCard):
         self._voices = QtWidgets.QTabBar()
         self._voices.setExpanding(False)
         self._voices.setUsesScrollButtons(True)
-        self._voices.setAccessibleName("Choose a voice for this sentence")
+        self._voices.setAccessibleName(i18n.tr('Choose a voice for this sentence'))
         self._voices.setStyleSheet("QTabBar::tab {font-size:13pt;padding:10px 16px;}")
         self._voices.currentChanged.connect(self._voice_changed)
-        self._replay = QtWidgets.QPushButton("Listen again · Alt+P")
+        self._replay = QtWidgets.QPushButton(i18n.tr('Listen again · Alt+P'))
         self._replay.setShortcut("Alt+P")
-        self._slow = QtWidgets.QPushButton("Listen slowly · Alt+L")
+        self._slow = QtWidgets.QPushButton(i18n.tr('Listen slowly · Alt+L'))
         self._slow.setShortcut("Alt+L")
-        self._stop = QtWidgets.QPushButton("Stop")
+        self._stop = QtWidgets.QPushButton(i18n.tr('Stop'))
         self._audio_note = QtWidgets.QLabel()
         self._audio_note.setWordWrap(True)
         self._audio_note.setTextFormat(QtCore.Qt.TextFormat.PlainText)
@@ -115,16 +116,16 @@ class ListeningCard(library_sentences.SentenceCard):
             self._stopped()
         self._row = row
         self._load_voices()
-        self.editor.setPlaceholderText("Type the Dutch sentence you hear…")
-        self.editor.setAccessibleName("Your Dutch transcription")
-        self.show_question(written.Question(source="Listen and type what you hear",
-                                            hint=f"Dutch dictation  ·  {sentences.SCENES[row['scene']]}",
-                                            instruction="Write the complete Dutch sentence. You can listen again or slow it down.",
+        self.editor.setPlaceholderText(i18n.tr('Type the Dutch sentence you hear…'))
+        self.editor.setAccessibleName(i18n.tr('Your Dutch transcription'))
+        self.show_question(written.Question(source=i18n.tr('Listen and type what you hear'),
+                                            hint=i18n.tr('Dutch dictation  ·  {value}', value=i18n.tr(sentences.SCENES[row['scene']])),
+                                            instruction=i18n.tr('Write the complete Dutch sentence. You can listen again or slow it down.'),
                                             draft=row["answer_text"]))
         self._controls.show()
         self._voices.show()
         self._audio_note.show()
-        self._audio_note.setText("English meaning appears with the correction.")
+        self._audio_note.setText(i18n.tr('English meaning appears with the correction.'))
         if changed and row["answer_text"] is None and row["outcome"] is None:
             QtCore.QTimer.singleShot(0, self, lambda: self._autoplay(row["id"]))
 
@@ -143,7 +144,7 @@ class ListeningCard(library_sentences.SentenceCard):
             for preset in self._presets:
                 idx = self._voices.addTab(preset.name)
                 self._voices.setTabData(idx, preset.id)
-                self._voices.setTabToolTip(idx, "Play this sentence with " + preset.name)
+                self._voices.setTabToolTip(idx, i18n.tr('Play this sentence with ') + preset.name)
                 if preset.id == previous:
                     self._voices.setCurrentIndex(idx)
 
@@ -190,9 +191,9 @@ class ListeningCard(library_sentences.SentenceCard):
             self._db.listening_play(self._row["id"], speed, cache_key=audio["cache_key"])
             self._requested = None
             self._stop.setEnabled(True)
-            self._audio_note.setText("Playing slowly…" if speed == "slow" else "Playing…")
+            self._audio_note.setText(i18n.tr('Playing slowly…') if speed == "slow" else i18n.tr('Playing…'))
         except (OSError, ValueError) as exc:
-            self._audio_note.setText(f"Could not play audio: {exc}")
+            self._audio_note.setText(i18n.tr('Could not play audio: {exc}', exc=exc))
 
     def _repair_audio(self, *, all_voices=False) -> None:
         """Rebuild missing speech off the GUI thread without changing drafts; e.g. clearing a cache is recoverable inside an active round."""
@@ -202,13 +203,13 @@ class ListeningCard(library_sentences.SentenceCard):
         row = self._row
         preset = None if all_voices else self._presets[self._voices.currentIndex()]
         questions = self._db.listening_questions(row["session_id"]) if all_voices else [{"id": row["question_id"], "body_json": json.dumps(row["content"])}]
-        self._audio_note.setText("Preparing enabled voices for this round…" if all_voices else f"Preparing {preset.name} for this sentence…")
+        self._audio_note.setText(i18n.tr('Preparing enabled voices for this round…') if all_voices else i18n.tr('Preparing {name} for this sentence…', name=preset.name))
         task = library_workers.BackgroundTask(lambda report: self._cache().prepare(questions, report, preset=preset))
         self._task = task
         task.signals.progress.connect(self._audio_note.setText)
         task.signals.finished.connect(self._repaired)
         task.signals.failed.connect(lambda message: self._repair_failed(row["id"], message, preset.id if preset else None))
-        task.signals.cancelled.connect(lambda: self._repair_failed(row["id"], "Audio preparation paused."))
+        task.signals.cancelled.connect(lambda: self._repair_failed(row["id"], i18n.tr('Audio preparation paused.')))
         QtCore.QThreadPool.globalInstance().start(task)
 
     def _repaired(self, _result) -> None:
@@ -216,7 +217,7 @@ class ListeningCard(library_sentences.SentenceCard):
 
         self._task = None
         if shiboken6.isValid(self):
-            self._audio_note.setText("Voices are ready. Choose one to listen.")
+            self._audio_note.setText(i18n.tr('Voices are ready. Choose one to listen.'))
             if self._row and self._row["id"] == self._requested:
                 self._play(self._speed)
 
@@ -230,7 +231,7 @@ class ListeningCard(library_sentences.SentenceCard):
                 self._play(self._speed)
                 return
             if self._row["id"] == presentation_id:
-                self._audio_note.setText("Could not prepare audio. Click Listen again to retry. " + message.rsplit("\n", 1)[-1])
+                self._audio_note.setText(i18n.tr('Could not prepare audio. Click Listen again to retry. ') + message.rsplit("\n", 1)[-1])
 
     def _stopped(self) -> None:
         """Stop only owned playback; e.g. switching sentences cannot leave overlapping voices."""
@@ -243,14 +244,14 @@ class ListeningCard(library_sentences.SentenceCard):
         """Keep playback status truthful after the clip ends; e.g. the learner can keep typing without a stale Playing indicator."""
 
         self._stop.setEnabled(False)
-        self._audio_note.setText("Listen again if you need to.")
+        self._audio_note.setText(i18n.tr('Listen again if you need to.'))
 
     def feedback(self, row: dict) -> None:
         """Reveal the transcript and English only in feedback; e.g. word mismatches retain the existing hover corrections."""
 
         super().feedback(row)
-        self._source.setText("The sentence you heard")
-        self._audio_note.setText("Listen again while comparing your transcription.")
+        self._source.setText(i18n.tr('The sentence you heard'))
+        self._audio_note.setText(i18n.tr('Listen again while comparing your transcription.'))
 
     def hideEvent(self, event) -> None:
         """Silence hidden questions; e.g. closing the practice dialog never leaves speech playing."""

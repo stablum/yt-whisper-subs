@@ -12,6 +12,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import chapters
 from yt_whisper_subs import cfg
 from yt_whisper_subs import download_prefs
@@ -43,6 +44,7 @@ class SettingsValues(NamedTuple):
     notifications: library_notifications.NotificationPrefs = library_notifications.NotificationPrefs()
     playback: playback.PlaybackPrefs = playback.PlaybackPrefs.defaults()
     practice_reminders: library_practice_reminders.ReminderPrefs = library_practice_reminders.ReminderPrefs()
+    ui_language: str = "en"
 
 
 class SmartFilterBar(QtWidgets.QFrame):
@@ -60,7 +62,7 @@ class SmartFilterBar(QtWidgets.QFrame):
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(11, 9, 11, 9)
         layout.setSpacing(6)
-        eyebrow = QtWidgets.QLabel("SHOW")
+        eyebrow = QtWidgets.QLabel(i18n.tr('SHOW'))
         eyebrow.setObjectName("filterEyebrow")
         layout.addWidget(eyebrow)
 
@@ -74,25 +76,25 @@ class SmartFilterBar(QtWidgets.QFrame):
         # Text-only chips must not suppress Qt's icon-only overflow arrow.
         extension.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
         extension.setArrowType(QtCore.Qt.ArrowType.RightArrow)
-        extension.setToolTip("More video filters")
-        extension.setAccessibleName("More video filters")
+        extension.setToolTip(i18n.tr('More video filters'))
+        extension.setAccessibleName(i18n.tr('More video filters'))
         layout.addWidget(self._views, 1)
         self._group = QtGui.QActionGroup(self)
         self._group.setExclusive(True)
         self._view_actions: dict[views.VideoView, QtGui.QAction] = {}
         for spec in views.VIDEO_VIEWS:
-            action = self._views.addAction(spec.label)
+            action = self._views.addAction(i18n.tr(spec.label))
             action.setCheckable(True)
             action.setData(int(spec.view))
-            action.setToolTip(spec.tooltip)
+            action.setToolTip(i18n.tr(spec.tooltip))
             self._group.addAction(action)
             self._view_actions[spec.view] = action
             self._views.widgetForAction(action).setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._view_actions[views.VideoView.ALL].setChecked(True)
         self._group.triggered.connect(lambda action: self.view_changed.emit(action.data()))
-        self._result = QtWidgets.QLabel("0 videos")
+        self._result = QtWidgets.QLabel(i18n.tr('0 videos'))
         self._result.setObjectName("filterResult")
-        self._clear = QtWidgets.QPushButton("Clear")
+        self._clear = QtWidgets.QPushButton(i18n.tr('Clear'))
         self._clear.setObjectName("clearFilters")
         self._clear.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
         self._clear.clicked.connect(lambda: self.reset_requested.emit())
@@ -102,8 +104,8 @@ class SmartFilterBar(QtWidgets.QFrame):
         self._actions = QtWidgets.QToolButton()
         self._actions.setText("...")
         self._actions.setObjectName("filterActions")
-        self._actions.setToolTip("Actions for all videos matching the current filters")
-        self._actions.setAccessibleName("Filtered video actions")
+        self._actions.setToolTip(i18n.tr('Actions for all videos matching the current filters'))
+        self._actions.setAccessibleName(i18n.tr('Filtered video actions'))
         self._actions.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         self._actions.setMenu(QtWidgets.QMenu(self._actions))
         layout.addWidget(self._actions)
@@ -133,18 +135,19 @@ class SmartFilterBar(QtWidgets.QFrame):
         """
 
         active = views.VideoView(self._group.checkedAction().data())
-        labels = {spec.view: spec.label for spec in views.VIDEO_VIEWS}
+        labels = {spec.view: i18n.tr(spec.label) for spec in views.VIDEO_VIEWS}
         for view, action in self._view_actions.items():
             count = counts.get(view, 0)
-            action.setText(f"{labels[view]}  {count:,}")
+            action.setText(f"{labels[view]}  {i18n.number(count)}")
             action.setEnabled(bool(count) or view in {active, views.VideoView.ALL})
 
         available = counts.get(views.VideoView.ALL, 0)
-        noun = "match" if search_active else "video"
         if visible == available:
-            text = f"{visible:,} {noun}{'' if visible == 1 else 's'}"
+            text = (i18n.nt("{count:,} match", "{count:,} matches", visible) if search_active else
+                    i18n.nt("{count:,} video", "{count:,} videos", visible))
         else:
-            text = f"{visible:,} of {available:,} {noun}{'' if available == 1 else 's'}"
+            text = (i18n.nt("{visible:,} of {count:,} match", "{visible:,} of {count:,} matches", available, visible=visible)
+                    if search_active else i18n.nt("{visible:,} of {count:,} video", "{visible:,} of {count:,} videos", available, visible=visible))
         self._result.setText(text)
         self._clear.setVisible(search_active or active is not views.VideoView.ALL)
 
@@ -169,7 +172,7 @@ class DetailPanel(QtWidgets.QFrame):
         info = QtWidgets.QWidget()
         info_layout = QtWidgets.QVBoxLayout(info)
         info_layout.setContentsMargins(18, 14, 18, 14)
-        self._title = QtWidgets.QLabel("Select a video")
+        self._title = QtWidgets.QLabel(i18n.tr('Select a video'))
         self._title.setObjectName("detailTitle")
         self._title.setWordWrap(True)
         self._facts = QtWidgets.QLabel("")
@@ -206,15 +209,15 @@ class DetailPanel(QtWidgets.QFrame):
         chapter_layout.setContentsMargins(14, 10, 12, 10)
         chapter_layout.setSpacing(5)
         heading_layout = QtWidgets.QHBoxLayout()
-        self._chapter_heading = QtWidgets.QLabel("CHAPTERS")
+        self._chapter_heading = QtWidgets.QLabel(i18n.tr('CHAPTERS'))
         self._chapter_heading.setObjectName("chapterHeading")
-        self._generate = QtWidgets.QPushButton("✦  Generate")
+        self._generate = QtWidgets.QPushButton(i18n.tr('✦  Generate'))
         self._generate.setObjectName("chapterGenerate")
         self._generate.clicked.connect(self.generate_requested.emit)
         heading_layout.addWidget(self._chapter_heading)
         heading_layout.addStretch(1)
         heading_layout.addWidget(self._generate)
-        self._chapter_hint = QtWidgets.QLabel("Select a downloaded video")
+        self._chapter_hint = QtWidgets.QLabel(i18n.tr('Select a downloaded video'))
         self._chapter_hint.setObjectName("chapterHint")
         self._chapters = QtWidgets.QListWidget()
         self._chapters.setObjectName("chapterList")
@@ -243,28 +246,28 @@ class DetailPanel(QtWidgets.QFrame):
         self._chapters.clear()
         self._downloaded = bool(record and record.downloaded)
         if not record:
-            self._title.setText("Select a video")
+            self._title.setText(i18n.tr('Select a video'))
             self._facts.clear()
             self._description.clear()
-            self._chapter_heading.setText("CHAPTERS")
-            self._chapter_hint.setText("Select a downloaded video")
-            self._generate.setText("✦  Generate")
+            self._chapter_heading.setText(i18n.tr('CHAPTERS'))
+            self._chapter_hint.setText(i18n.tr('Select a downloaded video'))
+            self._generate.setText(i18n.tr('✦  Generate'))
             self._update_generate_action()
             return
         meta = record.meta
         self._title.setText(meta.identity.title)
         published = library_model.format_timestamp(meta.origin.published_at)
-        facts = [meta.origin.channel, f"Published {published}", f"YouTube ID {meta.identity.video_id}"]
+        facts = [meta.origin.channel, i18n.tr('Published {published}', published=published), i18n.tr('YouTube ID {video_id}', video_id=meta.identity.video_id)]
         if record.local:
             facts.append(str(record.local.path))
         if record.history:
             if record.history.downloaded_at is not None:
-                facts.append(f"Last downloaded {library_model.format_timestamp(record.history.downloaded_at)}")
+                facts.append(i18n.tr('Last downloaded {value}', value=library_model.format_timestamp(record.history.downloaded_at)))
             if record.history.removed_at is not None:
-                label = "Video + yields removed" if record.removed else "Previously removed"
+                label = i18n.tr('Video + yields removed') if record.removed else i18n.tr('Previously removed')
                 facts.append(f"{label} {library_model.format_timestamp(record.history.removed_at)}")
         if record.download_error:
-            facts.append(f"Last error: {record.download_error}")
+            facts.append(i18n.tr('Last error: {download_error}', download_error=record.download_error))
         self._facts.setText("  ·  ".join(facts))
         self._description.setPlainText(meta.details.description.strip() or meta.identity.url)
         self._render_chapters(chapter_set)
@@ -285,27 +288,27 @@ class DetailPanel(QtWidgets.QFrame):
         """
 
         if not self._downloaded:
-            self._chapter_heading.setText("CHAPTERS")
-            self._chapter_hint.setText("Download this video to create chapters")
-            self._generate.setText("✦  Generate")
+            self._chapter_heading.setText(i18n.tr('CHAPTERS'))
+            self._chapter_hint.setText(i18n.tr('Download this video to create chapters'))
+            self._generate.setText(i18n.tr('✦  Generate'))
             self._update_generate_action()
             return
         if not chapter_set:
-            self._chapter_heading.setText("CHAPTERS")
-            self._chapter_hint.setText("No chapter plan yet · generated from your subtitles")
-            self._generate.setText("✦  Generate")
+            self._chapter_heading.setText(i18n.tr('CHAPTERS'))
+            self._chapter_hint.setText(i18n.tr('No chapter plan yet · generated from your subtitles'))
+            self._generate.setText(i18n.tr('✦  Generate'))
             self._update_generate_action()
             return
 
-        self._chapter_heading.setText(f"CHAPTERS  ·  {len(chapter_set.chapters)}")
-        self._chapter_hint.setText("Double-click a chapter to jump to that moment")
-        self._generate.setText("↻  Regenerate")
+        self._chapter_heading.setText(i18n.tr('CHAPTERS  ·  {len}', len=len(chapter_set.chapters)))
+        self._chapter_hint.setText(i18n.tr('Double-click a chapter to jump to that moment'))
+        self._generate.setText(i18n.tr('↻  Regenerate'))
         for chapter in chapter_set.chapters:
             timestamp = openai_chapters.format_time(chapter.start_ms)
             text = f"{timestamp:>7}    {chapter.primary_title}\n          {chapter.english_title}"
             item = QtWidgets.QListWidgetItem(text)
             item.setData(QtCore.Qt.ItemDataRole.UserRole, chapter.start_ms / 1000)
-            item.setToolTip(f"Jump to {timestamp}")
+            item.setToolTip(i18n.tr('Jump to {timestamp}', timestamp=timestamp))
             self._chapters.addItem(item)
         self._update_generate_action()
 
@@ -335,7 +338,7 @@ class ActivityTrace(QtWidgets.QDockWidget):
     """
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
-        super().__init__("Activity trace", parent)
+        super().__init__(i18n.tr('Activity trace'), parent)
         self.setObjectName("activityTraceDock")
         self.setAllowedAreas(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea)
         features = (
@@ -349,10 +352,10 @@ class ActivityTrace(QtWidgets.QDockWidget):
         layout.setContentsMargins(10, 8, 10, 10)
         layout.setSpacing(6)
         toolbar = QtWidgets.QHBoxLayout()
-        note = QtWidgets.QLabel("Live output is retained while this panel is hidden.")
+        note = QtWidgets.QLabel(i18n.tr('Live output is retained while this panel is hidden.'))
         note.setObjectName("traceNote")
-        copy = QtWidgets.QPushButton("Copy all")
-        clear = QtWidgets.QPushButton("Clear")
+        copy = QtWidgets.QPushButton(i18n.tr('Copy all'))
+        clear = QtWidgets.QPushButton(i18n.tr('Clear'))
         toolbar.addWidget(note, 1)
         toolbar.addWidget(copy)
         toolbar.addWidget(clear)
@@ -378,7 +381,7 @@ class ActivityTrace(QtWidgets.QDockWidget):
         lines = [line.rstrip() for line in lines if line.strip()]
         if not lines:
             return
-        timestamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = i18n.date_text(datetime.now().astimezone(), '%Y-%m-%d %H:%M:%S')
         text = "\n".join(f"[{timestamp}] {line}" for line in lines)
         self._output.appendPlainText(text)
         scroll_bar = self._output.verticalScrollBar()
@@ -401,19 +404,18 @@ class AddChannelDialog(QtWidgets.QDialog):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Track a YouTube channel")
+        self.setWindowTitle(i18n.tr('Track a YouTube channel'))
         self.setMinimumWidth(500)
         layout = QtWidgets.QVBoxLayout(self)
-        heading = QtWidgets.QLabel("Add a channel")
+        heading = QtWidgets.QLabel(i18n.tr('Add a channel'))
         heading.setObjectName("dialogHeading")
         explanation = QtWidgets.QLabel(
-            "Enter an @handle or channel URL. Recent uploads become browsable; "
-            "automatic download starts only for videos discovered by later checks."
+            i18n.tr('Enter an @handle or channel URL. Recent uploads become browsable; automatic download starts only for videos discovered by later checks.')
         )
         explanation.setWordWrap(True)
         self._url = QtWidgets.QLineEdit()
         self._url.setPlaceholderText("@channel or https://www.youtube.com/@channel")
-        self._auto = QtWidgets.QCheckBox("Automatically download future videos")
+        self._auto = QtWidgets.QCheckBox(i18n.tr('Automatically download future videos'))
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.StandardButton.Cancel | QtWidgets.QDialogButtonBox.StandardButton.Ok
         )
@@ -456,16 +458,24 @@ class SettingsDialog(QtWidgets.QDialog):
     def __init__(self, values: SettingsValues, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._playback = values.playback
-        self.setWindowTitle("Library settings")
+        self.setWindowTitle(i18n.tr('Library settings'))
         self.setMinimumWidth(460)
         layout = QtWidgets.QVBoxLayout(self)
-        heading = QtWidgets.QLabel("Library settings")
+        heading = QtWidgets.QLabel(i18n.tr('Library settings'))
         heading.setObjectName("dialogHeading")
         form = QtWidgets.QFormLayout()
+        form.setRowWrapPolicy(QtWidgets.QFormLayout.RowWrapPolicy.WrapLongRows)
+        self._language = QtWidgets.QComboBox()
+        self._language.setObjectName("uiLanguage")
+        for code, name in i18n.LANGUAGES.items():
+            self._language.addItem(name, code)
+        self._language.setCurrentIndex(self._language.findData(i18n.normalize(values.ui_language)))
+        self._language.setToolTip(i18n.tr("Restart the library to apply the interface language. Exercises stay in Dutch."))
+        form.addRow(i18n.tr("Interface language"), self._language)
         self._hours = QtWidgets.QDoubleSpinBox()
         self._hours.setRange(0.25, 168)
         self._hours.setDecimals(2)
-        self._hours.setSuffix(" hours")
+        self._hours.setSuffix(" h")
         self._hours.setValue(values.check_hours)
         self._watched = QtWidgets.QDoubleSpinBox()
         self._watched.setObjectName("watchedPercent")
@@ -474,8 +484,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self._watched.setSuffix(" %")
         self._watched.setValue(values.watch.percent)
         self._watched.setToolTip(
-            "Mark watched after more than this percentage is reached, or at the end of the video. "
-            "Already watched entries keep their status."
+            i18n.tr('Mark watched after more than this percentage is reached, or at the end of the video. Already watched entries keep their status.')
         )
         self._seek = QtWidgets.QDoubleSpinBox()
         self._seek.setObjectName("mpvSeekSeconds")
@@ -485,7 +494,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self._seek.setSuffix(" s")
         self._seek.setValue(values.playback.seek_seconds)
         self._seek.setToolTip(
-            "Seconds to seek backward/forward with mpv's Left/Right arrows. Applies to newly opened players."
+            i18n.tr("Seconds to seek backward/forward with mpv's Left/Right arrows. Applies to newly opened players.")
         )
         self._cookies = QtWidgets.QComboBox()
         self._cookies.setEditable(True)
@@ -494,10 +503,10 @@ class SettingsDialog(QtWidgets.QDialog):
         self._resolution = QtWidgets.QComboBox()
         self._resolution.setObjectName("videoResolution")
         for resolution in cfg.VIDEO_RESOLUTIONS:
-            label = f"{resolution}p" if resolution else "Best available"
+            label = f"{resolution}p" if resolution else i18n.tr('Best available')
             self._resolution.addItem(label, resolution)
         self._resolution.setCurrentIndex(self._resolution.findData(values.download.resolution))
-        self._higher = QtWidgets.QCheckBox("Allow higher resolution when preferred is unavailable")
+        self._higher = QtWidgets.QCheckBox(i18n.tr('Allow higher resolution when preferred is unavailable'))
         self._higher.setObjectName("allowHigherResolution")
         self._higher.setChecked(values.download.allow_higher)
         self._higher.setEnabled(bool(values.download.resolution))
@@ -505,16 +514,14 @@ class SettingsDialog(QtWidgets.QDialog):
             lambda _idx: self._higher.setEnabled(bool(self._resolution.currentData()))
         )
         self._resolution.setToolTip(
-            "Try this resolution, the next lower option, higher resolutions, then remaining lower ones. "
-            "Applies to future downloads; existing videos are reused."
+            i18n.tr('Try this resolution, the next lower option, higher resolutions, then remaining lower ones. Applies to future downloads; existing videos are reused.')
         )
         self._higher.setToolTip(
-            "Higher resolutions are tried only after the preferred resolution and next lower option. "
-            "Turn off to keep the preferred resolution as a ceiling."
+            i18n.tr('Higher resolutions are tried only after the preferred resolution and next lower option. Turn off to keep the preferred resolution as a ceiling.')
         )
         self._recent = QtWidgets.QSpinBox()
         self._recent.setRange(1, cfg.MAX_LIBRARY_CHANNEL_RECENT_LIMIT)
-        self._recent.setSuffix(" per section")
+        self._recent.setSuffix(i18n.tr(' per section'))
         self._recent.setValue(values.channel_recent_limit)
         self._cutoff = QtWidgets.QDateEdit()
         self._cutoff.setCalendarPopup(True)
@@ -522,37 +529,38 @@ class SettingsDialog(QtWidgets.QDialog):
         no_cutoff = QtCore.QDate(2005, 1, 1)
         self._cutoff.setMinimumDate(no_cutoff)
         self._cutoff.setMaximumDate(QtCore.QDate.currentDate())
-        self._cutoff.setSpecialValueText("No cutoff")
+        self._cutoff.setSpecialValueText(i18n.tr('No cutoff'))
         cutoff = QtCore.QDate.fromString(values.channel_published_after, "yyyy-MM-dd")
         self._cutoff.setDate(cutoff if cutoff.isValid() else no_cutoff)
-        self._tray = QtWidgets.QCheckBox("Keep checking when the window is closed")
+        self._tray = QtWidgets.QCheckBox(i18n.tr('Keep checking when the window is closed'))
         self._tray.setChecked(values.minimize_to_tray)
-        self._startup = QtWidgets.QCheckBox("Start quietly in the system tray when I sign in")
+        self._startup = QtWidgets.QCheckBox(i18n.tr('Start quietly in the system tray when I sign in'))
         self._startup.setObjectName("startWithWindows")
         self._startup.setChecked(values.start_with_windows)
         self._startup.setEnabled(windows_startup.supported())
         if not windows_startup.supported():
-            self._startup.setToolTip("Available only on Windows")
-        form.addRow("Check every", self._hours)
-        form.addRow("Watched threshold", self._watched)
-        form.addRow("mpv seek step", self._seek)
-        form.addRow("Cookies from browser", self._cookies)
-        form.addRow("Preferred video resolution", self._resolution)
-        form.addRow("Resolution fallback", self._higher)
-        form.addRow("Recent history", self._recent)
-        form.addRow("Published since", self._cutoff)
-        form.addRow("Background", self._tray)
-        form.addRow("Windows", self._startup)
+            self._startup.setToolTip(i18n.tr('Available only on Windows'))
+        form.addRow(i18n.tr('Check every'), self._hours)
+        form.addRow(i18n.tr('Watched threshold'), self._watched)
+        form.addRow(i18n.tr('mpv seek step'), self._seek)
+        form.addRow(i18n.tr('Cookies from browser'), self._cookies)
+        form.addRow(i18n.tr('Preferred video resolution'), self._resolution)
+        form.addRow(i18n.tr('Resolution fallback'), self._higher)
+        form.addRow(i18n.tr('Recent history'), self._recent)
+        form.addRow(i18n.tr('Published since'), self._cutoff)
+        form.addRow(i18n.tr('Background'), self._tray)
+        form.addRow(i18n.tr('Windows'), self._startup)
         self._notifications = library_notifications.NotificationSettings(values.notifications)
         form.addRow(self._notifications)
         self._practice_reminders = library_practice_reminders.ReminderSettings(values.practice_reminders)
         form.addRow(self._practice_reminders)
         note = QtWidgets.QLabel(
-            "Scheduled checks run while the app is open or living in the system tray. "
-            "Start with Windows is per-user and needs no administrator rights. "
-            "Recent history applies independently to Videos and Streams; Shorts are "
-            "ignored. Older untouched remote entries are removed; download, watch, and removal "
-            "history are always preserved."
+            i18n.tr(
+                'Scheduled checks run while the app is open or living in the system tray. Start with '
+                'Windows is per-user and needs no administrator rights. Recent history applies '
+                'independently to Videos and Streams; Shorts are ignored. Older untouched remote entries '
+                'are removed; download, watch, and removal history are always preserved.',
+            )
         )
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
@@ -597,4 +605,5 @@ class SettingsDialog(QtWidgets.QDialog):
             self._notifications.values(),
             playback=self._playback._replace(seek_seconds=self._seek.value()),
             practice_reminders=self._practice_reminders.values(),
+            ui_language=self._language.currentData(),
         )

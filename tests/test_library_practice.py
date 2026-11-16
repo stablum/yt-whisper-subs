@@ -131,7 +131,7 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(10)],
                          ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Verbs\nDutch transformations",
                           "Sentences\nEnglish → Dutch", "Sentences\nDutch → English", "Listening\nDutch dictation",
-                          'Leesbegrip\nTekst en vragen', 'Luisterbegrip\nTekst en vragen', "Progress", "Activity"])
+                          'Reading comprehension\nText and questions', 'Listening comprehension\nText and questions', "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
         self.assertEqual(labels, {"PRACTICE", "TRACKING"})

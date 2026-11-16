@@ -21,10 +21,12 @@ QLabel#appSubtitle, QLabel#statLabel, QLabel#settingsNote { color: #8f9aaa; }
 QListWidget { background: transparent; border: 0; outline: 0; padding: 4px; }
 QListWidget::item { padding: 9px 10px; margin: 2px 0; border-radius: 6px; }
 QListWidget::item:selected { background: #26364d; color: #8fc7ff; }
-QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {
+QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox, QDateEdit {
   background: #222730; border: 1px solid #343b47; border-radius: 7px; padding: 7px 9px;
 }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus { border-color: #4ea1f3; }
+QTabWidget::pane { background: #171a21; border: 0; }
+QStackedWidget, QScrollArea, QScrollArea > QWidget, QScrollArea > QWidget > QWidget { background: #171a21; }
 QPushButton, QToolButton#dangerButton, QToolButton#watchedButton { background: #2b313c; border: 1px solid #3a424f; border-radius: 7px; padding: 7px 13px; }
 QPushButton:hover, QToolButton#dangerButton:hover, QToolButton#watchedButton:hover { background: #353d49; }
 QPushButton:disabled, QToolButton#dangerButton:disabled, QToolButton#watchedButton:disabled { color: #697381; background: #22262d; }

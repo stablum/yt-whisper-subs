@@ -264,6 +264,7 @@ class StartupBackupTests(unittest.TestCase):
             root = Path(tmp)
             service = mock.Mock()
             service.db.path = root / "library" / "catalog.sqlite3"
+            service.db.setting.return_value = "it"
             for hidden in (False, True):
                 with (
                     self.subTest(hidden=hidden),
@@ -271,6 +272,7 @@ class StartupBackupTests(unittest.TestCase):
                     mock.patch.object(library_app.proc, "venv_paths", return_value={}),
                     mock.patch.object(library_app.library_service, "LibraryService", return_value=service),
                     mock.patch.object(library_app.library_gui, "LibraryWindow") as window,
+                    mock.patch.object(library_app.library_locale, "install") as locale,
                     mock.patch.object(library_app.library_backup, "StartupBackup") as start,
                     mock.patch.object(library_app.library_checks, "Checks"),
                     mock.patch.object(library_app.library_practice_ready, "PracticeReady"),
@@ -279,6 +281,7 @@ class StartupBackupTests(unittest.TestCase):
                 ):
                     args = ["--out-dir", str(root)] + (["--start-hidden"] if hidden else [])
                     self.assertEqual(library_app.main(args), 0)
+                    locale.assert_called_once_with(self._app, "it")
                     start.assert_called_once_with(service.db.path, self._app)
                     start.return_value.message.connect.assert_called_once_with(
                         window.return_value._ui.trace.append_message,

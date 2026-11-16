@@ -13,6 +13,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_balloon
 from yt_whisper_subs import library_practice_reminders
@@ -74,37 +75,36 @@ class NotificationSettings(QtWidgets.QGroupBox):
         Example: disabling the feature also disables its tuning controls.
         """
 
-        super().__init__("Pinned-channel notifications")
+        super().__init__(i18n.tr('Pinned-channel notifications'))
         self.setObjectName("notificationSettings")
         form = QtWidgets.QFormLayout(self)
-        self._enabled = QtWidgets.QCheckBox("Notify me about new videos")
+        self._enabled = QtWidgets.QCheckBox(i18n.tr('Notify me about new videos'))
         self._enabled.setObjectName("notifyEnabled")
         self._enabled.setChecked(prefs.enabled)
         self._delay = QtWidgets.QSpinBox()
         self._delay.setObjectName("notifyDelay")
         self._delay.setRange(0, 3600)
-        self._delay.setSuffix(" seconds")
+        self._delay.setSuffix(" s")
         self._delay.setValue(prefs.delay_seconds)
         self._delay.setToolTip(
-            "Collect completed checks for this long, then show one list. "
-            "Each check always groups all its channels; 0 shows it immediately."
+            i18n.tr('Collect completed checks for this long, then show one list. Each check always groups all its channels; 0 shows it immediately.')
         )
         self._duration = QtWidgets.QSpinBox()
         self._duration.setObjectName("notifyDuration")
         self._duration.setRange(0, 600)
-        self._duration.setSuffix(" seconds")
-        self._duration.setSpecialValueText("Until dismissed")
+        self._duration.setSuffix(" s")
+        self._duration.setSpecialValueText(i18n.tr('Until dismissed'))
         self._duration.setValue(prefs.duration_seconds)
-        self._duration.setToolTip("Reading time pauses while the pointer is over the balloon.")
-        self._hidden = QtWidgets.QCheckBox("Only while hidden or minimized")
+        self._duration.setToolTip(i18n.tr('Reading time pauses while the pointer is over the balloon.'))
+        self._hidden = QtWidgets.QCheckBox(i18n.tr('Only while hidden or minimized'))
         self._hidden.setObjectName("notifyOnlyHidden")
         self._hidden.setChecked(prefs.only_hidden)
         for control in (self._delay, self._duration, self._hidden):
             control.setEnabled(prefs.enabled)
             self._enabled.toggled.connect(control.setEnabled)
         form.addRow(self._enabled)
-        form.addRow("Group arrivals for", self._delay)
-        form.addRow("Dismiss after", self._duration)
+        form.addRow(i18n.tr('Group arrivals for'), self._delay)
+        form.addRow(i18n.tr('Dismiss after'), self._duration)
         form.addRow(self._hidden)
 
     def values(self) -> NotificationPrefs:
@@ -134,16 +134,16 @@ class VideoBalloon(library_balloon.TrayBalloon):
         Example: Escape or the close button hides the same balloon.
         """
 
-        super().__init__("New videos from pinned channels", parent)
+        super().__init__(i18n.tr('New videos from pinned channels'), parent)
         self.setObjectName("videoBalloon")
         self._videos = QtWidgets.QTextBrowser()
         self._videos.setObjectName("notificationVideos")
         self._videos.setOpenLinks(False)
         self._videos.anchorClicked.connect(lambda url: self.video_requested.emit(url.toString()))
         actions = QtWidgets.QHBoxLayout()
-        settings = QtWidgets.QPushButton("Settings…")
+        settings = QtWidgets.QPushButton(i18n.tr('Settings…'))
         settings.clicked.connect(self.settings_requested)
-        open_library = QtWidgets.QPushButton("Open library")
+        open_library = QtWidgets.QPushButton(i18n.tr('Open library'))
         open_library.setObjectName("primaryButton")
         open_library.clicked.connect(lambda: self.video_requested.emit(""))
         actions.addWidget(settings)
@@ -162,7 +162,9 @@ class VideoBalloon(library_balloon.TrayBalloon):
         for meta in videos:
             groups.setdefault(meta.origin.channel, []).append(meta)
         count = len(videos)
-        self._heading.setText(f"{count} new video{'s' if count != 1 else ''} · Pinned channels")
+        self._heading.setText(i18n.nt(
+            '{count} new video · Pinned channels', '{count} new videos · Pinned channels', count,
+        ))
         body = []
         for channel, entries in groups.items():
             body.append(f'<p style="color: #f1c75b"><b>{html.escape(channel)}</b></p><ul>')

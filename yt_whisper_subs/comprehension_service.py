@@ -6,6 +6,7 @@ Example: changing a narrator reuses the same approved article while an unfinishe
 import json
 import time
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import comprehension_audio
 from yt_whisper_subs import comprehension_generate
@@ -96,11 +97,11 @@ class ComprehensionService:
         else:
             rows = self._db.word_candidates('nl_en')
             if not rows:
-                raise practice_round.NothingToPractice('no_words', 'Sla eerst enkele Nederlandse woorden met vertaling op.')
+                raise practice_round.NothingToPractice('no_words', i18n.tr('Save some Dutch words with translations first.'))
             selection = practice.RoundOptions(direction=practice.Direction.NL_EN, count=opts.words, include_early=opts.include_early)
             chosen = word_select.Selector(practice.ReviewPolicy()).select(rows, selection, time.time())
             if not chosen:
-                raise practice_round.NothingToPractice('not_due', 'Deze woorden zijn nog niet aan herhaling toe. Schakel vroeg oefenen in als je verder wilt.')
+                raise practice_round.NothingToPractice('not_due', i18n.tr('These words are not due yet. Enable early review to continue.'))
             targets = [{key: row[key] for key in ('word_id', 'lookup_id', 'lemma', 'surface', 'lemma_meaning', 'meaning', 'part_of_speech')} for row in chosen]
         with self._db._connect() as conn:
             skills = [dict(row) for row in conn.execute("SELECT json_extract(q.body_json,'$.skill') AS skill,COUNT(*) AS attempts,"
@@ -109,7 +110,7 @@ class ComprehensionService:
         document = dict(options=json.loads(opts.content_key()), words=targets, weak_skills=skills,
                         recent_titles=self._db.comprehension_recent(), previous_rejection=reason,
                         previous_draft=json.loads(rejected['body_json']) if rejected else None)
-        report('Een Nederlandse tekst met precies de gevraagde vragen voorbereiden…')
+        report(i18n.tr('Preparing a Dutch text with exactly the requested questions…'))
         passage = self._provider.generate(document)
         pid = self._db.comprehension_cache(passage, opts, targets, self.policy)
         return self._db.comprehension_passage(pid)
@@ -118,7 +119,7 @@ class ComprehensionService:
         """Materialize speech only for listening; e.g. reading stock never loads a voice or waits for audio."""
 
         if opts.direction == comp.Direction.LISTEN:
-            report('Spraakfragmenten voorbereiden en controleren…')
+            report(i18n.tr('Preparing and checking speech clips…'))
             self.audio.prepare(passage_id, opts, report)
 
     def check(self, presentation_id: int, report) -> dict:
@@ -132,7 +133,7 @@ class ComprehensionService:
         question = comp.Question.model_validate(row['content'])
         if question.kind != 'open':
             raise ValueError('Meerkeuzevragen worden lokaal beoordeeld.')
-        report('Je antwoord en de betekenis van gebruikte woorden beoordelen…')
+        report(i18n.tr('Checking your answer and the meanings of words used…'))
         exact = verb_practice.normalized(row['answer_text']) == verb_practice.normalized(question.answer)
         grade = self._db.comprehension_proposal(presentation_id)
         policy = {key: row[key] for key in ('model', 'reasoning', 'version')} if grade is not None else None
@@ -150,7 +151,7 @@ class ComprehensionService:
                                 reasoning='none' if exact else self._provider.reasoning, version=comprehension_generate.GRADE_VERSION)
         self._db.comprehension_proposed(presentation_id, grade, policy)
         if grade.vocabulary:
-            report('Nieuwe woordbetekenissen onafhankelijk controleren…')
+            report(i18n.tr('Independently checking new word meanings…'))
             accepted = self._provider.verify(grade.learning_document(row['answer_text']), grade.vocabulary)
             grade = grade.model_copy(update={'vocabulary': [fix for idx, fix in enumerate(grade.vocabulary) if idx in accepted]})
         return self._db.comprehension_grade(presentation_id, grade, policy)

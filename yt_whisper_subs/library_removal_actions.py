@@ -10,6 +10,7 @@ from collections.abc import Callable
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_model
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import library_yields
@@ -39,7 +40,7 @@ class RemovalActionsMixin:
 
             return self._service.remove_yields(manifest, report)
 
-        self._run_task("Removing download…", library_workers.BackgroundTask(remove), lambda _: self.refresh())
+        self._run_task(i18n.tr('Removing download…'), library_workers.BackgroundTask(remove), lambda _: self.refresh())
 
     def _remove_filtered(self) -> None:
         """Snapshot all matching rows, independent of selection or scrolling.
@@ -62,16 +63,16 @@ class RemovalActionsMixin:
             return self._service.yield_selection(video_ids, report, excluded=excluded)
 
         task = library_workers.BackgroundTask(inspect)
-        self._run_task("Inspecting filtered downloads…", task, self._remove_inspected)
+        self._run_task(i18n.tr('Inspecting filtered downloads…'), task, self._remove_inspected)
 
     def _remove_inspected(self, selection: library_yields.YieldSelection) -> None:
         """Review a frozen preview before starting removal; e.g. filters may have changed."""
 
         if not selection.items:
-            message = "No removable downloads or generated files matched the captured filters."
+            message = i18n.tr('No removable downloads or generated files matched the captured filters.')
             if selection.skipped:
-                message += f" Skipped {len(selection.skipped)} active or pending video(s)."
-            QtWidgets.QMessageBox.information(self, "Remove filtered downloads", message)
+                message += i18n.tr(' Skipped {len} active or pending video(s).', len=len(selection.skipped))
+            QtWidgets.QMessageBox.information(self, i18n.tr('Remove filtered downloads'), message)
             return
         if not self._confirm_yields(selection, filtered=True):
             return
@@ -82,7 +83,7 @@ class RemovalActionsMixin:
 
             return self._service.remove_yield_selection(selection, report, excluded=excluded)
 
-        self._run_task("Removing filtered downloads…", library_workers.BackgroundTask(remove), self._removed_filtered)
+        self._run_task(i18n.tr('Removing filtered downloads…'), library_workers.BackgroundTask(remove), self._removed_filtered)
 
     def _confirm_yields(
         self, selection: library_yields.YieldSelection, *, filtered: bool = False,
@@ -93,11 +94,11 @@ class RemovalActionsMixin:
         """
 
         count = len(selection.items)
-        title = "Remove filtered downloads?" if filtered else "Remove download and yields?"
-        scope = f"{count} matching video(s)" if filtered else selection.items[0].title
-        text = f"Remove downloads and generated files for {scope}?\n{selection.file_count} managed file(s)"
+        title = i18n.tr('Remove filtered downloads?') if filtered else i18n.tr('Remove download and yields?')
+        scope = i18n.tr('{count} matching video(s)', count=count) if filtered else selection.items[0].title
+        text = i18n.tr('Remove downloads and generated files for {scope}?\n{file_count} managed file(s)', scope=scope, file_count=selection.file_count)
         if filtered:
-            text += f" · approximately {library_model.format_size(selection.size_bytes)}"
+            text += i18n.tr(' · approximately {value}', value=library_model.format_size(selection.size_bytes))
         box = QtWidgets.QMessageBox(
             QtWidgets.QMessageBox.Icon.Warning, title, text,
             QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.Cancel,
@@ -105,14 +106,14 @@ class RemovalActionsMixin:
         )
         box.setTextFormat(QtCore.Qt.TextFormat.PlainText)
         box.setDefaultButton(QtWidgets.QMessageBox.StandardButton.Cancel)
-        info = "Entries are marked Removed. Catalog entries, download and watch history stay, and you can download again."
+        info = i18n.tr('Entries are marked Removed. Catalog entries, download and watch history stay, and you can download again.')
         if filtered:
-            info += " This uses the filter matches captured when you clicked, including rows outside the viewport."
-            info += " Playing videos and pending or interrupted pipelines are skipped."
+            info += i18n.tr(' This uses the filter matches captured when you clicked, including rows outside the viewport.')
+            info += i18n.tr(' Playing videos and pending or interrupted pipelines are skipped.')
         box.setInformativeText(info)
         details = [f"{item.title}\n" + "\n".join(map(str, item.yields.paths)) for item in selection.items]
         if selection.skipped:
-            details.append("Skipped active or pending videos:\n" + "\n".join(selection.skipped))
+            details.append(i18n.tr('Skipped active or pending videos:\n') + "\n".join(selection.skipped))
         box.setDetailedText("\n\n".join(details))
         return box.exec() == QtWidgets.QMessageBox.StandardButton.Yes
 
@@ -120,8 +121,8 @@ class RemovalActionsMixin:
         """Refresh the catalog and show the completed scope; e.g. 12 watched downloads."""
 
         self.refresh()
-        message = f"Removed {result.videos} download(s) and {result.files} file(s)."
+        message = i18n.tr('Removed {videos} download(s) and {files} file(s).', videos=result.videos, files=result.files)
         if result.skipped:
-            message += f" Skipped {result.skipped} active or pending video(s)."
+            message += i18n.tr(' Skipped {skipped} active or pending video(s).', skipped=result.skipped)
         self.statusBar().showMessage(message, 10_000)
         self._ui.trace.append_message(message)

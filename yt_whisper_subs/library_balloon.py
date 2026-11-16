@@ -7,6 +7,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_theme
 
 
@@ -52,8 +53,8 @@ class TrayBalloon(QtWidgets.QDialog):
         close = QtWidgets.QToolButton()
         close.setObjectName("dismissNotification")
         close.setText("×")
-        close.setAccessibleName("Dismiss notification")
-        close.setToolTip("Dismiss notification (Escape)")
+        close.setAccessibleName(i18n.tr('Dismiss notification'))
+        close.setToolTip(i18n.tr('Dismiss notification (Escape)'))
         close.clicked.connect(self.reject)
         heading.addWidget(self._heading, 1)
         heading.addWidget(close)

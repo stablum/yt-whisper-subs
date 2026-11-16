@@ -8,6 +8,7 @@ from __future__ import annotations
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_written
 from yt_whisper_subs import library_written_controls as written
 from yt_whisper_subs import library_sentence_review
@@ -37,29 +38,29 @@ class SentenceOptions(QtWidgets.QWidget):
             opts = sentences.Options()
         self._direction = sentences.Direction(direction)
         self._scene = QtWidgets.QComboBox()
-        for key, label in {"mixed": "Varied everyday situations", **sentences.SCENES}.items():
-            self._scene.addItem(label, key)
+        for key, label in {"mixed": i18n.tr('Varied everyday situations'), **sentences.SCENES}.items():
+            self._scene.addItem(i18n.tr(label), key)
         self._scene.setCurrentIndex(self._scene.findData(opts.scene))
         self._count, self._words = QtWidgets.QSpinBox(), QtWidgets.QSpinBox()
         self._count.setRange(1, 50)
         self._count.setValue(opts.count)
         self._words.setRange(1, 3)
         self._words.setValue(opts.words)
-        self._early = QtWidgets.QCheckBox("Include words not due yet")
+        self._early = QtWidgets.QCheckBox(i18n.tr('Include words not due yet'))
         self._early.setChecked(opts.include_early)
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        for label, widget in (("Life context", self._scene),
-                              ("Sentences", self._count), ("Saved words per sentence", self._words)):
+        for label, widget in ((i18n.tr('Life context'), self._scene),
+                              (i18n.tr('Sentences'), self._count), (i18n.tr('Saved words per sentence'), self._words)):
             form.addRow(label, widget)
         form.addRow(self._early)
-        note = QtWidgets.QLabel("Saved words appear in new forms and situations.\nOther words are included naturally.")
+        note = QtWidgets.QLabel(i18n.tr('Saved words appear in new forms and situations.\nOther words are included naturally.'))
         note.setObjectName("settingsNote")
         form.addRow(note)
-        restart = QtWidgets.QPushButton("New sentence round")
+        restart = QtWidgets.QPushButton(i18n.tr('New sentence round'))
         restart.setAutoDefault(False)
         if self._direction == sentences.Direction.LISTEN:
-            restart.setText("New listening round")
+            restart.setText(i18n.tr('New listening round'))
         restart.setObjectName("primaryButton")
         restart.clicked.connect(self._restart)
         form.addRow(restart)
@@ -68,21 +69,21 @@ class SentenceOptions(QtWidgets.QWidget):
         fields.setDefaultWidget(panel)
         self.menu.addAction(fields)
         self.menu.addSeparator()
-        ending = "End this listening round" if self._direction == sentences.Direction.LISTEN else "End this sentence round"
+        ending = i18n.tr('End this listening round') if self._direction == sentences.Direction.LISTEN else i18n.tr('End this sentence round')
         self._finish = self.menu.addAction(ending, self.finish_requested)
         self.menu.aboutToShow.connect(lambda: self.editing.emit(True))
         self.menu.aboutToHide.connect(lambda: self.editing.emit(False))
         button = QtWidgets.QToolButton()
         button.setObjectName("practiceOptions")
-        button.setText("Sentence round options")
+        button.setText(i18n.tr('Sentence round options'))
         if self._direction == sentences.Direction.LISTEN:
-            button.setText("Listening round options")
+            button.setText(i18n.tr('Listening round options'))
         button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(self.menu)
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         if self._direction == sentences.Direction.LISTEN:
-            voices = QtWidgets.QPushButton("Voices…")
+            voices = QtWidgets.QPushButton(i18n.tr('Voices…'))
             voices.setAutoDefault(False)
             voices.clicked.connect(self.voices_requested)
             layout.addWidget(voices)
@@ -120,13 +121,13 @@ class SentenceCard(written.WritingCard):
         """Hide both the model answer and saved-word clues; e.g. Dutch-to-English practice cannot reveal English help first."""
 
         direction = practice.Direction(row["direction"])
-        target = "Dutch" if direction == practice.Direction.EN_NL else "English"
+        target = i18n.tr('Dutch') if direction == practice.Direction.EN_NL else i18n.tr('English')
         source_key = "english" if direction == practice.Direction.EN_NL else "dutch"
-        self.editor.setPlaceholderText(f"Type the complete {target} translation…")
-        self.editor.setAccessibleName(f"Your complete {target} translation")
+        self.editor.setPlaceholderText(i18n.tr('Type the complete {target} translation…', target=target))
+        self.editor.setAccessibleName(i18n.tr('Your complete {target} translation', target=target))
         self.show_question(written.Question(source=row["content"][source_key],
-                                            hint=f"{direction.label}  ·  {sentences.SCENES[row['scene']]}",
-                                            instruction=f"Translate the whole sentence into {target}.", draft=row["answer_text"]))
+                                            hint=f"{direction.label}  ·  {i18n.tr(sentences.SCENES[row['scene']])}",
+                                            instruction=i18n.tr('Translate the whole sentence into {target}.', target=target), draft=row["answer_text"]))
 
     def feedback(self, row: dict) -> None:
         """Explain corrections and identify practised concepts; e.g. a superlative's meaning and form stay visible after checking."""
@@ -136,8 +137,8 @@ class SentenceCard(written.WritingCard):
         targets = [f"{' … '.join(word['dutch_forms'])} — {' … '.join(word['english_forms'])}" for word in row["content"]["words"]]
         self.show_feedback(written.Feedback(correct=grade["correct"], corrected=grade["corrected"],
                                             translation=grade["corrected_meaning"], explanation=grade["explanation"],
-                                            errors=grade["errors"], targets="Practised: " + ";  ".join(targets),
-                                            vocabulary=grade.get("vocabulary", []), summary=f"Partial score: {score:.0%}"))
+                                            errors=grade["errors"], targets=i18n.tr('Practised: ') + ";  ".join(targets),
+                                            vocabulary=grade.get("vocabulary", []), summary=i18n.tr('Partial score: {score:.0%}', score=score)))
         self.editor.annotate(grade, row["direction"])
         if row["direction"] != sentences.Direction.LISTEN:
             self._source.annotate(row)
@@ -161,8 +162,8 @@ class SentencePanel(library_sentence_session.SentenceSession):
             card = SentenceCard()
         view = written.WritingView(SentenceOptions(saved, direction), card)
         mode = library_written.Mode(key="sentence", settings_key=track.settings_key,
-                                    label="Listening" if direction == sentences.Direction.LISTEN else "Sentence translations", tab_name=track.label.replace("\n", " · "),
-                                    intro="Use your saved vocabulary to understand and write natural sentences in everyday situations.",
+                                    label=i18n.tr('Listening') if direction == sentences.Direction.LISTEN else i18n.tr('Sentence translations'), tab_name=track.label.replace("\n", " · "),
+                                    intro=i18n.tr('Use your saved vocabulary to understand and write natural sentences in everyday situations.'),
                                     view=view, ops=library_written.SessionOps.for_db(db, "sentence", direction.value))
         super().__init__(db, mode, engine=engine or sentence_service.SentenceService(db))
         if direction == sentences.Direction.LISTEN:

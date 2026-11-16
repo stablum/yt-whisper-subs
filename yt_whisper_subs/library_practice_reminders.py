@@ -14,6 +14,7 @@ from typing import NamedTuple
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_balloon
 
 
@@ -53,25 +54,29 @@ class ReminderSettings(QtWidgets.QGroupBox):
     def __init__(self, prefs: ReminderPrefs) -> None:
         """Keep dismissal semantics visible in the form; e.g. close and Escape also snooze."""
 
-        super().__init__("Daily practice reminder")
+        super().__init__(i18n.tr('Daily practice reminder'))
         self.setObjectName("practiceReminderSettings")
-        self._enabled = QtWidgets.QCheckBox("Remind me on days I haven't practiced")
+        self._enabled = QtWidgets.QCheckBox(i18n.tr("Remind me on days I haven't practiced"))
         self._enabled.setObjectName("practiceReminderEnabled")
         self._enabled.setChecked(prefs.enabled)
         self._hours = QtWidgets.QSpinBox()
         self._hours.setObjectName("practiceSnoozeHours")
         self._hours.setRange(*SNOOZE_HOURS)
-        self._hours.setSuffix(" hours")
+        self._hours.setSuffix(" h")
         self._hours.setValue(prefs.snooze_hours)
         self._hours.setEnabled(prefs.enabled)
         self._enabled.toggled.connect(self._hours.setEnabled)
-        note = QtWidgets.QLabel(f"Closing the balloon snoozes it. Submitted answers keep reminders quiet for at least {MIN_PRACTICE_HOURS} hours. "
-                               "Reminders run while the library is open or in the system tray.")
+        note = QtWidgets.QLabel(i18n.tr(
+            'Closing the balloon snoozes it. Submitted answers keep reminders quiet for at least '
+            '{MIN_PRACTICE_HOURS} hours. Reminders run while the library is open or in the system '
+            'tray.',
+            MIN_PRACTICE_HOURS=MIN_PRACTICE_HOURS,
+        ))
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
         form = QtWidgets.QFormLayout(self)
         form.addRow(self._enabled)
-        form.addRow("Snooze for", self._hours)
+        form.addRow(i18n.tr('Snooze for'), self._hours)
         form.addRow(note)
 
     def values(self) -> ReminderPrefs:
@@ -91,16 +96,16 @@ class PracticeBalloon(library_balloon.TrayBalloon):
 
         from yt_whisper_subs import library_practice_activity
 
-        super().__init__("Time for practice", parent)
+        super().__init__(i18n.tr('Time for practice'), parent)
         self.setObjectName("practiceBalloon")
         self._message = QtWidgets.QLabel()
         self._message.setWordWrap(True)
         self._chart = library_practice_activity.ActivityChart()
         links = QtWidgets.QHBoxLayout()
-        activity = QtWidgets.QPushButton("Activity && calendar")
+        activity = QtWidgets.QPushButton(i18n.tr('Activity && calendar'))
         activity.setObjectName("openPracticeActivity")
         activity.clicked.connect(lambda: self.requested.emit(True))
-        settings = QtWidgets.QPushButton("Settings…")
+        settings = QtWidgets.QPushButton(i18n.tr('Settings…'))
         settings.clicked.connect(self.settings_requested)
         links.addWidget(activity)
         links.addStretch()
@@ -109,7 +114,7 @@ class PracticeBalloon(library_balloon.TrayBalloon):
         self._snooze = QtWidgets.QPushButton()
         self._snooze.setObjectName("snoozePractice")
         self._snooze.clicked.connect(self.reject)
-        start = QtWidgets.QPushButton("Practice now")
+        start = QtWidgets.QPushButton(i18n.tr('Practice now'))
         start.setObjectName("primaryButton")
         start.clicked.connect(lambda: self.requested.emit(False))
         actions.addWidget(self._snooze)
@@ -123,17 +128,17 @@ class PracticeBalloon(library_balloon.TrayBalloon):
     def present(self, activity, prefs: ReminderPrefs, anchor: QtCore.QRect) -> None:
         """Show elapsed local days only when known; e.g. a first-time learner sees no invented inactivity count."""
 
-        message = "A short round with your saved words?"
+        message = i18n.tr('A short round with your saved words?')
         if activity.gap is not None and activity.gap >= 2:
-            message = f"It's been {activity.gap} days since you last practiced."
+            message = i18n.tr("It's been {gap} days since you last practiced.", gap=activity.gap)
         elif activity.gap is None:
-            message = "Your saved words are ready for your first practice."
+            message = i18n.tr('Your saved words are ready for your first practice.')
         self._message.setText(message)
         self._chart.set_days(activity.week)
-        self._snooze.setText(f"Snooze {prefs.snooze_hours}h")
+        self._snooze.setText(i18n.tr('Snooze {snooze_hours}h', snooze_hours=prefs.snooze_hours))
         close = self.findChild(QtWidgets.QToolButton, "dismissNotification")
-        close.setToolTip(f"Snooze for {prefs.snooze_hours} hours (Escape)")
-        close.setAccessibleName(f"Snooze practice reminder for {prefs.snooze_hours} hours")
+        close.setToolTip(i18n.tr('Snooze for {snooze_hours} hours (Escape)', snooze_hours=prefs.snooze_hours))
+        close.setAccessibleName(i18n.tr('Snooze practice reminder for {snooze_hours} hours', snooze_hours=prefs.snooze_hours))
         self._present(anchor, QtCore.QSize(470, 405))
 
 

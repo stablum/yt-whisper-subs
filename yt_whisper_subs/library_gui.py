@@ -13,6 +13,7 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 import yt_whisper_subs
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_chapter_actions
 from yt_whisper_subs import library_channels
 from yt_whisper_subs import library_layout
@@ -34,7 +35,7 @@ from yt_whisper_subs import library_vocabulary
 from yt_whisper_subs import pipeline_progress as progress
 
 
-WINDOW_TITLE = f"YouTube Library · yt-whisper-subs v{yt_whisper_subs.__version__}"
+WINDOW_TITLE = i18n.mark("YouTube Library · yt-whisper-subs v{version}")
 
 
 def _metadata_status_text(state: library_metadata_db.MetadataQueueState) -> str:
@@ -44,13 +45,13 @@ def _metadata_status_text(state: library_metadata_db.MetadataQueueState) -> str:
     """
 
     if not state.pending:
-        return "Metadata lookup queue: empty"
+        return i18n.tr('Metadata lookup queue: empty')
     if state.ready:
-        deferred = f" · {state.deferred:,} deferred" if state.deferred else ""
-        return f"Metadata: {state.ready:,} queued{deferred} · ≤1/min"
+        deferred = i18n.tr(' · {deferred:,} deferred', deferred=state.deferred) if state.deferred else ""
+        return i18n.tr('Metadata: {ready:,} queued{deferred} · ≤1/min', ready=state.ready, deferred=deferred)
     assert state.retry_at is not None
-    retry = datetime.fromtimestamp(state.retry_at).astimezone().strftime("%a %H:%M")
-    return f"Metadata: {state.deferred:,} deferred · retry {retry}"
+    retry = i18n.date_text(datetime.fromtimestamp(state.retry_at).astimezone(), '%a %H:%M')
+    return i18n.tr('Metadata: {deferred:,} deferred · retry {retry}', deferred=state.deferred, retry=retry)
 
 
 class HeaderUi(NamedTuple):
@@ -164,7 +165,7 @@ class LibraryWindow(
         )
         self._ui.catalog.proxy.set_view(saved_view)
         self._ui.catalog.filters.set_view(saved_view)
-        self._ui.trace.append_message(f"Library started · output root: {self._service.out_dir}")
+        self._ui.trace.append_message(i18n.tr('Library started · output root: {out_dir}', out_dir=self._service.out_dir))
         self._tray = self._build_tray()
         self._notifications = library_notifications.TrayNotifications(
             service.db, self._tray, practice_window=lambda: self._practice_dialog,
@@ -217,7 +218,7 @@ class LibraryWindow(
         Example: called once by `LibraryWindow.__init__()`.
         """
 
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle(i18n.tr(WINDOW_TITLE, version=yt_whisper_subs.__version__))
         self.resize(1480, 900)
         self.setMinimumSize(1050, 650)
         self.setStyleSheet(library_theme.STYLE)
@@ -253,7 +254,7 @@ class LibraryWindow(
         self.statusBar().addPermanentWidget(queue_status)
         self.statusBar().addPermanentWidget(metadata_status)
         self.statusBar().addPermanentWidget(check_status)
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage(i18n.tr('Ready'))
         return LibraryUi(header, catalog, metadata_status, queue_status, check_status, trace)
 
     def _build_sidebar(self) -> tuple[QtWidgets.QFrame, QtWidgets.QListWidget]:
@@ -267,13 +268,15 @@ class LibraryWindow(
         sidebar.setFixedWidth(245)
         layout = QtWidgets.QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 20, 16, 16)
-        title = QtWidgets.QLabel("YouTube Library")
+        title = QtWidgets.QLabel(i18n.tr('YouTube Library'))
+        title.setWordWrap(True)
         title.setObjectName("appTitle")
-        subtitle = QtWidgets.QLabel("Watch · track · subtitle")
+        subtitle = QtWidgets.QLabel(i18n.tr('Watch · track · subtitle'))
+        subtitle.setWordWrap(True)
         subtitle.setObjectName("appSubtitle")
         channels = library_channels.ChannelList()
         channels.setObjectName("channelList")
-        add = QtWidgets.QPushButton("＋  Track channel")
+        add = QtWidgets.QPushButton(i18n.tr('＋  Track channel'))
         add.setObjectName("primaryButton")
         add.clicked.connect(self._add_channel)
         layout.addWidget(title)
@@ -292,22 +295,22 @@ class LibraryWindow(
         layout = QtWidgets.QHBoxLayout()
         layout.setSpacing(6)
         search = QtWidgets.QLineEdit()
-        search.setPlaceholderText("Search title, channel, or YouTube ID…")
+        search.setPlaceholderText(i18n.tr('Search title, channel, or YouTube ID…'))
         search.setClearButtonEnabled(True)
         search.setMinimumWidth(100)
-        check = QtWidgets.QPushButton("↻  Check now")
-        download = QtWidgets.QPushButton("↓  Download")
-        download.setToolTip("Download, repair, or queue the selected video")
-        play = QtWidgets.QPushButton("▶  Play")
+        check = QtWidgets.QPushButton(i18n.tr('↻  Check now'))
+        download = QtWidgets.QPushButton(i18n.tr('↓  Download'))
+        download.setToolTip(i18n.tr('Download, repair, or queue the selected video'))
+        play = QtWidgets.QPushButton(i18n.tr('▶  Play'))
         watched = QtWidgets.QToolButton()
         watched.setObjectName("watchedButton")
         watched.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonIconOnly)
         remove = QtWidgets.QToolButton()
         remove.setObjectName("dangerButton")
         remove.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextOnly)
-        pause = QtWidgets.QPushButton("Ⅱ  Pause")
+        pause = QtWidgets.QPushButton(i18n.tr('Ⅱ  Pause'))
         pause.hide()
-        cancel = QtWidgets.QPushButton("■  Cancel")
+        cancel = QtWidgets.QPushButton(i18n.tr('■  Cancel'))
         cancel.setObjectName("dangerButton")
         cancel.hide()
         play.setObjectName("primaryButton")
@@ -396,76 +399,6 @@ class LibraryWindow(
         if app:
             app.aboutToQuit.connect(self._store_ui_layout)
 
-    def _build_menus(self) -> None:
-        """Expose less-frequent channel, settings, and quit actions natively.
-
-        Example: called once after action wiring.
-        """
-
-        file_menu = self.menuBar().addMenu("Library")
-        settings = file_menu.addAction("Settings…")
-        settings.triggered.connect(self._edit_settings)
-        vocabulary = file_menu.addAction("Vocabulary…", self._show_vocabulary)
-        vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
-        practice_action = file_menu.addAction("Practice…", self._show_practice)
-        practice_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+R"))
-        file_menu.addAction("Practice activity…", lambda: self._show_practice(True))
-        file_menu.addSeparator()
-        quit_action = file_menu.addAction("Quit")
-        quit_action.triggered.connect(self._quit)
-        channel_menu = self.menuBar().addMenu("Channel")
-        channel_menu.addAction("Track channel…", self._add_channel)
-        self._pin_channel_action = channel_menu.addAction("Pin selected channel", self._toggle_channel_pin)
-        self._pin_channel_action.setShortcut(QtGui.QKeySequence("Alt+P"))
-        channel_menu.addAction("Toggle automatic download", self._toggle_channel_auto)
-        channel_menu.addAction("Stop tracking", self._remove_channel)
-        video_menu = self.menuBar().addMenu("Video")
-        video_menu.addAction("Download or repair selected", self._download_selected)
-        video_menu.addAction("Play selected", self._play_selected)
-        video_menu.addAction("Generate chapters", self._generate_chapters_selected)
-        video_menu.addAction("Open on YouTube", self._open_selected_url)
-        self._watched_action = video_menu.addAction("Mark as watched", self._mark_watched)
-        self._watched_action.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_DialogApplyButton))
-        self._watched_action.setToolTip("Mark the selected video watched without changing its playback percentage")
-        self._ui.header.watched.setDefaultAction(self._watched_action)
-        video_menu.addSeparator()
-        self._pause_action = video_menu.addAction("Pause current pipeline", self._pause_active_task)
-        self._pause_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+P"))
-        self._cancel_action = video_menu.addAction("Cancel current operation", self._cancel_active_task)
-        self._cancel_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
-        self._remove_action = video_menu.addAction("Remove download and yields…", self._remove_selected)
-        self._remove_action.setShortcut(QtGui.QKeySequence("Shift+Delete"))
-        self._remove_action.setIconText("Remove…")
-        self._remove_action.setToolTip(
-            "Remove the selected download and all generated files (Shift+Delete). "
-            "Download and watch history stay in the catalog."
-        )
-        # Let Qt share activation and availability with the menu and shortcut.
-        self._ui.header.remove.setDefaultAction(self._remove_action)
-        self._remove_filtered_action = video_menu.addAction(
-            "Remove filtered downloads…", self._remove_filtered,
-        )
-        self._remove_filtered_action.setToolTip(
-            "Remove downloads and generated files for all current filter matches. "
-            "Choose Watched to reclaim space while keeping watch history."
-        )
-        self._ui.catalog.filters.set_removal_action(self._remove_filtered_action)
-        view_menu = self.menuBar().addMenu("View")
-        search_action = view_menu.addAction("Focus search")
-        search_action.setShortcut(QtGui.QKeySequence.StandardKey.Find)
-        search_action.triggered.connect(self._focus_search)
-        clear_filters = view_menu.addAction("Clear filters")
-        clear_filters.setShortcut(QtGui.QKeySequence("Ctrl+Shift+F"))
-        clear_filters.triggered.connect(self._clear_filters)
-        view_menu.addSeparator()
-        view_menu.addAction("Reset column layout", self._reset_table_layout)
-        view_menu.addAction("Reset video inspector size", self._reset_catalog_layout)
-        view_menu.addSeparator()
-        trace_action = self._ui.trace.toggleViewAction()
-        trace_action.setText("Activity trace")
-        trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
-        view_menu.addAction(trace_action)
-
     def _show_vocabulary(self) -> None:
         """Reuse one native vocabulary window; e.g. inspect repeated words during playback."""
 
@@ -504,7 +437,7 @@ class LibraryWindow(
 
             self._service.play_occurrence(event, report)
 
-        self._run_playback("Opening saved word in mpv…", play, lambda _: self.refresh())
+        self._run_playback(i18n.tr('Opening saved word in mpv…'), play, lambda _: self.refresh())
 
     def _store_trace_visibility(self, visible: bool) -> None:
         """Remember whether the optional activity trace was left open.
@@ -577,7 +510,7 @@ class LibraryWindow(
                 catalog.records, catalog.issues, watch_policy=self._service.db.watch_policy(),
             )
             for job in self._service.interrupted_pipeline_jobs():
-                label = f"Interrupted · {job.label} · click Resume"
+                label = i18n.tr('Interrupted · {label} · click Resume', label=job.label)
                 interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
                 self._ui.catalog.model.set_progress(interrupted)
             state = self._service.metadata_queue_state()
@@ -596,7 +529,7 @@ class LibraryWindow(
         widget.blockSignals(True)
         widget.clear()
         items: list[tuple[str, tuple[str, int | None]]] = [
-            ("▦  All videos", ("all", None)),
+            (i18n.tr('▦  All videos'), ("all", None)),
         ]
         for text, key in items:
             item = QtWidgets.QListWidgetItem(text)
@@ -606,13 +539,14 @@ class LibraryWindow(
         self._channels_by_id = {channel.channel_id: channel for channel in tracked}
         pinned = [channel for channel in tracked if channel.pinned]
         unpinned = [channel for channel in tracked if not channel.pinned]
-        sections = (("pinned", "★  PINNED", pinned), ("unpinned", "OTHER CHANNELS", unpinned))
+        sections = (("pinned", i18n.tr('★  PINNED'), pinned), ("unpinned", i18n.tr('OTHER CHANNELS'), unpinned))
         for kind, label, channels in sections:
             if not channels:
                 continue
             heading = QtWidgets.QListWidgetItem(f"  {label} · {len(channels):,}")
             heading.setData(QtCore.Qt.ItemDataRole.UserRole, (kind, None))
-            heading.setToolTip(f"Show videos from all {kind} channels")
+            heading.setToolTip(i18n.tr('Show videos from pinned channels') if kind == 'pinned' else
+                               i18n.tr('Show videos from other channels'))
             color = "#f1c75b" if kind == "pinned" else "#aeb8c6"
             heading.setForeground(QtGui.QColor(color))
             widget.addItem(heading)
@@ -642,7 +576,7 @@ class LibraryWindow(
         try:
             channel = self._service.track_channel(value, auto)
         except ValueError as exc:
-            QtWidgets.QMessageBox.warning(self, "Track channel", str(exc))
+            QtWidgets.QMessageBox.warning(self, i18n.tr('Track channel'), str(exc))
             return
         self._filter_key = ("channel", channel.channel_id)
         self._refresh_channels()
@@ -651,7 +585,7 @@ class LibraryWindow(
         self._update_actions()
 
         task = library_workers.ChannelCheckTask(self._service, channel.channel_id)
-        self._queue_channel_task(f"Adding {channel.title}…", task)
+        self._queue_channel_task(i18n.tr('Adding {title}…', title=channel.title), task)
 
     def _remove_channel(self) -> None:
         """Confirm and remove the selected subscription and remote-only rows.
@@ -661,12 +595,12 @@ class LibraryWindow(
 
         channel = self._selected_channel()
         if not channel:
-            QtWidgets.QMessageBox.information(self, "Stop tracking", "Select a tracked channel first.")
+            QtWidgets.QMessageBox.information(self, i18n.tr('Stop tracking'), i18n.tr('Select a tracked channel first.'))
             return
         answer = QtWidgets.QMessageBox.question(
             self,
-            "Stop tracking channel?",
-            f"Stop tracking {channel.title}? Downloaded videos remain in the library.",
+            i18n.tr('Stop tracking channel?'),
+            i18n.tr('Stop tracking {title}? Downloaded videos remain in the library.', title=channel.title),
         )
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
@@ -682,7 +616,7 @@ class LibraryWindow(
 
         channel = self._selected_channel()
         if not channel:
-            QtWidgets.QMessageBox.information(self, "Automatic download", "Select a tracked channel first.")
+            QtWidgets.QMessageBox.information(self, i18n.tr('Automatic download'), i18n.tr('Select a tracked channel first.'))
             return
         self._service.db.set_channel_auto_download(channel.channel_id, not channel.auto_download)
         self._refresh_channels()

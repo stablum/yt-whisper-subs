@@ -12,6 +12,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_voice_controls
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import listening_tts
@@ -29,7 +30,7 @@ class VoiceDialog(QtWidgets.QDialog):
         self.finished.connect(self.deleteLater)
         from yt_whisper_subs import library_listening
 
-        self.setWindowTitle("Listening voices")
+        self.setWindowTitle(i18n.tr('Listening voices'))
         self.resize(1120, 780)
         self._db = db
         self._presets = listening_voices.read(db).presets
@@ -43,17 +44,17 @@ class VoiceDialog(QtWidgets.QDialog):
         self._list.currentRowChanged.connect(self._select)
         self._name = QtWidgets.QLineEdit()
         self._name.setMaxLength(60)
-        self._name.setPlaceholderText("Preset name")
+        self._name.setPlaceholderText(i18n.tr('Preset name'))
         self._name.editingFinished.connect(self._rename)
         self._editor = library_voice_controls.VoiceEditor()
-        self._sample = QtWidgets.QLineEdit("Morgen fietsen we naar de winkel, omdat de nieuwe fietspaden veel veiliger zijn.")
+        self._sample = QtWidgets.QLineEdit('Morgen fietsen we naar de winkel, omdat de nieuwe fietspaden veel veiliger zijn.')
         self._sample.setMaxLength(600)
-        self._sample.setAccessibleName("Voice preview sentence")
-        self._preview = QtWidgets.QPushButton("▶ Preview")
+        self._sample.setAccessibleName(i18n.tr('Voice preview sentence'))
+        self._preview = QtWidgets.QPushButton(i18n.tr('▶ Preview'))
         self._preview.clicked.connect(self._audition)
-        self._slow = QtWidgets.QPushButton("▶ Preview slowly")
+        self._slow = QtWidgets.QPushButton(i18n.tr('▶ Preview slowly'))
         self._slow.clicked.connect(lambda: self._audition(slow=True))
-        stop = QtWidgets.QPushButton("Stop")
+        stop = QtWidgets.QPushButton(i18n.tr('Stop'))
         stop.clicked.connect(self._player.stop)
         self._status = QtWidgets.QLabel()
         self._status.setWordWrap(True)
@@ -68,17 +69,19 @@ class VoiceDialog(QtWidgets.QDialog):
         """Keep preset actions and preview controls visible beside scrolling style groups; e.g. users never lose Save beneath dozens of sliders."""
 
         left = QtWidgets.QVBoxLayout()
-        left.addWidget(QtWidgets.QLabel("Voices available during practice"))
+        left.addWidget(QtWidgets.QLabel(i18n.tr('Voices available during practice')))
         left.addWidget(self._list, 1)
         actions = QtWidgets.QGridLayout()
-        for idx, (label, fn) in enumerate((("Add voice", self._add), ("Duplicate", self._duplicate), ("Remove", self._remove),
-                                           ("Move up", lambda: self._move(-1)), ("Move down", lambda: self._move(1)))):
+        for idx, (label, fn) in enumerate(((i18n.tr('Add voice'), self._add), (i18n.tr('Duplicate'), self._duplicate), (i18n.tr('Remove'), self._remove),
+                                           (i18n.tr('Move up'), lambda: self._move(-1)), (i18n.tr('Move down'), lambda: self._move(1)))):
             button = QtWidgets.QPushButton(label)
             button.clicked.connect(fn)
             actions.addWidget(button, idx // 2, idx % 2)
         left.addLayout(actions)
-        note = QtWidgets.QLabel("Check every voice you want to hear. Each enabled preset gets its own button on the same sentence. "
-                               "The first enabled voice plays automatically.")
+        note = QtWidgets.QLabel(i18n.tr(
+            'Check every voice you want to hear. Each enabled preset gets its own button on the same '
+            'sentence. The first enabled voice plays automatically.',
+        ))
         note.setWordWrap(True)
         note.setMaximumWidth(250)
         left.addWidget(note)
@@ -93,9 +96,9 @@ class VoiceDialog(QtWidgets.QDialog):
         preview.addWidget(self._slow)
         preview.addWidget(stop)
         preview.addStretch()
-        self._install = QtWidgets.QPushButton("Install / repair Zonos")
+        self._install = QtWidgets.QPushButton(i18n.tr('Install / repair Zonos'))
         self._install.clicked.connect(self._setup)
-        folder = QtWidgets.QPushButton("Open shared model folder")
+        folder = QtWidgets.QPushButton(i18n.tr('Open shared model folder'))
         folder.clicked.connect(lambda: QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(zonos_install.root()))))
         preview.addWidget(folder)
         preview.addWidget(self._install)
@@ -104,7 +107,7 @@ class VoiceDialog(QtWidgets.QDialog):
         buttons.rejected.connect(self.reject)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(body, 1)
-        layout.addWidget(QtWidgets.QLabel("Preview sentence · separate from your hidden practice question"))
+        layout.addWidget(QtWidgets.QLabel(i18n.tr('Preview sentence · separate from your hidden practice question')))
         layout.addWidget(self._sample)
         layout.addLayout(preview)
         layout.addWidget(self._status)
@@ -147,7 +150,7 @@ class VoiceDialog(QtWidgets.QDialog):
         """Create a named neutral Zonos preset; e.g. a learner can build a new character without replacing Piper."""
 
         self._store()
-        preset = listening_voices.Preset(name=f"Zonos voice {len(self._presets)}", config=listening_voices.Config(engine="zonos"))
+        preset = listening_voices.Preset(name=i18n.tr('Zonos voice {len}', len=len(self._presets)), config=listening_voices.Config(engine="zonos"))
         self._presets.append(preset)
         self._append(preset)
         self._list.setCurrentRow(len(self._presets) - 1)
@@ -156,7 +159,7 @@ class VoiceDialog(QtWidgets.QDialog):
         """Copy all audible settings under a new identity; e.g. compare one speaker's neutral and lively delivery."""
 
         self._store()
-        name = self._presets[self._index].name[:53] + " · copy"
+        name = self._presets[self._index].name[:53] + i18n.tr(' · copy')
         preset = self._presets[self._index].model_copy(deep=True, update={"id": uuid.uuid4().hex, "name": name})
         self._presets.append(preset)
         self._append(preset)
@@ -195,7 +198,7 @@ class VoiceDialog(QtWidgets.QDialog):
 
         try:
             zonos_install.installation()
-            self._status.setText("ZONOS3-Mini installed · shared user cache · local CPU runtime")
+            self._status.setText(i18n.tr('ZONOS3-Mini installed · shared user cache · local CPU runtime'))
         except RuntimeError as exc:
             self._status.setText(str(exc))
 
@@ -246,7 +249,7 @@ class VoiceDialog(QtWidgets.QDialog):
 
         self._player.stop()
         self._busy(True)
-        self._status.setText("Preparing voice preview…")
+        self._status.setText(i18n.tr('Preparing voice preview…'))
         self._task = library_workers.BackgroundTask(preview)
         self._task.signals.progress.connect(self._status.setText)
         self._task.signals.finished.connect(self._previewed)
@@ -265,10 +268,10 @@ class VoiceDialog(QtWidgets.QDialog):
         except (ValueError, OSError):
             current = None
         if current != result["identity"] or self._sample.text().strip() != result["text"]:
-            self._status.setText("Settings changed. Preview again to hear the new version.")
+            self._status.setText(i18n.tr('Settings changed. Preview again to hear the new version.'))
             return
         self._player.play(result["path"], result["seconds"])
-        self._status.setText("Playing preview · practice questions and statistics are unchanged")
+        self._status.setText(i18n.tr('Playing preview · practice questions and statistics are unchanged'))
 
     def _busy(self, value: bool) -> None:
         """Bound work to one owned task while keeping sliders responsive; e.g. repeated Preview clicks cannot queue many model runs."""

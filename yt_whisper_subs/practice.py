@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import fsrs
 import pydantic as pd
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import vocabulary
 
 
@@ -24,7 +25,7 @@ class Direction(enum.StrEnum):
     def label(self) -> str:
         """Name the round without exposing storage codes; e.g. Dutch → English."""
 
-        return "Dutch → English" if self == self.NL_EN else "English → Dutch"
+        return i18n.tr('Dutch → English') if self == self.NL_EN else i18n.tr('English → Dutch')
 
 
 class Content(pd.BaseModel):

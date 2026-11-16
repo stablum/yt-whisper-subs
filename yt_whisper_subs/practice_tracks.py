@@ -5,6 +5,7 @@ Example: English-to-Dutch sentences and Dutch-to-English sentences keep separate
 
 import enum
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import comprehension
@@ -41,11 +42,11 @@ class Track(str, enum.Enum):
         """Use compact two-line top-level labels; e.g. both sentence directions remain one click away."""
 
         if self == self.LISTENING:
-            return "Listening\nDutch dictation"
+            return i18n.tr('Listening\nDutch dictation')
         if self.kind == 'comprehension':
-            return self.direction.label + '\nTekst en vragen'
-        title = {"practice": "Word quiz", "sentence": "Sentences", "verb": "Verbs"}[self.kind]
-        return f"{title}\n{self.direction.label}" if self.direction else "Verbs\nDutch transformations"
+            return self.direction.label + '\n' + i18n.tr('Text and questions')
+        title = {"practice": i18n.tr('Word quiz'), "sentence": i18n.tr('Sentences'), "verb": i18n.tr('Verbs')}[self.kind]
+        return f"{title}\n{self.direction.label}" if self.direction else i18n.tr('Verbs\nDutch transformations')
 
     @property
     def settings_key(self) -> str:

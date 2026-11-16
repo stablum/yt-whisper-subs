@@ -12,6 +12,7 @@ from datetime import datetime
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_practice_controls as controls
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import practice
@@ -39,7 +40,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._closed = False
         self._arrange()
         self._controls.restore(db.setting(self._track.settings_key, db.setting("practice_options", "")))
-        self._idle("Getting your next word ready…", "", "Continue")
+        self._idle(i18n.tr('Getting your next word ready…'), "", i18n.tr('Continue'))
         self._next.hide()
 
     def activate(self) -> None:
@@ -86,11 +87,11 @@ class WordQuiz(QtWidgets.QWidget):
         for label in (self._prompt, self._context):
             label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
             label.setWordWrap(True)
-        self._unsure = QtWidgets.QCheckBox("I'm unsure / guessing")
+        self._unsure = QtWidgets.QCheckBox(i18n.tr("I'm unsure / guessing"))
         unsure_size = self._unsure.sizePolicy()
         unsure_size.setRetainSizeWhenHidden(True)
         self._unsure.setSizePolicy(unsure_size)
-        self._unsure.setToolTip("A correct guess gets a shorter review interval. Response speed does not affect grading.")
+        self._unsure.setToolTip(i18n.tr('A correct guess gets a shorter review interval. Response speed does not affect grading.'))
         self._answers = controls.AnswerButtons()
         self._answers.selected.connect(self._answer)
         self._result = QtWidgets.QLabel()
@@ -102,7 +103,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._details = QtWidgets.QToolButton()
         self._details.setObjectName("practiceDetails")
         self._details.setMinimumHeight(28)
-        self._details.setText("Why this answer?")
+        self._details.setText(i18n.tr('Why this answer?'))
         self._details.setCheckable(True)
         self._details.toggled.connect(self._explanation.setVisible)
         self._hint = QtWidgets.QLabel()
@@ -131,9 +132,9 @@ class WordQuiz(QtWidgets.QWidget):
         self._next.setMinimumHeight(44)
         self._next.setMinimumWidth(220)
         self._next.setAutoDefault(False)
-        self._flag = QtWidgets.QPushButton("Report question")
+        self._flag = QtWidgets.QPushButton(i18n.tr('Report question'))
         self._flag.setAutoDefault(False)
-        self._cancel = QtWidgets.QPushButton("Cancel preparation")
+        self._cancel = QtWidgets.QPushButton(i18n.tr('Cancel preparation'))
         self._cancel.setAutoDefault(False)
         footer = QtWidgets.QHBoxLayout()
         footer.addWidget(self._flag)
@@ -169,7 +170,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._details.setChecked(False)
         for widget in (self._bar, self._flag, self._cancel, self._unsure, self._answers, self._details, self._explanation):
             widget.hide()
-        self._status.setText("Your answers are saved as you go.")
+        self._status.setText(i18n.tr('Your answers are saved as you go.'))
         self._hint.setText("")
         self._controls.setEnabled(True)
         self._controls.set_active(self._session is not None)
@@ -211,7 +212,7 @@ class WordQuiz(QtWidgets.QWidget):
             opts = opts.model_copy(update={"include_early": True})
         self._autostart_pending = False
         self._empty = None
-        self._idle("Preparing your round…", "Getting the choices ready.", "Preparing…")
+        self._idle(i18n.tr('Preparing your round…'), i18n.tr('Getting the choices ready.'), i18n.tr('Preparing…'))
         self._controls.setEnabled(False)
         self._bar.setRange(0, 0)
         self._bar.show()
@@ -249,14 +250,14 @@ class WordQuiz(QtWidgets.QWidget):
         if isinstance(result, practice_round.NothingToPractice):
             self._empty = result
             self._session = self._db.practice_active(self._direction.value)
-            titles = {"not_due": "You're all caught up", "no_words": "No words ready yet",
-                      "not_enough": "Choose a smaller round", "no_questions": "Could not prepare this round"}
-            action = "Practice early" if result.reason == "not_due" else "Try again"
-            self._idle(titles[result.reason], str(result), "Resume round" if self._session else action)
+            titles = {"not_due": i18n.tr("You're all caught up"), "no_words": i18n.tr('No words ready yet'),
+                      "not_enough": i18n.tr('Choose a smaller round'), "no_questions": i18n.tr('Could not prepare this round')}
+            action = i18n.tr('Practice early') if result.reason == "not_due" else i18n.tr('Try again')
+            self._idle(titles[result.reason], str(result), i18n.tr('Resume round') if self._session else action)
             return
         self._session = result
         self._autostart_pending = True
-        self._idle("Your round is ready", "Return to Word quiz to continue.", "Continue round")
+        self._idle(i18n.tr('Your round is ready'), i18n.tr('Return to Word quiz to continue.'), i18n.tr('Continue round'))
         self._ensure_round()
 
     @QtCore.Slot(str, str)
@@ -265,7 +266,7 @@ class WordQuiz(QtWidgets.QWidget):
 
         if not self._closed:
             self._session = self._db.practice_active(self._direction.value)
-            self._idle("Couldn't prepare this round", message, "Resume round" if self._session else "Try again")
+            self._idle(i18n.tr("Couldn't prepare this round"), message, i18n.tr('Resume round') if self._session else i18n.tr('Try again'))
 
     @QtCore.Slot()
     def _cancelled(self) -> None:
@@ -273,7 +274,7 @@ class WordQuiz(QtWidgets.QWidget):
 
         if not self._closed:
             self._session = self._db.practice_active(self._direction.value)
-            self._idle("Practice paused", "Your progress is saved.", "Resume round" if self._session else "Try again")
+            self._idle(i18n.tr('Practice paused'), i18n.tr('Your progress is saved.'), i18n.tr('Resume round') if self._session else i18n.tr('Try again'))
 
     def _advance(self, *, guard: bool = False) -> None:
         """Timestamp exactly one visible next question; e.g. answer and continuation are separate gestures."""
@@ -288,7 +289,13 @@ class WordQuiz(QtWidgets.QWidget):
         row = self._current
         summary = self._db.practice_summary(self._session)
         direction = practice.Direction(row["direction"])
-        self._status.setText(f"{direction.label}    ·    {row['ordinal']} / {summary['planned']}    ·    {summary['correct']} correct")
+        self._status.setText(i18n.tr(
+            '{label}    ·    {ordinal} / {planned}    ·    {correct} correct',
+            label=direction.label,
+            ordinal=row['ordinal'],
+            planned=summary['planned'],
+            correct=summary['correct'],
+        ))
         self._bar.setRange(0, summary["planned"])
         self._bar.setValue(row["ordinal"] - 1)
         self._bar.show()
@@ -304,14 +311,14 @@ class WordQuiz(QtWidgets.QWidget):
         self._answers.present(row["choices"], guard=guard)
         self._controls.setEnabled(True)
         self._controls.set_active(True)
-        self._next.setText("Choose an answer")
+        self._next.setText(i18n.tr('Choose an answer'))
         self._next.setEnabled(False)
         self._next.setDefault(False)
         self._next.show()
         self._cancel.hide()
         self._flag.setEnabled(True)
         self._flag.show()
-        self._hint.setText("1 / 2 / 3 to answer · Close anytime to pause")
+        self._hint.setText(i18n.tr('1 / 2 / 3 to answer · Close anytime to pause'))
         self._started = time.monotonic()
 
     def _answer(self, idx: int) -> None:
@@ -326,7 +333,7 @@ class WordQuiz(QtWidgets.QWidget):
             elapsed = max(0, round((time.monotonic() - self._started) * 1000))
             row = self._db.practice_answer(self._current["id"], idx, self._unsure.isChecked(), elapsed)
         except (ValueError, OSError, sqlite3.Error) as exc:
-            self._result.setText(f"Could not save your answer: {exc}")
+            self._result.setText(i18n.tr('Could not save your answer: {exc}', exc=exc))
             return
         self._current = row
         self.activity_changed.emit()
@@ -335,15 +342,15 @@ class WordQuiz(QtWidgets.QWidget):
             return
         self._answers.reveal(row["correct_idx"], idx)
         self._unsure.hide()
-        verdict = "Correct" if row["outcome"] == "correct" else "Not quite"
+        verdict = i18n.tr('Correct') if row["outcome"] == "correct" else i18n.tr('Not quite')
         answer = row["choices"][row["correct_idx"]]["text"]
         self._result.setText(f"{verdict} · {answer}")
         self._result.setStyleSheet("color: #9ae7b4;" if row["outcome"] == "correct" else "color: #ffd166;")
         explanation = row["content"]["explanation"]
         if row["outcome"] == "wrong":
             explanation += "\n" + row["choices"][idx]["explanation"]
-        due = datetime.fromtimestamp(row["due_at"]).strftime("%d %b, %H:%M")
-        self._explanation.setText(f"{explanation}\nNext review: {due}")
+        due = i18n.date_text(datetime.fromtimestamp(row['due_at']), '%d %b, %H:%M')
+        self._explanation.setText(i18n.tr('{explanation}\nNext review: {due}', explanation=explanation, due=due))
         self._details.show()
         self._bar.setValue(row["ordinal"])
         self._offer_continue()
@@ -352,9 +359,9 @@ class WordQuiz(QtWidgets.QWidget):
         """Give mouse and keyboard the same deliberate next action; e.g. Space or Enter advances after feedback."""
 
         self._surface.arm()
-        target = "Click the card or an answer again" if self._answers.isVisible() else "Click the card"
-        self._hint.setText(f"{target} · Space / Enter to continue")
-        self._next.setText("Continue →")
+        target = i18n.tr('Click the card or an answer again') if self._answers.isVisible() else i18n.tr('Click the card')
+        self._hint.setText(i18n.tr('{target} · Space / Enter to continue', target=target))
+        self._next.setText(i18n.tr('Continue →'))
         self._next.setEnabled(True)
         self._next.setDefault(True)
         self._next.setFocus()
@@ -388,7 +395,7 @@ class WordQuiz(QtWidgets.QWidget):
             self._db.practice_flag(self._current["id"])
             self._current["outcome"] = "invalid"
             self.activity_changed.emit()
-            self._result.setText("Question reported · excluded from grading")
+            self._result.setText(i18n.tr('Question reported · excluded from grading'))
             self._result.setStyleSheet("color: #c4d5e9;")
             self._answers.shortcuts(False)
             self._answers.hide()
@@ -405,7 +412,7 @@ class WordQuiz(QtWidgets.QWidget):
         if self._task:
             self._task.cancel()
             self._cancel.setEnabled(False)
-            self._status.setText("Cancelling after the current request…")
+            self._status.setText(i18n.tr('Cancelling after the current request…'))
         elif self._session:
             self._finish(complete=False)
 
@@ -416,10 +423,10 @@ class WordQuiz(QtWidgets.QWidget):
         complete = complete or result["correct"] + result["wrong"] + result["invalid"] == result["planned"]
         self._session = None
         self._empty = None
-        counts = f"{result['correct']} correct · {result['wrong']} to revisit"
+        counts = i18n.tr('{correct} correct · {wrong} to revisit', correct=result['correct'], wrong=result['wrong'])
         if result["invalid"]:
-            counts += f" · {result['invalid']} reported"
-        self._idle("Round complete" if complete else "Round saved", counts, "Another round")
+            counts += i18n.tr(' · {invalid} reported', invalid=result['invalid'])
+        self._idle(i18n.tr('Round complete') if complete else i18n.tr('Round saved'), counts, i18n.tr('Another round'))
 
     def showEvent(self, event) -> None:
         """Let the window paint before preparing; e.g. no blocking or exposure during construction."""

@@ -11,6 +11,7 @@ from typing import NamedTuple
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_views as views
@@ -57,7 +58,7 @@ def format_timestamp(value: int | None) -> str:
         timestamp = datetime.fromtimestamp(value).astimezone()
     except (OSError, OverflowError, ValueError):
         return "—"
-    return timestamp.strftime("%Y-%m-%d  %H:%M")
+    return i18n.date_text(timestamp, '%Y-%m-%d  %H:%M')
 
 
 def format_duration(seconds: float | None) -> str:
@@ -85,7 +86,8 @@ def format_size(size_bytes: int | None) -> str:
     size = float(size_bytes)
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if size < 1024 or unit == "TiB":
-            return f"{size:.0f} {unit}" if unit in {"B", "KiB"} else f"{size:.1f} {unit}"
+            digits = ".0f" if unit in {"B", "KiB"} else ".1f"
+            return f"{i18n.number(size, digits)} {unit}"
         size /= 1024
     return "—"
 
@@ -121,19 +123,19 @@ def watched_progress(
         # Whole-percent rounding must not claim the end before it is reached.
         percent = min(round(fraction * 100), 99 if fraction < 1 else 100)
         label = f"{percent}%"
-        tooltip = f"Watched to {format_duration(position)} of {format_duration(duration)}"
+        tooltip = i18n.tr('Watched to {format_duration} of {format_duration2}', format_duration=format_duration(position), format_duration2=format_duration(duration))
     elif position or completed:
-        label = "Started"
-        tooltip = f"Watched to {format_duration(position)}; duration unavailable"
+        label = i18n.tr('Started')
+        tooltip = i18n.tr('Watched to {format_duration}; duration unavailable', format_duration=format_duration(position))
     else:
         label = "0%"
-        tooltip = "Not watched yet"
+        tooltip = i18n.tr('Not watched yet')
     if completed:
-        label = f"✓ {label}" if duration else "✓ Watched"
+        label = f"✓ {label}" if duration else i18n.tr('✓ Watched')
         marked = (
-            f"Marked watched {format_timestamp(stored.completed_at)}"
+            i18n.tr('Marked watched {format_timestamp}', format_timestamp=format_timestamp(stored.completed_at))
             if stored and stored.completed_at is not None
-            else f"Watched: more than {policy.percent:g}% reached or mpv reported the end"
+            else i18n.tr('Watched: more than {percent:g}% reached or mpv reported the end', percent=policy.percent)
         )
         tooltip = f"{tooltip}\n{marked}"
     return WatchedProgress(fraction, label, tooltip, completed, position > 0 or completed)
@@ -186,10 +188,10 @@ def record_progress(
 
     video_id = record.meta.identity.video_id
     if record.download_error:
-        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Failed · {record.download_error}")
+        return progress.make(video_id, progress.Stage.FAILED, 0.0, i18n.tr('Failed · {download_error}', download_error=record.download_error))
     resolved = library_artifacts.pipeline_issue(record) if issue is _UNCHECKED else issue
     if resolved:
-        return progress.make(video_id, progress.Stage.FAILED, 0.0, f"Incomplete · {resolved}")
+        return progress.make(video_id, progress.Stage.FAILED, 0.0, i18n.tr('Incomplete · {resolved}', resolved=resolved))
     if record.downloaded:
         return progress.make(video_id, progress.Stage.READY, 1.0)
     if record.removed:
@@ -215,15 +217,15 @@ class VideoTableModel(QtCore.QAbstractTableModel):
     facets_changed = QtCore.Signal()
 
     _columns = (
-        ("Pipeline", 230),
-        ("Watched", 120),
-        ("Title", 420),
-        ("Channel", 190),
-        ("Published", 145),
-        ("Downloaded", 145),
-        ("Duration", 85),
-        ("Size", 90),
-        ("Views", 90),
+        (i18n.mark('Pipeline'), 230),
+        (i18n.mark('Watched'), 120),
+        (i18n.mark('Title'), 420),
+        (i18n.mark('Channel'), 190),
+        (i18n.mark('Published'), 145),
+        (i18n.mark('Downloaded'), 145),
+        (i18n.mark('Duration'), 85),
+        (i18n.mark('Size'), 90),
+        (i18n.mark('Views'), 90),
     )
 
     def __init__(self) -> None:
@@ -440,7 +442,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
         """
 
         if orientation == QtCore.Qt.Orientation.Horizontal and role == QtCore.Qt.ItemDataRole.DisplayRole:
-            return self._columns[section][0]
+            return i18n.tr(self._columns[section][0])
         if orientation == QtCore.Qt.Orientation.Horizontal and role == QtCore.Qt.ItemDataRole.SizeHintRole:
             return QtCore.QSize(self._columns[section][1], 34)
         if (
@@ -448,13 +450,13 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             and section == PIPELINE_COLUMN
             and role == QtCore.Qt.ItemDataRole.ToolTipRole
         ):
-            return "Preparing · Download · Audio · Speech-to-text · Translation · Final files"
+            return i18n.tr('Preparing · Download · Audio · Speech-to-text · Translation · Final files')
         if (
             orientation == QtCore.Qt.Orientation.Horizontal
             and section == WATCHED_COLUMN
             and role == QtCore.Qt.ItemDataRole.ToolTipRole
         ):
-            return "Furthest observed position; 100% requires mpv to reach end-of-file"
+            return i18n.tr('Furthest observed position; 100% requires mpv to reach end-of-file')
         return None
 
     def data(self, index: QtCore.QModelIndex, role: int = QtCore.Qt.ItemDataRole.DisplayRole) -> Any:
@@ -479,7 +481,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
                 if not update:
                     return None
                 if role == QtCore.Qt.ItemDataRole.DisplayRole:
-                    return update.label
+                    return i18n.tr(update.label)
                 return progress.overall_fraction(update)
             if column == WATCHED_COLUMN:
                 watched = self.watched_at(index.row())
@@ -490,17 +492,17 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return display if role == QtCore.Qt.ItemDataRole.DisplayRole else sort_value
         if role == QtCore.Qt.ItemDataRole.ToolTipRole:
             if column == PIPELINE_COLUMN and record.removed:
-                return f"Video and yields removed {format_timestamp(record.history.removed_at)}; history retained"
+                return i18n.tr('Video and yields removed {format_timestamp}; history retained', format_timestamp=format_timestamp(record.history.removed_at))
             if column == 5 and record.history:
-                text = f"Last downloaded {format_timestamp(record.history.downloaded_at)}"
+                text = i18n.tr('Last downloaded {format_timestamp}', format_timestamp=format_timestamp(record.history.downloaded_at))
                 if record.history.removed_at is not None:
-                    text += f" · Last removed {format_timestamp(record.history.removed_at)}"
+                    text += i18n.tr(' · Last removed {format_timestamp}', format_timestamp=format_timestamp(record.history.removed_at))
                 return text
             if column == PIPELINE_COLUMN and (update := self.progress_at(index.row())):
                 if update.stage is progress.Stage.LIVE_UNKNOWN:
-                    return "Current availability could not be confirmed. Double-click to check again."
+                    return i18n.tr('Current availability could not be confirmed. Double-click to check again.')
                 overall = progress.overall_fraction(update)
-                return f"{update.label} · overall {overall:.0%}"
+                return i18n.tr('{label} · overall {overall:.0%}', label=i18n.tr(update.label), overall=overall)
             if column == WATCHED_COLUMN and (watched := self.watched_at(index.row())):
                 return watched.tooltip
             return record.download_error or record.meta.identity.title
@@ -539,7 +541,7 @@ class VideoTableModel(QtCore.QAbstractTableModel):
             return format_size(size), size or 0
         if column == VIEWS_COLUMN:
             views = meta.details.view_count
-            return f"{views:,}" if views is not None else "—", views or 0
+            return i18n.number(views, ',') if views is not None else "—", views or 0
         return "—", -1.0
 
 

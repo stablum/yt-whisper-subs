@@ -6,6 +6,7 @@ Example: a multiple-choice answer uses the same guarded continuation as a correc
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_practice_controls
 from yt_whisper_subs import library_sentence_review
@@ -32,7 +33,7 @@ class Options(QtWidgets.QWidget):
             opts = comp.Options()
         self._genre = QtWidgets.QComboBox()
         for key, label in comp.GENRES.items():
-            self._genre.addItem(label, key)
+            self._genre.addItem(i18n.tr(label), key)
         self._genre.setCurrentIndex(self._genre.findData(opts.genre))
         self._level = QtWidgets.QComboBox()
         self._level.addItems(['B1', 'B2', 'C1'])
@@ -40,22 +41,22 @@ class Options(QtWidgets.QWidget):
         self._numbers = {}
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        form.addRow('Tekstsoort', self._genre)
-        form.addRow('Taalniveau', self._level)
-        for key, label, low, high in (('paragraphs', "Alinea's", 2, 10), ('mc', 'Meerkeuzevragen', 0, 20),
-                                      ('open', 'Open vragen', 0, 15), ('words', 'Woorden uit je woordenschat', 1, 20)):
+        form.addRow(i18n.tr('Text type'), self._genre)
+        form.addRow(i18n.tr('Language level'), self._level)
+        for key, label, low, high in (('paragraphs', i18n.tr('Paragraphs'), 2, 10), ('mc', i18n.tr('Multiple-choice questions'), 0, 20),
+                                      ('open', i18n.tr('Open questions'), 0, 15), ('words', i18n.tr('Words from your vocabulary'), 1, 20)):
             spin = QtWidgets.QSpinBox()
             spin.setRange(low, high)
             spin.setValue(getattr(opts, key))
             self._numbers[key] = spin
             form.addRow(label, spin)
-        self._early = QtWidgets.QCheckBox('Ook woorden oefenen die nog niet aan herhaling toe zijn')
+        self._early = QtWidgets.QCheckBox(i18n.tr('Include words not due yet'))
         self._early.setChecked(opts.include_early)
         form.addRow(self._early)
-        note = QtWidgets.QLabel('Samen 1–30 vragen. Eén antwoord per meerkeuzevraag is juist.\nOpen antwoorden krijgen ook deelpunten voor begrip.')
+        note = QtWidgets.QLabel(i18n.tr('1–30 questions in total. Each multiple-choice question has one correct answer.\nOpen answers also receive partial comprehension credit.'))
         note.setWordWrap(True)
         form.addRow(note)
-        start = QtWidgets.QPushButton('Nieuwe tekst voorbereiden')
+        start = QtWidgets.QPushButton(i18n.tr('Prepare new text'))
         start.setAutoDefault(False)
         start.clicked.connect(self._restart)
         form.addRow(start)
@@ -64,11 +65,12 @@ class Options(QtWidgets.QWidget):
         fields.setDefaultWidget(panel)
         self.menu.addAction(fields)
         self.menu.addSeparator()
-        self._finish = self.menu.addAction('Deze ronde beëindigen', self.finish_requested)
+        self._finish = self.menu.addAction(i18n.tr('End this round'), self.finish_requested)
         self.menu.aboutToShow.connect(lambda: self.editing.emit(True))
         self.menu.aboutToHide.connect(lambda: self.editing.emit(False))
         button = QtWidgets.QToolButton()
-        button.setText('Ronde-opties')
+        button.setObjectName('practiceOptions')
+        button.setText(i18n.tr('Round options'))
         button.setPopupMode(QtWidgets.QToolButton.ToolButtonPopupMode.InstantPopup)
         button.setMenu(self.menu)
         layout = QtWidgets.QHBoxLayout(self)
@@ -112,8 +114,8 @@ class Card(written.WritingCard):
         self.choices.selected.connect(self.chosen)
         self.layout().insertWidget(4, self.choices)
         self._source.setStyleSheet('font-size:20pt;font-weight:600;color:#ffd166;padding:8px 0;')
-        self.editor.setPlaceholderText('Schrijf je antwoord in het Nederlands…')
-        self.editor.setAccessibleName('Jouw open antwoord')
+        self.editor.setPlaceholderText(i18n.tr('Write your answer in Dutch…'))
+        self.editor.setAccessibleName(i18n.tr('Your open answer'))
 
     def idle(self, title, message) -> None:
         """Clear both formats while keeping a recoverable state; e.g. a failed preparation cannot leave old answer buttons visible."""
@@ -126,8 +128,8 @@ class Card(written.WritingCard):
         """Show only the public question and saved learner text; e.g. answer keys and criterion solutions remain concealed."""
 
         q = row['content']
-        self.show_question(written.Question(source=q['prompt'], hint=comp.SKILLS[q['skill']],
-                           instruction='Kies één antwoord.' if q['kind'] == 'mc' else 'Beantwoord de vraag in het Nederlands. Een eigen formulering mag.',
+        self.show_question(written.Question(source=q['prompt'], hint=i18n.tr(comp.SKILLS[q['skill']]),
+                           instruction=i18n.tr('Choose one answer.') if q['kind'] == 'mc' else i18n.tr('Answer the question in Dutch. You may use your own wording.'),
                            draft=row['answer_text']))
         if q['kind'] == 'mc':
             self.editor.hide()
@@ -145,14 +147,14 @@ class Card(written.WritingCard):
         grade, q = row['grade'], row['content']
         self.show_feedback(written.Feedback(correct=row['score'] == 1, corrected=grade['corrected'], translation='',
                                             explanation=grade['explanation'], errors=[]))
-        title = 'Goed begrepen' if row['score'] == 1 else 'Gedeeltelijk begrepen' if row['score'] else 'Bekijk de uitleg'
-        language = '' if row['language_correct'] is None else ' · taal correct' if row['language_correct'] else ' · taalfouten gecorrigeerd'
-        self._verdict.setText(f"{title} · begrip {row['score']:.0%}{language}")
+        title = i18n.tr('Well understood') if row['score'] == 1 else i18n.tr('Partly understood') if row['score'] else i18n.tr('Review the explanation')
+        language = '' if row['language_correct'] is None else i18n.tr(' · language correct') if row['language_correct'] else i18n.tr(' · language errors corrected')
+        self._verdict.setText(i18n.tr('{title} · comprehension {score:.0%}{language}', title=title, score=row['score'], language=language))
         details = [grade['explanation']]
         criteria = {c['key']: c['text'] for c in q['rubric']}
         details.extend(f"{'✓' if c['met'] else '✕'} {criteria[c['key']]} — {c['explanation']}" for c in grade.get('criteria', []))
-        details.extend(f"{e['evidence'] or 'Ontbreekt'} → {e['correction']}\n{e['explanation']}" for e in grade.get('errors', []))
-        details.extend(f"Alinea {e['paragraph']}: ‘{e['quote']}’" for e in grade['evidence'])
+        details.extend(f"{e['evidence'] or i18n.tr('Missing')} → {e['correction']}\n{e['explanation']}" for e in grade.get('errors', []))
+        details.extend(i18n.tr('Paragraph {paragraph}: ‘{quote}’', paragraph=e['paragraph'], quote=e['quote']) for e in grade['evidence'])
         self._details.setText('\n\n'.join(details))
         if q['kind'] == 'mc':
             self.choices.reveal(q['correct_idx'], row['selected_idx'])
@@ -164,10 +166,10 @@ class Card(written.WritingCard):
         """Keep a submitted first attempt immutable while grading runs; e.g. listening feedback cannot reveal the source before the last answer."""
 
         state = row['check_state']
-        message = ('Antwoord opgeslagen. Je ziet de uitleg nadat alle antwoorden zijn ingediend.' if withheld else
-                   'De beoordeling wordt voorbereid…' if state == 'checking' else
-                   'Beoordeling mislukt. Je antwoord is bewaard; probeer de beoordeling opnieuw.' if state == 'failed' else
-                   'Antwoord opgeslagen · beoordeling staat in de wachtrij.')
+        message = (i18n.tr('Answer saved. Explanations appear after all answers are submitted.') if withheld else
+                   i18n.tr('Preparing correction…') if state == 'checking' else
+                   i18n.tr('Correction failed. Your answer is saved; retry the correction.') if state == 'failed' else
+                   i18n.tr('Answer saved · correction queued.'))
         self.message(message)
         self.choices.shortcuts(False)
         self.arm()

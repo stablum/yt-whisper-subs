@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_types as types
 
 
@@ -83,17 +84,17 @@ class ChannelList(QtWidgets.QListWidget):
         auto = "⚡ " if channel.auto_download else ""
         error = "  !" if channel.last_error else ""
         title = f"{auto}{channel.title}{error}"
-        item.setText(f"{title}\nChecking…" if checking else title)
+        item.setText(i18n.tr('{title}\nChecking…', title=title) if checking else title)
         item.setIcon(self._spinner() if checking else QtGui.QIcon())
         color = "#8fc7ff" if checking else "#f1c75b" if channel.pinned else "#eef2f7"
         item.setForeground(QtGui.QColor(color))
         tips = [channel.title, channel.url]
         if checking:
-            tips.append("Checking channel for new videos…")
+            tips.append(i18n.tr('Checking channel for new videos…'))
         if channel.pinned:
-            tips.append("Pinned for quick access")
+            tips.append(i18n.tr('Pinned for quick access'))
         if channel.auto_download:
-            tips.append("Automatic download enabled")
+            tips.append(i18n.tr('Automatic download enabled'))
         if channel.last_error:
             tips.append(channel.last_error)
         item.setToolTip("\n".join(tips))

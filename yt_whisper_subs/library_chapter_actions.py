@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 from PySide6 import QtCore
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import openai_chapters
 
 
@@ -39,7 +40,7 @@ class ChapterActionsMixin:
 
         self._queue_video_task(
             video_id,
-            "Creating bilingual chapters…",
+            i18n.tr('Creating bilingual chapters…'),
             generate,
             lambda _: self.refresh(),
         )
@@ -63,7 +64,7 @@ class ChapterActionsMixin:
         if record and self._service.seek(record.meta.identity.video_id, start_seconds):
             timestamp = openai_chapters.format_time(round(start_seconds * 1000))
             title = record.meta.identity.title
-            message = f"Seek → {timestamp} · {title}"
+            message = i18n.tr('Seek → {timestamp} · {title}', timestamp=timestamp, title=title)
             self.statusBar().showMessage(message, 3_000)
             self._ui.trace.append_message(message)
             return
@@ -92,8 +93,8 @@ class ChapterActionsMixin:
             Example: `play(report)` blocks only its background worker.
             """
 
-            report(f"Playing {record.meta.identity.title}")
+            report(i18n.tr('Playing {title}', title=record.meta.identity.title))
             self._service.play(video_id, report, start_seconds=start_seconds)
 
-        status = "Opening chapter in mpv…" if start_seconds is not None else "Opening mpv…"
+        status = i18n.tr('Opening chapter in mpv…') if start_seconds is not None else i18n.tr('Opening mpv…')
         self._run_playback(status, play, lambda _: self.refresh())

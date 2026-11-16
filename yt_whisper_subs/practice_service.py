@@ -12,6 +12,7 @@ import re
 import time
 from collections.abc import Callable
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
@@ -37,7 +38,7 @@ class PracticeService:
         if background:
             candidates = self._db.practice_spare_candidates("practice", opts, candidates)
         if not candidates:
-            raise practice_round.NothingToPractice("no_words", "Capture Dutch words in mpv and let their translations finish first.")
+            raise practice_round.NothingToPractice("no_words", i18n.tr('Capture Dutch words in mpv and let their translations finish first.'))
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                       "prompt_version": practice_generate.PROMPT_VERSION, "direction": opts.direction.value}
         unused = self._db.practice_unused("practice", generation)
@@ -46,7 +47,7 @@ class PracticeService:
         selector = word_select.Selector(policy)
         selected = selector.select(candidates, opts, time.time())
         if not selected:
-            raise practice_round.NothingToPractice("not_due", "No terms are due yet. Try the other direction, capture more words, or enable early review.")
+            raise practice_round.NothingToPractice("not_due", i18n.tr('No terms are due yet. Try the other direction, capture more words, or enable early review.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         plan = practice_round.Plan(candidates=candidates, initial=selected, key=operator.itemgetter("lookup_id"),
                                    select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), time.time()),
@@ -60,7 +61,7 @@ class PracticeService:
             random.shuffle(choices)
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
-        report(f"Ready · {len(questions)} distinct terms")
+        report(i18n.tr('Ready · {len} distinct terms', len=len(questions)))
         if background:
             return self._db.practice_stage("practice", opts, questions)
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
@@ -84,7 +85,7 @@ class PracticeService:
             batch = build.take(pending[offset:offset + 6])
             if not batch:
                 break
-            build.report(f"Preparing and checking {len(batch)} choices…")
+            build.report(i18n.tr('Preparing and checking {len} choices…', len=len(batch)))
             try:
                 results = self._provider.generate(batch, direction)
                 cached.update(self._cache(batch, results, direction, policy))
@@ -94,7 +95,7 @@ class PracticeService:
             except Exception:
                 if not all(row["lookup_id"] in cached for row in batch):
                     raise
-                build.report("Using previously checked choices while generation is unavailable.")
+                build.report(i18n.tr('Using previously checked choices while generation is unavailable.'))
                 continue
         return cached
 

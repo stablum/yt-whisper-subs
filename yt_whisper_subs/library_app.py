@@ -11,6 +11,8 @@ import sys
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import library_gui
+from yt_whisper_subs import i18n
+from yt_whisper_subs import library_locale
 from yt_whisper_subs import library_backup
 from yt_whisper_subs import library_service
 from yt_whisper_subs import library_practice_ready
@@ -52,6 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with output_lock.OutputLock(out_dir, "library"):
             service = library_service.LibraryService(out_dir, proc.venv_paths())
+            library_locale.install(qt_app, service.db.setting("ui_language", "en"))
             window = library_gui.LibraryWindow(service)
             backup = library_backup.StartupBackup(service.db.path, qt_app)
             backup.message.connect(window._ui.trace.append_message)
@@ -68,12 +71,12 @@ def main(argv: list[str] | None = None) -> int:
             return qt_app.exec()
     except output_lock.OutputBusyError:
         QtWidgets.QMessageBox.information(
-            None, "Library is already running",
-            "This library is already open. Use its window or system tray icon.",
+            None, i18n.tr("Library is already running"),
+            i18n.tr("This library is already open. Use its window or system tray icon."),
         )
         return 0
     except Exception as exc:
-        QtWidgets.QMessageBox.critical(None, "Could not open YouTube Library", str(exc))
+        QtWidgets.QMessageBox.critical(None, i18n.tr("Could not open YouTube Library"), str(exc))
         return 1
 
 

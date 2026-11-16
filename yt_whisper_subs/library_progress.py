@@ -9,6 +9,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_model
 from yt_whisper_subs import pipeline_progress as progress
 
@@ -79,7 +80,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
         painter.setPen(text_color if progress.active(update) else muted_color)
         label_rect = QtCore.QRect(rect.left(), rect.top(), rect.width() - 44, 19)
         label = painter.fontMetrics().elidedText(
-            update.label,
+            i18n.tr(update.label),
             QtCore.Qt.TextElideMode.ElideRight,
             label_rect.width(),
         )
@@ -100,7 +101,7 @@ class PipelineProgressDelegate(QtWidgets.QStyledItemDelegate):
             painter.drawText(
                 percent_rect,
                 QtCore.Qt.AlignmentFlag.AlignRight | QtCore.Qt.AlignmentFlag.AlignVCenter,
-                f"{overall:.0%}",
+                i18n.number(overall, '.0%'),
             )
 
         track = QtCore.QRectF(rect.left(), rect.top() + 23, rect.width(), 8)

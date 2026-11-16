@@ -10,6 +10,7 @@ import pydantic as pd
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import comprehension_service
 from yt_whisper_subs import library_checks
@@ -64,7 +65,7 @@ class Panel(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._view)
-        self._view.card.idle(self._direction.label, 'Lees of beluister een Nederlandse tekst en beantwoord de vragen.')
+        self._view.card.idle(self._direction.label, i18n.tr('Read or listen to a Dutch text and answer the questions.'))
         for widget in (self._view.action, self._view.flag, self._view.retry, self._view.cancel, self._view.rail, self._view.bar):
             widget.hide()
 
@@ -118,7 +119,7 @@ class Panel(QtWidgets.QWidget):
         self._run.phase = 'preparing'
         self._run.row = None
         self._view.source.clear()
-        self._view.card.idle('Tekst voorbereiden…', 'De tekst en alle vragen worden onafhankelijk gecontroleerd.')
+        self._view.card.idle(i18n.tr('Preparing text…'), i18n.tr('The text and all questions are independently checked.'))
         self._view.action.hide()
         self._view.flag.hide()
         self._view.retry.hide()
@@ -153,27 +154,27 @@ class Panel(QtWidgets.QWidget):
         self._view.options.setEnabled(True)
         self._view.cancel.hide()
         if isinstance(result, practice_round.NothingToPractice):
-            self._rest('Nog geen ronde beschikbaar', str(result))
+            self._rest(i18n.tr('No round available yet'), str(result))
             return
         self._run.session, self._run.phase = result, 'ready'
         if self.isVisible():
             self._resume()
         else:
-            self._view.card.idle('Je tekst staat klaar', 'Keer terug om te beginnen.')
+            self._view.card.idle(i18n.tr('Your text is ready'), i18n.tr('Return to begin.'))
 
     def _failed(self, _message, _trace='') -> None:
         """Keep private source/answer data out of preparation errors; e.g. a schema exception cannot leak a listening transcript."""
 
         self._task = None
         if not self._run.closed:
-            self._rest('Voorbereiding niet gelukt', 'Je eerdere antwoorden en voorbereide tekst blijven bewaard. Probeer het opnieuw.')
+            self._rest(i18n.tr('Preparation failed'), i18n.tr('Your previous answers and prepared text are saved. Try again.'))
 
     def _cancelled(self) -> None:
         """Preserve cached yields after cancellation; e.g. restarting resumes an unfinished independent audit."""
 
         self._task = None
         if not self._run.closed:
-            self._rest('Voorbereiding gepauzeerd', 'Voltooide onderdelen blijven beschikbaar.')
+            self._rest(i18n.tr('Preparation paused'), i18n.tr('Completed parts remain available.'))
 
     def _rest(self, title, message) -> None:
         """Offer a deliberate retry without starting another request; e.g. an error page never loops through paid generation."""
@@ -186,7 +187,7 @@ class Panel(QtWidgets.QWidget):
         self._view.rail.hide()
         self._view.flag.hide()
         self._view.retry.hide()
-        self._view.action.setText('Vorige ronde hervatten' if self._run.session else 'Opnieuw proberen')
+        self._view.action.setText(i18n.tr('Resume previous round') if self._run.session else i18n.tr('Try again'))
         self._view.action.setEnabled(True)
         self._view.action.show()
 
@@ -221,7 +222,7 @@ class Panel(QtWidgets.QWidget):
                 row['viewed_at'] = row['viewed_at'] or time.time()
         elif row['answer_text'] is not None:
             self._view.card.pending(row, withheld=not allowed)
-        self._view.action.setText('Antwoord indienen en verder' if row['answer_text'] is None and row['kind'] == 'open' else 'Volgende')
+        self._view.action.setText(i18n.tr('Submit answer and continue') if row['answer_text'] is None and row['kind'] == 'open' else i18n.tr('Next'))
         self._view.action.setDefault(False)
         self._view.action.show()
         self._view.retry.setVisible(row['check_state'] == 'failed' and row['outcome'] is None)
@@ -255,10 +256,22 @@ class Panel(QtWidgets.QWidget):
         self._view.bar.setValue(summary['submitted'])
         self._view.bar.show()
         if summary['graded'] == summary['planned'] - summary['invalid']:
-            score = f"{summary['score']:.0%}" if summary['score'] is not None else '—'
-            message = f"Begrip {score} · {summary['correct']}/{summary['graded']} volledig goed · {summary['unseen']} beoordelingen nog niet bekeken"
+            score = i18n.number(summary['score'], '.0%') if summary['score'] is not None else '—'
+            message = i18n.tr(
+                'Comprehension {score} · {correct}/{graded} fully correct · {unseen} unseen corrections',
+                score=score,
+                correct=summary['correct'],
+                graded=summary['graded'],
+                unseen=summary['unseen'],
+            )
         else:
-            message = f"{summary['submitted']}/{summary['planned']} ingediend · {summary['submitted'] - summary['graded'] - summary['invalid']} wachtend · {summary['unseen']} beoordelingen nog niet bekeken"
+            message = i18n.tr(
+                '{submitted}/{planned} submitted · {value} pending · {unseen} unseen corrections',
+                submitted=summary['submitted'],
+                planned=summary['planned'],
+                value=summary['submitted'] - summary['graded'] - summary['invalid'],
+                unseen=summary['unseen'],
+            )
         self._view.status.setText(message)
 
     def _input(self) -> None:
@@ -355,10 +368,15 @@ class Panel(QtWidgets.QWidget):
 
         self._run.row, self._run.phase = None, 'summary'
         result = self._db.comprehension_summary(self._run.session)
-        score = f"{result['score']:.0%}" if result['score'] is not None else '—'
-        self._view.card.idle('Ronde afgerond' if not result['unseen'] and result['graded'] == result['submitted'] else 'Je antwoorden zijn opgeslagen',
-                             f"Begrip {score} · {result['correct']} volledig goed. Kies links een eerdere vraag of begin een nieuwe tekst.")
-        self._view.action.setText('Nieuwe tekst')
+        score = i18n.number(result['score'], '.0%') if result['score'] is not None else '—'
+        self._view.card.idle(i18n.tr('Round complete') if not result['unseen'] and result['graded'] == result['submitted'] else i18n.tr('Your answers are saved'),
+                             i18n.tr(
+                                 'Comprehension {score} · {correct} fully correct. Choose an earlier question on the left '
+                                 'or start a new text.',
+                                 score=score,
+                                 correct=result['correct'],
+                             ))
+        self._view.action.setText(i18n.tr('New text'))
         self._view.action.setEnabled(True)
         self._view.action.show()
         self._view.retry.hide()
@@ -395,13 +413,13 @@ class Panel(QtWidgets.QWidget):
 
         if not self._run.session:
             return
-        reason, accepted = QtWidgets.QInputDialog.getText(self, 'Tekst of vraag melden', 'Wat klopt er niet?')
+        reason, accepted = QtWidgets.QInputDialog.getText(self, i18n.tr('Report text or question'), i18n.tr('What is wrong?'))
         if accepted and reason.strip():
             session = self._db.comprehension_session(self._run.session)
             self._db.comprehension_flag(session['passage_id'], reason.strip())
             self._run.session = None
             self._view.source.clear()
-            self._rest('Tekst gemeld', 'Je ingediende antwoorden blijven in je activiteit staan, maar tellen niet meer mee voor de beoordeling.')
+            self._rest(i18n.tr('Text reported'), i18n.tr('Your submitted answers remain in your activity but no longer count toward scores.'))
             self.activity_changed.emit()
 
     def _cancel(self) -> None:

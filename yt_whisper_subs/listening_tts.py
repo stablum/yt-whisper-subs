@@ -15,6 +15,7 @@ import wave
 import contextlib
 from pathlib import Path
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import task_cancel
 from yt_whisper_subs import cfg
 from yt_whisper_subs import proc
@@ -104,7 +105,7 @@ class PiperSpeech:
             if target.is_file() and digest(target, algorithm) == expected:
                 continue
             _checkpoint()
-            report("Downloading verified Dutch speech voice (first use only)…")
+            report(i18n.tr('Downloading verified Dutch speech voice (first use only)…'))
             temp = target.with_name(name + f".{uuid.uuid4().hex}.part")
             try:
                 with urllib.request.urlopen(f"{_BASE}/{name}", timeout=60) as response, temp.open("wb") as output:
@@ -142,7 +143,7 @@ class PiperSpeech:
             if python.name.lower() == "pythonw.exe":
                 python = python.with_name("python.exe")
             boot = "import sys; sys.path.insert(0,sys.argv[1]); from yt_whisper_subs.listening_synth import main; main(sys.argv[2])"
-            report("Preparing Dutch listening audio…")
+            report(i18n.tr('Preparing Dutch listening audio…'))
             result = proc.run([python, "-c", boot, str(cfg.PROJECT_DIR), str(manifest.resolve())],
                               capture_stdout=True, stream_stdout=True, check=False)
             if result.returncode:
@@ -166,7 +167,7 @@ class AudioCache:
         presets = [preset] if preset else listening_voices.read(self._db).enabled
         for row in presets:
             _checkpoint()
-            report("Preparing voice: " + row.name)
+            report(i18n.tr('Preparing voice: ') + row.name)
             try:
                 self._prepare_voice(self.engine(row.config), questions, report)
             except RuntimeError as exc:

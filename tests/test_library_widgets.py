@@ -131,7 +131,8 @@ class DetailPanelTests(unittest.TestCase):
         Example: a patch bump changes the title without another version edit.
         """
 
-        self.assertTrue(library_gui.WINDOW_TITLE.endswith(f"v{yt_whisper_subs.__version__}"))
+        title = library_gui.i18n.tr(library_gui.WINDOW_TITLE, version=yt_whisper_subs.__version__)
+        self.assertTrue(title.endswith(f"v{yt_whisper_subs.__version__}"))
 
     def test_metadata_footer_distinguishes_deferred_work(self) -> None:
         """Never describe a cooled-down lookup as actively queued.

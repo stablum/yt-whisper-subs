@@ -12,6 +12,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_service
 from yt_whisper_subs import openai_chapters
 
@@ -19,7 +20,7 @@ from yt_whisper_subs import openai_chapters
 def _when(timestamp: float) -> str:
     """Display stored UTC instants in local time; e.g. distinguish two clicks today."""
 
-    return datetime.fromtimestamp(timestamp).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    return i18n.date_text(datetime.fromtimestamp(timestamp).astimezone(), '%Y-%m-%d %H:%M:%S')
 
 
 def _time(seconds: float) -> str:
@@ -38,18 +39,18 @@ class VocabularyDialog(QtWidgets.QDialog):
         """Bind the review window to one output root; e.g. the currently open library."""
 
         super().__init__(parent)
-        self.setWindowTitle("Vocabulary · subtitles and practice")
+        self.setWindowTitle(i18n.tr('Vocabulary · subtitles and practice'))
         self.resize(1180, 760)
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self._service = service
         self._snapshot = None
         self._events: list[dict] = []
         self._search = QtWidgets.QLineEdit()
-        self._search.setPlaceholderText("Search words, meanings, or dictionary forms…")
-        self._group = QtWidgets.QCheckBox("Group by dictionary form")
+        self._search.setPlaceholderText(i18n.tr('Search words, meanings, or dictionary forms…'))
+        self._group = QtWidgets.QCheckBox(i18n.tr('Group by dictionary form'))
         self._status = QtWidgets.QLabel()
-        self._words = self._table(["Word", "Language", "Dictionary form", "Meaning", "Clicks", "Mistakes", "Videos", "Compounds", "Last seen", "Translation"])
-        self._history = self._table(["Recorded at", "Source", "Cue time", "Click position", "Meaning", "Translation"])
+        self._words = self._table([i18n.tr('Word'), i18n.tr('Language'), i18n.tr('Dictionary form'), i18n.tr('Meaning'), i18n.tr('Clicks'), i18n.tr('Mistakes'), i18n.tr('Videos'), i18n.tr('Compounds'), i18n.tr('Last seen'), i18n.tr('Translation')])
+        self._history = self._table([i18n.tr('Recorded at'), i18n.tr('Source'), i18n.tr('Cue time'), i18n.tr('Click position'), i18n.tr('Meaning'), i18n.tr('Translation')])
         for col, width in enumerate((125, 75, 135, 180, 60, 70, 65, 95, 160, 105)):
             self._words.setColumnWidth(col, width)
         for col, width in enumerate((160, 245, 90, 105, 200, 105)):
@@ -57,7 +58,7 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._detail = QtWidgets.QPlainTextEdit()
         self._detail.setObjectName("vocabularyDetail")
         self._detail.setReadOnly(True)
-        self._detail.setPlaceholderText("Select a word and an occurrence to inspect its original sentence and meaning.")
+        self._detail.setPlaceholderText(i18n.tr('Select a word and an occurrence to inspect its original sentence and meaning.'))
         self._arrange()
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(2000)
@@ -69,11 +70,11 @@ class VocabularyDialog(QtWidgets.QDialog):
     def _arrange(self) -> None:
         """Compose resizable panels and their native actions; e.g. replay a selected occurrence."""
 
-        retry = QtWidgets.QPushButton("Retry failed lookups / enrichment")
-        play = QtWidgets.QPushButton("Play occurrence")
-        source = QtWidgets.QPushButton("Open source")
-        close = QtWidgets.QPushButton("Close")
-        practice = QtWidgets.QPushButton("Practice…")
+        retry = QtWidgets.QPushButton(i18n.tr('Retry failed lookups / enrichment'))
+        play = QtWidgets.QPushButton(i18n.tr('Play occurrence'))
+        source = QtWidgets.QPushButton(i18n.tr('Open source'))
+        close = QtWidgets.QPushButton(i18n.tr('Close'))
+        practice = QtWidgets.QPushButton(i18n.tr('Practice…'))
         practice.setObjectName("primaryButton")
         self._play, self._source = play, source
         top = QtWidgets.QHBoxLayout()
@@ -140,7 +141,7 @@ class VocabularyDialog(QtWidgets.QDialog):
             if query and query not in searchable.casefold():
                 continue
             word = row["lemma"] if self._group.isChecked() and row["lemma"] else row["surface"]
-            status = f"{row['failed']} failed" if row["failed"] else (f"{row['pending']} pending" if row["pending"] else "Ready")
+            status = f"{row['failed']} failed" if row["failed"] else (f"{row['pending']} pending" if row["pending"] else i18n.tr('Ready'))
             values = [word, row["language"], row["lemma"] or "", row["meaning"] or "",
                       row["clicks"], row["mistakes"], row["videos"], row["components"], _when(row["occurred_at"]), status]
             idx = self._words.rowCount()
@@ -157,9 +158,15 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._words.blockSignals(False)
         pending = sum(count for state, count in enrichment.items() if state not in {"done", "failed"})
         failed = enrichment.get("failed", 0)
-        self._status.setText(f"{len(rows):,} words · {sum(row['clicks'] for row in rows):,} clicks · "
-                             f"{sum(row['mistakes'] for row in rows):,} word confusions · "
-                             f"enrichment: {pending} pending, {failed} failed")
+        self._status.setText(i18n.tr(
+            '{len:,} words · {sum:,} clicks · {sum3:,} word confusions · enrichment: {pending} '
+            'pending, {failed} failed',
+            len=len(rows),
+            sum=sum((row['clicks'] for row in rows)),
+            sum3=sum((row['mistakes'] for row in rows)),
+            pending=pending,
+            failed=failed,
+        ))
         self._show_history()
 
     def _show_history(self) -> None:
@@ -203,31 +210,40 @@ class VocabularyDialog(QtWidgets.QDialog):
             self._detail.clear()
             return
         ctx = json.loads(row["context_json"])
-        lines = [f"{row['surface']} → {row['meaning'] or 'Translation pending'}",
-                 f"Dictionary form: {row['lemma'] or '—'} · {row['lemma_meaning'] or '—'}",
+        lines = [f"{row['surface']} → {row['meaning'] or i18n.tr('Translation pending')}",
+                 i18n.tr('Dictionary form: {value} · {value2}', value=row['lemma'] or '—', value2=row['lemma_meaning'] or '—'),
                  f"{row['part_of_speech'] or ''} · {row['note'] or ''}",
-                 f"Expression: {row['expression'] or '—'}", "", ctx["sentence"]]
+                 i18n.tr('Expression: {value}', value=row['expression'] or '—'), "", ctx["sentence"]]
         for split in self._service.db.word_compounds(row["lookup_id"]):
             parts = []
             for part in split.parts:
                 if part.word is None:
-                    parts.append(f"{part.text} (linking element)")
+                    parts.append(i18n.tr('{text} (linking element)', text=part.text))
                 else:
                     parts.append(f"{part.text} [{part.word.lemma}: {part.word.meaning}]")
-            lines.extend(["", f"Compound: {split.lemma} = {' + '.join(parts)}"])
+            lines.extend(["", i18n.tr('Compound: {lemma} = {value}', lemma=split.lemma, value=' + '.join(parts))])
         if row["origin"] == "click":
-            lines.extend(["", f"Before: {ctx['before']}", f"After: {ctx['after']}",
-                          f"English subtitle: {ctx['english'] or '—'}", "", f"Source: {row['url']}", f"File: {row['path']}"])
+            lines.extend(["", i18n.tr('Before: {before}', before=ctx['before']), i18n.tr('After: {after}', after=ctx['after']),
+                          i18n.tr(
+                              'English subtitle: {value}',
+                              value=ctx['english'] or '—',
+                          ), "", i18n.tr(
+                              'Source: {url}',
+                              url=row['url'],
+                          ), i18n.tr(
+                              'File: {path}',
+                              path=row['path'],
+                          )])
         elif row["origin"] == "component":
-            lines.extend(["", row["title"], "Added as an unassessed constituent; no independent mistake was recorded."])
+            lines.extend(["", row["title"], i18n.tr('Added as an unassessed constituent; no independent mistake was recorded.')])
         else:
-            lines.extend(["", f"{row['title']} · {row['role']} concept",
-                          f"You selected or typed: {row['typed'] or '(omitted)'}", f"Correction: {row['correction']}",
-                          f"English: {ctx['english'] or '—'}"])
+            lines.extend(["", i18n.tr('{title} · {role} concept', title=row['title'], role=row['role']),
+                          i18n.tr('You selected or typed: {value}', value=row['typed'] or '(omitted)'), i18n.tr('Correction: {correction}', correction=row['correction']),
+                          i18n.tr('English: {value}', value=ctx['english'] or '—')])
         if row["ambiguous"]:
-            lines.append("Meaning is ambiguous in this context.")
+            lines.append(i18n.tr('Meaning is ambiguous in this context.'))
         if row["error"]:
-            lines.append(f"Translation error: {row['error']}")
+            lines.append(i18n.tr('Translation error: {error}', error=row['error']))
         self._detail.setPlainText("\n".join(lines))
 
     def _play_occurrence(self, *_args: object) -> None:

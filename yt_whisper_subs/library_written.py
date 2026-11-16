@@ -14,6 +14,7 @@ import pydantic as pd
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_workers
 
@@ -91,7 +92,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._view.options.restart_requested.connect(self._prepare)
         self._view.options.finish_requested.connect(self._stop)
         self._view.options.editing.connect(self._editing)
-        self._idle(mode.label, mode.intro, "Continue")
+        self._idle(mode.label, mode.intro, i18n.tr('Continue'))
         self._view.action.hide()
 
     @property
@@ -124,7 +125,7 @@ class WrittenPanel(QtWidgets.QWidget):
 
         self._run.row = None
         self._view.card.idle(title, message)
-        self._view.status.setText(f"{self._mode.label} · close anytime to pause")
+        self._view.status.setText(i18n.tr('{label} · close anytime to pause', label=self._mode.label))
         self._view.bar.hide()
         self._view.flag.hide()
         self._view.cancel.hide()
@@ -146,7 +147,7 @@ class WrittenPanel(QtWidgets.QWidget):
             opts = opts.model_copy(update={"include_early": True})
         self._run.pending = False
         self._run.empty = ""
-        self._idle(f"Preparing {self._mode.label.lower()}…", "Getting natural sentences ready and checking them.", "Preparing…")
+        self._idle(i18n.tr('Preparing {value}…', value=self._mode.label.lower()), i18n.tr('Getting natural sentences ready and checking them.'), i18n.tr('Preparing…'))
 
         def prepare(report):
             """Return healthy empty states as data; e.g. incompatible filters are different from a network failure."""
@@ -190,12 +191,12 @@ class WrittenPanel(QtWidgets.QWidget):
         if isinstance(result, practice_round.NothingToPractice):
             self._run.empty = result.reason
             self._run.session = self._mode.ops.active()
-            action = "Resume round" if self._run.session else ("Practice early" if result.reason == "not_due" else "Try again")
-            self._idle("All caught up" if result.reason == "not_due" else "Adjust your round", str(result), action)
+            action = i18n.tr('Resume round') if self._run.session else (i18n.tr('Practice early') if result.reason == "not_due" else i18n.tr('Try again'))
+            self._idle(i18n.tr('All caught up') if result.reason == "not_due" else i18n.tr('Adjust your round'), str(result), action)
             return
         self._run.session = result
         self._run.pending = True
-        self._idle("Your round is ready", f"Return to {self._mode.tab_name} to continue.", "Continue round")
+        self._idle(i18n.tr('Your round is ready'), i18n.tr('Return to {tab_name} to continue.', tab_name=self._mode.tab_name), i18n.tr('Continue round'))
         self.activate()
 
     def _advance(self, *, guard: bool = False) -> None:
@@ -217,7 +218,13 @@ class WrittenPanel(QtWidgets.QWidget):
         self._run.guard_until = time.monotonic() + QtWidgets.QApplication.doubleClickInterval() / 1000 if guard else 0
         self._view.card.present(row)
         summary = self._mode.ops.summary(self._run.session)
-        self._view.status.setText(f"{self._mode.label}    ·    {row['ordinal']} / {summary['planned']}    ·    {summary['correct']} correct")
+        self._view.status.setText(i18n.tr(
+            '{label}    ·    {ordinal} / {planned}    ·    {correct} correct',
+            label=self._mode.label,
+            ordinal=row['ordinal'],
+            planned=summary['planned'],
+            correct=summary['correct'],
+        ))
         self._view.bar.setRange(0, summary["planned"])
         self._view.bar.setValue(row["ordinal"] - 1)
         self._view.bar.show()
@@ -226,12 +233,12 @@ class WrittenPanel(QtWidgets.QWidget):
         self._view.cancel.hide()
         self._view.flag.setEnabled(True)
         self._view.flag.show()
-        self._view.action.setText("Retry checking" if row["answer_text"] is not None else "Check sentence")
+        self._view.action.setText(i18n.tr('Retry checking') if row["answer_text"] is not None else i18n.tr('Check sentence'))
         self._view.action.setDefault(False)
         self._view.action.show()
         self._input_changed()
         if row["answer_text"] is not None:
-            self._view.card.message("Your first attempt is saved. Retry checking it to get the correction.")
+            self._view.card.message(i18n.tr('Your first attempt is saved. Retry checking it to get the correction.'))
 
     def _input_changed(self) -> None:
         """Enable checking only for bounded nonempty input; e.g. whitespace cannot become a failed attempt."""
@@ -256,7 +263,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._run.row = saved
         self._view.card.editor.setReadOnly(True)
         self.activity_changed.emit()
-        self._view.card.message("Checking…")
+        self._view.card.message(i18n.tr('Checking…'))
         self._start_task(lambda report: self._engine.check(saved["id"], report), "grade", self._graded)
 
     def _graded(self, row: dict) -> None:
@@ -272,13 +279,13 @@ class WrittenPanel(QtWidgets.QWidget):
         self._view.bar.setRange(0, self._mode.ops.summary(self._run.session)["planned"])
         self._view.bar.setValue(row["ordinal"])
         if row["outcome"] == "invalid":
-            self._view.card.idle("Exercise reported", "Excluded from grading and adaptive review.")
+            self._view.card.idle(i18n.tr('Exercise reported'), i18n.tr('Excluded from grading and adaptive review.'))
             self._view.card.arm()
             self._view.flag.setEnabled(False)
         else:
             self._view.card.feedback(row)
-        self._view.status.setText("Correction saved · read it, then click Continue or press Enter")
-        self._view.action.setText("Continue →")
+        self._view.status.setText(i18n.tr('Correction saved · read it, then click Continue or press Enter'))
+        self._view.action.setText(i18n.tr('Continue →'))
         self._view.action.setEnabled(True)
         self._view.action.setDefault(self._active)
         if self._active:
@@ -307,8 +314,8 @@ class WrittenPanel(QtWidgets.QWidget):
             return
         self._task = None
         if self._run.operation == "grade" and self._run.row:
-            self._view.card.message(f"Could not check your sentence: {message}\nYour first attempt is saved; no failure was recorded.")
-            self._view.action.setText("Retry checking")
+            self._view.card.message(i18n.tr('Could not check your sentence: {message}\nYour first attempt is saved; no failure was recorded.', message=message))
+            self._view.action.setText(i18n.tr('Retry checking'))
             self._view.action.setEnabled(True)
             self._view.action.setDefault(False)
             self._view.options.setEnabled(True)
@@ -317,12 +324,12 @@ class WrittenPanel(QtWidgets.QWidget):
             self._view.bar.hide()
         else:
             self._run.session = self._mode.ops.active()
-            self._idle("Could not prepare this round", message, "Resume round" if self._run.session else "Try again")
+            self._idle(i18n.tr('Could not prepare this round'), message, i18n.tr('Resume round') if self._run.session else i18n.tr('Try again'))
 
     def _cancelled(self) -> None:
         """Leave cancellation paused; e.g. it must not immediately restart a paid request."""
 
-        self._failed("Checking cancelled." if self._run.operation == "grade" else "Preparation cancelled.", "")
+        self._failed(i18n.tr('Checking cancelled.') if self._run.operation == "grade" else i18n.tr('Preparation cancelled.'), "")
 
     def _report(self) -> None:
         """Remove defective content from every skill estimate; e.g. report a disputed AI correction after reading it."""
@@ -331,10 +338,10 @@ class WrittenPanel(QtWidgets.QWidget):
             return
         self._mode.ops.flag(self._run.row["id"])
         self._run.row["outcome"] = "invalid"
-        self._view.card.idle("Exercise reported", "Excluded from grading and adaptive review. Your submitted effort stays recorded.")
+        self._view.card.idle(i18n.tr('Exercise reported'), i18n.tr('Excluded from grading and adaptive review. Your submitted effort stays recorded.'))
         self._view.card.arm()
         self._view.flag.setEnabled(False)
-        self._view.action.setText("Continue →")
+        self._view.action.setText(i18n.tr('Continue →'))
         self._view.action.setEnabled(True)
         self._view.action.setDefault(True)
         self._view.action.setFocus()
@@ -347,7 +354,7 @@ class WrittenPanel(QtWidgets.QWidget):
         if self._task:
             self._task.cancel()
             self._view.cancel.setEnabled(False)
-            self._view.status.setText("Cancelling after the current request…")
+            self._view.status.setText(i18n.tr('Cancelling after the current request…'))
         elif self._run.session:
             self._finish()
 
@@ -359,8 +366,17 @@ class WrittenPanel(QtWidgets.QWidget):
         self._run.session = None
         self._run.pending = False
         self._run.empty = ""
-        message = f"{result['correct']} correct · {result['wrong']} to revisit · {result['submitted']} submitted"
-        self._idle(f"{self._mode.key.capitalize()} round complete" if complete else f"{self._mode.key.capitalize()} round saved", message, f"Another {self._mode.key} round")
+        message = i18n.tr('{correct} correct · {wrong} to revisit · {submitted} submitted', correct=result['correct'], wrong=result['wrong'], submitted=result['submitted'])
+        self._idle(i18n.tr(
+            '{value} round complete',
+            value=self._mode.key.capitalize(),
+        ) if complete else i18n.tr(
+            '{value} round saved',
+            value=self._mode.key.capitalize(),
+        ), message, i18n.tr(
+            'Another {key} round',
+            key=self._mode.key,
+        ))
 
     def _editing(self, editing: bool) -> None:
         """Suspend dialog action keys during setup; e.g. Enter in round length cannot advance an answered sentence."""

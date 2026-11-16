@@ -12,6 +12,7 @@ from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_activity
 
 
@@ -26,14 +27,14 @@ class ActivityChart(QtWidgets.QWidget):
         self._hits: list[tuple[QtCore.QRectF, str]] = []
         self.setMinimumHeight(180)
         self.setMouseTracking(True)
-        self.setAccessibleName("Practice activity over the last seven days, in questions answered")
+        self.setAccessibleName(i18n.tr('Practice activity over the last seven days, in questions answered'))
         self.setSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
 
     def set_days(self, days: list[practice_activity.Day]) -> None:
         """Accept the shared zero-filled week; e.g. both surfaces show the same counts for Friday."""
 
         self._days = days
-        description = "; ".join(f"{row.day:%A %d %B}: {row.answers} answers" for row in days)
+        description = "; ".join(i18n.nt("{day}: {count} answer", "{day}: {count} answers", row.answers, day=i18n.date_text(row.day, "%A %d %B")) for row in days)
         self.setAccessibleDescription(description)
         self.update()
 
@@ -44,9 +45,9 @@ class ActivityChart(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.fillRect(self.rect(), QtGui.QColor("#1c212b"))
         painter.setPen(QtGui.QColor("#d9e3ef"))
-        painter.drawText(12, 23, "Answers · last 7 days")
-        legend = (("NL → EN", "#66d9ef"), ("EN → NL", "#ffd166"), ("Verbs", "#c4a1ff"),
-                  ("Sentences", "#ffac78"), ("Listening", "#83e5af"), ("Begrip", "#f38cbb"))
+        painter.drawText(12, 23, i18n.tr('Answers · last 7 days'))
+        legend = (("NL → EN", "#66d9ef"), ("EN → NL", "#ffd166"), (i18n.tr('Verbs'), "#c4a1ff"),
+                  (i18n.tr('Sentences'), "#ffac78"), (i18n.tr('Listening'), "#83e5af"), (i18n.tr('Comprehension'), "#f38cbb"))
         for idx, (text, color) in enumerate(legend):
             painter.setPen(QtGui.QColor(color))
             painter.drawText(12 + idx % 3 * 145, 44 + idx // 3 * 18, text)
@@ -77,11 +78,25 @@ class ActivityChart(QtWidgets.QWidget):
                              QtCore.Qt.AlignmentFlag.AlignCenter, str(row.answers))
             painter.setPen(QtGui.QColor("#aebed1"))
             painter.drawText(QtCore.QRectF(center - step / 2, plot.bottom() + 7, step, 40),
-                             QtCore.Qt.AlignmentFlag.AlignCenter, row.day.strftime("%a\n%d %b"))
-            hint = (f"{row.day:%A, %d %B %Y}\n{row.answers} answers · {row.words} words · {row.verb_lemmas} verbs\n"
-                    f"NL → EN: {row.nl_en} · EN → NL: {row.en_nl} · Verbs: {row.verbs}\n"
-                    f"Sentences EN → NL: {row.sentence_en_nl} · NL → EN: {row.sentence_nl_en}\nListening: {row.listening}\n"
-                    f"Leesbegrip: {row.comprehension_read} · Luisterbegrip: {row.comprehension_listen}")
+                             QtCore.Qt.AlignmentFlag.AlignCenter, i18n.date_text(row.day, '%a\n%d %b'))
+            hint = (i18n.tr(
+                '{day:%A, %d %B %Y}\n{answers} answers · {words} words · {verb_lemmas} verbs\nNL → EN: '
+                '{nl_en} · EN → NL: {en_nl} · Verbs: {verbs}\nSentences EN → NL: {sentence_en_nl} · NL → '
+                'EN: {sentence_nl_en}\nListening: {listening}\nReading comprehension: {comprehension_read} '
+                '· Listening comprehension: {comprehension_listen}',
+                day=row.day,
+                answers=row.answers,
+                words=row.words,
+                verb_lemmas=row.verb_lemmas,
+                nl_en=row.nl_en,
+                en_nl=row.en_nl,
+                verbs=row.verbs,
+                sentence_en_nl=row.sentence_en_nl,
+                sentence_nl_en=row.sentence_nl_en,
+                listening=row.listening,
+                comprehension_read=row.comprehension_read,
+                comprehension_listen=row.comprehension_listen,
+            ))
             self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
 
     def mouseMoveEvent(self, event) -> None:
@@ -104,7 +119,7 @@ class ActivityCalendar(QtWidgets.QCalendarWidget):
         self._days: dict[date, practice_activity.Day] = {}
         self._today = date.today()
         self.setObjectName("practiceCalendar")
-        self.setAccessibleName("Practice activity calendar, stronger teal means more answers")
+        self.setAccessibleName(i18n.tr('Practice activity calendar, stronger teal means more answers'))
         self.setFirstDayOfWeek(QtCore.Qt.DayOfWeek.Monday)
         self.setVerticalHeaderFormat(QtWidgets.QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
         self.setMinimumHeight(330)
@@ -170,7 +185,7 @@ class ActivityPanel(QtWidgets.QWidget):
         self._day.setObjectName("practiceDay")
         self._details = QtWidgets.QLabel()
         self._details.setWordWrap(True)
-        today = QtWidgets.QPushButton("Today")
+        today = QtWidgets.QPushButton(i18n.tr('Today'))
         today.clicked.connect(self._select_today)
         self._calendar.selectionChanged.connect(self._show_day)
         self._calendar.currentPageChanged.connect(self._show_month)
@@ -184,9 +199,11 @@ class ActivityPanel(QtWidgets.QWidget):
         bottom = QtWidgets.QHBoxLayout()
         bottom.addWidget(self._calendar, 3)
         bottom.addLayout(detail, 2)
-        note = QtWidgets.QLabel("Activity counts submitted answers, including mistakes and answers to later-reported questions. "
-                               "Opening a round or reporting before answering adds no activity. Accuracy excludes reported questions. "
-                               "Each day uses your local calendar date.")
+        note = QtWidgets.QLabel(i18n.tr(
+            'Activity counts submitted answers, including mistakes and answers to later-reported '
+            'questions. Opening a round or reporting before answering adds no activity. Accuracy '
+            'excludes reported questions. Each day uses your local calendar date.',
+        ))
         note.setWordWrap(True)
         note.setObjectName("settingsNote")
         layout = QtWidgets.QVBoxLayout(self)
@@ -213,9 +230,19 @@ class ActivityPanel(QtWidgets.QWidget):
         week = self._data.week
         active = sum(row.answers > 0 for row in week)
         self._totals.setText(
-            f"This week · {sum(row.answers for row in week)} answers · {active}/7 active days · {current} day streak\n"
-            f"All time · {self._data.answers} answers · {len(self._data.days)} active days · "
-            f"{self._data.distinct_words} words · {self._data.distinct_verbs} verbs · longest streak {longest} days")
+            i18n.tr(
+                'This week · {sum} answers · {active}/7 active days · {current} day streak\nAll time · '
+                '{answers} answers · {len} active days · {distinct_words} words · {distinct_verbs} verbs '
+                '· longest streak {longest} days',
+                sum=sum((row.answers for row in week)),
+                active=active,
+                current=current,
+                answers=self._data.answers,
+                len=len(self._data.days),
+                distinct_words=self._data.distinct_words,
+                distinct_verbs=self._data.distinct_verbs,
+                longest=longest,
+            ))
         self._chart.set_days(week)
         self._calendar.set_activity(self._data)
         self._show_day()
@@ -227,23 +254,43 @@ class ActivityPanel(QtWidgets.QWidget):
         selected = self._calendar.selectedDate()
         stamp = date(selected.year(), selected.month(), selected.day())
         row = next((row for row in self._data.days if row.day == stamp), practice_activity.Day(day=stamp))
-        self._day.setText(stamp.strftime("%A\n%d %B %Y"))
+        self._day.setText(i18n.date_text(stamp, '%A\n%d %B %Y'))
         if not row.answers:
-            self._details.setText("No answers on this day.")
+            self._details.setText(i18n.tr('No answers on this day.'))
             return
-        accuracy = f"{row.correct / row.graded:.0%} correct ({row.correct}/{row.graded} graded)" if row.graded else "No graded answers"
-        self._details.setText(f"{row.answers} answers · {row.words} words · {row.verb_lemmas} verbs\n\n"
-                              f"Words Dutch → English: {row.nl_en}\nWords English → Dutch: {row.en_nl}\nVerb transformations: {row.verbs}\n"
-                              f"Sentences English → Dutch: {row.sentence_en_nl}\nSentences Dutch → English: {row.sentence_nl_en}\n"
-                              f"Listening: {row.listening}\nLeesbegrip: {row.comprehension_read} · Luisterbegrip: {row.comprehension_listen}\n\n{accuracy}\n"
-                              f"{row.answers - row.graded} not graded (pending or reported)")
+        accuracy = i18n.tr(
+            '{value:.0%} correct ({correct}/{graded} graded)',
+            value=row.correct / row.graded,
+            correct=row.correct,
+            graded=row.graded,
+        ) if row.graded else i18n.tr('No graded answers')
+        self._details.setText(i18n.tr(
+            '{answers} answers · {words} words · {verb_lemmas} verbs\n\nWords Dutch → English: {nl_en}\n'
+            'Words English → Dutch: {en_nl}\nVerb transformations: {verbs}\nSentences English → Dutch: '
+            '{sentence_en_nl}\nSentences Dutch → English: {sentence_nl_en}\nListening: {listening}\n'
+            'Reading comprehension: {comprehension_read} · Listening comprehension: '
+            '{comprehension_listen}\n\n{accuracy}\n{value} not graded (pending or reported)',
+            answers=row.answers,
+            words=row.words,
+            verb_lemmas=row.verb_lemmas,
+            nl_en=row.nl_en,
+            en_nl=row.en_nl,
+            verbs=row.verbs,
+            sentence_en_nl=row.sentence_en_nl,
+            sentence_nl_en=row.sentence_nl_en,
+            listening=row.listening,
+            comprehension_read=row.comprehension_read,
+            comprehension_listen=row.comprehension_listen,
+            accuracy=accuracy,
+            value=row.answers - row.graded,
+        ))
 
     def _show_month(self, *_args) -> None:
         """Summarize the displayed month independently of date selection; e.g. navigate to last month."""
 
         year, month = self._calendar.yearShown(), self._calendar.monthShown()
         rows = [row for row in self._data.days if row.day.year == year and row.day.month == month]
-        self._month.setText(f"{date(year, month, 1):%B %Y}\n{sum(row.answers for row in rows)} answers · {len(rows)} active days")
+        self._month.setText(i18n.tr('{date:%B %Y}\n{sum} answers · {len} active days', date=date(year, month, 1), sum=sum((row.answers for row in rows)), len=len(rows)))
 
     def _select_today(self) -> None:
         """Return both selection and month to today; e.g. finish browsing historical activity."""

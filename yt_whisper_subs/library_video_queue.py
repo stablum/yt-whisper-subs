@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 from typing import NamedTuple
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import pipeline_progress as progress
 
@@ -45,7 +46,7 @@ class VideoQueueMixin:
 
         if self._is_video_pending(video_id):
             title = self._ui.catalog.model.title_for(video_id)
-            self.statusBar().showMessage(f"Already queued or processing · {title}", 4_000)
+            self.statusBar().showMessage(i18n.tr('Already queued or processing · {title}', title=title), 4_000)
             return False
         work = VideoWork(video_id, label, fn, finished)
         self._video_queue[video_id] = work
@@ -53,7 +54,7 @@ class VideoQueueMixin:
         if self._busy:
             position = len(self._video_queue)
             title = self._ui.catalog.model.title_for(video_id)
-            self._ui.trace.append_message(f"○ Pipeline queued · #{position} · {title}")
+            self._ui.trace.append_message(i18n.tr('○ Pipeline queued · #{position} · {title}', position=position, title=title))
             self._update_actions()
         else:
             self._start_next_video()
@@ -139,17 +140,17 @@ class VideoQueueMixin:
         """
 
         for position, work in enumerate(self._video_queue.values(), start=1):
-            label = "Queued · next" if position == 1 else f"Queued · #{position}"
+            label = i18n.tr('Queued · next') if position == 1 else i18n.tr('Queued · #{position}', position=position)
             update = progress.make(work.video_id, progress.Stage.QUEUED, 0.0, label)
             self._ui.catalog.model.set_progress(update)
         waiting = len(self._video_queue)
         active = self._active_video_id is not None or self._active_progress is not None
         if active and waiting:
-            text = f"Pipeline queue: 1 active · {waiting} waiting"
+            text = i18n.tr('Pipeline queue: 1 active · {waiting} waiting', waiting=waiting)
         elif active:
-            text = "Pipeline: active"
+            text = i18n.tr('Pipeline: active')
         elif waiting:
-            text = f"Pipeline queue: {waiting} waiting"
+            text = i18n.tr('Pipeline queue: {waiting} waiting', waiting=waiting)
         else:
             text = ""
         self._ui.queue_status.setText(text)

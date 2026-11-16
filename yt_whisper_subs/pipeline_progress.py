@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import NamedTuple
 
 
+from yt_whisper_subs import i18n
 ENV_VIDEO_ID = "YT_WHISPER_SUBS_PROGRESS_VIDEO_ID"
 PREFIX = "@@yt-whisper-progress "
 
@@ -56,13 +57,13 @@ class StageSpec(NamedTuple):
 
 
 STAGE_SPECS = (
-    StageSpec(Stage.PREPARING, "Preparing", 0.03, "#8f9aaa"),
-    StageSpec(Stage.DOWNLOADING, "Downloading", 0.32, "#4ea1f3"),
-    StageSpec(Stage.EXTRACTING, "Extracting audio", 0.07, "#55d6be"),
-    StageSpec(Stage.TRANSCRIBING, "Speech-to-text", 0.30, "#a78bfa"),
-    StageSpec(Stage.TRANSLATING, "Translating", 0.16, "#f3bd63"),
-    StageSpec(Stage.CHAPTERING, "Creating chapters", 0.07, "#f27bbd"),
-    StageSpec(Stage.FINALIZING, "Finalizing", 0.05, "#58d68d"),
+    StageSpec(Stage.PREPARING, i18n.mark('Preparing'), 0.03, "#8f9aaa"),
+    StageSpec(Stage.DOWNLOADING, i18n.mark('Downloading'), 0.32, "#4ea1f3"),
+    StageSpec(Stage.EXTRACTING, i18n.mark('Extracting audio'), 0.07, "#55d6be"),
+    StageSpec(Stage.TRANSCRIBING, i18n.mark('Speech-to-text'), 0.30, "#a78bfa"),
+    StageSpec(Stage.TRANSLATING, i18n.mark('Translating'), 0.16, "#f3bd63"),
+    StageSpec(Stage.CHAPTERING, i18n.mark('Creating chapters'), 0.07, "#f27bbd"),
+    StageSpec(Stage.FINALIZING, i18n.mark('Finalizing'), 0.05, "#58d68d"),
 )
 _WORK_SPECS = {spec.stage: spec for spec in STAGE_SPECS}
 _DOWNLOAD_PERCENT = re.compile(r"\[download\]\s+(?P<pct>\d{1,3}(?:\.\d+)?)%", re.IGNORECASE)
@@ -101,18 +102,18 @@ def stage_label(stage: Stage) -> str:
     """
 
     labels = {
-        Stage.AVAILABLE: "Available",
-        Stage.REMOVED: "Video + yields removed",
-        Stage.QUEUED: "Queued",
-        Stage.READY: "Ready to play",
-        Stage.FAILED: "Failed",
-        Stage.CANCELLED: "Cancelled",
-        Stage.PAUSED: "Paused",
-        Stage.INTERRUPTED: "Interrupted · ready to resume",
-        Stage.LIVE: "Live now",
-        Stage.UPCOMING: "Upcoming",
-        Stage.POST_LIVE: "Replay processing",
-        Stage.LIVE_UNKNOWN: "Availability unconfirmed",
+        Stage.AVAILABLE: i18n.mark('Available'),
+        Stage.REMOVED: i18n.mark('Video + yields removed'),
+        Stage.QUEUED: i18n.mark('Queued'),
+        Stage.READY: i18n.mark('Ready to play'),
+        Stage.FAILED: i18n.mark('Failed'),
+        Stage.CANCELLED: i18n.mark('Cancelled'),
+        Stage.PAUSED: i18n.mark('Paused'),
+        Stage.INTERRUPTED: i18n.mark('Interrupted · ready to resume'),
+        Stage.LIVE: i18n.mark('Live now'),
+        Stage.UPCOMING: i18n.mark('Upcoming'),
+        Stage.POST_LIVE: i18n.mark('Replay processing'),
+        Stage.LIVE_UNKNOWN: i18n.mark('Availability unconfirmed'),
     }
     if spec := _WORK_SPECS.get(stage):
         return spec.label

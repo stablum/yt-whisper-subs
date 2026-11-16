@@ -3,6 +3,8 @@
 Example: Word quiz, Verbs and Sentences share one labelled group without adding an extra navigation step.
 """
 
+import textwrap
+
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
@@ -38,12 +40,15 @@ class PracticeNav(QtWidgets.QWidget):
             buttons.setSpacing(5)
             columns = 4 if len(indices) > 6 else 3
             for pos, idx in enumerate(indices):
-                button = QtWidgets.QPushButton(tabs.tabText(idx))
+                title_text = tabs.tabText(idx)
+                lines = [textwrap.fill(line, width=22, break_long_words=False) for line in title_text.splitlines()]
+                button = QtWidgets.QPushButton("\n".join(lines))
                 button.setObjectName("practicePageButton")
                 button.setAccessibleName(f"{tabs.tabText(idx)} · {title}")
                 button.setCheckable(True)
                 button.setAutoDefault(False)
-                button.setMinimumHeight(32)
+                button.setMinimumHeight(64)
+                button.setToolTip(title_text)
                 self._buttons.addButton(button, int(idx))
                 buttons.addWidget(button, pos // columns, pos % columns)
             group.addLayout(buttons)

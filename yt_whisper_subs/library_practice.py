@@ -10,6 +10,7 @@ import enum
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_practice_nav
 from yt_whisper_subs import library_practice_progress
@@ -35,7 +36,7 @@ QLabel#practiceStats { font-size: 12pt; color: #c4d5e9; padding: 12px 0; }
 QPushButton#practiceChoice { font-size: 17pt; text-align: left; padding: 12px 22px; border-radius: 10px; }
 QPushButton#practiceChoice[answerState="correct"] { background: #214b3d; border: 2px solid #75dba4; color: #d2ffe5; }
 QPushButton#practiceChoice[answerState="wrong"] { background: #552f39; border: 2px solid #ed8594; color: #ffe2e6; }
-QToolButton#practiceOptions, QToolButton#practiceDetails { padding: 5px 10px; border-radius: 6px; }
+QToolButton#practiceOptions, QToolButton#practiceDetails { background: #2b313c; border: 1px solid #3a424f; padding: 5px 10px; border-radius: 6px; }
 """
 
 
@@ -69,7 +70,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Construct direct practice destinations with one native page state; e.g. each direction keeps its draft when another is selected."""
 
         super().__init__(parent)
-        self.setWindowTitle("Practice · vocabulary, verbs, sentences and comprehension")
+        self.setWindowTitle(i18n.tr('Practice · vocabulary, verbs, sentences and comprehension'))
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.resize(1160, 900)
         self._db = service.db
@@ -91,10 +92,10 @@ class PracticeDialog(QtWidgets.QDialog):
             self._tabs.addTab(panel, track.label)
         self._arrange_tracking()
         self._nav = library_practice_nav.PracticeNav(self._tabs, (
-            ("Practice", tuple(self._panels)), ("Tracking", (Page.PROGRESS, Page.ACTIVITY)),
+            (i18n.tr('Practice'), tuple(self._panels)), (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
         ))
         self._tabs.currentChanged.connect(self._tab_changed)
-        title = QtWidgets.QLabel("Practice")
+        title = QtWidgets.QLabel(i18n.tr('Practice'))
         title.setObjectName("practiceTitle")
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(title)
@@ -112,18 +113,18 @@ class PracticeDialog(QtWidgets.QDialog):
         self._listening_progress = library_sentence_progress.SentenceProgress(self._db, listening=True)
         self._comprehension_progress = {direction: library_comprehension_progress.Progress(self._db, direction) for direction in comprehension.Direction}
         self._progress_tabs = QtWidgets.QTabWidget()
-        for panel, label in ((self._progress, "Vocabulary"), (self._verb_progress, "Verbs"), (self._sentence_progress, "Sentences"),
-                             (self._listening_progress, "Listening"),
-                             (self._comprehension_progress[comprehension.Direction.READ], 'Leesbegrip'),
-                             (self._comprehension_progress[comprehension.Direction.LISTEN], 'Luisterbegrip')):
+        for panel, label in ((self._progress, i18n.tr('Vocabulary')), (self._verb_progress, i18n.tr('Verbs')), (self._sentence_progress, i18n.tr('Sentences')),
+                             (self._listening_progress, i18n.tr('Listening')),
+                             (self._comprehension_progress[comprehension.Direction.READ], i18n.tr('Reading comprehension')),
+                             (self._comprehension_progress[comprehension.Direction.LISTEN], i18n.tr('Listening comprehension'))):
             self._progress_tabs.addTab(panel, label)
         self._progress_tabs.currentChanged.connect(self._refresh_progress)
         self._activity = library_practice_activity.ActivityPanel(self._db)
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(self._activity)
-        self._tabs.addTab(self._progress_tabs, "Progress")
-        self._tabs.addTab(scroll, "Activity")
+        self._tabs.addTab(self._progress_tabs, i18n.tr('Progress'))
+        self._tabs.addTab(scroll, i18n.tr('Activity'))
 
     def _tab_changed(self, idx: int) -> None:
         """Activate only the selected destination; e.g. opening a reverse quiz cannot expose its sibling's next question."""

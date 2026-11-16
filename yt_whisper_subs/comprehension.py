@@ -10,6 +10,7 @@ from typing import Literal
 
 import pydantic as pd
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import vocabulary_learning as learning
 
@@ -22,14 +23,14 @@ class Direction(str, enum.Enum):
 
     @property
     def label(self) -> str:
-        """Use Dutch learning destinations; e.g. Leesbegrip appears beside Luisterbegrip."""
+        """Name the modality in the UI language; e.g. Dutch uses Leesbegrip beside Luisterbegrip."""
 
-        return "Leesbegrip" if self == self.READ else "Luisterbegrip"
+        return i18n.tr('Reading comprehension') if self == self.READ else i18n.tr('Listening comprehension')
 
 
-GENRES = {"mixed": "Afwisselend", "story": "Verhaal", "article": "Fictief nieuwsartikel", "essay": "Beschouwing"}
-SKILLS = {"detail": "Details", "inference": "Gevolgtrekkingen", "cause": "Oorzaak en gevolg",
-          "argument": "Argumentatie", "tone": "Toon en bedoeling", "reference": "Verbanden en verwijzingen"}
+GENRES = {"mixed": i18n.mark('Mixed'), "story": i18n.mark('Story'), "article": i18n.mark('Fictional news article'), "essay": i18n.mark('Reflective essay')}
+SKILLS = {"detail": i18n.mark('Details'), "inference": i18n.mark('Inferences'), "cause": i18n.mark('Cause and effect'),
+          "argument": i18n.mark('Arguments'), "tone": i18n.mark('Tone and intent'), "reference": i18n.mark('Connections and references')}
 
 
 class Options(pd.BaseModel):

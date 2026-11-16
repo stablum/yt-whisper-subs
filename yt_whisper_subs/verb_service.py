@@ -8,6 +8,7 @@ from __future__ import annotations
 import operator
 import time
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ready
@@ -38,8 +39,8 @@ class VerbService:
         if background:
             candidates = self._db.practice_spare_candidates("verb", opts, candidates)
         if not candidates:
-            message = ("No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
-                       if opts.source == "vocabulary" else "These filters have no valid Dutch forms. Change the round options.")
+            message = (i18n.tr('No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs.')
+                       if opts.source == "vocabulary" else i18n.tr('These filters have no valid Dutch forms. Change the round options.'))
             raise practice_round.NothingToPractice("no_questions", message)
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                       "prompt_version": verb_generate.PROMPT_VERSION}
@@ -49,7 +50,7 @@ class VerbService:
         selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
         selected = selector.select(candidates, metrics, opts, time.time())
         if not selected:
-            raise practice_round.NothingToPractice("not_due", "These verb forms are not due yet. Try other forms or practise early.")
+            raise practice_round.NothingToPractice("not_due", i18n.tr('These verb forms are not due yet. Try other forms or practise early.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         key = operator.itemgetter("verb_id", "tense", "subject", "structure")
 
@@ -67,7 +68,7 @@ class VerbService:
         plan = practice_round.Plan(candidates=candidates, initial=selected, key=key, load=load,
                                    select=lambda rows, n: selector.select(rows, metrics, opts.model_copy(update={"count": n}), time.time()))
         questions = build.fill(plan)
-        report(f"{len(questions)} checked verb exercises ready")
+        report(i18n.tr('{len} checked verb exercises ready', len=len(questions)))
         if background:
             return self._db.practice_stage("verb", opts, questions)
         return self._db.verb_create(opts, questions, policy.document())
@@ -91,7 +92,7 @@ class VerbService:
                 break
             document = [{key: row[key] for key in ("target_id", "lemma", "family", "transitive", "tense", "subject", "structure", "previous_rejection")}
                         for row in batch]
-            build.report(f"Preparing and checking {len(document)} verb exercises…")
+            build.report(i18n.tr('Preparing and checking {len} verb exercises…', len=len(document)))
             try:
                 approved, rejected = self._checked(document, policy)
             except ValueError as exc:
@@ -140,7 +141,7 @@ class VerbService:
         content = row["content"]
         accepted = [content["answer"], *content["alternatives"]]
         exact = verbs.normalized(row["answer_text"]) in {verbs.normalized(text) for text in accepted}
-        report("Checking your sentence…")
+        report(i18n.tr('Checking your sentence…'))
         if exact:
             grade = verbs.Grade(confident=True, correct=True, corrected=row["answer_text"],
                                 corrected_english=content.get("answer_english") or self._provider.translate_sentence(row["answer_text"]),
@@ -150,7 +151,7 @@ class VerbService:
             target = {key: row[key] for key in ("lemma", "family", "tense", "subject", "structure")}
             grade = self._provider.grade({"target": target, "exercise": content, "learner_answer": row["answer_text"]})
         grade.check(row["answer_text"])
-        report("Saving correction…")
+        report(i18n.tr('Saving correction…'))
         provenance = {"model": "approved_exact_match" if exact else self._provider.model,
                       "reasoning": "none" if exact else self._provider.reasoning, "grade_version": verb_generate.GRADE_VERSION}
         return self._db.verb_grade(presentation_id, grade, provenance)
@@ -165,8 +166,8 @@ class VerbService:
                   "prompt_version": verb_generate.TRANSLATION_VERSION}
         if text := self._db.verb_translation(question_id, policy):
             return text
-        report("Translating the original sentence…")
+        report(i18n.tr('Translating the original sentence…'))
         text = self._provider.translate_sentence(content["source"])
-        report("Saving sentence translation…")
+        report(i18n.tr('Saving sentence translation…'))
         self._db.verb_translation_save(question_id, text, policy)
         return text

@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 
+from yt_whisper_subs import i18n
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import vocabulary
@@ -52,7 +53,7 @@ class VocabularySync:
             self._db.verb_vocab_save([row for row in rows if row["lookup_id"] in local_ids], local, policy)
         for offset in range(0, len(pending), 12):
             batch = pending[offset:offset + 12]
-            report(f"Checking saved vocabulary verbs {offset + 1}–{offset + len(batch)} / {len(pending)}…")
+            report(i18n.tr('Checking saved vocabulary verbs {value}–{value2} / {len}…', value=offset + 1, value2=offset + len(batch), len=len(pending)))
             self._audit(batch, policy, report)
 
     def _audit(self, rows: list[dict], policy: dict, report) -> None:
@@ -66,13 +67,13 @@ class VocabularySync:
                              "expression": row["expression"] or "", "note": row["note"] or "", "context": context})
         for attempt in range(2):
             results = self._provider.lexemes(document)
-            report("Saving checked vocabulary verbs…")
+            report(i18n.tr('Saving checked vocabulary verbs…'))
             chosen = {row["lookup_id"] for row in document}
             self._db.verb_vocab_save([row for row in rows if row["lookup_id"] in chosen], results, policy)
             rejected = {item["verdict"]["lookup_id"]: item["verdict"]["reason"]
                         for item in results if not item["verdict"]["valid"]}
             if not rejected or attempt:
                 break
-            report(f"Refining {len(rejected)} unconfirmed vocabulary verb mappings…")
+            report(i18n.tr('Refining {len} unconfirmed vocabulary verb mappings…', len=len(rejected)))
             document = [{**row, "previous_rejection": rejected[row["lookup_id"]]}
                         for row in document if row["lookup_id"] in rejected]
