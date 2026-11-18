@@ -21,6 +21,73 @@ This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
 script without rediscovering all of the local decisions.
 
+## Screenshots
+
+The screenshots show an example catalog and sample Dutch practice rounds.
+Select any image to view it at full size, or jump to [Quick Start](#quick-start).
+
+### YouTube library
+
+Browse tracked channels, check download and watch progress, and jump to
+bilingual chapters from the selected video's details.
+
+[![YouTube library with pinned channels, video filters, watched progress, and bilingual chapters](docs/screenshots/video-library.png)](docs/screenshots/video-library.png)
+
+### Vocabulary and practice
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Saved vocabulary</strong><br>
+      <a href="docs/screenshots/saved-vocabulary.png"><img src="docs/screenshots/saved-vocabulary.png" alt="Captured Dutch words with dictionary forms, translations, and the original subtitle sentence"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Verb transformations</strong><br>
+      <a href="docs/screenshots/verb-transformations.png"><img src="docs/screenshots/verb-transformations.png" alt="A Dutch verb exercise with the corrected sentence and an explanation of the jij ending"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Word quiz · Dutch → English</strong><br>
+      <a href="docs/screenshots/word-quiz.png"><img src="docs/screenshots/word-quiz.png" alt="A Dutch word in context with three English choices and immediate feedback"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Word quiz · English → Dutch</strong><br>
+      <a href="docs/screenshots/reverse-word-quiz.png"><img src="docs/screenshots/reverse-word-quiz.png" alt="An English prompt and a gap in a Dutch sentence with three Dutch choices"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Sentence translation</strong><br>
+      <a href="docs/screenshots/sentence-translation.png"><img src="docs/screenshots/sentence-translation.png" alt="An English sentence and a Dutch translation with the exact error highlighted and a corrected answer"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Dutch dictation</strong><br>
+      <a href="docs/screenshots/dutch-dictation.png"><img src="docs/screenshots/dutch-dictation.png" alt="Dutch sentence dictation with voice selection, normal and slow replay, and a transcription in progress"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Reading comprehension</strong><br>
+      <a href="docs/screenshots/reading-comprehension.png"><img src="docs/screenshots/reading-comprehension.png" alt="A Dutch article beside a four-choice comprehension question"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Listening comprehension</strong><br>
+      <a href="docs/screenshots/listening-comprehension.png"><img src="docs/screenshots/listening-comprehension.png" alt="Dutch narration controls beside an open-ended question, with the transcript hidden"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <strong>Practice progress</strong><br>
+      <a href="docs/screenshots/practice-progress.png"><img src="docs/screenshots/practice-progress.png" alt="Daily quiz accuracy, vocabulary coverage, and upcoming reviews"></a>
+    </td>
+    <td width="50%" valign="top">
+      <strong>Practice activity</strong><br>
+      <a href="docs/screenshots/practice-activity.png"><img src="docs/screenshots/practice-activity.png" alt="Seven-day practice chart, monthly activity calendar, and a selected day's answers"></a>
+    </td>
+  </tr>
+</table>
+
 ## Current Intent
 
 The script is optimized for this workflow:
