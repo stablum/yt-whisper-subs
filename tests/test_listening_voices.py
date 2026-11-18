@@ -332,10 +332,12 @@ class VoiceTests(unittest.TestCase):
         self.assertIn("concealed script", result.stdout)
         self.assertNotIn("concealed script", output.getvalue())
 
-    def test_readiness_repairs_added_voices_on_an_unopened_round(self) -> None:
-        """Warm existing sessions as well as standby stock; e.g. a saved voice edit cannot leave an unopened round falsely ready."""
+    def test_readiness_repairs_added_voices_on_a_shown_round(self) -> None:
+        """Warm existing sessions as well as standby stock; e.g. a saved voice edit repairs a shown question before replay."""
 
         session = self.engine.start(self.options, lambda _: None)
+        row = self.db.sentence_current(session)
+        self.db.sentence_open(row['id'])
         track = practice_tracks.Track.LISTENING
         ready = self._own(library_practice_ready.PracticeReady(self.db, modes={"sentence": (self.options, self.engine)}))
         self.assertFalse(ready._needed(track, self.options, self.engine))
@@ -345,6 +347,7 @@ class VoiceTests(unittest.TestCase):
         ready.prepare(lambda _: None)
         self.assertEqual(self.db.sentence_active("listen_nl"), session)
         self.assertTrue(self.engine.audio.ready(self.db.listening_questions(session)))
+        self.assertIsNone(self.db.sentence_get(row['id'])['answer_text'])
 
     def test_reordering_and_removing_presets_keeps_each_configuration(self) -> None:
         """Avoid intermediate list-selection writes; e.g. moving a row cannot copy its sliders into another speaker."""

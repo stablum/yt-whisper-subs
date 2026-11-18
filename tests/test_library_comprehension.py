@@ -76,11 +76,12 @@ class ComprehensionFlowTests(unittest.TestCase):
             time.sleep(.01)
         self.assertTrue(predicate())
 
-    def _panel(self, *, direction=comp.Direction.READ, mc=2, open=1):
+    def _panel(self, *, direction=comp.Direction.READ, mc=2, open=1, prefetch=True):
         """Consume a prebuilt round through production activation; e.g. the first question appears without Start."""
 
         opts = fixtures.options(direction=direction, mc=mc, open=open)
-        self.engine.start(opts, lambda _: None, background=True)
+        if prefetch:
+            self.engine.start(opts, lambda _: None, background=True)
         key = f'comprehension:{direction.value}_options'
         self.db.set_setting(key, opts.model_dump_json())
         with mock.patch.object(library_listening, 'WavePlayer', speech.Player):
@@ -225,6 +226,37 @@ class ComprehensionFlowTests(unittest.TestCase):
         panel = self._panel(mc=2, open=0)
         self.assertEqual(panel._run.session, session)
         self.assertEqual(panel._run.row['id'], rows[1]['id'])
+
+    def test_resuming_a_passage_starts_speech_before_pressing_play(self):
+        """Start local work when the round opens; e.g. pressing Play during warm-up joins the existing job."""
+
+        opts = fixtures.options(direction=comp.Direction.LISTEN)
+        session = self.engine.start(opts, lambda _: None)
+        row = self.db.comprehension_history(session)[0]
+        self.db.comprehension_open(row['id'])
+        self.db.comprehension_submit(row['id'], row['content']['correct_idx'], 1000)
+        self.engine.audio.rows(row['passage_id'], opts)[0]['paths']['normal'].unlink()
+        entered = threading.Event()
+        render = self.speech.render_many
+
+        def blocked(jobs, report):
+            """Wait for the playback request to arrive; e.g. there can only be one render for the missing clip."""
+
+            entered.set()
+            self.release.wait(4)
+            render(jobs, report)
+
+        with mock.patch.object(self.speech, 'render_many', side_effect=blocked) as worker:
+            panel = self._panel(direction=comp.Direction.LISTEN, prefetch=False)
+            audio = panel._view.source.audio
+            self._wait(entered.is_set)
+            self.assertFalse(audio._player.calls)
+            audio.play()
+            self.release.set()
+            self._wait(lambda: bool(audio._player.calls))
+            worker.assert_called_once()
+        self.assertEqual(panel._run.session, session)
+        self.assertEqual(len(self.provider.generated), 1)
 
     def test_voice_picker_changes_current_audio_and_persists_without_losing_draft(self):
         """Switch distinct cached speech strategies on one passage; e.g. the next play uses a different file while the answer stays intact."""

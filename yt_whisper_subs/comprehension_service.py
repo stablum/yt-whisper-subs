@@ -36,10 +36,24 @@ class ComprehensionService:
     def needs(self, opts: comp.Options) -> bool:
         """Maintain one unopened spare after practice begins; e.g. unused paid passages are consumed before new ones are generated."""
 
+        if self._missing_resume_audio(opts):
+            return True
         if ready := self._db.comprehension_ready(opts, self.policy):
             return opts.direction == comp.Direction.LISTEN and not self.audio.ready(ready['passage_id'], opts)
         active = self._db.comprehension_active(opts.direction.value)
         return not active or bool(self._db.comprehension_summary(active)['submitted'])
+
+    def _missing_resume_audio(self, opts: comp.Options) -> tuple[dict, comp.Options] | None:
+        """Check the voice actually used by the resumable passage; e.g. a warm spare cannot hide a deleted recording in the active round."""
+
+        if opts.direction != comp.Direction.LISTEN:
+            return None
+        if session_id := self._db.comprehension_resume(opts.direction.value):
+            session = self._db.comprehension_session(session_id)
+            saved = comp.Options.model_validate_json(session['options_json'])
+            if not self.audio.ready(session['passage_id'], saved):
+                return session, saved
+        return None
 
     def start(self, opts: comp.Options, report, *, cached_first=True, background=False) -> str:
         """Prepare exactly the requested two question counts under shared ownership; e.g. a failed narrator never purchases a replacement passage."""
@@ -48,14 +62,20 @@ class ComprehensionService:
         if opts.direction == comp.Direction.LISTEN and not opts.voice_id:
             opts = opts.model_copy(update={'voice_id': self.audio.preset(opts).id})
         with practice_ready.preparing(self._db, track, report) as progress:
+            if background and (missing := self._missing_resume_audio(opts)):
+                session, saved = missing
+                self.prepare_media(session['passage_id'], saved, progress)
+                return session['id']
             active = self._db.comprehension_active(opts.direction.value)
-            if active and cached_first and (not background or not self._db.comprehension_summary(active)['submitted']):
+            if active and cached_first and not background:
                 session = self._db.comprehension_session(active)
                 self.prepare_media(session['passage_id'], comp.Options.model_validate_json(session['options_json']), progress)
                 return active
             if ready := self._db.comprehension_ready(opts, self.policy):
                 self.prepare_media(ready['passage_id'], opts, progress)
                 return ready['id'] if background else self._db.comprehension_use_ready(ready['id'], opts)
+            if active and background and not self._db.comprehension_summary(active)['submitted']:
+                return active
             session = self._reserve(opts, progress)
             passage_id = self._db.comprehension_session(session)['passage_id']
             self.prepare_media(passage_id, opts, progress)

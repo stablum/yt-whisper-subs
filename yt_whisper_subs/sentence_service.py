@@ -90,6 +90,24 @@ class SentenceService:
         if opts.direction == sentences.Direction.LISTEN:
             self.audio.prepare(questions, report)
 
+    def pending_dictation_audio(self) -> list[dict]:
+        """Find missing recordings in the round the learner will resume; e.g. a newly enabled voice needs audio for questions already shown."""
+
+        direction = sentences.Direction.LISTEN.value
+        session = self._db.sentence_active(direction) or self._db.sentence_unseen_session(direction)
+        questions = self._db.listening_questions(session) if session else []
+        return questions if questions and not self.audio.ready(questions) else []
+
+    def prepare_resumed_dictation(self, report) -> bool:
+        """Give the resumable round a preparation turn ahead of stock; e.g. foreground and background repairs share the dictation lease."""
+
+        if not self.pending_dictation_audio():
+            return False
+        with practice_ready.preparing(self._db, 'sentence:' + sentences.Direction.LISTEN.value, report) as progress:
+            if questions := self.pending_dictation_audio():
+                self.audio.prepare(questions, progress)
+        return True
+
     def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
         """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""
 

@@ -79,6 +79,8 @@ class PracticeReady(QtCore.QObject):
             return False
         if track.kind == 'comprehension':
             return engine.needs(opts)
+        if track == practice_tracks.Track.LISTENING and engine.pending_dictation_audio():
+            return True
         policy = {"model": engine._provider.model, "reasoning": engine._provider.reasoning,
                   "prompt_version": engine.start.prompt_version}
         stock = self._db.practice_stock(track, opts, policy)
@@ -104,6 +106,8 @@ class PracticeReady(QtCore.QObject):
 
         report("Preparing " + track.label.replace("\n", " · "))
         try:
+            if track == practice_tracks.Track.LISTENING and engine.prepare_resumed_dictation(report):
+                return
             engine.start(opts, report, cached_first=True, background=True)
         except Exception:
             if control := task_cancel.current():

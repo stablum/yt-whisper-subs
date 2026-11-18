@@ -76,12 +76,24 @@ class Narration(QtWidgets.QWidget):
         if not same:
             self._index = 0
         self._voices()
+        self._load_recordings()
+        self._warm()
+
+    def _load_recordings(self) -> None:
+        """Refresh the selected voice from disk; e.g. a background fill can make an open passage ready without user input."""
+
         try:
-            self._rows = self._audio.rows(session['passage_id'], self._opts)
+            self._rows = self._audio.rows(self._session['passage_id'], self._opts)
             self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._voice.currentText()))
-        except (ValueError, OSError):
-            self._note.setText(i18n.tr('Voice: {value}. Click Listen to prepare speech.', value=self._voice.currentText()))
+        except (ValueError, OSError, RuntimeError):
+            self._rows = []
         self._paragraphs()
+
+    def _warm(self) -> None:
+        """Start missing narration at entry without requesting playback; e.g. Play can join a render already underway."""
+
+        if self.isVisible() and self._session and not self._rows and not self._task:
+            self._repair()
 
     def _voices(self) -> None:
         """Refresh shared presets without emitting an accidental selection; e.g. renaming a voice does not reset the passage."""
@@ -202,11 +214,17 @@ class Narration(QtWidgets.QWidget):
         """Recover cached media without generating another passage; e.g. deleting a WAV does not lose typed answers."""
 
         passage_id, opts = self._session['passage_id'], self._opts
-        task = library_workers.BackgroundTask(lambda report: self._audio.prepare(passage_id, opts, report))
+        def prepare(report):
+            """Join cache preparation in a worker and return verified recordings for playback."""
+
+            self._audio.prepare(passage_id, opts, report)
+            return self._audio.rows(passage_id, opts)
+
+        task = library_workers.BackgroundTask(prepare)
         self._task = task
         self._note.setText(i18n.tr('Preparing voice: {value}…', value=self._voice.currentText()))
         task.signals.progress.connect(lambda message: self._progress(task, message))
-        task.signals.finished.connect(lambda _: self._repaired(task))
+        task.signals.finished.connect(lambda rows: self._repaired(task, rows))
         task.signals.failed.connect(lambda message: self._failed(task, message))
         task.signals.cancelled.connect(lambda: self._failed(task, i18n.tr('Speech preparation paused.')))
         QtCore.QThreadPool.globalInstance().start(task)
@@ -219,17 +237,14 @@ class Narration(QtWidgets.QWidget):
             progress = i18n.tr(' · clip ') + count.group(1) if count else '…'
             self._note.setText(i18n.tr('Preparing voice: {value}{progress}', value=self._voice.currentText(), progress=progress))
 
-    def _repaired(self, task) -> None:
+    def _repaired(self, task, rows) -> None:
         """Use repaired audio only for the same visible passage; e.g. a late completion cannot speak over another practice mode."""
 
         if shiboken6.isValid(self) and self._task is task:
-            try:
-                self._rows = self._audio.rows(self._session['passage_id'], self._opts)
-            except (ValueError, OSError) as exc:
-                self._failed(task, str(exc))
-                return
+            self._rows = rows
             self._task = None
             self._paragraphs()
+            self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._voice.currentText()))
             if self._wanted:
                 self.play(self._speed)
 
@@ -245,6 +260,12 @@ class Narration(QtWidgets.QWidget):
 
         self.shutdown()
         super().hideEvent(event)
+
+    def showEvent(self, event) -> None:
+        """Resume preparation after navigation; e.g. a cancelled warm-up restarts when the listening pane returns."""
+
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self, self._warm)
 
     def shutdown(self) -> None:
         """Cancel only owned media work as well as playback; e.g. deleting the practice window cannot leave a repair callback targeting its labels."""

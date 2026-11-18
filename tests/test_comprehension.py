@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import psutil
 
@@ -125,6 +126,33 @@ class ComprehensionTests(unittest.TestCase):
         self._open(read)
         listen = self._start(fixtures.options(direction=comp.Direction.LISTEN))
         self.assertNotEqual(self.db.comprehension_session(read)['passage_id'], self.db.comprehension_session(listen)['passage_id'])
+
+    def test_missing_current_narration_gets_prepared_even_with_a_warm_spare(self):
+        """Repair the passage that will actually open; e.g. ready spare audio cannot mask a missing clip in an ongoing round."""
+
+        opts = fixtures.options(direction=comp.Direction.LISTEN)
+        active = self._start(opts)
+        row = self._open(active)
+        self.db.comprehension_submit(row['id'], row['content']['correct_idx'], 1000)
+        distinct = [p.replace('zou eventueel', 'zou misschien') for p in fixtures.PARAGRAPHS]
+        with mock.patch.object(fixtures, 'PARAGRAPHS', distinct):
+            standby = self.engine.start(opts, lambda _: None, background=True)
+        self.assertNotEqual(active, standby)
+        self.assertFalse(self.engine.needs(opts))
+        passage = self.db.comprehension_session(active)['passage_id']
+        self.engine.audio.rows(passage, opts)[0]['paths']['slow'].unlink()
+        next_passage = self.db.comprehension_session(standby)['passage_id']
+        self.assertTrue(self.engine.audio.ready(next_passage, opts))
+        self.assertTrue(self.engine.needs(opts))
+        before = len(self.speech.calls)
+        self.provider.available = False
+
+        self.assertEqual(self.engine.start(opts, lambda _: None, background=True), active)
+        self.assertTrue(self.engine.audio.ready(passage, opts))
+        self.assertEqual(len(self.speech.calls), before + 1)
+        self.assertFalse(self.engine.needs(opts))
+        self.assertEqual(self.db.comprehension_active('listen'), active)
+        self.assertEqual(len(self.provider.generated), 2)
 
     def test_choices_are_local_immutable_and_feed_the_shared_word_schedule(self):
         """Use one actual answer event with the same failed-word treatment; e.g. retries do not create duplicate quiz activity."""

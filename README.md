@@ -133,7 +133,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
 | Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); B2; 5 paragraphs, 5 four-choice and 3 open questions; learning content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
-| Comprehension narration | existing local Piper/Zonos presets; live voice switching on the same passage, normal and slow clips cached per sound configuration; transcript and feedback concealed until all listening answers are submitted |
+| Comprehension narration | local Piper/Zonos presets; normal and slow clips prepared in the background for the selected voice, live switching on the same passage; transcript and feedback concealed until all listening answers are submitted |
 | Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
 | OpenAI timeout | `900` seconds |
@@ -2277,6 +2277,8 @@ separate from active sessions and answer history: preparing one cannot stop your
 current round, expose questions, or count as practice. There is no growing queue
 of unused rounds. Restarting preserves checked stock and saved word-choice order.
 Starting the next round consumes its standby plan atomically with session creation.
+For both listening modes, missing recordings for the round you will resume are
+prepared before standby work, even if the standby already has its audio.
 
 Question-based standby selection uses the same adaptive probabilities, due/new balance and
 filters as ordinary preparation. When enough other eligible targets exist,
@@ -3109,9 +3111,9 @@ Leesbegrip displays the passage alongside independently scrolling questions.
 Luisterbegrip uses the same local speech strategies and presets as dictation,
 preparing both normal and slower clips for **one selected narrator at a time**.
 Select **Stem** beside playback to hear the **same passage** through a different
-preset immediately, without starting a new round or losing a draft. Uncached
-voices show their preparation progress, then play from the current fragment;
-already cached voices switch directly. The selected voice is saved for this
+preset without starting a new round or losing a draft. Cached voices switch
+directly. Choosing an uncached voice starts preparation and shows progress,
+then plays from the current fragment. The selected voice is saved for this
 round and future rounds. **Stemmen instellen…** opens the existing full preset
 editor; saving new sound parameters refreshes that voice's recordings too.
 Obsolete or cancelled voice jobs cannot change the new selection or its status.
@@ -3120,8 +3122,9 @@ fragments preserve every word and avoid an oversized expressive-speech job.
 The transcript stays absent from the browser until all answers are submitted and
 you explicitly choose **Transcript bekijken**. Feedback is also withheld until
 then so an early explanation cannot reveal a later answer. Navigating away stops
-narration. Missing recordings can be repaired without losing your current draft
-or generating another passage.
+narration. When a passage opens with missing recordings, preparation starts in
+the background. Pressing Listen during that work queues playback on the same
+job. Audio recovery uses the existing passage and keeps your current draft.
 
 Preparation uses the existing two-worker scheduler and per-destination leases,
 keeping one unexposed spare after answering begins. Generated text is saved before

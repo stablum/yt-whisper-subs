@@ -128,6 +128,12 @@ class ListeningCard(library_sentences.SentenceCard):
         self._audio_note.setText(i18n.tr('English meaning appears with the correction.'))
         if changed and row["answer_text"] is None and row["outcome"] is None:
             QtCore.QTimer.singleShot(0, self, lambda: self._autoplay(row["id"]))
+        elif changed:
+            try:
+                if not self._recording():
+                    self._repair_audio()
+            except (OSError, ValueError) as exc:
+                self._audio_note.setText(i18n.tr('Could not play audio: {exc}', exc=exc))
 
     def _load_voices(self) -> None:
         """Preserve selection across questions and harmless renames; e.g. a learner can keep using the conversational preset."""
@@ -180,10 +186,7 @@ class ListeningCard(library_sentences.SentenceCard):
         try:
             self._speed = speed
             self._requested = self._row["id"]
-            config = self._presets[self._voices.currentIndex()].config
-            profile = self._cache().engine(config).profile
-            audio = self._db.listening_audio(self._row["question_id"], profile)
-            if not audio or not self._db.listening_audio_valid(audio):
+            if not (audio := self._recording()):
                 self._repair_audio()
                 return
             path = self._db.listening_paths(audio["cache_key"])[speed]
@@ -194,6 +197,14 @@ class ListeningCard(library_sentences.SentenceCard):
             self._audio_note.setText(i18n.tr('Playing slowly…') if speed == "slow" else i18n.tr('Playing…'))
         except (OSError, ValueError) as exc:
             self._audio_note.setText(i18n.tr('Could not play audio: {exc}', exc=exc))
+
+    def _recording(self) -> dict | None:
+        """Resolve verified audio for the selected voice; e.g. a changed preset cannot play an old cache entry."""
+
+        config = self._presets[self._voices.currentIndex()].config
+        profile = self._cache().engine(config).profile
+        audio = self._db.listening_audio(self._row['question_id'], profile)
+        return audio if audio and self._db.listening_audio_valid(audio) else None
 
     def _repair_audio(self, *, all_voices=False) -> None:
         """Rebuild missing speech off the GUI thread without changing drafts; e.g. clearing a cache is recoverable inside an active round."""
