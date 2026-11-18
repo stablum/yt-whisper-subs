@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import re
 import textwrap
+from contextlib import contextmanager
 
 from PySide6 import QtCore
 from PySide6 import QtGui
@@ -232,6 +233,20 @@ class AnswerButtons(QtWidgets.QWidget):
         for idx, button in enumerate(self._buttons):
             self._style(button, "correct" if idx == correct else ("wrong" if idx == selected else ""))
 
+    @contextmanager
+    def checking(self, idx: int):
+        """Show the chosen answer during a synchronous save, then clear it if saving fails."""
+
+        button = self._buttons[idx]
+        self._style(button, "pending")
+        # Flush the cue before SQLite can block this click handler.
+        button.repaint()
+        try:
+            yield
+        finally:
+            if button.property("answerState") == "pending":
+                self._style(button, "")
+
     @staticmethod
     def _style(button: QtWidgets.QPushButton, state: str) -> None:
         """Refresh dynamic Qt styling for each card; e.g. clear the previous green answer."""
@@ -239,6 +254,7 @@ class AnswerButtons(QtWidgets.QWidget):
         button.setProperty("answerState", state)
         button.style().unpolish(button)
         button.style().polish(button)
+        button.update()
 
 
 class ContinueSurface(QtWidgets.QWidget):

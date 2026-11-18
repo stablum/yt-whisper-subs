@@ -331,12 +331,12 @@ class WordQuiz(QtWidgets.QWidget):
             return
         try:
             elapsed = max(0, round((time.monotonic() - self._started) * 1000))
-            row = self._db.practice_answer(self._current["id"], idx, self._unsure.isChecked(), elapsed)
+            with self._answers.checking(idx):
+                row = self._db.practice_answer(self._current["id"], idx, self._unsure.isChecked(), elapsed)
         except (ValueError, OSError, sqlite3.Error) as exc:
             self._result.setText(i18n.tr('Could not save your answer: {exc}', exc=exc))
             return
         self._current = row
-        self.activity_changed.emit()
         if row["outcome"] == "invalid":
             self._report()
             return
@@ -354,6 +354,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._details.show()
         self._bar.setValue(row["ordinal"])
         self._offer_continue()
+        self.activity_changed.emit()
 
     def _offer_continue(self) -> None:
         """Give mouse and keyboard the same deliberate next action; e.g. Space or Enter advances after feedback."""

@@ -132,6 +132,43 @@ class PracticeFlowTests(unittest.TestCase):
         data = practice_stats.snapshot(self.db)
         self.assertEqual((data["totals"]["attempts"], data["totals"]["shown"]), (1, 2))
 
+    def test_choice_paints_before_save_and_can_retry_after_a_failure(self) -> None:
+        """Observe the blue cue before SQLite runs and confirm a failed save leaves the choice retryable."""
+
+        self._open()
+        self._ready()
+        button = self.quiz._answers._buttons[self.quiz._current['correct_idx']]
+        painted = []
+
+        class PaintProbe(QtCore.QObject):
+            """Record actual paints, including the one before the answer handler saves."""
+
+            def eventFilter(self, watched, event):
+                """Capture the state painted by the answer widget while preserving its normal draw."""
+
+                if event.type() == QtCore.QEvent.Type.Paint:
+                    painted.append(watched.property('answerState'))
+                return False
+
+        probe = PaintProbe(button)
+        button.installEventFilter(probe)
+
+        def failed_save(*_args):
+            """Stop at the save boundary and require the button to have painted already."""
+
+            self.assertTrue(painted)
+            self.assertEqual(painted[-1], 'pending')
+            raise OSError('Test save failure')
+
+        with mock.patch.object(self.db, 'practice_answer', side_effect=failed_save):
+            QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
+        self.assertEqual(button.property('answerState'), '')
+        self.assertIn('Test save failure', self.quiz._result.text())
+        self.assertIsNone(self.quiz._current['outcome'])
+        QtTest.QTest.mouseClick(button, QtCore.Qt.MouseButton.LeftButton)
+        self.assertEqual(button.property('answerState'), 'correct')
+        self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 1)
+
     def test_card_background_and_keyboard_continue_after_feedback(self) -> None:
         """Use large reading targets and native keys; e.g. Space then Enter need no pointer movement to Next."""
 

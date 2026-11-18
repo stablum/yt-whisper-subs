@@ -2495,8 +2495,9 @@ number of distinct terms must be available and independently approved before
 the round becomes playable. English subtitle clicks remain reviewable in
 Vocabulary but are not Dutch practice targets.
 
-One click answers and reveals the correct choice. After reading the feedback,
-click an answer again, click the question/feedback area, or use **Continue →**,
+One click highlights your choice in blue while the answer saves, then reveals the
+green/red result. The same cue appears on comprehension choices. After reading
+the feedback, click an answer again, click the question/feedback area, or use **Continue →**,
 **Space**, or **Enter** to move on. Correct/wrong highlights remain clickable;
 numeric answer shortcuts turn off during feedback. A short guard using the
 system double-click interval prevents double-clicks from skipping feedback or

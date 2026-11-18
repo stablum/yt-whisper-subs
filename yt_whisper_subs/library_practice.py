@@ -33,7 +33,9 @@ QLabel#practicePrompt { font-size: 30pt; font-weight: 600; color: #ffd166; paddi
 QLabel#practiceContext { font-size: 13pt; color: #b8c7d9; padding: 6px; }
 QLabel#practiceResult { font-size: 15pt; font-weight: 600; color: #dce6f2; padding: 8px 0; }
 QLabel#practiceStats { font-size: 12pt; color: #c4d5e9; padding: 12px 0; }
-QPushButton#practiceChoice { font-size: 17pt; text-align: left; padding: 12px 22px; border-radius: 10px; }
+QPushButton#practiceChoice { font-size: 17pt; text-align: left; padding: 12px 22px; border: 2px solid #3a424f; border-radius: 10px; }
+QPushButton#practiceChoice[answerState=""]:pressed,
+QPushButton#practiceChoice[answerState="pending"] { background: #243f60; border-color: #83b6ef; color: #eaf4ff; }
 QPushButton#practiceChoice[answerState="correct"] { background: #214b3d; border: 2px solid #75dba4; color: #d2ffe5; }
 QPushButton#practiceChoice[answerState="wrong"] { background: #552f39; border: 2px solid #ed8594; color: #ffe2e6; }
 QToolButton#practiceOptions, QToolButton#practiceDetails { background: #2b313c; border: 1px solid #3a424f; padding: 5px 10px; border-radius: 6px; }

@@ -301,10 +301,13 @@ class Panel(QtWidgets.QWidget):
     def _choose(self, idx) -> None:
         """Make choosing and continuing separate gestures; e.g. a double-click cannot answer the next question."""
 
-        if self._run.row and self._run.row['answer_text'] is not None:
+        if not self._run.row:
+            return
+        if self._run.row['answer_text'] is not None:
             self._view.card.request_continue()
         else:
-            self._submit(idx)
+            with self._view.card.choices.checking(idx):
+                self._submit(idx)
 
     def _submit(self, selected=None) -> None:
         """Persist first, then continue while semantic grading runs; e.g. an API timeout never loses typed Dutch."""
