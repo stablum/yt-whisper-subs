@@ -172,7 +172,7 @@ class LibraryWindow(
         )
         self._notifications.video_requested.connect(self._notification_video)
         self._notifications.settings_requested.connect(self._notification_settings)
-        self._notifications.practice_requested.connect(self._show_practice)
+        self._notifications.practice_requested.connect(lambda activity: self._show_practice(activity, sequence=not activity))
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._notifications.stop)
         self._connect_actions()
         self._build_menus()
@@ -410,7 +410,7 @@ class LibraryWindow(
         self._vocabulary_dialog.raise_()
         self._vocabulary_dialog.activateWindow()
 
-    def _show_practice(self, activity: bool = False) -> None:
+    def _show_practice(self, activity: bool = False, *, sequence: bool = False) -> None:
         """Reuse one adaptive practice window; e.g. open it from Vocabulary or the Library menu."""
 
         self._notifications.snooze_practice()
@@ -422,7 +422,7 @@ class LibraryWindow(
             self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
             self._practice_dialog.activity_changed.connect(self._notifications.check_practice)
             self._practice_dialog.activity_changed.connect(self.practice_changed)
-        self._practice_dialog.show_page(activity)
+        self._practice_dialog.show_page(activity, sequence=sequence)
         self._practice_dialog.show()
         self._practice_dialog.raise_()
         self._practice_dialog.activateWindow()

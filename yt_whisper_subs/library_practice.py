@@ -6,6 +6,7 @@ Example: Word quiz and Sentences each expose Dutch-to-English and English-to-Dut
 from __future__ import annotations
 
 import enum
+from functools import partial
 
 from PySide6 import QtCore
 from PySide6 import QtWidgets
@@ -14,6 +15,7 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_practice_nav
 from yt_whisper_subs import library_practice_progress
+from yt_whisper_subs import library_practice_sequence
 from yt_whisper_subs import library_sentence_progress
 from yt_whisper_subs import library_sentences
 from yt_whisper_subs import library_verb_progress
@@ -88,9 +90,12 @@ class PracticeDialog(QtWidgets.QDialog):
                         Page.READ_COMPREHENSION: self._comprehension[comprehension.Direction.READ],
                         Page.LISTEN_COMPREHENSION: self._comprehension[comprehension.Direction.LISTEN]}
         self._tabs = QtWidgets.QTabWidget()
+        self._sequence = library_practice_sequence.SequenceBar(self._db)
+        self._sequence.requested.connect(self._show_sequence_track)
         for track in practice_tracks.Track:
             panel = self._panels[Page.for_track(track)]
-            panel.activity_changed.connect(self.activity_changed)
+            panel.activity_changed.connect(partial(self._record_activity, track))
+            panel.round_reviewed.connect(partial(self._sequence.reviewed, track))
             self._tabs.addTab(panel, track.label)
         self._arrange_tracking()
         self._nav = library_practice_nav.PracticeNav(self._tabs, (
@@ -99,8 +104,11 @@ class PracticeDialog(QtWidgets.QDialog):
         self._tabs.currentChanged.connect(self._tab_changed)
         title = QtWidgets.QLabel(i18n.tr('Practice'))
         title.setObjectName("practiceTitle")
+        heading = QtWidgets.QHBoxLayout()
+        heading.addWidget(title)
+        heading.addWidget(self._sequence, 1)
         layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(title)
+        layout.addLayout(heading)
         layout.addWidget(self._nav)
         layout.addWidget(self._tabs, 1)
         self.setStyleSheet(_STYLE)
@@ -131,6 +139,9 @@ class PracticeDialog(QtWidgets.QDialog):
     def _tab_changed(self, idx: int) -> None:
         """Activate only the selected destination; e.g. opening a reverse quiz cannot expose its sibling's next question."""
 
+        guided = self._sequence.current
+        if guided is not None and idx != Page.for_track(guided):
+            self._sequence.pause()
         if idx in self._panels:
             track = list(practice_tracks.Track)[idx]
             self._db.set_setting("practice_last_track", track.value)
@@ -157,9 +168,38 @@ class PracticeDialog(QtWidgets.QDialog):
         except ValueError:
             return practice_tracks.Track.WORD_NL_EN
 
-    def show_page(self, activity: bool = False) -> None:
+    def _record_activity(self, track: practice_tracks.Track) -> None:
+        """Checkpoint the guided mode alongside the normal answer notification."""
+
+        self._sequence.bind(track, self._panels[Page.for_track(track)].round_id)
+        self.activity_changed.emit()
+
+    def _show_sequence_track(self, track: practice_tracks.Track) -> None:
+        """Select the same practice page used by manual navigation before opening the mode."""
+
+        self._tabs.setCurrentIndex(Page.for_track(track))
+        QtCore.QTimer.singleShot(0, self, self._enter_sequence_track)
+
+    def _enter_sequence_track(self) -> None:
+        """Only start the guided mode if it is still visible, e.g. a later tab selection paused it."""
+
+        if (track := self._sequence.current) is not None and self.isVisible():
+            page = Page.for_track(track)
+            if self._tabs.currentIndex() == page:
+                self._panels[page].enter_sequence()
+
+    def showEvent(self, event) -> None:
+        """Open the guided mode after the dialog becomes visible from the tray."""
+
+        super().showEvent(event)
+        QtCore.QTimer.singleShot(0, self, self._enter_sequence_track)
+
+    def show_page(self, activity: bool = False, *, sequence: bool = False) -> None:
         """Route menu and reminder entry points directly; e.g. Activity opens without starting any practice destination."""
 
+        if sequence and not activity:
+            self._sequence.start()
+            return
         page = Page.ACTIVITY if activity else Page.for_track(self._last_track())
         self._tabs.setCurrentIndex(page)
         if page == Page.ACTIVITY:

@@ -5,6 +5,7 @@ Example: `python -m unittest tests.test_library_practice` uses an injected fake 
 
 from __future__ import annotations
 
+from contextlib import ExitStack
 import os
 import tempfile
 import threading
@@ -30,6 +31,7 @@ from yt_whisper_subs import library_theme
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
+from yt_whisper_subs import practice_tracks
 
 
 class PracticeDialogTests(unittest.TestCase):
@@ -229,6 +231,60 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(original._current["choices"], first["choices"])
         self.assertEqual(original._current["outcome"], "correct")
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 2)
+
+    def test_full_practice_moves_on_after_feedback_and_resumes_after_close(self) -> None:
+        """Use real single-question rounds to exercise the first two modes and a close at the handoff."""
+
+        for quiz in self.dialog._quizzes.values():
+            quiz._controls.count.setValue(1)
+        self.dialog._sequence._start.click()
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.WORD_NL_EN)
+        self._wait_ready()
+        self.quiz._answers._buttons[self.quiz._current['correct_idx']].click()
+        self.assertEqual(self.dialog._sequence.current, practice_tracks.Track.WORD_NL_EN)
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
+        self.quiz._next.click()
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.WORD_EN_NL)
+        self.quiz = self.dialog._quizzes[practice.Direction.EN_NL]
+        self._wait_ready()
+        self.quiz._answers._buttons[self.quiz._current['correct_idx']].click()
+        self._close()
+
+        self.dialog = self._dialog()
+        self.assertEqual(self.dialog._sequence._start.text(), 'Resume full practice')
+        with mock.patch.object(self.dialog._verbs, 'activate'), mock.patch.object(self.dialog._verbs, 'enter_sequence'):
+            self.dialog.show_page(sequence=True)
+            self.app.processEvents()
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.VERBS)
+        self.assertIn('3/8', self.dialog._sequence._status.text())
+        self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 2)
+
+    def test_full_practice_survives_navigation_and_visits_every_mode_in_order(self) -> None:
+        """Drive all eight handoffs, including skipping an unavailable mode and pausing to see Activity."""
+
+        tracks = list(practice_tracks.Track)
+        bar = self.dialog._sequence
+        with ExitStack() as stack:
+            for panel in self.dialog._panels.values():
+                stack.enter_context(mock.patch.object(panel, 'activate'))
+                stack.enter_context(mock.patch.object(panel, 'enter_sequence'))
+            bar._start.click()
+            for idx, track in enumerate(tracks):
+                self.app.processEvents()
+                self.assertEqual(bar.current, track)
+                self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.for_track(track))
+                if idx == 2:
+                    self.dialog.show_page(True)
+                    self.assertIsNone(bar.current)
+                    bar._start.click()
+                    self.assertEqual(bar.current, track)
+                    bar._skip.click()
+                else:
+                    self.dialog._panels[library_practice.Page.for_track(track)].round_reviewed.emit()
+            self.app.processEvents()
+        self.assertIsNone(bar.current)
+        self.assertIn('7 completed · 1 skipped', bar._status.text())
+        self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 0)
 
     def test_closing_during_generation_cancels_without_a_partial_round(self) -> None:
         """A delayed provider must not hold the window open or invent exposures; e.g. close during an API call."""

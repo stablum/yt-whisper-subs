@@ -64,6 +64,7 @@ class _Run(pd.BaseModel):
     closed: bool = False
     operation: str = ""
     empty: str = ""
+    at_end: bool = False
 
 
 
@@ -71,6 +72,7 @@ class WrittenPanel(QtWidgets.QWidget):
     """Coordinate durable typed practice; e.g. verbs and translations share separate correction/continue gestures."""
 
     activity_changed = QtCore.Signal()
+    round_reviewed = QtCore.Signal()
 
     def __init__(self, db, mode: Mode, *, engine) -> None:
         """Construct without exposure or provider calls; e.g. statistics can open without starting a paid round."""
@@ -100,6 +102,20 @@ class WrittenPanel(QtWidgets.QWidget):
         """Protect against hidden question exposure; e.g. preparation may finish while viewing the calendar."""
 
         return not self._run.closed and self.isVisible()
+
+    @property
+    def round_id(self) -> str | None:
+        """Identify the saved round for a guided checkpoint, e.g. after submitting a verb answer."""
+
+        return self._run.session
+
+    def enter_sequence(self) -> None:
+        """Reuse an open round or start a cached one from an earlier summary."""
+
+        if self._active and self._run.at_end and self._run.row is None and not self._task:
+            self._prepare(cached_first=True)
+        else:
+            self.activate()
 
     def activate(self) -> None:
         """Automatically open the first visible question once; e.g. switching tabs needs no Start round click."""
@@ -147,6 +163,7 @@ class WrittenPanel(QtWidgets.QWidget):
             opts = opts.model_copy(update={"include_early": True})
         self._run.pending = False
         self._run.empty = ""
+        self._run.at_end = False
         self._idle(i18n.tr('Preparing {value}…', value=self._mode.label.lower()), i18n.tr('Getting natural sentences ready and checking them.'), i18n.tr('Preparing…'))
 
         def prepare(report):
@@ -377,6 +394,9 @@ class WrittenPanel(QtWidgets.QWidget):
             'Another {key} round',
             key=self._mode.key,
         ))
+        self._run.at_end = True
+        if complete:
+            self.round_reviewed.emit()
 
     def _editing(self, editing: bool) -> None:
         """Suspend dialog action keys during setup; e.g. Enter in round length cannot advance an answered sentence."""

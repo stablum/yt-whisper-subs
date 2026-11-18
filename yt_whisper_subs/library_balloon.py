@@ -62,6 +62,7 @@ class TrayBalloon(QtWidgets.QDialog):
         self._heading = QtWidgets.QLabel()
         self._heading.setObjectName("notificationHeading")
         self._heading.setWordWrap(True)
+        self._heading.installEventFilter(self)
         self._close = QtWidgets.QToolButton()
         self._close.setObjectName("dismissNotification")
         self._close.setText("×")
@@ -104,6 +105,8 @@ class TrayBalloon(QtWidgets.QDialog):
         self._videos.setVisible(bool(videos))
         self._open_library.setVisible(bool(videos))
         self._activity.setVisible(reminder is not None)
+        clickable_heading = reminder is not None and not videos
+        self._heading.setCursor(QtCore.Qt.CursorShape.PointingHandCursor if clickable_heading else QtCore.Qt.CursorShape.ArrowCursor)
         if videos:
             video_limit = max(54, min(185, available.height() - height - 30)) if reminder else 336
             height += self._render_videos(videos, width, video_limit)
@@ -119,6 +122,16 @@ class TrayBalloon(QtWidgets.QDialog):
         self._duration_ms = duration * 1000 if videos else 0
         self.show()
         self._restart_timeout()
+
+    def eventFilter(self, watched, event) -> bool:
+        """Route a practice-only title click to Full practice while combined video links keep their actions."""
+
+        if (watched is self._heading and event.type() == QtCore.QEvent.Type.MouseButtonRelease
+                and event.button() == QtCore.Qt.MouseButton.LeftButton and self._videos.isHidden()
+                and self._practice and self._practice.isVisible()):
+            self.practice_requested.emit(False)
+            return True
+        return super().eventFilter(watched, event)
 
     def _render_videos(self, videos: Collection[types.VideoMeta], width: int, limit: int) -> int:
         """Keep titles grouped and scrollable; e.g. fifty uploads still fit above the practice section."""

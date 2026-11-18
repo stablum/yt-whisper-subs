@@ -311,6 +311,8 @@ class SentenceFlowTests(unittest.TestCase):
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
+        reviewed = []
+        self.panel.round_reviewed.connect(lambda: reviewed.append(True))
         first = self.panel._run.row["id"]
         self._answer(fixtures.DUTCH.replace("slimste", "slimmere"))
         self._wait(lambda: self.db.sentence_get(first)["outcome"] == "wrong")
@@ -325,12 +327,14 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertIn('href="error:', self.panel._view.card._source.text())
         self._wait(lambda: self.db.sentence_get(second)["outcome"] == "correct")
         self.assertIsNone(self.db.sentence_get(second)["viewed_at"])
+        self.assertFalse(reviewed)
         for expected in (second, None):
             QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
             card = self.panel._view.card
             QtTest.QTest.mouseClick(card, QtCore.Qt.MouseButton.LeftButton, pos=QtCore.QPoint(card.width() - 8, card.height() - 8))
             self.assertEqual(self.panel._run.row["id"] if self.panel._run.row else None, expected)
         self.assertEqual(self.panel._view.card._source.text(), "Round reviewed")
+        self.assertEqual(reviewed, [True])
         self.assertIn("1 correct", self.panel._view.card._instruction.text())
         self.assertIn("1 to revisit", self.panel._view.card._instruction.text())
         self.assertNotIn("•", self.panel._rail.item(1).text())

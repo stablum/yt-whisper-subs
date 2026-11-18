@@ -25,6 +25,7 @@ class WordQuiz(QtWidgets.QWidget):
     """Own one direction's view and lifecycle; e.g. independent preparation cannot overwrite the other direction's current answer."""
 
     activity_changed = QtCore.Signal()
+    round_reviewed = QtCore.Signal()
 
     def __init__(self, db, direction: practice.Direction, *, engine=None) -> None:
         """Restore only this destination's session; e.g. hidden construction never records exposure."""
@@ -37,11 +38,26 @@ class WordQuiz(QtWidgets.QWidget):
         self._current = self._task = self._empty = None
         self._started = 0.0
         self._autostart_pending = True
+        self._at_end = False
         self._closed = False
         self._arrange()
         self._controls.restore(db.setting(self._track.settings_key, db.setting("practice_options", "")))
         self._idle(i18n.tr('Getting your next word ready…'), "", i18n.tr('Continue'))
         self._next.hide()
+
+    @property
+    def round_id(self) -> str | None:
+        """Identify the round whose answers advance the guided session."""
+
+        return self._session
+
+    def enter_sequence(self) -> None:
+        """Start a fresh cached round when returning to a result screen from earlier practice."""
+
+        if self._at_end and self._practicing:
+            self._prepare(cached_first=True)
+        else:
+            self.activate()
 
     def activate(self) -> None:
         """Restore keys only for the visible direction; e.g. number shortcuts on a hidden quiz cannot answer its question."""
@@ -212,6 +228,7 @@ class WordQuiz(QtWidgets.QWidget):
             opts = opts.model_copy(update={"include_early": True})
         self._autostart_pending = False
         self._empty = None
+        self._at_end = False
         self._idle(i18n.tr('Preparing your round…'), i18n.tr('Getting the choices ready.'), i18n.tr('Preparing…'))
         self._controls.setEnabled(False)
         self._bar.setRange(0, 0)
@@ -428,6 +445,9 @@ class WordQuiz(QtWidgets.QWidget):
         if result["invalid"]:
             counts += i18n.tr(' · {invalid} reported', invalid=result['invalid'])
         self._idle(i18n.tr('Round complete') if complete else i18n.tr('Round saved'), counts, i18n.tr('Another round'))
+        self._at_end = True
+        if complete:
+            self.round_reviewed.emit()
 
     def showEvent(self, event) -> None:
         """Let the window paint before preparing; e.g. no blocking or exposure during construction."""

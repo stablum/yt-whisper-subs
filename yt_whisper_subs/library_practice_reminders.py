@@ -112,6 +112,9 @@ class PracticeNotice(QtWidgets.QWidget):
         self._message = QtWidgets.QLabel()
         self._message.setWordWrap(True)
         self._chart = library_practice_activity.ActivityChart()
+        for widget in (self._heading, self._message, self._chart):
+            widget.setCursor(QtCore.Qt.CursorShape.PointingHandCursor)
+            widget.installEventFilter(self)
         actions = QtWidgets.QHBoxLayout()
         self._snooze = QtWidgets.QPushButton()
         self._snooze.setObjectName("snoozePractice")
@@ -129,12 +132,20 @@ class PracticeNotice(QtWidgets.QWidget):
         layout.addWidget(self._chart, 1)
         layout.addLayout(actions)
 
+    def eventFilter(self, watched, event) -> bool:
+        """Open full practice from the reminder text or chart, e.g. clicking a bar starts the sequence."""
+
+        if event.type() == QtCore.QEvent.Type.MouseButtonRelease and event.button() == QtCore.Qt.MouseButton.LeftButton:
+            self.requested.emit()
+            return True
+        return super().eventFilter(watched, event)
+
     def render(self, reminder: Reminder, *, with_videos: bool) -> None:
         """Show the practice heading inline when the main heading describes new videos."""
 
         activity, hours = reminder
         self._heading.setVisible(with_videos)
-        message = i18n.tr('A short round with your saved words?')
+        message = i18n.tr('Ready for full practice?')
         if activity.gap is not None and activity.gap >= 2:
             message = i18n.tr("It's been {gap} days since you last practiced.", gap=activity.gap)
         elif activity.gap is None:

@@ -446,7 +446,9 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertFalse(self._notifier._balloon.isVisible())
         self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
         dialog = self._window._practice_dialog
-        dialog._engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())
+        engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())
+        for quiz in dialog._quizzes.values():
+            quiz._engine = engine
         self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
         dialog.resize(800, 600)
         self._app.processEvents()
@@ -461,6 +463,27 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
         dialog.close()
         QtCore.QThreadPool.globalInstance().waitForDone(5000)
+
+    def test_clicking_practice_reminder_opens_the_saved_full_practice_mode(self) -> None:
+        """Route reminder text to the sequence cursor rather than the manually last used tab."""
+
+        db = self._service.db
+        practice_fixtures.seed(db)
+        db.set_setting('practice_last_track', 'verb')
+        db.set_setting('practice_sequence', json.dumps({'completed': 1, 'skipped': 0}))
+        self._notifier.check_practice()
+        balloon = self._notifier._balloon
+        self.assertTrue(balloon.isVisible())
+        with mock.patch.object(library_practice.library_word_quiz.WordQuiz, 'activate'), \
+             mock.patch.object(library_practice.library_word_quiz.WordQuiz, 'enter_sequence'):
+            QtTest.QTest.mouseClick(balloon._practice._message, QtCore.Qt.MouseButton.LeftButton)
+            self._app.processEvents()
+        dialog = self._window._practice_dialog
+        self.assertIsNotNone(dialog)
+        self.assertFalse(balloon.isVisible())
+        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.WORD_EN_NL)
+        self.assertIn('2/8', dialog._sequence._status.text())
+        self.assertIsNone(db.practice_last_answer(time.time()))
 
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:
         """Keep the entire list accessible instead of truncating a native toast.

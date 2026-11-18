@@ -1076,6 +1076,9 @@ practice. The catalog saves the snooze deadline across restarts and midnight.
 When that deadline arrives, the reminder can reappear if you're still due for
 practice. A change to the snooze duration takes effect on the next snooze.
 Opening Practice or Activity from the menu/tray also snoozes a visible reminder.
+**Practice now**, the reminder text and its chart open or resume **Full practice**.
+In a combined balloon, the video titles still open their videos and
+**Activity & calendar** opens the activity page.
 
 When your last answer was two or more local calendar days ago, the balloon says
 how many days it has been. With no recorded answers, it invites your first
@@ -2556,6 +2559,33 @@ ledger, rather than maintaining a second vocabulary or scheduler.
 ```powershell
 python -m unittest tests.test_vocabulary_accretion -v
 ```
+
+### Full Practice
+
+Open **Library → Practice…** and choose **Full practice** above the mode buttons,
+or click the practice reminder. The session visits one round of each mode in
+the order shown in Practice:
+
+1. Word quiz, Dutch → English
+2. Word quiz, English → Dutch
+3. Verb transformations
+4. Sentence translation, English → Dutch
+5. Sentence translation, Dutch → English
+6. Dutch dictation
+7. Reading comprehension
+8. Listening comprehension
+
+Each mode uses its own settings and resumes an open round or takes a prepared
+round when available. Continue past the final feedback to move on. Modes with
+queued corrections give you time to review them before the handoff. If a mode
+has nothing due, is waiting on preparation or simply needs a break, **Skip mode**
+moves forward and keeps its draft and submitted answers. The header shows your
+place in the sequence and its final counts of completed and skipped modes.
+
+**Pause full practice**, selecting another tab, or closing the window saves the
+sequence position. **Resume full practice** and **Practice now** return you to
+that position. Submissions go through their usual grading, vocabulary review,
+activity and reminder rules.
 
 ### Adaptive Vocabulary Practice
 

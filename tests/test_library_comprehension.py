@@ -172,6 +172,8 @@ class ComprehensionFlowTests(unittest.TestCase):
         """Prevent question feedback from answering later questions; e.g. even a correct choice reveals no evidence early."""
 
         panel = self._panel(direction=comp.Direction.LISTEN, mc=2, open=0)
+        reviewed = []
+        panel.round_reviewed.connect(lambda: reviewed.append(True))
         view, source = panel._view, panel._view.source
         self._wait(lambda: bool(source.audio._player.calls))
         self.assertEqual(source.browser.toPlainText(), '')
@@ -192,6 +194,10 @@ class ComprehensionFlowTests(unittest.TestCase):
         before = len(source.audio._player.calls)
         source.audio._player.finished.emit()
         self.assertEqual(len(source.audio._player.calls), before + 1)
+        self.assertFalse(reviewed)
+        panel._next()
+        panel._next()
+        self.assertEqual(reviewed, [True])
         panel.hide()
         self.assertFalse(source.audio._playing)
         self.assertEqual(practice_activity.read(self.db).answers, 2)

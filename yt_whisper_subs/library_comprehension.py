@@ -35,6 +35,7 @@ class Panel(QtWidgets.QWidget):
     """Bind one modality to the same audited-passage strategy; e.g. reading and listening maintain separate resumable sessions."""
 
     activity_changed = QtCore.Signal()
+    round_reviewed = QtCore.Signal()
 
     def __init__(self, db, direction, *, engine=None) -> None:
         """Build without exposing content or calling a provider; e.g. opening Progress does not start a round."""
@@ -68,6 +69,22 @@ class Panel(QtWidgets.QWidget):
         self._view.card.idle(self._direction.label, i18n.tr('Read or listen to a Dutch text and answer the questions.'))
         for widget in (self._view.action, self._view.flag, self._view.retry, self._view.cancel, self._view.rail, self._view.bar):
             widget.hide()
+
+    @property
+    def round_id(self) -> str | None:
+        """Identify the saved passage round for a guided checkpoint."""
+
+        return self._run.session
+
+    def enter_sequence(self) -> None:
+        """Start cached text from an earlier summary once its corrections have been viewed."""
+
+        if self.isVisible() and self._run.phase == 'summary':
+            summary = self._db.comprehension_summary(self._run.session)
+            if not summary['unseen'] and summary['graded'] + summary['invalid'] >= summary['submitted']:
+                self._new(cached=True)
+                return
+        self.activate()
 
     def activate(self) -> None:
         """Open the first question automatically and restore the last review position; e.g. no Start round click is needed."""
@@ -385,6 +402,8 @@ class Panel(QtWidgets.QWidget):
         self._view.retry.hide()
         self._view.source.load(self._db.comprehension_session(self._run.session), result)
         self._outline()
+        if result['planned'] and result['graded'] + result['invalid'] == result['planned'] and not result['unseen']:
+            self.round_reviewed.emit()
 
     def _changed(self, presentation_id) -> None:
         """Refresh only relevant visible feedback; e.g. another answer's correction never replaces an unfinished draft."""

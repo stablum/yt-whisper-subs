@@ -299,6 +299,9 @@ class SentenceSession(library_written.WrittenPanel):
         self._view.action.setEnabled(not pending or failed or bool(unseen))
         self._view.options.set_active(self._mode.ops.active() == self._run.session)
         self._refresh()
+        self._run.at_end = not pending and not unseen
+        if self._run.at_end and complete:
+            self.round_reviewed.emit()
 
     def _finish(self) -> None:
         """End writing without cancelling submitted corrections; e.g. earlier rounds still contribute their original answers to statistics."""
