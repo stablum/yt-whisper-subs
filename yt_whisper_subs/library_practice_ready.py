@@ -6,6 +6,8 @@ Example: the next writing round is prepared while the current round is being ans
 from __future__ import annotations
 
 import functools
+import itertools
+import logging
 import time
 
 from PySide6 import QtCore
@@ -19,6 +21,7 @@ class PracticeReady(QtCore.QObject):
     """Prepare two destinations concurrently with per-track ownership and backoff; e.g. slow verb generation cannot block both sentence directions."""
 
     changed = QtCore.Signal()
+    _candidate = QtCore.Signal(object)
 
     def __init__(self, db, parent=None, *, modes=None) -> None:
         """Start only at the application entry point; e.g. opening statistics never initiates paid work."""
@@ -27,9 +30,12 @@ class PracticeReady(QtCore.QObject):
         self._db, self._modes = db, modes
         self._custom = modes is not None
         self._tasks = {}
+        self._scan = None
+        self._rescan = False
         self._stopped = False
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(2)
+        self._candidate.connect(self._schedule, QtCore.Qt.ConnectionType.QueuedConnection)
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(5000)
         self._timer.timeout.connect(self.check)
@@ -113,32 +119,75 @@ class PracticeReady(QtCore.QObject):
             if control := task_cancel.current():
                 control.checkpoint()
 
+    def _pending(self, busy: frozenset = frozenset()):
+        """Yield eligible requests in preferred order; e.g. an active listening check can inspect and hash cached recordings here."""
+
+        if not self._db.practice_has_candidates() and not self._db.verb_has_history():
+            return
+        for track, opts, engine in self._requests():
+            if control := task_cancel.current():
+                control.checkpoint()
+            if track not in busy and self._needed(track, opts, engine):
+                yield track, opts, engine
+
     def prepare(self, report) -> None:
         """Fill eligible destinations synchronously for deterministic checks; e.g. fake providers still exercise real leases and persistence."""
 
-        if not self._db.practice_has_candidates() and not self._db.verb_has_history():
-            return
-        for track, opts, engine in self._requests():
-            if self._needed(track, opts, engine):
-                self._prepare_track(track, opts, engine, report)
+        for track, opts, engine in self._pending():
+            self._prepare_track(track, opts, engine, report)
 
     def check(self) -> None:
-        """Dispatch only available worker slots, prioritizing the selected destination; e.g. no unbounded job queue builds up behind slow API calls."""
+        """Queue readiness without touching the catalog on the UI thread; e.g. answering a quiz can repaint while WAVs are checked."""
 
-        if self._stopped or len(self._tasks) >= 2:
+        capacity = self._pool.maxThreadCount() - len(self._tasks)
+        if self._stopped or capacity <= 0:
             return
-        if not self._db.practice_has_candidates() and not self._db.verb_has_history():
+        if self._scan is not None:
+            self._rescan = True
             return
-        for track, opts, engine in self._requests():
-            if track in self._tasks or not self._needed(track, opts, engine):
-                continue
-            task = library_workers.BackgroundTask(functools.partial(self._prepare_track, track, opts, engine))
-            self._tasks[track] = task
-            for signal in (task.signals.finished, task.signals.failed, task.signals.cancelled):
-                signal.connect(functools.partial(self._finished, track))
-            self._pool.start(task)
-            if len(self._tasks) == 2:
-                break
+        busy = frozenset(self._tasks)
+
+        def scan(_report):
+            """Send each eligible request as it is found; e.g. preferred word practice can start while audio is still checked."""
+
+            for request in itertools.islice(self._pending(busy), capacity):
+                self._candidate.emit(request)
+
+        task = library_workers.BackgroundTask(scan)
+        self._scan = task
+        task.signals.finished.connect(self._end_scan)
+        task.signals.cancelled.connect(self._end_scan)
+        task.signals.failed.connect(self._scan_failed)
+        self._pool.start(task)
+
+    @QtCore.Slot(object)
+    def _schedule(self, request) -> None:
+        """Dispatch only while capacity remains; e.g. a queued candidate cannot start after shutdown."""
+
+        track, opts, engine = request
+        if self._stopped or track in self._tasks or len(self._tasks) >= self._pool.maxThreadCount():
+            return
+        task = library_workers.BackgroundTask(functools.partial(self._prepare_track, track, opts, engine))
+        self._tasks[track] = task
+        for signal in (task.signals.finished, task.signals.failed, task.signals.cancelled):
+            signal.connect(functools.partial(self._finished, track), QtCore.Qt.ConnectionType.QueuedConnection)
+        self._pool.start(task)
+
+    @QtCore.Slot()
+    def _end_scan(self) -> None:
+        """Service one missed wake after a slow scan; e.g. rapid submissions never queue a scan per click."""
+
+        self._scan = None
+        again, self._rescan = self._rescan, False
+        if again:
+            self.check()
+
+    @QtCore.Slot(str, str)
+    def _scan_failed(self, message, _trace) -> None:
+        """Release the scan slot on error so a transient catalog failure can retry on the next tick."""
+
+        logging.getLogger(__name__).warning('Practice readiness check failed: %s', message)
+        self._end_scan()
 
     def _finished(self, track, *_args) -> None:
         """Immediately refill free capacity rather than waiting another minute; e.g. one ready direction lets the next destination start promptly."""
@@ -153,5 +202,7 @@ class PracticeReady(QtCore.QObject):
 
         self._stopped = True
         self._timer.stop()
+        if self._scan:
+            self._scan.cancel()
         for task in self._tasks.values():
             task.cancel()

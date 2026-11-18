@@ -15,6 +15,7 @@ from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6 import QtCore
 from PySide6 import QtWidgets
 from PySide6 import QtTest
 
@@ -239,14 +240,55 @@ class ReadyTests(unittest.TestCase):
         """Exercise the actual Qt worker and completion signal; e.g. the first ready round exists before any Practice dialog."""
 
         db, _, _, _, ready = self._case("sentence")
+        completed = []
+        ready.changed.connect(lambda: completed.append(True))
         ready.check()
         deadline = time.monotonic() + 10
-        while ready._tasks and time.monotonic() < deadline:
-            QtTest.QTest.qWait(10)
+        while not completed and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(.01)
+        self.assertTrue(completed)
         self.assertFalse(ready._tasks)
         self.assertIsNone(db.sentence_active())
         self.assertEqual(len(self._stock(db, ready._modes["sentence"][1], ready._modes["sentence"][0])), 2)
         self.assertEqual(practice_activity.read(db).answers, 0)
+
+    def test_slow_readiness_leaves_qt_responsive_and_combines_repeated_wakes(self) -> None:
+        """Drive the UI during a blocked readiness check and require at most one follow-up for repeated wakes."""
+
+        _, _, _, _, ready = self._case('practice')
+        ready._timer.stop()
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        ui_thread = threading.get_ident()
+        scans, events = [], []
+
+        def blocked(*_args):
+            """Simulate waiting on audio files without involving a provider or touching the test clock."""
+
+            scans.append(threading.get_ident())
+            entered.set()
+            release.wait(3)
+            return False
+
+        with mock.patch.object(ready, '_needed', side_effect=blocked):
+            ready.check()
+            self.assertTrue(entered.wait(2))
+            for _ in range(6):
+                ready.check()
+            QtCore.QTimer.singleShot(0, lambda: events.append(True))
+            self.app.processEvents()
+            self.assertEqual(events, [True])
+            self.assertEqual(len(scans), 1)
+            self.assertNotEqual(scans[0], ui_thread)
+            release.set()
+            deadline = time.monotonic() + 4
+            while ready._scan is not None and time.monotonic() < deadline:
+                self.app.processEvents()
+                time.sleep(.01)
+            self.assertIsNone(ready._scan)
+            self.assertEqual(len(scans), 2)
+            self.assertFalse(ready._tasks)
 
     def test_not_due_waits_for_scheduling_without_provider_failure_backoff(self) -> None:
         """Keep minute-scale learning steps available; e.g. all-caught-up is a healthy state rather than a one-hour outage."""

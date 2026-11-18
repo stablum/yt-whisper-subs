@@ -2263,8 +2263,10 @@ Tracking group. The direction dropdowns have been removed from round options.
 While the library is open or in the tray, preparation starts shortly after
 startup. It prioritizes the last selected destination and runs at most **two
 background jobs concurrently**, so one slow category cannot block all the others.
-It rechecks missing stock every five seconds and immediately after practice
-activity or a job finishes. Saved preferences apply per destination; shared
+It checks for missing stock in the worker pool every five seconds and after
+practice activity or a job finishes. One check runs at a time, with repeated
+requests combined into one follow-up. Catalog reads and audio-file verification
+can proceed while the quiz shows its result. Saved preferences apply per destination; shared
 previous preferences supply first-use defaults. Default word rounds explicitly
 include their required ten-term length, so startup cannot fail before beginning
 preparation. Preparation uses the configured practice model and API credentials.
