@@ -33,6 +33,33 @@ bilingual chapters from the selected video's details.
 
 [![YouTube library with pinned channels, video filters, watched progress, and bilingual chapters](docs/screenshots/video-library.png)](docs/screenshots/video-library.png)
 
+### Tray notification balloon
+
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <strong>Combined notification</strong><br>
+      <a href="docs/screenshots/notification-combined.png"><img src="docs/screenshots/notification-combined.png" alt="One tray balloon with grouped new video titles and a due practice reminder"></a>
+    </td>
+    <td width="33%" valign="top">
+      <strong>New videos</strong><br>
+      <a href="docs/screenshots/notification-videos.png"><img src="docs/screenshots/notification-videos.png" alt="Three new videos grouped under their two pinned channels"></a>
+    </td>
+    <td width="33%" valign="top">
+      <strong>Practice reminder</strong><br>
+      <a href="docs/screenshots/notification-practice.png"><img src="docs/screenshots/notification-practice.png" alt="Daily practice reminder with seven days of activity, snooze, and practice buttons"></a>
+    </td>
+  </tr>
+</table>
+
+### Clickable subtitles in mpv
+
+Click a word in either subtitle track to save it to Vocabulary. In this example,
+the saved word <em>liep</em> is green and underlined, and mpv shows its English
+meaning and tense. The `1/1` count means one click in one video.
+
+[![mpv dual subtitles with the clicked Dutch word liep highlighted in green and the English meaning walked shown over the video](docs/screenshots/mpv-clickable-subtitles.jpg)](docs/screenshots/mpv-clickable-subtitles.jpg)
+
 ### Vocabulary and practice
 
 <table>
