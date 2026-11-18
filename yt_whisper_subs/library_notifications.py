@@ -1,21 +1,19 @@
-"""Collect channel discoveries into one quiet, scrollable tray balloon.
+"""Coordinate new videos and daily practice in one tray balloon.
 
 Example: `notifier.add(videos)` merges a completed check without per-video alerts.
 """
 
 from __future__ import annotations
 
-import html
 from collections.abc import Callable
 from typing import NamedTuple
 
 from PySide6 import QtCore
-from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import i18n
-from yt_whisper_subs import library_db
 from yt_whisper_subs import library_balloon
+from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice_reminders
 from yt_whisper_subs import library_types as types
 
@@ -119,89 +117,18 @@ class NotificationSettings(QtWidgets.QGroupBox):
         )
 
 
-class VideoBalloon(library_balloon.TrayBalloon):
-    """Display all titles by channel without stealing the current app's focus.
-
-    Example: twenty uploads remain readable in one scrollable list.
-    """
-
-    video_requested = QtCore.Signal(str)
-    settings_requested = QtCore.Signal()
-
-    def __init__(self, parent: QtWidgets.QWidget) -> None:
-        """Build a reusable nonmodal window with explicit dismissal controls.
-
-        Example: Escape or the close button hides the same balloon.
-        """
-
-        super().__init__(i18n.tr('New videos from pinned channels'), parent)
-        self.setObjectName("videoBalloon")
-        self._videos = QtWidgets.QTextBrowser()
-        self._videos.setObjectName("notificationVideos")
-        self._videos.setOpenLinks(False)
-        self._videos.anchorClicked.connect(lambda url: self.video_requested.emit(url.toString()))
-        actions = QtWidgets.QHBoxLayout()
-        settings = QtWidgets.QPushButton(i18n.tr('Settings…'))
-        settings.clicked.connect(self.settings_requested)
-        open_library = QtWidgets.QPushButton(i18n.tr('Open library'))
-        open_library.setObjectName("primaryButton")
-        open_library.clicked.connect(lambda: self.video_requested.emit(""))
-        actions.addWidget(settings)
-        actions.addStretch()
-        actions.addWidget(open_library)
-        self._root.addWidget(self._videos, 1)
-        self._root.addLayout(actions)
-
-    def present(self, videos: list[types.VideoMeta], prefs: NotificationPrefs, anchor: QtCore.QRect) -> None:
-        """Update the complete list in place and reset its reading time.
-
-        Example: a second check adds titles to an already visible balloon.
-        """
-
-        groups: dict[str, list[types.VideoMeta]] = {}
-        for meta in videos:
-            groups.setdefault(meta.origin.channel, []).append(meta)
-        count = len(videos)
-        self._heading.setText(i18n.nt(
-            '{count} new video · Pinned channels', '{count} new videos · Pinned channels', count,
-        ))
-        body = []
-        for channel, entries in groups.items():
-            body.append(f'<p style="color: #f1c75b"><b>{html.escape(channel)}</b></p><ul>')
-            for meta in entries:
-                video_id = html.escape(meta.identity.video_id, quote=True)
-                title = html.escape(meta.identity.title)
-                body.append(f'<li><a href="{video_id}" style="color: #b5d9ff">{title}</a></li>')
-            body.append("</ul>")
-        scroll = self._videos.verticalScrollBar().value()
-        self._videos.setHtml("".join(body))
-        self._videos.verticalScrollBar().setValue(scroll)
-        screen = QtGui.QGuiApplication.screenAt(anchor.center()) if anchor.isValid() else None
-        screen = screen or self.parentWidget().screen()
-        available = screen.availableGeometry()
-        width = min(440, available.width())
-        self._videos.document().setTextWidth(max(1, width - 52))
-        height = min(440, 132 + int(self._videos.document().size().height()))
-        self._present(anchor, QtCore.QSize(width, height), prefs.duration_seconds)
-
-
 class TrayNotifications(QtCore.QObject):
-    """Debounce completed discoveries and own at most one visible balloon.
-
-    Example: three channel checks within thirty seconds share one notification.
-    """
+    """Keep one balloon current as video batches and practice reminders become due."""
 
     video_requested = QtCore.Signal(str)
     settings_requested = QtCore.Signal()
+    practice_requested = QtCore.Signal(bool)
 
     def __init__(
         self, db: library_db.LibraryDb, tray: QtWidgets.QSystemTrayIcon, *,
         practice_window: Callable[[], QtWidgets.QWidget | None] = lambda: None,
     ) -> None:
-        """Keep the queue, preferences, and popup tied to the tray's lifetime.
-
-        Example: `TrayNotifications(service.db, tray)` belongs to its main window.
-        """
+        """Tie both schedules and popup actions to the tray's lifetime."""
 
         super().__init__(tray)
         self._db = db
@@ -211,81 +138,87 @@ class TrayNotifications(QtCore.QObject):
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._show_pending)
-        self._balloon = VideoBalloon(tray.parent())
-        self._balloon.hidden.connect(self._clear)
-        self._balloon.video_requested.connect(self._open_video)
-        self._balloon.settings_requested.connect(self._open_settings)
         self._stopped = False
         self._practice_window = practice_window
-        self.practice = library_practice_reminders.PracticeReminders(db, tray, self._practice_available)
-        self.practice.hidden.connect(self._resume_pending, QtCore.Qt.ConnectionType.QueuedConnection)
-        self._balloon.hidden.connect(self.practice.check, QtCore.Qt.ConnectionType.QueuedConnection)
-
-    def _resume_pending(self) -> None:
-        """Resume a balloon waiting for the shared slot without shortening aggregation; e.g. preserve its thirty seconds."""
-
-        if self._pending and not self._timer.isActive() and not self._balloon.isVisible():
-            self._show_pending()
-
-    def _practice_available(self) -> bool:
-        """Use a single visible slot and respect active practice; e.g. no reminder over a question or video alert."""
-
-        window = self._practice_window()
-        practicing = window is not None and window.isVisible() and window.isActiveWindow()
-        modal = QtWidgets.QApplication.activeModalWidget() is not None
-        return not (self._stopped or self._pending or self._balloon.isVisible() or practicing or modal)
+        self._practice = library_practice_reminders.PracticeReminders(db)
+        self._reminder: library_practice_reminders.Reminder | None = None
+        self._balloon = library_balloon.TrayBalloon(tray.parent())
+        self._balloon.dismissed.connect(self._dismiss)
+        self._balloon.hidden.connect(self._clear_displayed)
+        self._balloon.videos_expired.connect(self._expire_videos)
+        self._balloon.video_requested.connect(self._open_video)
+        self._balloon.settings_requested.connect(self._open_settings)
+        self._balloon.practice_requested.connect(self._open_practice)
+        self._balloon.practice_snoozed.connect(self.snooze_practice)
+        self._practice_timer = QtCore.QTimer(self)
+        self._practice_timer.setInterval(60_000)
+        self._practice_timer.timeout.connect(self.check_practice)
+        self._practice_timer.start()
+        QtCore.QTimer.singleShot(5000, self, self.check_practice)
 
     @QtCore.Slot(object)
     def add(self, videos: list[types.VideoMeta]) -> None:
-        """Merge eligible IDs, updating an existing balloon instead of stacking.
+        """Start a bounded grouping window or extend the visible video list."""
 
-        Example: unpinned subscriptions never enter the displayed batch.
-        """
-
-        if self._stopped or not self._prefs.enabled:
+        if self._stopped or not self._prefs.enabled or not videos:
             return
+        updating = bool(self._pending) and not self._timer.isActive()
         for meta in videos:
             self._pending[meta.identity.video_id] = meta
-        self._retain_pinned()
-        if not self._pending:
-            return
-        if self._balloon.isVisible():
+        if updating:
             self._show_pending()
-        elif not self._timer.isActive():
-            # A fixed window bounds the wait even if more checks keep arriving.
-            self._timer.start(self._prefs.delay_seconds * 1000)
+        else:
+            self._retain_pinned()
+            if self._pending and not self._timer.isActive():
+                self._timer.start(self._prefs.delay_seconds * 1000)
 
     def configure(self, prefs: NotificationPrefs) -> None:
-        """Apply changes immediately and discard alerts when disabled.
-
-        Example: Save with notifications off also closes an existing balloon.
-        """
+        """Apply video settings immediately; e.g. turning off alerts removes the video list."""
 
         self._prefs = prefs
         if not prefs.enabled:
-            self._balloon.hide()
-            self._clear()
-        elif self._balloon.isVisible():
-            self._show_pending()
-        elif self._pending:
+            self._timer.stop()
+            self._pending.clear()
+            self._render()
+        elif self._timer.isActive():
             self._timer.start(prefs.delay_seconds * 1000)
+        elif self._pending:
+            self._show_pending()
+
+    def configure_practice(self, prefs: library_practice_reminders.ReminderPrefs) -> None:
+        """Apply reminder settings to the practice section as soon as they are saved."""
+
+        self._practice.configure(prefs)
+        self.check_practice()
+
+    @QtCore.Slot()
+    def check_practice(self) -> None:
+        """Refresh practice when due or answered; e.g. append it to a visible video list."""
+
+        if not self._stopped and self._sync_practice():
+            self._render()
+
+    @QtCore.Slot()
+    def snooze_practice(self) -> None:
+        """Postpone a visible reminder while keeping any new videos readable."""
+
+        if self._reminder is not None:
+            self._practice.snooze()
+            self._reminder = None
+            self._render()
 
     def stop(self) -> None:
-        """Prevent late worker signals from reopening notifications during exit.
-
-        Example: quitting while discovery completes keeps the tray quiet.
-        """
+        """Prevent late signals from reopening the balloon during shutdown."""
 
         self._stopped = True
-        self.practice.stop()
+        self._timer.stop()
+        self._practice_timer.stop()
+        self._pending.clear()
+        self._reminder = None
         self._balloon.hide()
-        self._clear()
 
     def _retain_pinned(self) -> None:
-        """Recheck current pin and catalog membership before showing delayed work.
-
-        Example: unpinning during the grouping delay removes that channel's titles.
-        """
+        """Recheck membership before delivery; e.g. exclude channels unpinned during the delay."""
 
         pinned = {channel.channel_id for channel in self._db.channels() if channel.pinned}
         self._pending = {
@@ -295,47 +228,76 @@ class TrayNotifications(QtCore.QObject):
 
     @QtCore.Slot()
     def _show_pending(self) -> None:
-        """Present one full batch beside the tray after the grouping interval.
+        """Deliver the finished video batch together with any reminder that is due."""
 
-        Example: a hidden icon falls back to its main window monitor's corner.
-        """
-
-        self._timer.stop()
-        if not self._pending:
+        if self._stopped:
             return
+        self._timer.stop()
         self._retain_pinned()
         owner = self._balloon.parentWidget()
-        suppressed = self._prefs.only_hidden and owner.isVisible() and not owner.isMinimized()
-        if self._stopped or not self._prefs.enabled or suppressed or not self._pending:
+        if self._prefs.only_hidden and owner.isVisible() and not owner.isMinimized():
+            self._pending.clear()
+        self._sync_practice()
+        self._render()
+
+    def _sync_practice(self) -> bool:
+        """Check whether practice content changed before redrawing the balloon."""
+
+        if self._timer.isActive() and self._reminder is None:
+            # Let a new reminder join the video alert when its grouping window ends.
+            return False
+        window = self._practice_window()
+        practicing = window is not None and window.isVisible() and window.isActiveWindow()
+        modal = QtWidgets.QApplication.activeModalWidget() is not None
+        reminder = None if practicing or modal else self._practice.due()
+        changed = reminder is not self._reminder
+        self._reminder = reminder
+        return changed
+
+    def _render(self) -> None:
+        """Show ready content only; e.g. snoozing cannot release a batch still collecting."""
+
+        videos = () if self._timer.isActive() else self._pending.values()
+        if videos or self._reminder is not None:
+            self._balloon.present(videos, self._reminder, self._tray.geometry(), self._prefs.duration_seconds)
+        else:
             self._balloon.hide()
-            self._clear()
-            return
-        self.practice.defer()
-        self._balloon.present(list(self._pending.values()), self._prefs, self._tray.geometry())
 
-    def _clear(self) -> None:
-        """Consume a displayed or suppressed batch without rescheduling it.
+    def _expire_videos(self) -> None:
+        """Consume the timed video section while leaving a due reminder in place."""
 
-        Example: dismissal cannot produce another balloon for the same batch.
-        """
-
-        self._timer.stop()
         self._pending.clear()
+        self._sync_practice()
+        self._render()
+
+    def _dismiss(self) -> None:
+        """Dismiss the visible content and snooze practice when it was included."""
+
+        if self._reminder is not None:
+            self._practice.snooze()
+        self._balloon.hide()
+
+    def _clear_displayed(self) -> None:
+        """Consume displayed content on hide; e.g. keep a video batch still in its grouping window."""
+
+        self._reminder = None
+        if not self._timer.isActive():
+            self._pending.clear()
 
     def _open_video(self, video_id: str) -> None:
-        """Dismiss before handing a title or general library action to the window.
+        """Close the balloon before selecting a title or opening the pinned list."""
 
-        Example: clicking an upload selects its catalog row.
-        """
-
-        self._balloon.hide()
+        self._dismiss()
         self.video_requested.emit(video_id)
 
+    def _open_practice(self, activity: bool) -> None:
+        """Dismiss and snooze before opening Practice or its activity calendar."""
+
+        self._dismiss()
+        self.practice_requested.emit(activity)
+
     def _open_settings(self) -> None:
-        """Make the settings entry reachable directly from the balloon.
+        """Open the shared settings without obscuring it with the balloon."""
 
-        Example: tune the reading time after a large upload batch.
-        """
-
-        self._balloon.hide()
+        self._dismiss()
         self.settings_requested.emit()

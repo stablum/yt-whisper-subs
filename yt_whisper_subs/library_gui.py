@@ -172,8 +172,7 @@ class LibraryWindow(
         )
         self._notifications.video_requested.connect(self._notification_video)
         self._notifications.settings_requested.connect(self._notification_settings)
-        self._notifications.practice.requested.connect(self._show_practice)
-        self._notifications.practice.settings_requested.connect(self._notification_settings)
+        self._notifications.practice_requested.connect(self._show_practice)
         QtWidgets.QApplication.instance().aboutToQuit.connect(self._notifications.stop)
         self._connect_actions()
         self._build_menus()
@@ -414,15 +413,14 @@ class LibraryWindow(
     def _show_practice(self, activity: bool = False) -> None:
         """Reuse one adaptive practice window; e.g. open it from Vocabulary or the Library menu."""
 
-        if self._notifications.practice.visible:
-            self._notifications.practice.snooze()
+        self._notifications.snooze_practice()
         # Construct practice widgets on demand; background preparation shares the same durable catalog.
         from yt_whisper_subs import library_practice
 
         if self._practice_dialog is None:
             self._practice_dialog = library_practice.PracticeDialog(self._service, self)
             self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
-            self._practice_dialog.activity_changed.connect(self._notifications.practice.check)
+            self._practice_dialog.activity_changed.connect(self._notifications.check_practice)
             self._practice_dialog.activity_changed.connect(self.practice_changed)
         self._practice_dialog.show_page(activity)
         self._practice_dialog.show()

@@ -81,8 +81,8 @@ The companion library is optimized for a second workflow:
 15. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
     the exact reason as an Issue, and offer one-click Repair instead of claiming
     that the pipeline is complete.
-16. Announce new pinned-channel discoveries in one dismissible tray balloon,
-    with every title grouped under its channel and configurable delivery timing.
+16. Announce new pinned-channel discoveries in a shared tray balloon, with titles
+    grouped by channel and the daily practice reminder included when it's due.
 17. Click subtitle words inside mpv, preserve every selection in SQLite, and
     review contextual English meanings, repeated clicks, and distinct-video counts.
 18. Practice saved Dutch vocabulary in either translation direction with challenging
@@ -189,9 +189,9 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Library watched rule | configurable threshold, default more than `95%`; confirmed mpv end-of-file or manual marking also completes |
 | Library smart view | counted Pipeline filter plus remembered browsing views; search and channel remain independent |
 | Channel quick access | clickable Pinned and Other channels groups; right-click or `Alt+P` to pin |
-| Pinned-channel notifications | enabled; one scrollable tray balloon per discovery batch |
+| Pinned-channel notifications | enabled; scrollable video list in the shared tray balloon |
 | Notification grouping delay | `30` seconds after channel discovery; adjustable from `0` to `3,600` |
-| Notification dismissal | `20` seconds, paused while hovering; `0` keeps it open until dismissed |
+| New-video list timeout | `20` seconds, paused while hovering; `0` keeps the list visible until dismissed |
 | Notification visibility | visible and hidden library windows by default; optional hidden/minimized only |
 | Daily practice reminders | enabled once eligible Dutch vocabulary exists or a verb round has been started; quiet for at least 24 hours after any submitted answer and throughout its local calendar day |
 | Practice reminder snooze | `4` hours; configurable from `1` to `72` hours; persisted across restarts |
@@ -917,8 +917,9 @@ of the library window's monitor.
 All channels in a check are collected before notification delivery starts,
 and the default **30-second** grouping interval also combines nearby completed
 checks. The interval starts with the first completed batch and is not extended
-by more arrivals. If a balloon is already visible, new titles update that same
-balloon. Duplicate video IDs appear once. Initial subscription history, repeat
+by more arrivals. When the batch is ready, its titles join any open practice
+reminder in the same balloon. Later batches extend a visible list of new titles.
+Duplicate video IDs appear once. Initial subscription history, repeat
 checks with no discoveries, and videos already known through archived metadata
 remain quiet. Pinning an existing channel does not announce its existing rows.
 Current pin and subscription membership are checked again before delivery.
@@ -932,22 +933,23 @@ discoveries still form one batch. The old separate auto-download-attempt tray
 message has been removed.
 
 Dismiss with **×**, or press **Escape** when the balloon has keyboard focus.
-It closes automatically after **20 seconds** by default; hovering pauses that
-timer, and leaving gives you the full reading time again. Click a title to
+The video list expires after **20 seconds** by default. Hovering pauses that
+timer, and leaving gives you the full reading time again. A practice reminder
+stays visible in the balloon when the video list expires. Click a title to
 restore the library, clear search and smart-view filters, and select that video
 in **Pinned**. This does not start playback or a download. **Open library**
 opens the Pinned list, and **Settings…** opens the same library settings dialog.
 
 Under **Library → Settings → Pinned-channel notifications**, configure:
 
-- **Notify me about new videos**: enable or deactivate the feature. Turning it
-  off immediately closes the balloon and discards queued alerts; enabling it
-  later does not replay those alerts.
-- **Group arrivals for**: `0`–`3,600` seconds; `0` delivers as soon as all
-  channels in the check have been scanned.
-- **Dismiss after**: `0`–`600` seconds; `0` means **Until dismissed**.
-- **Only while hidden or minimized**: suppress delivery while browsing the
-  visible library. Suppressed batches are consumed, rather than replayed on hide.
+- **Notify me about new videos** turns video alerts on or off. Turning it off
+  clears the video list and its queued titles.
+- **Group arrivals for** supports `0`–`3,600` seconds. A value of `0` delivers
+  as soon as all channels in the check have been scanned.
+- **Dismiss after** sets the video list timeout from `0`–`600` seconds.
+  A value of `0` means **Until dismissed**.
+- **Only while hidden or minimized** consumes new-video batches while the
+  library is visible.
 
 Changes take effect on Save and persist per output root in SQLite. Pending
 balloons are session-scoped. Settings uses a scrollable form so Save and Cancel
@@ -956,7 +958,8 @@ so Windows notification-center history and Focus Assist do not manage them.
 
 ### Daily Practice Reminder
 
-Once you have eligible saved Dutch words or have started a verb round, a **Time for practice** balloon reminds
+Once you have eligible saved Dutch words or have started a verb round, the tray
+balloon shows **Time for practice** to remind
 you when you have not submitted a practice answer for at least **24 hours** and
 have not answered on the current local calendar day. A late session at **23:55**
 keeps the reminder quiet until at least **23:55 the following day**, including
@@ -966,17 +969,18 @@ use the actual local answer dates. The reminder checks shortly after startup
 and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
 does not count; one submitted answer, correct or wrong, stops that day's reminder.
-The balloon waits while the Practice window is active in the foreground, while another modal
-dialog is open, or while a pinned-video notification is waiting or visible.
+The reminder waits while the Practice window is active in the foreground or
+while a modal dialog is open. When videos are already being grouped, a newly
+due reminder joins them when the grouping timer finishes.
 
-**Snooze 4h**, **×**, and **Escape** all postpone the reminder by the configured
-number of real hours. The absolute snooze deadline is saved in the catalog, so
-it survives closing/restarting the app and crossing midnight. There is no
-automatic timeout for this balloon. **Practice now**, **Activity & calendar**,
-and **Settings…** also snooze before opening their destination; opening a page
-does not invent practice credit. After the deadline, it can remind again if you
-still meet the practice-spacing rule. A saved snooze is not extended by application exit
-or by changing its duration in Settings; the new duration applies next dismissal.
+**Snooze 4h** postpones the reminder by the configured number of real hours
+and leaves any new videos visible. Closing the entire balloon with **×** or
+**Escape** also snoozes a displayed reminder. Opening a destination from the
+balloon closes it and snoozes any reminder it showed. Submit an answer to earn
+practice credit. The reminder stays visible until acted on or until you
+practice. The catalog saves the snooze deadline across restarts and midnight.
+When that deadline arrives, the reminder can reappear if you're still due for
+practice. A change to the snooze duration takes effect on the next snooze.
 Opening Practice or Activity from the menu/tray also snoozes a visible reminder.
 
 When your last answer was two or more local calendar days ago, the balloon says
@@ -990,12 +994,8 @@ than starting on Monday. The balloon and Activity page share the same counts.
 
 Under **Library → Settings → Daily practice reminder**, enable/disable reminders
 independently of pinned-channel notifications and set **Snooze for** from **1–72
-hours**, default **4**. Disabling closes an existing reminder immediately.
-The two notification types share their native frame, monitor-aware placement,
-and one visible slot. After its configured grouping delay, a video alert can
-temporarily replace a practice reminder without snoozing it. The reminder returns
-after the video alert closes, if still due. These reminders use local
-SQLite history and require no additional OpenAI calls or Windows scheduled task.
+hours**, default **4**. Disabling the reminder removes its section immediately.
+The reminder uses local SQLite history.
 They cannot appear while the library process is fully quit; the existing
 **Start with Windows** option can keep the library available in the tray.
 
@@ -3731,9 +3731,9 @@ High-level groups:
 | `yt_whisper_subs.library_service` | Local scanning, retention policy, bounded metadata hydration, channel checks, safe auto-download, and playback orchestration. |
 | `yt_whisper_subs.library_channel_service` | Bounded channel-snapshot merging, live transitions, and automatic-download eligibility. |
 | `yt_whisper_subs.library_channels` | Sidebar subscription presentation and transient per-channel check animation. |
-| `yt_whisper_subs.library_notifications` | Persisted notification controls, pinned-discovery aggregation, tray positioning, and one dismissible scrollable balloon. |
-| `yt_whisper_subs.library_balloon` | Shared native notification frame, explicit dismissal, hover timer, and monitor-aware placement. |
-| `yt_whisper_subs.library_practice_reminders` | Daily eligibility, persisted snooze deadlines, reminder settings, and the practice balloon. |
+| `yt_whisper_subs.library_notifications` | Pinned-discovery aggregation, reminder scheduling, and tray balloon actions. |
+| `yt_whisper_subs.library_balloon` | Shared native balloon, scrollable video list, hover timer, and monitor-aware placement. |
+| `yt_whisper_subs.library_practice_reminders` | Daily eligibility, persisted snooze deadlines, reminder settings, and the inline practice section. |
 | `yt_whisper_subs.practice_activity` | Shared submitted-answer/day accounting, zero-filled rolling week, and habit streaks. |
 | `yt_whisper_subs.library_practice_activity` | Shared weekly bar chart and a native calendar with selected-day details. |
 | `yt_whisper_subs.library_practice_controls` | Round-options popover, answer targets, and guarded mouse/keyboard continuation. |
@@ -3922,8 +3922,9 @@ hidden-only delivery, dismissal and hover timers, exact title navigation,
 persisted settings, large scrollable batches, and multi-monitor tray positioning.
 Practice reminder tests cover snooze/restart persistence, close/Escape/stop,
 the 24-hour practice interval across midnight/restart, vocabulary, verb and sentence credit,
-long local days, inactivity wording, first practice, shared balloon delivery without
-shortening aggregation, opening without completion credit, settings, and reuse
+long local days, inactivity wording, first practice, both sections in the same
+balloon, grouping delay, independent video timeout and practice snooze,
+opening without completion credit, settings, and reuse
 of the existing Practice window. Activity tests exercise real SQLite answers,
 both directions, mistakes, idempotency, reported/unanswered questions, local
 answer dates, zero days, streaks, and native calendar navigation.

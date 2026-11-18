@@ -162,7 +162,7 @@ msgstr ""
 "Una risposta corretta indovinata riceve un intervallo di ripasso più breve. La velocità non "
 "influisce sulla valutazione."
 
-#: yt_whisper_subs/library_practice_reminders.py:131
+#: yt_whisper_subs/library_practice_reminders.py:137
 msgid "A short round with your saved words?"
 msgstr "Una breve sessione con le parole salvate?"
 
@@ -184,7 +184,7 @@ msgstr "Azioni per tutti i video corrispondenti ai filtri"
 msgid "Activity"
 msgstr "Attività"
 
-#: yt_whisper_subs/library_practice_reminders.py:105
+#: yt_whisper_subs/library_balloon.py:82
 msgid "Activity && calendar"
 msgstr "Attività e calendario"
 
@@ -585,7 +585,7 @@ msgstr "Clona da registrazione"
 msgid "Close"
 msgstr "Chiudi"
 
-#: yt_whisper_subs/library_practice_reminders.py:69
+#: yt_whisper_subs/library_practice_reminders.py:72
 #, python-brace-format
 msgid ""
 "Closing the balloon snoozes it. Submitted answers keep reminders quiet for at least "
@@ -595,7 +595,7 @@ msgstr ""
 "silenziosi per almeno {MIN_PRACTICE_HOURS} ore. Funzionano mentre la raccolta è aperta o "
 "nell’area di notifica."
 
-#: yt_whisper_subs/library_notifications.py:90
+#: yt_whisper_subs/library_notifications.py:88
 msgid ""
 "Collect completed checks for this long, then show one list. Each check always groups all its "
 "channels; 0 shows it immediately."
@@ -855,7 +855,7 @@ msgstr "Download attuali o precedenti non ancora visti"
 msgid "Daily answer accuracy"
 msgstr "Precisione giornaliera delle risposte"
 
-#: yt_whisper_subs/library_practice_reminders.py:57
+#: yt_whisper_subs/library_practice_reminders.py:60
 msgid "Daily practice reminder"
 msgstr "Promemoria quotidiano degli esercizi"
 
@@ -906,15 +906,15 @@ msgstr "Direzione"
 msgid "Disable automatic download"
 msgstr "Disattiva download automatico"
 
-#: yt_whisper_subs/library_notifications.py:107
+#: yt_whisper_subs/library_notifications.py:105
 msgid "Dismiss after"
 msgstr "Chiudi dopo"
 
-#: yt_whisper_subs/library_balloon.py:56
+#: yt_whisper_subs/library_balloon.py:155
 msgid "Dismiss notification"
 msgstr "Chiudi notifica"
 
-#: yt_whisper_subs/library_balloon.py:57
+#: yt_whisper_subs/library_balloon.py:156
 msgid "Dismiss notification (Escape)"
 msgstr "Chiudi notifica (Esc)"
 
@@ -1185,6 +1185,7 @@ msgid "Fully correct"
 msgstr "Del tutto corretto"
 
 #: yt_whisper_subs/library_model.py:459
+#, python-format
 msgid "Furthest observed position; 100% requires mpv to reach end-of-file"
 msgstr "Posizione più avanzata; il 100% richiede che mpv raggiunga la fine"
 
@@ -1221,7 +1222,7 @@ msgstr "Preparazione della prossima parola…"
 msgid "Graded"
 msgstr "Valutato"
 
-#: yt_whisper_subs/library_notifications.py:106
+#: yt_whisper_subs/library_notifications.py:104
 msgid "Group arrivals for"
 msgstr "Raggruppa per"
 
@@ -1336,7 +1337,7 @@ msgstr "Interrotto · {label} · fai clic su Riprendi"
 msgid "Issues"
 msgstr "Problemi"
 
-#: yt_whisper_subs/library_practice_reminders.py:133
+#: yt_whisper_subs/library_practice_reminders.py:139
 #, python-brace-format
 msgid "It's been {gap} days since you last practiced."
 msgstr "Sono passati {gap} giorni dall’ultimo esercizio."
@@ -1368,7 +1369,7 @@ msgid "Last check: {checked} · Next check: {when}"
 msgstr "Ultimo controllo: {checked} · Prossimo: {when}"
 
 #: yt_whisper_subs/library_window_support.py:82
-#, python-brace-format
+#, python-brace-format, python-format
 msgid "Last completed channel check: {checked_at:%Y-%m-%d %H:%M:%S %Z}."
 msgstr "Ultimo controllo completo dei canali: {checked_at:%Y-%m-%d %H:%M:%S %Z}."
 
@@ -1688,7 +1689,7 @@ msgstr "Nuova variazione"
 msgid "New verb round"
 msgstr "Nuova sessione di verbi"
 
-#: yt_whisper_subs/library_notifications.py:137
+#: yt_whisper_subs/library_balloon.py:110
 msgid "New videos from pinned channels"
 msgstr "Nuovi video dai canali fissati"
 
@@ -1783,7 +1784,7 @@ msgstr "Non proprio · ecco la correzione"
 msgid "Not watched yet"
 msgstr "Non ancora visto"
 
-#: yt_whisper_subs/library_notifications.py:81
+#: yt_whisper_subs/library_notifications.py:79
 msgid "Notify me about new videos"
 msgstr "Avvisami dei nuovi video"
 
@@ -1807,7 +1808,7 @@ msgstr "Omissione"
 msgid "On device"
 msgstr "Sul dispositivo"
 
-#: yt_whisper_subs/library_notifications.py:99
+#: yt_whisper_subs/library_notifications.py:97
 msgid "Only while hidden or minimized"
 msgstr "Solo con finestra nascosta o ridotta"
 
@@ -1815,7 +1816,7 @@ msgstr "Solo con finestra nascosta o ridotta"
 msgid "Open"
 msgstr "Aperta"
 
-#: yt_whisper_subs/library_notifications.py:146
+#: yt_whisper_subs/library_balloon.py:85
 msgid "Open library"
 msgstr "Apri raccolta"
 
@@ -1967,7 +1968,7 @@ msgstr "Canali fissati"
 msgid "Pinned for quick access"
 msgstr "Fissato per l’accesso rapido"
 
-#: yt_whisper_subs/library_notifications.py:78
+#: yt_whisper_subs/library_notifications.py:76
 msgid "Pinned-channel notifications"
 msgstr "Notifiche dei canali fissati"
 
@@ -2072,7 +2073,7 @@ msgstr "Attività degli esercizi…"
 msgid "Practice early"
 msgstr "Ripassa in anticipo"
 
-#: yt_whisper_subs/library_practice_reminders.py:117
+#: yt_whisper_subs/library_practice_reminders.py:119
 msgid "Practice now"
 msgstr "Esercitati ora"
 
@@ -2299,7 +2300,7 @@ msgstr "Leggi o ascolta un testo olandese e rispondi alle domande."
 msgid "Reading comprehension"
 msgstr "Comprensione scritta"
 
-#: yt_whisper_subs/library_notifications.py:98
+#: yt_whisper_subs/library_notifications.py:96
 msgid "Reading time pauses while the pointer is over the balloon."
 msgstr "Il tempo si ferma quando il puntatore è sulla notifica."
 
@@ -2364,7 +2365,7 @@ msgstr "Aggiorna statistiche delle frasi"
 msgid "Refresh statistics"
 msgstr "Aggiorna statistiche"
 
-#: yt_whisper_subs/library_practice_reminders.py:59
+#: yt_whisper_subs/library_practice_reminders.py:62
 msgid "Remind me on days I haven't practiced"
 msgstr "Ricordamelo nei giorni senza esercizi"
 
@@ -2647,6 +2648,7 @@ msgid "Saving sentence translation…"
 msgstr "Salvataggio della traduzione della frase…"
 
 #: yt_whisper_subs/library_voice_controls.py:118
+#, python-format
 msgid ""
 "Scale all expression sliders together. Try 25–50% if a strong mix cannot finish speaking. Pace "
 "and volume stay independent."
@@ -2732,8 +2734,7 @@ msgstr "Prefisso separabile"
 msgid "Settings changed. Preview again to hear the new version."
 msgstr "Impostazioni modificate. Riproduci di nuovo l’anteprima per sentire la nuova versione."
 
-#: yt_whisper_subs/library_notifications.py:144 yt_whisper_subs/library_practice_reminders.py:108
-#: yt_whisper_subs/library_window_menus.py:22
+#: yt_whisper_subs/library_balloon.py:80 yt_whisper_subs/library_window_menus.py:22
 msgid "Settings…"
 msgstr "Impostazioni…"
 
@@ -2792,21 +2793,21 @@ msgstr "Competenze"
 msgid "Skipped active or pending videos:\n"
 msgstr "Video attivi o in attesa saltati:\n"
 
-#: yt_whisper_subs/library_practice_reminders.py:79
+#: yt_whisper_subs/library_practice_reminders.py:82
 msgid "Snooze for"
 msgstr "Rinvia di"
 
-#: yt_whisper_subs/library_practice_reminders.py:140
+#: yt_whisper_subs/library_balloon.py:166
 #, python-brace-format
 msgid "Snooze for {snooze_hours} hours (Escape)"
 msgstr "Rinvia di {snooze_hours} ore (Esc)"
 
-#: yt_whisper_subs/library_practice_reminders.py:141
+#: yt_whisper_subs/library_balloon.py:167
 #, python-brace-format
 msgid "Snooze practice reminder for {snooze_hours} hours"
 msgstr "Rinvia il promemoria di {snooze_hours} ore"
 
-#: yt_whisper_subs/library_practice_reminders.py:138
+#: yt_whisper_subs/library_practice_reminders.py:144
 #, python-brace-format
 msgid "Snooze {snooze_hours}h"
 msgstr "Rinvia di {snooze_hours} ore"
@@ -3058,7 +3059,7 @@ msgstr ""
 "Totale · {answers} risposte · {len} giorni attivi · {distinct_words} parole · {distinct_verbs} "
 "verbi · serie più lunga {longest} giorni"
 
-#: yt_whisper_subs/library_practice_reminders.py:99
+#: yt_whisper_subs/library_balloon.py:112 yt_whisper_subs/library_practice_reminders.py:110
 msgid "Time for practice"
 msgstr "È ora di esercitarsi"
 
@@ -3188,7 +3189,7 @@ msgstr "Rimuovi dall’accesso rapido"
 msgid "Unpin selected channel"
 msgstr "Sblocca canale selezionato"
 
-#: yt_whisper_subs/library_notifications.py:96
+#: yt_whisper_subs/library_notifications.py:94
 msgid "Until dismissed"
 msgstr "Fino alla chiusura"
 
@@ -3401,7 +3402,7 @@ msgid "Watched to {format_duration}; duration unavailable"
 msgstr "Visto fino a {format_duration}; durata non disponibile"
 
 #: yt_whisper_subs/library_model.py:138
-#, python-brace-format
+#, python-brace-format, python-format
 msgid "Watched: more than {percent:g}% reached or mpv reported the end"
 msgstr "Visto: superato il {percent:g}% o fine segnalata da mpv"
 
@@ -3590,7 +3591,7 @@ msgstr "I progressi sono salvati."
 msgid "Your round is ready"
 msgstr "La sessione è pronta"
 
-#: yt_whisper_subs/library_practice_reminders.py:135
+#: yt_whisper_subs/library_practice_reminders.py:141
 msgid "Your saved words are ready for your first practice."
 msgstr "Le parole salvate sono pronte per il primo esercizio."
 
@@ -3750,7 +3751,7 @@ msgstr[1] "{count:,} video"
 msgid "{count} matching video(s)"
 msgstr "{count} video corrispondenti"
 
-#: yt_whisper_subs/library_notifications.py:165
+#: yt_whisper_subs/library_balloon.py:126
 #, python-brace-format
 msgid "{count} new video · Pinned channels"
 msgid_plural "{count} new videos · Pinned channels"
@@ -3767,7 +3768,7 @@ msgstr ""
 "{sum} risposte · {len} giorni attivi"
 
 #: yt_whisper_subs/library_practice_activity.py:82
-#, python-brace-format
+#, python-brace-format, python-format
 msgid ""
 "{day:%A, %d %B %Y}\n"
 "{answers} answers · {words} words · {verb_lemmas} verbs\n"

@@ -427,7 +427,7 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertEqual(notifications.NotificationPrefs.load(self._service.db), prefs)
         self.assertEqual(self._notifier._prefs, prefs)
         self.assertEqual(reminders.ReminderPrefs.load(self._service.db), current.practice_reminders)
-        self.assertEqual(self._notifier.practice._prefs, current.practice_reminders)
+        self.assertEqual(self._notifier._practice._prefs, current.practice_reminders)
         self._service.db.set_setting("notify_delay_seconds", "broken")
         self._service.db.set_setting("notify_duration_seconds", "999999999")
         loaded = notifications.NotificationPrefs.load(self._service.db)
@@ -438,12 +438,12 @@ class TrayNotificationTests(unittest.TestCase):
         """Navigate from menu and tray without duplicate analytics windows; e.g. Practice now returns to the round tab."""
 
         practice_fixtures.seed(self._service.db)
-        self._notifier.practice.check()
-        self.assertTrue(self._notifier.practice.visible)
+        self._notifier.check_practice()
+        self.assertTrue(self._notifier._balloon.isVisible())
         menu = self._window.menuBar().actions()[0].menu()
         activity = next(action for action in menu.actions() if action.text() == "Practice activity…")
         activity.trigger()
-        self.assertFalse(self._notifier.practice.visible)
+        self.assertFalse(self._notifier._balloon.isVisible())
         self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
         dialog = self._window._practice_dialog
         dialog._engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())

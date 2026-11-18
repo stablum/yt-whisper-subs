@@ -1,14 +1,21 @@
-"""Shared tray-popup frame, placement and explicit dismissal behavior.
+"""One tray balloon for new videos and the daily practice reminder.
 
 Example: video discoveries and practice reminders use the same quiet native surface.
 """
+
+from __future__ import annotations
+
+import html
+from collections.abc import Collection
 
 from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_practice_reminders as reminders
 from yt_whisper_subs import library_theme
+from yt_whisper_subs import library_types as types
 
 
 def popup_rect(anchor: QtCore.QRect, available: QtCore.QRect, size: QtCore.QSize) -> QtCore.QRect:
@@ -26,49 +33,138 @@ def popup_rect(anchor: QtCore.QRect, available: QtCore.QRect, size: QtCore.QSize
 
 
 class TrayBalloon(QtWidgets.QDialog):
-    """Share focus-safe presentation without coupling notification policies; e.g. persistent practice reminders."""
+    """Show either or both sections in one focus-safe window beside the tray."""
 
     dismissed = QtCore.Signal()
     hidden = QtCore.Signal()
+    videos_expired = QtCore.Signal()
+    video_requested = QtCore.Signal(str)
+    practice_requested = QtCore.Signal(bool)
+    practice_snoozed = QtCore.Signal()
+    settings_requested = QtCore.Signal()
 
-    def __init__(self, title: str, parent: QtWidgets.QWidget) -> None:
+    def __init__(self, parent: QtWidgets.QWidget) -> None:
         """Build the common heading and close control; e.g. Escape follows the same dismissal path."""
 
         flags = QtCore.Qt.WindowType.Tool | QtCore.Qt.WindowType.FramelessWindowHint
         flags |= QtCore.Qt.WindowType.WindowStaysOnTopHint
         super().__init__(parent, flags)
-        self.setWindowTitle(title)
+        self.setObjectName("trayBalloon")
         self.setAttribute(QtCore.Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setStyleSheet(library_theme.STYLE)
         self._duration_ms = 0
         self._timer = QtCore.QTimer(self)
         self._timer.setSingleShot(True)
-        self._timer.timeout.connect(self.reject)
+        self._timer.timeout.connect(self.videos_expired)
         self._root = QtWidgets.QVBoxLayout(self)
         self._root.setContentsMargins(16, 14, 16, 14)
         heading = QtWidgets.QHBoxLayout()
-        self._heading = QtWidgets.QLabel(title)
+        self._heading = QtWidgets.QLabel()
         self._heading.setObjectName("notificationHeading")
         self._heading.setWordWrap(True)
-        close = QtWidgets.QToolButton()
-        close.setObjectName("dismissNotification")
-        close.setText("×")
-        close.setAccessibleName(i18n.tr('Dismiss notification'))
-        close.setToolTip(i18n.tr('Dismiss notification (Escape)'))
-        close.clicked.connect(self.reject)
+        self._close = QtWidgets.QToolButton()
+        self._close.setObjectName("dismissNotification")
+        self._close.setText("×")
+        self._close.clicked.connect(self.reject)
         heading.addWidget(self._heading, 1)
-        heading.addWidget(close)
+        heading.addWidget(self._close)
         self._root.addLayout(heading)
+        self._videos = QtWidgets.QTextBrowser()
+        self._videos.setObjectName("notificationVideos")
+        self._videos.setOpenLinks(False)
+        self._videos.anchorClicked.connect(lambda url: self.video_requested.emit(url.toString()))
+        self._videos.setMinimumHeight(54)
+        self._root.addWidget(self._videos)
+        self._practice: reminders.PracticeNotice | None = None
+        actions = QtWidgets.QHBoxLayout()
+        settings = QtWidgets.QPushButton(i18n.tr('Settings…'))
+        settings.clicked.connect(self.settings_requested)
+        self._activity = QtWidgets.QPushButton(i18n.tr('Activity && calendar'))
+        self._activity.setObjectName("openPracticeActivity")
+        self._activity.clicked.connect(lambda: self.practice_requested.emit(True))
+        self._open_library = QtWidgets.QPushButton(i18n.tr('Open library'))
+        self._open_library.clicked.connect(lambda: self.video_requested.emit(""))
+        actions.addWidget(settings)
+        actions.addWidget(self._activity)
+        actions.addStretch()
+        actions.addWidget(self._open_library)
+        self._root.addLayout(actions)
 
-    def _present(self, anchor: QtCore.QRect, size: QtCore.QSize, duration: int = 0) -> None:
-        """Position without activating and optionally expire; e.g. zero duration waits for dismissal."""
+    def present(
+        self, videos: Collection[types.VideoMeta], reminder: reminders.Reminder | None,
+        anchor: QtCore.QRect, duration: int,
+    ) -> None:
+        """Update the sections in place; e.g. remove expired titles while keeping practice visible."""
 
         screen = QtGui.QGuiApplication.screenAt(anchor.center()) if anchor.isValid() else None
         screen = screen or self.parentWidget().screen()
-        self.setGeometry(popup_rect(anchor, screen.availableGeometry(), size))
-        self._duration_ms = duration * 1000
+        available = screen.availableGeometry()
+        width = min(470 if reminder else 440, available.width())
+        height = 405 if reminder else 104
+        self._videos.setVisible(bool(videos))
+        self._open_library.setVisible(bool(videos))
+        self._activity.setVisible(reminder is not None)
+        if videos:
+            video_limit = max(54, min(185, available.height() - height - 30)) if reminder else 336
+            height += self._render_videos(videos, width, video_limit)
+            title = i18n.tr('New videos from pinned channels')
+        else:
+            title = i18n.tr('Time for practice')
+            self._heading.setText(title)
+        self._render_practice(reminder, with_videos=bool(videos))
+        if reminder and videos:
+            height += 30
+        self.setWindowTitle(title)
+        self.setGeometry(popup_rect(anchor, available, QtCore.QSize(width, height)))
+        self._duration_ms = duration * 1000 if videos else 0
         self.show()
         self._restart_timeout()
+
+    def _render_videos(self, videos: Collection[types.VideoMeta], width: int, limit: int) -> int:
+        """Keep titles grouped and scrollable; e.g. fifty uploads still fit above the practice section."""
+
+        self._heading.setText(i18n.nt(
+            '{count} new video · Pinned channels', '{count} new videos · Pinned channels', len(videos),
+        ))
+        groups: dict[str, list[types.VideoMeta]] = {}
+        for meta in videos:
+            groups.setdefault(meta.origin.channel, []).append(meta)
+        body = []
+        for channel, entries in groups.items():
+            body.append(f'<p style="color: #f1c75b"><b>{html.escape(channel)}</b></p><ul>')
+            for meta in entries:
+                video_id = html.escape(meta.identity.video_id, quote=True)
+                title = html.escape(meta.identity.title)
+                body.append(f'<li><a href="{video_id}" style="color: #b5d9ff">{title}</a></li>')
+            body.append("</ul>")
+        document = self._videos.document()
+        scroll = self._videos.verticalScrollBar().value()
+        self._videos.setHtml("".join(body))
+        document.setTextWidth(max(1, width - 52))
+        height = min(limit, max(54, int(document.size().height()) + 12))
+        self._videos.setMaximumHeight(height)
+        self._videos.verticalScrollBar().setValue(scroll)
+        return height
+
+    def _render_practice(self, reminder: reminders.Reminder | None, *, with_videos: bool) -> None:
+        """Load the chart on demand and label the close button with the current snooze action."""
+
+        if reminder is None:
+            if self._practice is not None:
+                self._practice.hide()
+            self._close.setAccessibleName(i18n.tr('Dismiss notification'))
+            self._close.setToolTip(i18n.tr('Dismiss notification (Escape)'))
+            return
+        if self._practice is None:
+            self._practice = reminders.PracticeNotice()
+            self._practice.snoozed.connect(self.practice_snoozed)
+            self._practice.requested.connect(lambda: self.practice_requested.emit(False))
+            self._root.insertWidget(2, self._practice, 1)
+        self._practice.render(reminder, with_videos=with_videos)
+        self._practice.show()
+        hours = reminder.snooze_hours
+        self._close.setToolTip(i18n.tr('Snooze for {snooze_hours} hours (Escape)', snooze_hours=hours))
+        self._close.setAccessibleName(i18n.tr('Snooze practice reminder for {snooze_hours} hours', snooze_hours=hours))
 
     def _restart_timeout(self) -> None:
         """Pause expiration while reading; e.g. a hovered video list stays open."""
@@ -96,7 +192,7 @@ class TrayBalloon(QtWidgets.QDialog):
         super().reject()
 
     def hideEvent(self, event: QtGui.QHideEvent) -> None:
-        """Release the shared notification slot on every hide; e.g. another pending balloon may appear."""
+        """Stop the reading timer when the window hides; e.g. closing cannot replay the alert."""
 
         self._timer.stop()
         self.hidden.emit()

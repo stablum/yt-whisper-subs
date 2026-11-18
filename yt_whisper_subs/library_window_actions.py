@@ -165,7 +165,7 @@ class WindowActionsMixin:
         values.notifications.save(self._service.db)
         self._notifications.configure(values.notifications)
         values.practice_reminders.save(self._service.db)
-        self._notifications.practice.configure(values.practice_reminders)
+        self._notifications.configure_practice(values.practice_reminders)
         self.refresh()
         if cookies_changed:
             released = self._service.db.reset_metadata_attempts()

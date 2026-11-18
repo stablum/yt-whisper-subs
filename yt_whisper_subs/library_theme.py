@@ -5,7 +5,7 @@ Example: `window.setStyleSheet(library_theme.STYLE)`.
 
 STYLE = """
 QMainWindow, QDialog { background: #171a21; color: #eef2f7; }
-QDialog#videoBalloon, QDialog#practiceBalloon { border: 1px solid #4b617c; border-radius: 10px; }
+QDialog#trayBalloon { border: 1px solid #4b617c; border-radius: 10px; }
 QLabel#notificationHeading { color: #ffffff; font-size: 11pt; font-weight: 600; }
 QTextBrowser#notificationVideos { background: transparent; border: 0; }
 QToolButton#dismissNotification { border: 0; padding: 2px 8px; font-size: 18pt; }

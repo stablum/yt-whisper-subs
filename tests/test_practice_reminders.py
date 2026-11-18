@@ -56,13 +56,31 @@ class ReminderTests(unittest.TestCase):
         self.owner.setStyleSheet(library_theme.STYLE)
         self.tray = QtWidgets.QSystemTrayIcon(self.owner)
         self.available = True
-        self.reminder = reminders.PracticeReminders(self.db, self.tray, lambda: self.available, clock=lambda: self.now)
+        self.practice_window = mock.Mock()
+        self.practice_window.isVisible.return_value = True
+        self.practice_window.isActiveWindow.side_effect = lambda: not self.available
+        self._start_notifier()
         self.addCleanup(self._cleanup)
+
+    def _start_notifier(self) -> None:
+        """Recreate the coordinator with the same catalog and clock, as on tray restart."""
+
+        self.notifier = library_notifications.TrayNotifications(
+            self.db, self.tray, practice_window=lambda: self.practice_window,
+        )
+        self.notifier._practice._clock = lambda: self.now
+        self.balloon = self.notifier._balloon
+
+    @property
+    def _practice_visible(self) -> bool:
+        """Check whether practice content is actually visible in the shared balloon."""
+
+        return self.balloon._practice is not None and self.balloon._practice.isVisible()
 
     def _cleanup(self) -> None:
         """Stop timers before removing the catalog; e.g. a queued startup check cannot touch a deleted database."""
 
-        self.reminder.stop()
+        self.notifier.stop()
         self.owner.close()
         self.owner.deleteLater()
         self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
@@ -79,25 +97,25 @@ class ReminderTests(unittest.TestCase):
     def test_snooze_recurrence_restart_and_today_completion(self) -> None:
         """Preserve snooze across controller recreation; e.g. no duplicate reminder on a quiet tray restart."""
 
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
-        self.reminder._balloon.findChild(QtWidgets.QPushButton, "snoozePractice").click()
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
+        self.balloon.findChild(QtWidgets.QPushButton, "snoozePractice").click()
         deadline = float(self.db.setting("practice_snooze_until", "0"))
         self.assertEqual(deadline, self.now + 4 * 3600)
-        self.reminder.stop()
-        self.reminder = reminders.PracticeReminders(self.db, self.tray, lambda: True, clock=lambda: self.now)
+        self.notifier.stop()
+        self._start_notifier()
         self.now = deadline - 1
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now = deadline
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
         self._answer(self.now)
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now += 2 * 3600
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
 
     def test_verb_only_history_enables_reminders_and_submitted_verbs_complete_today(self) -> None:
         """Share daily habit accounting across modes; e.g. a saved typed attempt suppresses reminders even if grading is pending."""
@@ -105,48 +123,47 @@ class ReminderTests(unittest.TestCase):
         catalog = verb_fixtures.catalog(self.db)
         engine = verb_service.VerbService(self.db, verb_fixtures.FakeVerbProvider())
         with mock.patch.object(self.db, "practice_has_candidates", return_value=False):
-            self.reminder.check()
-            self.assertFalse(self.reminder.visible)
+            self.notifier.check_practice()
+            self.assertFalse(self._practice_visible)
             with mock.patch.object(self.db, "verb_catalog", return_value=catalog):
                 session = engine.start(verb_fixtures.options(1), lambda _: None)
-            self.reminder.check()
-            self.assertTrue(self.reminder.visible)
+            self.notifier.check_practice()
+            self.assertTrue(self._practice_visible)
             with mock.patch("yt_whisper_subs.verb_db.time.time", return_value=self.now):
                 row = self.db.verb_current(session)
                 self.db.verb_submit(row["id"], row["content"]["answer"], 1500)
-            self.reminder.check()
-            self.assertFalse(self.reminder.visible)
+            self.notifier.check_practice()
+            self.assertFalse(self._practice_visible)
             self.now += 2 * 86400
-            self.reminder.check()
-            self.assertTrue(self.reminder.visible)
-            self.assertIn("2 days", self.reminder._balloon._message.text())
+            self.notifier.check_practice()
+            self.assertTrue(self._practice_visible)
+            self.assertIn("2 days", self.balloon._practice._message.text())
 
     def test_close_escape_and_stop_have_distinct_persistence(self) -> None:
         """User dismissal snoozes but application shutdown does not; e.g. close using the window manager."""
 
-        self.reminder.configure(reminders.ReminderPrefs(snooze_hours=6))
-        QtTest.QTest.keyClick(self.reminder._balloon, QtCore.Qt.Key.Key_Escape)
+        self.notifier.configure_practice(reminders.ReminderPrefs(snooze_hours=6))
+        QtTest.QTest.keyClick(self.balloon, QtCore.Qt.Key.Key_Escape)
         self.assertEqual(float(self.db.setting("practice_snooze_until", "0")), self.now + 6 * 3600)
         self.now += 6 * 3600
-        self.reminder.check()
-        self.reminder._balloon.close()
+        self.notifier.check_practice()
+        self.balloon.close()
         deadline = self.db.setting("practice_snooze_until", "0")
         self.assertEqual(float(deadline), self.now + 6 * 3600)
         self.now += 6 * 3600
-        self.reminder.check()
-        self.reminder.stop()
+        self.notifier.check_practice()
+        self.notifier.stop()
         self.assertEqual(self.db.setting("practice_snooze_until", "0"), deadline)
 
     def test_gap_and_seven_zero_days_and_never_practiced(self) -> None:
         """Render known gaps without inventing a start date; e.g. an empty vocabulary history says first practice."""
 
-        self.reminder.check()
-        self.assertIn("first practice", self.reminder._balloon._message.text())
-        self.reminder._balloon.hide()
+        self.notifier.check_practice()
+        self.assertIn("first practice", self.balloon._practice._message.text())
         self._answer(self.now - 3 * 86400, count=3)
-        self.reminder.check()
-        self.assertIn("3 days", self.reminder._balloon._message.text())
-        days = self.reminder._balloon._chart._days
+        self.notifier.check_practice()
+        self.assertIn("3 days", self.balloon._practice._message.text())
+        days = self.balloon._practice._chart._days
         self.assertEqual(len(days), 7)
         self.assertEqual(sum(day.answers for day in days), 3)
         self.assertEqual(days[-1].answers, 0)
@@ -156,15 +173,15 @@ class ReminderTests(unittest.TestCase):
 
         self.now = datetime(2026, 11, 12, 23).timestamp()
         self._answer(self.now - 86400)
-        self.reminder.check()
-        self.reminder.snooze()
+        self.notifier.check_practice()
+        self.notifier.snooze_practice()
         self.now += 3 * 3600
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now += 3600
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
-        self.assertIn("2 days", self.reminder._balloon._message.text())
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
+        self.assertIn("2 days", self.balloon._practice._message.text())
 
     def test_late_vocabulary_practice_stays_quiet_until_24_hours_even_after_restart(self) -> None:
         """Regress the 23:55-to-midnight reset; e.g. reuse the saved answer timestamp without inventing a new deadline."""
@@ -172,16 +189,16 @@ class ReminderTests(unittest.TestCase):
         last = datetime(2026, 11, 12, 23, 55).timestamp()
         self._answer(last)
         self.now = last + 5 * 60
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
-        self.reminder.stop()
-        self.reminder = reminders.PracticeReminders(self.db, self.tray, lambda: True, clock=lambda: self.now)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
+        self.notifier.stop()
+        self._start_notifier()
         self.now = last + 24 * 3600 - 1
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now += 1
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
         self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
         activity = practice_activity.read(self.db, now=datetime.fromtimestamp(self.now))
         self.assertEqual(activity.last_day, datetime.fromtimestamp(last).date())
@@ -198,11 +215,11 @@ class ReminderTests(unittest.TestCase):
             row = self.db.verb_current(session)
             self.db.verb_submit(row["id"], row["content"]["answer"], 1500)
         self.now = last + 5 * 60
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now = last + 24 * 3600
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
 
     def test_same_local_day_stays_credited_when_longer_than_24_hours(self) -> None:
         """Preserve daily credit alongside minimum spacing; e.g. a repeated clock hour can lengthen a local day."""
@@ -215,8 +232,8 @@ class ReminderTests(unittest.TestCase):
         self.assertGreater(self.now - first.timestamp(), 24 * 3600)
         with mock.patch.object(reminders, "datetime") as local_time:
             local_time.fromtimestamp.side_effect = local_dates.__getitem__
-            self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+            self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
 
     def test_late_sentence_submission_quiets_reminder_while_correction_is_pending(self) -> None:
         """Give full habit credit to a saved translation attempt; e.g. a 23:55 writing session cannot trigger a midnight reminder."""
@@ -233,117 +250,133 @@ class ReminderTests(unittest.TestCase):
             row = self.db.sentence_current(session)
             self.db.sentence_submit(row["id"], sentence_fixtures.DUTCH, 1500)
         self.now = last + 5 * 60
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now = last + 24 * 3600 - 1
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.now += 1
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
 
     def test_opening_practice_or_activity_is_not_completion(self) -> None:
         """Opening either page only snoozes; e.g. closing without answering still needs a later reminder."""
 
         opened = []
-        self.reminder.requested.connect(opened.append)
-        self.reminder.check()
-        self.reminder._balloon.findChild(QtWidgets.QPushButton, "openPracticeActivity").click()
+        self.notifier.practice_requested.connect(opened.append)
+        self.notifier.check_practice()
+        self.balloon.findChild(QtWidgets.QPushButton, "openPracticeActivity").click()
         self.assertEqual(opened, [True])
-        self.assertFalse(self.reminder.visible)
+        self.assertFalse(self._practice_visible)
         self.assertIsNone(self.db.practice_last_answer(self.now))
         self.now += 4 * 3600
         self.available = False
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
         self.available = True
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
+        start = self.balloon.findChild(QtWidgets.QPushButton, "primaryButton")
+        start.click()
+        self.assertEqual(opened, [True, False])
+        self.assertFalse(self.balloon.isVisible())
 
     def test_disable_and_empty_vocabulary_stay_quiet(self) -> None:
         """Honor reminder settings independently of video notifications; e.g. disable without creating a snooze."""
 
-        self.reminder.check()
-        self.reminder.configure(reminders.ReminderPrefs(enabled=False))
-        self.assertFalse(self.reminder.visible)
+        self.notifier.check_practice()
+        self.notifier.configure_practice(reminders.ReminderPrefs(enabled=False))
+        self.assertFalse(self._practice_visible)
         self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
-        self.reminder.configure(reminders.ReminderPrefs())
-        self.assertTrue(self.reminder.visible)
-        self.reminder._balloon.hide()
+        self.notifier.configure_practice(reminders.ReminderPrefs())
+        self.assertTrue(self._practice_visible)
         with mock.patch.object(self.db, "practice_has_candidates", return_value=False):
-            self.reminder.check()
-        self.assertFalse(self.reminder.visible)
+            self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
 
     def test_background_practice_window_does_not_silence_daily_reminders(self) -> None:
         """Suppress only active practice, not a forgotten background window; e.g. a page left open for days."""
 
-        self.reminder.stop()
-        window = mock.Mock()
-        window.isVisible.return_value = True
-        window.isActiveWindow.return_value = True
-        notifier = library_notifications.TrayNotifications(self.db, self.tray, practice_window=lambda: window)
-        self.addCleanup(notifier.stop)
-        self.reminder = notifier.practice
-        self.reminder._clock = lambda: self.now
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
-        window.isActiveWindow.return_value = False
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
+        self.available = False
+        self.notifier.check_practice()
+        self.assertFalse(self._practice_visible)
+        self.available = True
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
 
-    def test_balloon_slot_preserves_video_batch_and_aggregation_delay(self) -> None:
-        """Queue rather than overlap balloons; e.g. snoozing practice reveals a waiting pinned-channel batch."""
+    def _queue_video(self) -> None:
+        """Queue a pinned discovery with a grouping delay and a timed reading interval."""
 
-        self.reminder.stop()
-        notifier = library_notifications.TrayNotifications(self.db, self.tray)
-        self.addCleanup(notifier.stop)
-        self.reminder = notifier.practice
-        self.reminder._clock = lambda: self.now
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
         channel = self.db.add_channel("https://youtube.com/@alpha", "Alpha", False)
         meta = notification_fixtures._meta("aaaaaaaaaaa", "Alpha")
-        self.db.store_snapshot(channel.channel_id, library_types.ChannelSnapshot(channel.url, "UC-Alpha", "Alpha", [meta], True))
+        snapshot = library_types.ChannelSnapshot(channel.url, "UC-Alpha", "Alpha", [meta], True)
+        self.db.store_snapshot(channel.channel_id, snapshot)
         self.db.set_channel_pinned(channel.channel_id, True)
-        notifier.configure(library_notifications.NotificationPrefs(delay_seconds=30, duration_seconds=0))
-        notifier.add([meta])
-        self.reminder.snooze()
-        self.assertTrue(notifier._timer.isActive())
-        self.assertFalse(notifier._balloon.isVisible())
-        notifier._show_pending()
-        self.assertTrue(notifier._balloon.isVisible())
-        self.now += 4 * 3600
-        self.reminder.check()
-        self.assertFalse(self.reminder.visible)
-        notifier._balloon.hide()
-        self.app.processEvents()
-        self.assertTrue(self.reminder.visible)
+        self.notifier.configure(library_notifications.NotificationPrefs(delay_seconds=30, duration_seconds=20))
+        self.notifier.add([meta])
 
-    def test_video_alert_temporarily_preempts_without_snoozing_practice(self) -> None:
-        """Preserve existing video delivery while a persistent reminder is visible; e.g. restore practice after reading uploads."""
+    def test_video_batch_joins_open_reminder_and_snooze_keeps_videos(self) -> None:
+        """Group the titles first, then let Snooze remove only the practice section."""
 
-        self.reminder.stop()
-        notifier = library_notifications.TrayNotifications(self.db, self.tray)
-        self.addCleanup(notifier.stop)
-        self.reminder = notifier.practice
-        self.reminder._clock = lambda: self.now
-        self.reminder.check()
-        self.assertTrue(self.reminder.visible)
-        channel = self.db.add_channel("https://youtube.com/@alpha", "Alpha", False)
-        meta = notification_fixtures._meta("aaaaaaaaaaa", "Alpha")
-        self.db.store_snapshot(channel.channel_id, library_types.ChannelSnapshot(channel.url, "UC-Alpha", "Alpha", [meta], True))
-        self.db.set_channel_pinned(channel.channel_id, True)
-        notifier.configure(library_notifications.NotificationPrefs(delay_seconds=30, duration_seconds=0))
-        notifier.add([meta])
-        self.assertTrue(self.reminder.visible)
-        notifier._show_pending()
-        self.app.processEvents()
-        self.assertFalse(self.reminder.visible)
-        self.assertTrue(notifier._balloon.isVisible())
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
+        self._queue_video()
+        self.assertTrue(self.notifier._timer.isActive())
+        self.assertFalse(self.balloon._videos.isVisible())
+        self.notifier._show_pending()
+        self.assertTrue(self.balloon._videos.isVisible())
+        self.assertTrue(self._practice_visible)
+        self.assertIs(self.balloon._practice.window(), self.balloon)
+        self.assertIn("News <aaaaaaaaaaa>", self.balloon._videos.toPlainText())
         self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
-        notifier._balloon.hide()
-        self.app.processEvents()
-        self.assertTrue(self.reminder.visible)
+        self.balloon.findChild(QtWidgets.QPushButton, "snoozePractice").click()
+        self.assertFalse(self._practice_visible)
+        self.assertTrue(self.balloon._videos.isVisible())
+        self.assertEqual(float(self.db.setting("practice_snooze_until", "0")), self.now + 4 * 3600)
+        self.now += 4 * 3600
+        self.notifier.check_practice()
+        self.assertTrue(self._practice_visible)
+        self.balloon.findChild(QtWidgets.QToolButton, "dismissNotification").click()
+        self.assertFalse(self.balloon.isVisible())
+        self.assertFalse(self.notifier._pending)
+        self.assertEqual(float(self.db.setting("practice_snooze_until", "0")), self.now + 4 * 3600)
+
+    def test_waiting_reminder_shares_video_delivery_and_survives_video_timeout(self) -> None:
+        """Present a queued batch with practice and expire only the timed titles."""
+
+        self._queue_video()
+        self.notifier.check_practice()
+        self.assertFalse(self.balloon.isVisible())
+        self.notifier._show_pending()
+        self.assertTrue(self._practice_visible)
+        self.assertTrue(self.balloon._videos.isVisible())
+        self.balloon._timer.timeout.emit()
+        self.assertTrue(self._practice_visible)
+        self.assertFalse(self.balloon._videos.isVisible())
+        self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
+        self.assertIn("Time for practice", self.balloon._heading.text())
+
+    def test_dismiss_before_batch_is_ready_preserves_the_grouping_delay(self) -> None:
+        """A practice-only dismissal keeps a pending video batch scheduled."""
+
+        self.notifier.check_practice()
+        self._queue_video()
+        self.balloon.reject()
+        self.assertFalse(self.balloon.isVisible())
+        self.assertTrue(self.notifier._timer.isActive())
+        self.notifier._show_pending()
+        self.assertTrue(self.balloon._videos.isVisible())
+        self.assertFalse(self._practice_visible)
+
+    def test_video_settings_remove_only_the_video_section(self) -> None:
+        """Disabling alerts preserves the due reminder and its existing snooze state."""
+
+        self._queue_video()
+        self.notifier._show_pending()
+        self.notifier.configure(library_notifications.NotificationPrefs(enabled=False))
+        self.assertTrue(self._practice_visible)
+        self.assertFalse(self.balloon._videos.isVisible())
+        self.assertEqual(self.db.setting("practice_snooze_until", "0"), "0")
 
     def test_activity_calendar_navigation_and_reported_effort(self) -> None:
         """Inspect actual saved day counts through native navigation; e.g. an inactive selected day reads zero."""
