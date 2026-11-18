@@ -78,6 +78,48 @@ class PracticeTests(unittest.TestCase):
             self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
             self.assertEqual(conn.execute("PRAGMA quick_check").fetchone()[0], "ok")
 
+    def test_quiz_shows_one_gloss_per_option_and_keeps_the_full_feedback(self) -> None:
+        """Reuse approved gloss lists without revealing their punctuation or losing the displayed evidence."""
+
+        with self.db._connect() as conn:
+            conn.execute("UPDATE vocab_lookups SET meaning='possibly; if necessary' WHERE meaning='possibly'")
+            conn.execute("UPDATE vocab_lookups SET ambiguous=1 WHERE meaning<>'possibly; if necessary'")
+        session = self._round(count=1)
+        with self.db._connect() as conn:
+            row = conn.execute('SELECT * FROM practice_presentations WHERE session_id=?', (session,)).fetchone()
+            choices = json.loads(row['choices_json'])
+            correct = row['correct_idx']
+            self.assertEqual(choices[correct]['text'], 'possibly')
+            # Exercise a saved round created before choice formatting was applied.
+            choices[correct]['text'] = 'possibly; if necessary'
+            wrong = (correct + 1) % 3
+            short_wrong = choices[wrong]['text']
+            choices[wrong]['text'] += '; another wording'
+            conn.execute('UPDATE practice_presentations SET choices_json=? WHERE id=?', (json.dumps(choices), row['id']))
+        shown = self.db.practice_current(session)
+        self.assertEqual(shown['correct_idx'], correct)
+        self.assertEqual(shown['choices'][correct]['text'], 'possibly')
+        self.assertEqual(shown['content']['answer'], 'possibly; if necessary')
+        self.assertTrue(all(';' not in choice['text'] for choice in shown['choices']))
+        result = self.db.practice_answer(shown['id'], wrong, False, 1250)
+        self.assertEqual(result['choices'][wrong]['text'], short_wrong)
+        self.assertEqual(result['outcome'], 'wrong')
+
+    def test_opening_a_saved_collision_skips_it_without_a_review(self) -> None:
+        """Exclude a duplicated visible answer without counting it as shown or guessed."""
+
+        session = self._round(count=2)
+        with self.db._connect() as conn:
+            first = conn.execute('SELECT * FROM practice_presentations WHERE session_id=? AND ordinal=1', (session,)).fetchone()
+            choices = json.loads(first['choices_json'])
+            correct = first['correct_idx']
+            choices[(correct + 1) % 3]['text'] = choices[correct]['text'] + '; another wording'
+            conn.execute('UPDATE practice_presentations SET choices_json=? WHERE id=?', (json.dumps(choices), first['id']))
+        self.assertEqual(self.db.practice_current(session)['ordinal'], 2)
+        summary = self.db.practice_summary(session)
+        self.assertEqual((summary['shown'], summary['invalid'], summary['wrong']), (1, 1, 0))
+        self.assertIsNone(self.db.practice_last_answer(time.time()))
+
     def test_directions_have_independent_histories_and_reverse_blanks_answer(self) -> None:
         """A Dutch recognition success does not imply Dutch recall; e.g. reverse practice starts untrained."""
 
@@ -174,6 +216,8 @@ class PracticeTests(unittest.TestCase):
         """Verify the real provider contract, including independent semantics review and literal saved answers."""
 
         rows = self.db.word_candidates("nl_en")[:1]
+        label = rows[0]['meaning']
+        rows[0]['meaning'] += '; alternate gloss'
         draft = self.generator.generate(rows, practice.Direction.NL_EN)[0]
         request.side_effect = [{"output_text": json.dumps({"questions": [draft["draft"]]})},
                                {"output_text": json.dumps({"verdicts": [draft["verdict"]]})}]
@@ -187,7 +231,10 @@ class PracticeTests(unittest.TestCase):
             self.assertTrue(call.args[1]["text"]["format"]["strict"])
             self.assertFalse(call.args[1]["store"])
             self.assertNotIn("video.mkv", call.args[1]["input"])
-        draft["draft"]["distractors"][0]["text"] = rows[0]["meaning"].upper()
+        audit = json.loads(request.call_args_list[1].args[1]['input'])
+        self.assertEqual(audit['questions'][0]['answer'], label)
+        self.assertEqual(audit['terms'][0]['english'], rows[0]['meaning'])
+        draft["draft"]["distractors"][0]["text"] = label.upper() + '; alternate wording'
         request.side_effect = [{"output_text": json.dumps({"questions": [draft["draft"]]})}]
         with self.assertRaises(ValueError):
             practice_generate.QuestionGenerator().generate(rows, practice.Direction.NL_EN)

@@ -192,15 +192,31 @@ class PracticeDbMixin:
     def practice_current(self, session_id: str) -> dict | None:
         """Count a question only when shown and preserve its first display time; e.g. resume after a crash."""
 
+        from yt_whisper_subs import practice
+
+        query = (PRESENTATION + " WHERE p.session_id=? AND p.outcome IS NULL "
+                 "AND s.status='active' ORDER BY p.ordinal LIMIT 1")
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(PRESENTATION + " WHERE p.session_id=? AND p.outcome IS NULL "
-                               "AND s.status='active' ORDER BY p.ordinal LIMIT 1", (session_id,)).fetchone()
-            if row is None:
-                return None
-            conn.execute("UPDATE practice_presentations SET shown_at=COALESCE(shown_at,?) WHERE id=?",
-                         (time.time(), row["id"]))
-            return self._practice_row(conn.execute(PRESENTATION + " WHERE p.id=?", (row["id"],)).fetchone())
+            skipped = False
+            while row := conn.execute(query, (session_id,)).fetchone():
+                current = self._practice_row(row)
+                try:
+                    choices = practice.display_choices(current["choices"])
+                except ValueError:
+                    # A saved set can only be offered if its visible choices remain distinct.
+                    conn.execute("UPDATE practice_presentations SET outcome='invalid' WHERE id=?", (row["id"],))
+                    skipped = True
+                    continue
+                display = row["choices_json"] if choices == current["choices"] else json.dumps(choices, ensure_ascii=False)
+                current["choices"] = choices
+                current["shown_at"] = row["shown_at"] if row["shown_at"] is not None else time.time()
+                conn.execute("UPDATE practice_presentations SET shown_at=?,choices_json=? WHERE id=?",
+                             (current["shown_at"], display, row["id"]))
+                return current
+            if skipped:
+                self._practice_complete(conn)
+            return None
 
     @staticmethod
     def _practice_state(conn, row: dict, result: dict) -> None:

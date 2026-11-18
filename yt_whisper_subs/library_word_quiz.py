@@ -360,7 +360,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._answers.reveal(row["correct_idx"], idx)
         self._unsure.hide()
         verdict = i18n.tr('Correct') if row["outcome"] == "correct" else i18n.tr('Not quite')
-        answer = row["choices"][row["correct_idx"]]["text"]
+        answer = row["content"]["answer"]
         self._result.setText(f"{verdict} · {answer}")
         self._result.setStyleSheet("color: #9ae7b4;" if row["outcome"] == "correct" else "color: #ffd166;")
         explanation = row["content"]["explanation"]

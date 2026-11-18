@@ -2615,7 +2615,11 @@ the selected Dutch word is blanked everywhere in that sentence so it cannot
 reveal the answer; that blank receives the same emphasis. Text and punctuation
 remain literal, including angle brackets and ampersands. Existing cached rounds
 use this display immediately without new question generation.
-Correct answers always come from saved vocabulary.
+Correct answers come from saved vocabulary. Each choice shows one gloss, so
+a saved list of equivalent translations cannot give away the answer through
+its punctuation. Feedback shows the full saved translation. Cached rounds
+use the concise labels without another generation request, and submitted
+answers retain the choices that were shown at the time.
 Only translated, non-ambiguous Dutch selections are eligible. The requested
 number of distinct terms must be available and independently approved before
 the round becomes playable. English subtitle clicks remain reviewable in
@@ -2642,7 +2646,7 @@ direction button to switch practice. Typing in round options cannot answer or co
 
 OpenAI generates two challenging incorrect choices: false friends, close but
 distinct meanings, or confusable grammatical forms. It also explains each
-distinction. A separate review call checks the stored correct answer and rejects
+distinction. A separate review call checks the exact displayed choices and rejects
 questions with valid synonyms, overlapping meanings, misleading explanations,
 or otherwise ambiguous choices. This is a quality filter, not a guarantee of
 linguistic correctness. **Report question** works before or after an

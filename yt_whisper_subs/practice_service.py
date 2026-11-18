@@ -55,9 +55,7 @@ class PracticeService:
         checked = build.fill(plan)
         questions = []
         for question in checked:
-            content = json.loads(question["body_json"])
-            choices = [{"text": content["answer"], "explanation": content["explanation"], "kind": "correct"},
-                       *content["distractors"]]
+            choices = self._choices(question)
             random.shuffle(choices)
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
@@ -65,6 +63,15 @@ class PracticeService:
         if background:
             return self._db.practice_stage("practice", opts, questions)
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
+
+    @staticmethod
+    def _choices(question: dict) -> list[dict]:
+        """Build equally formatted buttons from checked content, e.g. retain full glosses only for feedback."""
+
+        content = json.loads(question["body_json"])
+        choices = [{"text": content["answer"], "explanation": content["explanation"], "kind": "correct"},
+                   *content["distractors"]]
+        return practice.display_choices(choices)
 
     def _ensure_content(self, selected: list[dict], build: practice_round.Build) -> dict:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
@@ -75,7 +82,15 @@ class PracticeService:
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": practice_generate.PROMPT_VERSION}
         for row in selected:
-            variants = [item for item in self._db.practice_cached(row["lookup_id"], direction.value, policy) if item["id"] not in reserved]
+            variants = []
+            for item in self._db.practice_cached(row["lookup_id"], direction.value, policy):
+                if item["id"] in reserved:
+                    continue
+                try:
+                    self._choices(item)
+                except ValueError:
+                    continue
+                variants.append(item)
             if variants:
                 cached[row["lookup_id"]] = variants[0]
             # Build a small rotating pool, then use the least-seen variant with new button ordering.

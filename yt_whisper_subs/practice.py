@@ -42,6 +42,29 @@ class Distractor(Content):
     kind: str = pd.Field(pattern="^(false_friend|near_meaning|grammar|other)$")
 
 
+def choice_label(text: str) -> str:
+    """Use one gloss per button, e.g. show 'stream' for 'stream; brook'."""
+
+    return text.split(";", 1)[0].strip()
+
+
+def choice_labels(texts: list[str]) -> list[str]:
+    """Require the options that actually appear to be distinct, e.g. 'shop; store' and 'shop' collide."""
+
+    labels = [choice_label(text) for text in texts]
+    normalized = [vocabulary.normalized(" ".join(text.split())).strip(" .!?") for text in labels]
+    if len(labels) != 3 or len(set(normalized)) != 3 or not all(normalized) or any("\n" in text or "\r" in text for text in texts):
+        raise ValueError("Practice choices must be three distinct, single-line answers")
+    return labels
+
+
+def display_choices(choices: list[dict]) -> list[dict]:
+    """Shorten labels without changing order or grading roles, e.g. keep the stored correct index valid."""
+
+    labels = choice_labels([choice['text'] for choice in choices])
+    return [dict(choice, text=label) for choice, label in zip(choices, labels, strict=True)]
+
+
 class Draft(Content):
     """Let AI supply distractors while the saved vocabulary owns the correct answer."""
 
@@ -49,13 +72,10 @@ class Draft(Content):
     distractors: list[Distractor] = pd.Field(min_length=2, max_length=2)
     explanation: str = pd.Field(min_length=1, max_length=500)
 
-    def check(self, answer: str) -> None:
-        """Reject duplicate choices before semantic verification; e.g. capitalization cannot hide a duplicate."""
+    def check(self, answer: str) -> list[str]:
+        """Return the displayed options for independent review, e.g. check 'stream' rather than its gloss list."""
 
-        texts = [answer, *(item.text for item in self.distractors)]
-        normalized = [vocabulary.normalized(" ".join(text.split())).strip(" .!?") for text in texts]
-        if len(set(normalized)) != 3 or any("\n" in text or "\r" in text for text in texts):
-            raise ValueError("Practice choices must be three distinct, single-line answers")
+        return choice_labels([answer, *(item.text for item in self.distractors)])
 
 
 class Drafts(Content):
