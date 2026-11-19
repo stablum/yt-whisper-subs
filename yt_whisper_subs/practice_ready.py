@@ -162,6 +162,13 @@ def owner_alive(owner: str) -> bool:
         return True
 
 
+def question_policy(engine) -> dict:
+    """Identify checked question stock, e.g. speech uses the same round as the foreground."""
+
+    provider = engine._provider
+    return dict(model=provider.model, reasoning=provider.reasoning, prompt_version=engine.start.prompt_version)
+
+
 @contextlib.contextmanager
 def preparing(db, track: str, report):
     """Share generation ownership, cancellation and cooldown across round shapes; e.g. a passage audit cannot race a second foreground request."""

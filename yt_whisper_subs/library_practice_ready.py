@@ -13,7 +13,9 @@ import time
 from PySide6 import QtCore
 
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import pronunciation_stock
 from yt_whisper_subs import task_cancel
 
 
@@ -23,7 +25,7 @@ class PracticeReady(QtCore.QObject):
     changed = QtCore.Signal()
     _candidate = QtCore.Signal(object)
 
-    def __init__(self, db, parent=None, *, modes=None) -> None:
+    def __init__(self, db, parent=None, *, modes=None, speech=None) -> None:
         """Start only at the application entry point; e.g. opening statistics never initiates paid work."""
 
         super().__init__(parent)
@@ -33,6 +35,9 @@ class PracticeReady(QtCore.QObject):
         self._scan = None
         self._rescan = False
         self._stopped = False
+        self._speech = pronunciation_stock.Stock(db) if speech is None and not self._custom else speech
+        self._speech_task = None
+        self._speech_retry = 0.0
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(2)
         self._candidate.connect(self._schedule, QtCore.Qt.ConnectionType.QueuedConnection)
@@ -87,8 +92,7 @@ class PracticeReady(QtCore.QObject):
             return engine.needs(opts)
         if track == practice_tracks.Track.LISTENING and engine.pending_dictation_audio():
             return True
-        policy = {"model": engine._provider.model, "reasoning": engine._provider.reasoning,
-                  "prompt_version": engine.start.prompt_version}
+        policy = practice_ready.question_policy(engine)
         stock = self._db.practice_stock(track, opts, policy)
         if stock:
             if track == practice_tracks.Track.LISTENING:
@@ -139,8 +143,11 @@ class PracticeReady(QtCore.QObject):
     def check(self) -> None:
         """Queue readiness without touching the catalog on the UI thread; e.g. answering a quiz can repaint while WAVs are checked."""
 
+        if self._stopped:
+            return
+        self._check_speech()
         capacity = self._pool.maxThreadCount() - len(self._tasks)
-        if self._stopped or capacity <= 0:
+        if capacity <= 0:
             return
         if self._scan is not None:
             self._rescan = True
@@ -159,6 +166,33 @@ class PracticeReady(QtCore.QObject):
         task.signals.cancelled.connect(self._end_scan)
         task.signals.failed.connect(self._scan_failed)
         self._pool.start(task)
+
+    def _check_speech(self) -> None:
+        """Keep one low-priority speech job outside the round-generation pool."""
+
+        if self._stopped or self._speech is None or self._speech_task or time.monotonic() < self._speech_retry:
+            return
+        task = library_workers.BackgroundTask(lambda report: self._speech.warm(self._requests(), report))
+        self._speech_task = task
+        task.signals.finished.connect(self._speech_finished)
+        task.signals.failed.connect(self._speech_failed)
+        QtCore.QThreadPool.globalInstance().start(task, -1)
+
+    @QtCore.Slot(object)
+    def _speech_finished(self, warmed) -> None:
+        """Recheck after a batch so new rounds can change the priority of the remaining clips."""
+
+        self._speech_task = None
+        if warmed and not self._stopped:
+            QtCore.QTimer.singleShot(0, self, self._check_speech)
+
+    @QtCore.Slot(str, str)
+    def _speech_failed(self, message, _trace) -> None:
+        """Let text practice continue during an audio problem and retry on a later tick."""
+
+        self._speech_task = None
+        self._speech_retry = time.monotonic() + 60
+        logging.getLogger(__name__).warning('Practice speech preparation failed: %s', message)
 
     @QtCore.Slot(object)
     def _schedule(self, request) -> None:
@@ -204,5 +238,7 @@ class PracticeReady(QtCore.QObject):
         self._timer.stop()
         if self._scan:
             self._scan.cancel()
+        if self._speech_task:
+            self._speech_task.cancel()
         for task in self._tasks.values():
             task.cancel()

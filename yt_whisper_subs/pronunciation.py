@@ -1,6 +1,7 @@
 """Cache normal-speed Dutch pronunciation using the existing local Piper engine."""
 
 import wave
+from functools import lru_cache
 from pathlib import Path
 
 from yt_whisper_subs import comprehension_audio
@@ -8,6 +9,14 @@ from yt_whisper_subs import listening_tts
 
 
 type Clip = tuple[Path, float]
+_WARM_BATCH = 8
+
+
+@lru_cache(maxsize=2048)
+def _verified_seconds(path: Path, stat_key: tuple[int, int]) -> float:
+    """Validate once per file revision, e.g. a changed WAV is checked on the next scan."""
+
+    return listening_tts.duration(path)
 
 
 class Audio:
@@ -24,15 +33,22 @@ class Audio:
         """Return verified clips in spoken order, e.g. a long article can play paragraph by paragraph."""
 
         texts = [part['text'] for part in comprehension_audio.segments(paragraphs)]
-        keys = {text: listening_tts.Recordings.key(self._speech.profile, text) for text in texts}
-        clips = {text: self._cached(key) for text, key in keys.items()}
-        if missing := [text for text in keys if clips[text] is None]:
+        keys = {text: self._key(text) for text in texts}
+        clips = {}
+        missing = {}
+        for text, key in keys.items():
+            if clip := self._cached(key):
+                clips[text] = clip
+            else:
+                missing[text] = key
+        if missing:
             with listening_tts.cache_writes():
                 jobs = []
-                for text in missing:
-                    clips[text] = self._cached(keys[text])
-                    if clips[text] is None:
-                        jobs.append((text, {'normal': self._root / f'{keys[text]}.wav'}))
+                for text, key in missing.items():
+                    if clip := self._cached(key):
+                        clips[text] = clip
+                    else:
+                        jobs.append((text, {'normal': self._path(key)}))
                 if jobs:
                     self._speech.render_many(jobs, report)
                     for text, paths in jobs:
@@ -40,12 +56,38 @@ class Audio:
                         clips[text] = path, listening_tts.duration(path)
         return [clips[text] for text in texts]
 
+    def warm(self, texts: list[str], report) -> bool:
+        """Fill one small batch ahead of use, e.g. release the CPU between standby jobs."""
+
+        batch = []
+        for part in comprehension_audio.segments(texts):
+            text = part['text']
+            key = self._key(text)
+            if text not in batch and not self._cached(key):
+                batch.append(text)
+                if len(batch) == _WARM_BATCH:
+                    break
+        if batch:
+            self.prepare(batch, report)
+        return bool(batch)
+
+    def _key(self, text: str) -> str:
+        """Share the text and voice identity with dictation, e.g. 'Goedemorgen' reuses its take."""
+
+        return listening_tts.Recordings.key(self._speech.profile, text)
+
+    def _path(self, key: str) -> Path:
+        """Locate the shared optional recording for both prewarming and replay."""
+
+        return self._root / f'{key}.wav'
+
     def _cached(self, key: str) -> Clip | None:
         """Check cache integrity before replay, e.g. replace a truncated optional clip on demand."""
 
-        path = self._root / f'{key}.wav'
+        path = self._path(key)
         try:
-            return path, listening_tts.duration(path)
+            stat = path.stat()
+            return path, _verified_seconds(path, (stat.st_mtime_ns, stat.st_size))
         except (OSError, ValueError, EOFError, wave.Error):
             pass
         normal = self._db.listening_paths(key)['normal']

@@ -19,6 +19,7 @@ from PySide6 import QtCore
 from PySide6 import QtWidgets
 from PySide6 import QtTest
 
+from tests import listening_fixtures
 from tests import practice_fixtures
 from tests import sentence_fixtures
 from tests import verb_fixtures
@@ -29,6 +30,8 @@ from yt_whisper_subs import practice
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import pronunciation
+from yt_whisper_subs import pronunciation_stock
 from yt_whisper_subs import sentence_select
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import verb_service
@@ -43,7 +46,7 @@ class ReadyTests(unittest.TestCase):
 
         cls.app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
-    def _case(self, kind: str):
+    def _case(self, kind: str, *, speech=None):
         """Create one genuine practice domain; e.g. fake linguistic providers still use production persistence and scheduling."""
 
         tmp = tempfile.TemporaryDirectory()
@@ -70,7 +73,8 @@ class ReadyTests(unittest.TestCase):
                 engine = verb_service.VerbService(db, provider)
                 opts = verb_fixtures.options().model_copy(update={"source": "starter"})
         db.set_setting(practice_tracks.Track.for_options(kind, opts).settings_key, opts.model_dump_json())
-        ready = library_practice_ready.PracticeReady(db, modes={kind: (opts, engine)})
+        stock = pronunciation_stock.Stock(db, audio=pronunciation.Audio(db, speech=speech)) if speech else None
+        ready = library_practice_ready.PracticeReady(db, modes={kind: (opts, engine)}, speech=stock)
         self.addCleanup(self._stop, ready)
         return db, provider, engine, opts, ready
 
@@ -79,6 +83,8 @@ class ReadyTests(unittest.TestCase):
 
         ready.stop()
         self.assertTrue(ready._pool.waitForDone(15000))
+        if ready._speech_task:
+            self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(15000))
         self.app.processEvents()
 
     def _stock(self, db, engine, opts):
@@ -116,6 +122,36 @@ class ReadyTests(unittest.TestCase):
                     self.assertEqual(shown["correct_idx"], before_correct)
                 with db._connect() as conn:
                     self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {kind}_questions").fetchone()[0], before)
+
+    def test_background_pronunciation_is_ready_for_manual_read_and_autoplay(self) -> None:
+        """Warm a resumed word and the spare with autoplay off, without scoring or replay synthesis."""
+
+        speech = listening_fixtures.Speech()
+        db, provider, engine, opts, ready = self._case("practice", speech=speech)
+        session = engine.start(opts, lambda _: None)
+        current = db.practice_current(session)
+        db.practice_answer(current['id'], current['correct_idx'], False, 0)
+        ready.prepare(lambda _: None)
+        spare = self._stock(db, engine, opts)
+        self.assertEqual(len(spare), opts.count)
+        provider.available = False
+
+        ready.check()
+        deadline = time.monotonic() + 8
+        while ready._speech_task is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(.01)
+        self.assertIsNone(ready._speech_task)
+        self.assertEqual(db.setting('practice_auto_read_dutch', '0'), '0')
+        self.assertEqual(db.practice_summary(session)['shown'], 1)
+        self.assertEqual(practice_activity.read(db).answers, 1)
+
+        speech.available = False
+        reader = pronunciation.Audio(db, speech=speech)
+        resumed = db.practice_current(session)['content']['surface']
+        standby = [json.loads(row['body_json'])['surface'] for row in spare]
+        self.assertEqual(speech.calls[0][0], resumed)
+        self.assertEqual(len(reader.prepare([resumed, *standby], lambda _: None)), 1 + len(standby))
 
     def test_pending_answer_allows_one_spare_without_replacing_the_active_round(self) -> None:
         """Prepare ahead while corrections arrive; e.g. one queued answer cannot strand next-round preparation or create an unlimited backlog."""

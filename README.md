@@ -2600,9 +2600,13 @@ and the corrected sentence.
 
 Reading comprehension can read its current question or, with **Read passage
 aloud**, the entire passage. **Stop** interrupts playback. Moving to another
-question or practice mode cancels speech for the previous one. Pronunciation uses
-the local Piper Dutch voice and caches recordings for replay. Dictation and
-listening comprehension keep their own voice and playback controls.
+question or practice mode cancels speech for the previous one. The library
+prepares and caches local Piper recordings in the background for resumable
+and standby rounds, including passages and known Dutch answer forms. This
+also makes **Read aloud** available from the cache when autoplay is off.
+Fresh rounds opened before preparation finishes and newly generated
+corrections may still need a first render. Dictation and listening comprehension
+keep their own voice and playback controls.
 
 ### Adaptive Vocabulary Practice
 
