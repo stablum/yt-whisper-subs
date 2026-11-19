@@ -2609,8 +2609,10 @@ for resumable and standby rounds, including passages and checked Dutch answers.
 With **Auto-read Dutch** on, an opened round finishes any missing audio before
 showing its first question. This also applies when resuming a cold round or
 opening it with another voice. **Read aloud** and feedback play only cached
-audio. Turning autoplay off allows text practice while background preparation
-continues. The same preset also supplies dictation and listening comprehension.
+audio. If a clip is missing, **Speech unavailable** appears and replay remains
+available once the recording is ready. Turning autoplay off lets you practise
+with text while audio prepares in the background. The same preset also
+supplies dictation and listening comprehension.
 
 ### Adaptive Vocabulary Practice
 

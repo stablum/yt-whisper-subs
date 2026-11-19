@@ -282,6 +282,34 @@ class PracticeDialogTests(unittest.TestCase):
             self.assertFalse(controls.isVisible())
             self.assertEqual(self.db.setting(library_pronunciation.SETTING, ''), '0')
 
+    def test_read_aloud_can_retry_after_a_cache_miss(self) -> None:
+        """Handle a missing clip without synthesis on click, then play it after cache preparation."""
+
+        controls = self.dialog._pronunciation
+        speech = listening_fixtures.Speech()
+        controls._audio = pronunciation.Audio(self.db, speech=speech)
+        self.dialog._nav._buttons.button(library_practice.Page.WORD_NL_EN).click()
+        self._wait_ready()
+        text = self.quiz._current['content']['surface']
+        pool = QtCore.QThreadPool.globalInstance()
+        with mock.patch.object(controls._player, 'play') as play:
+            controls._listen.click()
+            self.assertTrue(pool.waitForDone(5000))
+            self.app.processEvents()
+            self.assertEqual(controls._status.text(), 'Speech unavailable')
+            self.assertTrue(controls._listen.isEnabled())
+            self.assertFalse(controls._stop.isEnabled())
+            self.assertEqual(speech.calls, [])
+            play.assert_not_called()
+
+            clip, = controls._audio.prepare([text], lambda _: None)
+            controls._listen.click()
+            self.assertTrue(pool.waitForDone(5000))
+            self.app.processEvents()
+            play.assert_called_once_with(*clip)
+            self.assertEqual(controls._status.text(), '')
+            self.assertEqual(len(speech.calls), 1)
+
     def test_full_practice_moves_on_after_feedback_and_resumes_after_close(self) -> None:
         """Use real single-question rounds to exercise the first two modes and a close at the handoff."""
 

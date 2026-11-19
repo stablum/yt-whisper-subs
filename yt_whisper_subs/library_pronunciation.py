@@ -217,20 +217,10 @@ class Controls(QtWidgets.QWidget):
             return
         task = library_workers.BackgroundTask(lambda _: self._audio.cached(paragraphs))
         self._task = task
-        task.signals.progress.connect(lambda message: self._progress(task, message))
         task.signals.finished.connect(lambda clips: self._prepared(task, clips))
         task.signals.failed.connect(lambda message, _trace: self._failed(task, message))
         task.signals.cancelled.connect(lambda: self._cancelled(task))
         QtCore.QThreadPool.globalInstance().start(task, 1)
-
-    def _progress(self, task, message: str) -> None:
-        """Show current synthesis progress without reviving a previous question's status."""
-
-        if shiboken6.isValid(self) and self._task is task:
-            if clips is None:
-                self._failed(task, '')
-                return
-            self._status.setText(message)
 
     def _cancelled(self, task) -> None:
         """Clear the preparing indicator after a cancellation from the speech worker."""
@@ -238,9 +228,12 @@ class Controls(QtWidgets.QWidget):
         if shiboken6.isValid(self) and self._task is task:
             self.stop()
 
-    def _prepared(self, task, clips) -> None:
-        """Play only the latest result, e.g. a completed old render cannot speak over a new question."""
+    def _prepared(self, task, clips: list[pronunciation.Clip] | None) -> None:
+        """Play the current cached result, e.g. a missing clip leaves manual replay available."""
 
+        if not clips:
+            self._failed(task, i18n.tr('No cached recording is ready for this text.'))
+            return
         if shiboken6.isValid(self) and self._task is task:
             self._task = None
             self._clips.extend(clips)
@@ -248,7 +241,7 @@ class Controls(QtWidgets.QWidget):
             self._next()
 
     def _failed(self, task, message) -> None:
-        """Keep a synthesis failure separate from practice grading and allow another manual attempt."""
+        """Keep audio failures separate from practice, e.g. a cache miss leaves Read aloud enabled."""
 
         if shiboken6.isValid(self) and self._task is task:
             self.stop()
