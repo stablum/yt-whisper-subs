@@ -37,6 +37,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._engine = engine or practice_service.PracticeService(db)
         self._session = db.practice_active(direction.value)
         self._current = self._task = self._empty = None
+        self.before_question = None
         self._started = 0.0
         self._autostart_pending = True
         self._at_end = False
@@ -300,6 +301,10 @@ class WordQuiz(QtWidgets.QWidget):
 
         if not self._session or not self._practicing:
             return
+        if self.before_question and not self.before_question(self._session, lambda: self._advance(guard=guard)):
+            self._autostart_pending = self._current is None
+            return
+        self._autostart_pending = False
         self._current = self._db.practice_current(self._session)
         if self._current is None:
             self._finish(complete=True)

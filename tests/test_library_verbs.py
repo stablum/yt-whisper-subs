@@ -25,7 +25,9 @@ from tests import listening_fixtures
 from tests import practice_fixtures
 from tests import verb_fixtures
 from yt_whisper_subs import library_db
+from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_practice
+from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import listening_tts
 from yt_whisper_subs import practice_activity
@@ -103,8 +105,11 @@ class VerbFlowTests(unittest.TestCase):
         self.panel._view.card.editor.setPlainText(answer)
         QtTest.QTest.keyClick(self.panel._view.card.editor, QtCore.Qt.Key.Key_Return)
 
-    def test_verb_autoplay_does_not_wait_for_another_engine(self) -> None:
-        """Play both visible verb sentences while a different voice's render is still busy."""
+    def test_verb_answer_speech_is_ready_before_the_question_appears(self) -> None:
+        """Reveal a correction from cache even when grading displays the learner's variant."""
+
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
 
         class Piper(listening_fixtures.Speech):
             """Use the real Piper scheduling lane with deterministic offline waveforms."""
@@ -113,21 +118,36 @@ class VerbFlowTests(unittest.TestCase):
                 """Render fixture audio under the same lane as the native backend."""
 
                 with listening_tts.synthesis("piper"):
+                    entered.set()
+                    if not release.wait(5):
+                        raise TimeoutError("Test did not release the speech job")
                     super().render_many(jobs, report)
 
-        self._open()
-        self._wait(lambda: self.panel._run.row is not None)
-        controls = self.dialog._pronunciation
+        self.db.set_setting(library_pronunciation.SETTING, 1)
         speaker = Piper()
-        controls._audio = pronunciation.Audio(self.db, speech=speaker)
+        audio = pronunciation.Audio(self.db, speech=speaker)
         with (listening_tts.cache_writes("test-unrelated-voice"), listening_tts.synthesis("zonos"),
-              mock.patch.object(controls._player, "play") as play):
-            controls._auto.click()
-            self._wait(lambda: play.call_count == 1)
-            self.assertEqual(speaker.calls[0][0], self.panel._run.row["content"]["source"])
-            self._answer()
-            self._wait(lambda: play.call_count == 2)
-            self.assertEqual(speaker.calls[1][0], self.panel._run.row["grade"]["corrected"])
+              mock.patch.object(library_listening, "WavePlayer", listening_fixtures.Player),
+              mock.patch.object(pronunciation, "Audio", return_value=audio)):
+            self._open()
+            controls = self.dialog._pronunciation
+            self._wait(entered.is_set)
+            self.assertIsNone(self.panel._run.row)
+            self.assertEqual(self.db.verb_summary(self.panel._run.session)["shown"], 0)
+            release.set()
+            self._wait(lambda: self.panel._run.row is not None)
+            row = self.panel._run.row
+            source, answer = (row["content"][key] for key in ("source", "answer"))
+            source_clip, answer_clip = audio.cached([source, answer])
+            self._wait(lambda: controls._player.calls == [source_clip])
+            calls = len(speaker.calls)
+            speaker.available = False
+            variant = answer.lower().rstrip(".")
+            self.panel._view.card.editor.setPlainText(variant)
+            self.panel._view.action.click()
+            self._wait(lambda: controls._player.calls == [source_clip, answer_clip])
+            self.assertEqual(self.panel._run.row["grade"]["corrected"], variant)
+            self.assertEqual(len(speaker.calls), calls)
             self.assertFalse(controls._status.text())
 
     def test_auto_first_question_submit_feedback_and_separate_continue(self) -> None:

@@ -423,6 +423,7 @@ class LibraryWindow(
             self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
             self._practice_dialog.activity_changed.connect(self._notifications.check_practice)
             self._practice_dialog.activity_changed.connect(self.practice_changed)
+            self._practice_dialog.audio_preparation_requested.connect(self.practice_changed)
             self._practice_dialog.voice_changed.connect(self.voice_changed)
         self._practice_dialog.show_page(activity, sequence=sequence)
         self._practice_dialog.show()

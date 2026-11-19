@@ -124,7 +124,7 @@ class VerbCard(written.WritingCard):
 
         if row['outcome'] == 'invalid':
             return ''
-        return row['grade']['corrected'] if row['grade'] else row['content']['source']
+        return row['content']['answer'] if row['grade'] else row['content']['source']
 
 
 class VerbView(written.WritingView):

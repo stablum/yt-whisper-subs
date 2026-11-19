@@ -242,16 +242,23 @@ class PracticeDialogTests(unittest.TestCase):
         speech = listening_fixtures.Speech()
         controls._audio = pronunciation.Audio(self.db, speech=speech)
         buttons = self.dialog._nav._buttons
-        pool = QtCore.QThreadPool.globalInstance()
         with mock.patch.object(controls._player, 'play') as play:
+            def wait_play(count):
+                """Wait for round readiness and its queued cache-only playback."""
+
+                deadline = time.monotonic() + 5
+                while play.call_count < count and time.monotonic() < deadline:
+                    self.app.processEvents()
+                    time.sleep(.01)
+                self.assertEqual(play.call_count, count)
+
             buttons.button(library_practice.Page.WORD_NL_EN).click()
             self._wait_ready()
             self.assertTrue(controls._listen.isEnabled())
             self.assertFalse(controls._auto.isChecked())
             controls._auto.click()
             self.assertEqual(self.db.setting(library_pronunciation.SETTING, ''), '1')
-            self.assertTrue(pool.waitForDone(5000))
-            self.app.processEvents()
+            wait_play(1)
             self.assertEqual(speech.calls[0][0], self.quiz._current['content']['surface'])
             self.assertEqual(play.call_count, 1)
 
@@ -261,17 +268,15 @@ class PracticeDialogTests(unittest.TestCase):
             self.app.processEvents()
             self.assertFalse(controls._listen.isEnabled())
             self.assertEqual(play.call_count, 1)
+            speech.available = False
             self.quiz._answers._buttons[self.quiz._current['correct_idx']].click()
-            self.app.processEvents()
-            self.assertTrue(pool.waitForDone(5000))
-            self.app.processEvents()
+            wait_play(2)
             self.assertTrue(controls._listen.isEnabled())
             self.assertEqual(play.call_count, 2)
 
             controls._auto.click()
             controls._listen.click()
-            self.assertTrue(pool.waitForDone(5000))
-            self.app.processEvents()
+            wait_play(3)
             self.assertEqual(play.call_count, 3)
             self.dialog.show_page(True)
             self.assertFalse(controls.isVisible())

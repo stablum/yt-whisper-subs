@@ -73,6 +73,8 @@ class ListeningTests(unittest.TestCase):
         self.assertEqual([text for text, _ in self.speech.calls], ['Ik lees.', 'Ik schrijf.'])
         self.assertEqual(set(self.speech.calls[-1][1]), {'normal'})
         self.assertEqual(reader.prepare(texts, report), clips)
+        self.assertEqual(reader.cached(texts), clips)
+        self.assertIsNone(reader.cached(['Dit is nog niet opgenomen.']))
         self.assertEqual(len(self.speech.calls), 2)
         self.assertEqual(practice_activity.read(self.db).answers, 0)
 

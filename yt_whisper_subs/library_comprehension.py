@@ -46,6 +46,7 @@ class Panel(QtWidgets.QWidget):
         self._db, self._direction = db, comp.Direction(direction)
         self._engine = engine or comprehension_service.ComprehensionService(db)
         self._run, self._task = Run(), None
+        self.before_question = None
         self._view = library_comprehension_view.View(db, self._direction, self._engine.audio)
         self._view.source.read_requested.connect(self.passage_requested)
         self._checks = library_checks.Checks.shared(db, kind='comprehension')
@@ -217,6 +218,8 @@ class Panel(QtWidgets.QWidget):
         """Navigate without editing a submitted attempt; e.g. the rail can revisit question two while question five is being graded."""
 
         if self._task or self._run.closed:
+            return
+        if self.before_question and not self.before_question(self._run.session, lambda: self._jump(presentation_id)):
             return
         self._save_draft()
         row = self._db.comprehension_open(presentation_id)

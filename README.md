@@ -2596,20 +2596,20 @@ The preference is shared across word quizzes, verb transformations, sentence
 translation, and reading comprehension. For Dutch-to-English exercises it
 reads the Dutch prompt. For English-to-Dutch exercises it waits until the Dutch
 answer is shown in the feedback. Verb transformations read both the original
-and the corrected sentence.
+sentence and the checked model answer. English-to-Dutch sentence translation
+also reads the checked model answer, which can differ in wording from the
+individual correction. Hover over **Read aloud** to see the spoken wording.
 
 Reading comprehension can read its current question or, with **Read passage
 aloud**, the entire passage. **Stop** interrupts playback. Moving to another
 question or practice mode cancels speech for the previous one. The library
 prepares and caches recordings with the selected **Voice** in the background
-for resumable and standby rounds, including passages and known Dutch answer forms. This
-also makes **Read aloud** available from the cache when autoplay is off.
-Fresh rounds opened before preparation finishes and newly generated
-corrections may still need a first render. A visible read-aloud request gets
-priority at the next render batch. Piper and Zonos have separate synthesis
-queues. If a native speech worker stalls and times out, **Read aloud** can retry
-the current sentence. The same preset also supplies dictation and listening
-comprehension.
+for resumable and standby rounds, including passages and checked Dutch answers.
+With **Auto-read Dutch** on, an opened round finishes any missing audio before
+showing its first question. This also applies when resuming a cold round or
+opening it with another voice. **Read aloud** and feedback play only cached
+audio. Turning autoplay off allows text practice while background preparation
+continues. The same preset also supplies dictation and listening comprehension.
 
 ### Adaptive Vocabulary Practice
 

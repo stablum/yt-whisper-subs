@@ -114,6 +114,8 @@ class SentenceSession(library_written.WrittenPanel):
         next_id = next((row["id"] for row in rows if row["answer_text"] is None and row["outcome"] is None), None)
         if target["shown_at"] is None and target["id"] != next_id:
             return
+        if self.before_question and not self.before_question(self._run.session, lambda: self._jump(presentation_id, guard=guard)):
+            return
         self._save_draft()
         row = self._db.sentence_open(presentation_id)
         self._db.set_setting(self._mode.settings_key.removesuffix("_options") + "_cursor", json.dumps({"session": self._run.session, "id": presentation_id}))

@@ -10,6 +10,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -18,14 +19,18 @@ from PySide6 import QtTest
 from PySide6 import QtWidgets
 import shiboken6
 
+from tests import listening_fixtures
 from tests import practice_fixtures
 from tests import sentence_fixtures as fixtures
 from yt_whisper_subs import library_db
+from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_practice
+from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import pronunciation
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import sentence_stats
 
@@ -97,6 +102,34 @@ class SentenceFlowTests(unittest.TestCase):
 
         self.panel._view.card.editor.setPlainText(text)
         QtTest.QTest.keyClick(self.panel._view.card.editor, QtCore.Qt.Key.Key_Return)
+
+    def test_dutch_translation_review_uses_prepared_model_audio(self) -> None:
+        """Keep the English prompt silent and play the saved Dutch target when feedback opens."""
+
+        self.db.set_setting(library_pronunciation.SETTING, 1)
+        voice = listening_fixtures.Speech()
+        audio = pronunciation.Audio(self.db, speech=voice)
+        with (mock.patch.object(pronunciation, "Audio", return_value=audio),
+              mock.patch.object(library_listening, "WavePlayer", listening_fixtures.Player)):
+            self._open()
+            self._wait(lambda: self.panel._run.row is not None)
+            first = self.panel._run.row
+            controls = self.dialog._pronunciation
+            approved = first["content"]["dutch"]
+            self.assertFalse(controls._listen.isEnabled())
+            self.assertFalse(controls._player.calls)
+            cached = audio.cached([approved])
+            self.assertTrue(cached)
+            calls = len(voice.calls)
+            voice.available = False
+            variant = approved.upper()
+            self._answer(variant)
+            self._wait(lambda: self.db.sentence_get(first["id"])["outcome"] == "correct")
+            self.panel._jump(first["id"])
+            self._wait(lambda: bool(controls._player.calls))
+            self.assertEqual(controls._player.calls, cached)
+            self.assertEqual(self.panel._run.row["grade"]["corrected"], variant)
+            self.assertEqual(len(voice.calls), calls)
 
     def test_submit_advances_and_history_restores_highlighted_feedback(self) -> None:
         """Start source-only and continue immediately; e.g. the previous answer later exposes its actual superlative mistake."""

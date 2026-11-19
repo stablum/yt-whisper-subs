@@ -72,6 +72,7 @@ class PracticeDialog(QtWidgets.QDialog):
 
     activity_changed = QtCore.Signal()
     voice_changed = QtCore.Signal()
+    audio_preparation_requested = QtCore.Signal()
 
     def __init__(self, service, parent=None, *, engine=None) -> None:
         """Construct direct practice destinations with one native page state; e.g. each direction keeps its draft when another is selected."""
@@ -94,6 +95,7 @@ class PracticeDialog(QtWidgets.QDialog):
                         Page.LISTEN_COMPREHENSION: self._comprehension[comprehension.Direction.LISTEN]}
         self._tabs = QtWidgets.QTabWidget()
         self._pronunciation = library_pronunciation.Controls(self._db)
+        self._pronunciation.round_opened.connect(self.audio_preparation_requested)
         self._voice_bar = library_practice_voices.VoiceBar(self._db)
         self._listeners = (self._listening._view.card,
                            self._comprehension[comprehension.Direction.LISTEN]._view.source.audio)
@@ -110,6 +112,7 @@ class PracticeDialog(QtWidgets.QDialog):
             panel.activity_changed.connect(partial(self._record_activity, track))
             panel.round_reviewed.connect(partial(self._sequence.reviewed, track))
             if page in self._spoken:
+                panel.before_question = partial(self._pronunciation.before_question, track)
                 panel.speech_changed.connect(partial(self._offer_pronunciation, page))
             self._tabs.addTab(panel, track.label)
         self._arrange_tracking()
@@ -161,6 +164,7 @@ class PracticeDialog(QtWidgets.QDialog):
     def _tab_changed(self, idx: int) -> None:
         """Activate only the selected destination; e.g. opening a reverse quiz cannot expose its sibling's next question."""
 
+        self._pronunciation.stop()
         self._voice_bar.setVisible(idx in self._panels)
         self._pronunciation.setVisible(idx in self._spoken)
         ident, text = self._spoken.get(idx, (0, ''))
@@ -171,6 +175,8 @@ class PracticeDialog(QtWidgets.QDialog):
         if idx in self._panels:
             track = list(practice_tracks.Track)[idx]
             self._db.set_setting("practice_last_track", track.value)
+            if idx in self._spoken:
+                self._pronunciation.bind_round(track, self._panels[idx].round_id)
             self._panels[idx].activate()
         elif idx == Page.PROGRESS:
             track = self._last_track()

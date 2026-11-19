@@ -82,6 +82,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._db, self._mode, self._engine = db, mode, engine
         self._run = _Run(session=mode.ops.active())
         self._task: library_workers.BackgroundTask | None = None
+        self.before_question = None
         self._view = mode.view
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -223,6 +224,10 @@ class WrittenPanel(QtWidgets.QWidget):
 
         if not self._active or not self._run.session or self._task:
             return
+        if self.before_question and not self.before_question(self._run.session, lambda: self._advance(guard=guard)):
+            self._run.pending = self._run.row is None
+            return
+        self._run.pending = False
         row = self._mode.ops.current(self._run.session)
         if row is None:
             self._finish()

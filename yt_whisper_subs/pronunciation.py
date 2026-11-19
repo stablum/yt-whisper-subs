@@ -37,6 +37,18 @@ class Audio:
         texts = [part['text'] for part in comprehension_audio.segments(paragraphs)]
         return self._prepare(texts, self._engine(), report, foreground=True)
 
+    def cached(self, paragraphs: list[str]) -> list[Clip] | None:
+        """Read a complete prepared request, e.g. feedback never starts synthesis."""
+
+        engine = self._engine()
+        clips = []
+        for part in comprehension_audio.segments(paragraphs):
+            key = listening_tts.Recordings.key(engine.profile, part['text'])
+            if not (clip := self._cached(key)):
+                return None
+            clips.append(clip)
+        return clips
+
     def _prepare(self, texts: list[str], engine, report, *, foreground: bool) -> list[Clip]:
         """Use one sound identity per job so switching voices cannot mix recordings."""
 
