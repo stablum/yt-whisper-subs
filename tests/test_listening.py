@@ -18,6 +18,7 @@ from yt_whisper_subs import listening_tts
 from yt_whisper_subs import listening_grade
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import pronunciation
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import sentence_stats
@@ -58,6 +59,22 @@ class ListeningTests(unittest.TestCase):
         self.assertTrue(self.db.listening_audio_valid(recording))
         self.assertGreater(recording["slow_seconds"], recording["normal_seconds"])
         self.assertEqual((len(self.provider.calls), len(self.speech.calls)), (1, 1))
+
+    def test_optional_pronunciation_reuses_speech_and_never_counts_as_an_answer(self) -> None:
+        """Reuse a validated dictation take and cache only normal audio for optional replay."""
+
+        report = lambda _: None
+        stock = listening_tts.Recordings(self.db).prepare(self.speech, ['Ik lees.'], report)
+        normal = self.db.listening_paths(stock['Ik lees.'])['normal']
+        reader = pronunciation.Audio(self.db, speech=self.speech)
+        texts = ['Ik lees. Ik schrijf.', 'Ik lees.']
+        clips = reader.prepare(texts, report)
+        self.assertEqual([path for path, _ in clips[::2]], [normal, normal])
+        self.assertEqual([text for text, _ in self.speech.calls], ['Ik lees.', 'Ik schrijf.'])
+        self.assertEqual(set(self.speech.calls[-1][1]), {'normal'})
+        self.assertEqual(reader.prepare(texts, report), clips)
+        self.assertEqual(len(self.speech.calls), 2)
+        self.assertEqual(practice_activity.read(self.db).answers, 0)
 
     def test_transcription_is_local_reveals_english_and_counts_only_submitted_effort(self) -> None:
         """Ignore case and punctuation while retaining the spoken words; e.g. replays add assistance, not extra practice answers."""

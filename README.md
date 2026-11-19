@@ -226,6 +226,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Ready practice rounds | eight independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
+| Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
 | Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); B2; 5 paragraphs, 5 four-choice and 3 open questions; learning content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
 | Comprehension narration | local Piper/Zonos presets; normal and slow clips prepared in the background for the selected voice, live switching on the same passage; transcript and feedback concealed until all listening answers are submitted |
 | Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
@@ -2586,6 +2587,22 @@ place in the sequence and its final counts of completed and skipped modes.
 sequence position. **Resume full practice** and **Practice now** return you to
 that position. Submissions go through their usual grading, vocabulary review,
 activity and reminder rules.
+
+### Optional Dutch Pronunciation
+
+Choose **Read aloud** beside the practice menu to hear the current Dutch text.
+Turn on **Auto-read Dutch** once to hear it as you work through an exercise.
+The preference is shared across word quizzes, verb transformations, sentence
+translation, and reading comprehension. For Dutch-to-English exercises it
+reads the Dutch prompt. For English-to-Dutch exercises it waits until the Dutch
+answer is shown in the feedback. Verb transformations read both the original
+and the corrected sentence.
+
+Reading comprehension can read its current question or, with **Read passage
+aloud**, the entire passage. **Stop** interrupts playback. Moving to another
+question or practice mode cancels speech for the previous one. Pronunciation uses
+the local Piper Dutch voice and caches recordings for replay. Dictation and
+listening comprehension keep their own voice and playback controls.
 
 ### Adaptive Vocabulary Practice
 

@@ -73,6 +73,7 @@ class WrittenPanel(QtWidgets.QWidget):
 
     activity_changed = QtCore.Signal()
     round_reviewed = QtCore.Signal()
+    speech_changed = QtCore.Signal(int, str)
 
     def __init__(self, db, mode: Mode, *, engine) -> None:
         """Construct without exposure or provider calls; e.g. statistics can open without starting a paid round."""
@@ -140,6 +141,7 @@ class WrittenPanel(QtWidgets.QWidget):
         """Show a recoverable resting state; e.g. completion does not silently generate another paid round."""
 
         self._run.row = None
+        self.speech_changed.emit(0, '')
         self._view.card.idle(title, message)
         self._view.status.setText(i18n.tr('{label} · close anytime to pause', label=self._mode.label))
         self._view.bar.hide()
@@ -256,6 +258,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._input_changed()
         if row["answer_text"] is not None:
             self._view.card.message(i18n.tr('Your first attempt is saved. Retry checking it to get the correction.'))
+        self.speech_changed.emit(row['id'], self._view.card.dutch_speech(row))
 
     def _input_changed(self) -> None:
         """Enable checking only for bounded nonempty input; e.g. whitespace cannot become a failed attempt."""
@@ -307,6 +310,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._view.action.setDefault(self._active)
         if self._active:
             self._view.action.setFocus()
+        self.speech_changed.emit(row['id'], self._view.card.dutch_speech(row))
         self.activity_changed.emit()
 
     def _action(self) -> None:
@@ -355,6 +359,7 @@ class WrittenPanel(QtWidgets.QWidget):
             return
         self._mode.ops.flag(self._run.row["id"])
         self._run.row["outcome"] = "invalid"
+        self.speech_changed.emit(0, '')
         self._view.card.idle(i18n.tr('Exercise reported'), i18n.tr('Excluded from grading and adaptive review. Your submitted effort stays recorded.'))
         self._view.card.arm()
         self._view.flag.setEnabled(False)

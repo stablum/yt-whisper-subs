@@ -26,6 +26,7 @@ class WordQuiz(QtWidgets.QWidget):
 
     activity_changed = QtCore.Signal()
     round_reviewed = QtCore.Signal()
+    speech_changed = QtCore.Signal(int, str)
 
     def __init__(self, db, direction: practice.Direction, *, engine=None) -> None:
         """Restore only this destination's session; e.g. hidden construction never records exposure."""
@@ -177,6 +178,7 @@ class WordQuiz(QtWidgets.QWidget):
         """Render a useful resting state with one primary action; e.g. another round or retry after an outage."""
 
         self._current = None
+        self.speech_changed.emit(0, '')
         self._task = None
         self._surface.reset()
         self._prompt.setText(title)
@@ -337,6 +339,8 @@ class WordQuiz(QtWidgets.QWidget):
         self._flag.show()
         self._hint.setText(i18n.tr('1 / 2 / 3 to answer · Close anytime to pause'))
         self._started = time.monotonic()
+        text = row["content"]["surface"] if self._direction == practice.Direction.NL_EN else ''
+        self.speech_changed.emit(row["id"], text)
 
     def _answer(self, idx: int) -> None:
         """Save the first click and use later clicks to continue; e.g. feedback clicks cannot record another answer."""
@@ -371,6 +375,8 @@ class WordQuiz(QtWidgets.QWidget):
         self._details.show()
         self._bar.setValue(row["ordinal"])
         self._offer_continue()
+        if self._direction == practice.Direction.EN_NL:
+            self.speech_changed.emit(row["id"], answer)
         self.activity_changed.emit()
 
     def _offer_continue(self) -> None:
@@ -417,6 +423,7 @@ class WordQuiz(QtWidgets.QWidget):
             self._result.setStyleSheet("color: #c4d5e9;")
             self._answers.shortcuts(False)
             self._answers.hide()
+            self.speech_changed.emit(0, '')
             self._flag.setEnabled(False)
             self._unsure.hide()
             self._details.hide()

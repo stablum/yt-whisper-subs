@@ -86,7 +86,8 @@ class VerbFlowTests(unittest.TestCase):
 
         deadline = time.monotonic() + 5
         while not predicate() and time.monotonic() < deadline:
-            QtTest.QTest.qWait(10)
+            self.app.processEvents()
+            time.sleep(.01)
         self.assertTrue(predicate())
 
     def _answer(self, *, wrong=False) -> None:

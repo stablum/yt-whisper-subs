@@ -129,6 +129,17 @@ class SentenceCard(written.WritingCard):
                                             hint=f"{direction.label}  ·  {i18n.tr(sentences.SCENES[row['scene']])}",
                                             instruction=i18n.tr('Translate the whole sentence into {target}.', target=target), draft=row["answer_text"]))
 
+    def dutch_speech(self, row: dict) -> str:
+        """Read Dutch source or graded Dutch output, e.g. the target stays silent during English → Dutch."""
+
+        if row['outcome'] == 'invalid':
+            return ''
+        if row['direction'] == practice.Direction.NL_EN:
+            return row['content']['dutch']
+        if row['direction'] == practice.Direction.EN_NL and row['grade']:
+            return row['grade']['corrected']
+        return ''
+
     def feedback(self, row: dict) -> None:
         """Explain corrections and identify practised concepts; e.g. a superlative's meaning and form stay visible after checking."""
 

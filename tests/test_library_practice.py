@@ -23,15 +23,18 @@ from PySide6 import QtTest
 from PySide6 import QtWidgets
 import shiboken6
 
+from tests import listening_fixtures
 from tests import practice_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice
 from yt_whisper_subs import library_practice_controls
+from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
 from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import pronunciation
 
 
 class PracticeDialogTests(unittest.TestCase):
@@ -231,6 +234,48 @@ class PracticeDialogTests(unittest.TestCase):
         self.assertEqual(original._current["choices"], first["choices"])
         self.assertEqual(original._current["outcome"], "correct")
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 2)
+
+    def test_pronunciation_respects_both_word_quiz_directions(self) -> None:
+        """Read visible Dutch automatically and protect the reverse answer until feedback."""
+
+        controls = self.dialog._pronunciation
+        speech = listening_fixtures.Speech()
+        controls._audio = pronunciation.Audio(self.db, speech=speech)
+        buttons = self.dialog._nav._buttons
+        pool = QtCore.QThreadPool.globalInstance()
+        with mock.patch.object(controls._player, 'play') as play:
+            buttons.button(library_practice.Page.WORD_NL_EN).click()
+            self._wait_ready()
+            self.assertTrue(controls._listen.isEnabled())
+            self.assertFalse(controls._auto.isChecked())
+            controls._auto.click()
+            self.assertEqual(self.db.setting(library_pronunciation.SETTING, ''), '1')
+            self.assertTrue(pool.waitForDone(5000))
+            self.app.processEvents()
+            self.assertEqual(speech.calls[0][0], self.quiz._current['content']['surface'])
+            self.assertEqual(play.call_count, 1)
+
+            buttons.button(library_practice.Page.WORD_EN_NL).click()
+            self.quiz = self.dialog._quizzes[practice.Direction.EN_NL]
+            self._wait_ready()
+            self.app.processEvents()
+            self.assertFalse(controls._listen.isEnabled())
+            self.assertEqual(play.call_count, 1)
+            self.quiz._answers._buttons[self.quiz._current['correct_idx']].click()
+            self.app.processEvents()
+            self.assertTrue(pool.waitForDone(5000))
+            self.app.processEvents()
+            self.assertTrue(controls._listen.isEnabled())
+            self.assertEqual(play.call_count, 2)
+
+            controls._auto.click()
+            controls._listen.click()
+            self.assertTrue(pool.waitForDone(5000))
+            self.app.processEvents()
+            self.assertEqual(play.call_count, 3)
+            self.dialog.show_page(True)
+            self.assertFalse(controls.isVisible())
+            self.assertEqual(self.db.setting(library_pronunciation.SETTING, ''), '0')
 
     def test_full_practice_moves_on_after_feedback_and_resumes_after_close(self) -> None:
         """Use real single-question rounds to exercise the first two modes and a close at the handoff."""

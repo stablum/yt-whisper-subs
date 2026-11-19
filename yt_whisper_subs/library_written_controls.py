@@ -132,6 +132,11 @@ class WritingCard(controls.ContinueSurface):
 
     submitted = QtCore.Signal()
 
+    def dutch_speech(self, row: dict) -> str:
+        """Opt in explicitly to visible Dutch text, e.g. a generic writing card reads nothing."""
+
+        return ''
+
     def __init__(self, editor: SentenceEdit | None = None, source: QtWidgets.QLabel | None = None) -> None:
         """Keep the answer area spacious and stable; e.g. show the original sentence above the rewrite."""
 

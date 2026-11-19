@@ -119,6 +119,13 @@ class VerbCard(written.WritingCard):
                                             translation=grade["corrected_english"], explanation=grade["explanation"],
                                             errors=grade["errors"], vocabulary=grade.get("vocabulary", [])))
 
+    def dutch_speech(self, row: dict) -> str:
+        """Read the example before writing and the transformed sentence in feedback."""
+
+        if row['outcome'] == 'invalid':
+            return ''
+        return row['grade']['corrected'] if row['grade'] else row['content']['source']
+
 
 class VerbView(written.WritingView):
     """Compose grammar options with the common typing surface and a scoped source-help shortcut."""

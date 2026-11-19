@@ -54,6 +54,19 @@ def synthesis():
         _LOCK.release()
 
 
+@contextlib.contextmanager
+def cache_writes():
+    """Recheck cache misses under one lock, e.g. when a playback request overlaps preparation."""
+
+    while not _CACHE_LOCK.acquire(timeout=.25):
+        _checkpoint()
+    try:
+        _checkpoint()
+        yield
+    finally:
+        _CACHE_LOCK.release()
+
+
 def digest(path: Path, algorithm: str = "sha256") -> str:
     """Validate a file against its published identity; e.g. Git blobs include the length header in their SHA-1."""
 
@@ -214,12 +227,8 @@ class Recordings:
     def prepare(self, engine, texts: list[str], report) -> dict[str, str]:
         """Coalesce concurrent repair and narration work; e.g. a foreground retry rechecks stock after waiting for background synthesis."""
 
-        while not _CACHE_LOCK.acquire(timeout=.25):
-            _checkpoint()
-        try:
+        with cache_writes():
             return self._prepare(engine, texts, report)
-        finally:
-            _CACHE_LOCK.release()
 
     def _prepare(self, engine, texts, report) -> dict[str, str]:
         """Batch only missing files and publish after validation; e.g. one broken speed reuses its intact counterpart."""

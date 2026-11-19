@@ -36,6 +36,8 @@ class Panel(QtWidgets.QWidget):
 
     activity_changed = QtCore.Signal()
     round_reviewed = QtCore.Signal()
+    speech_changed = QtCore.Signal(int, str)
+    passage_requested = QtCore.Signal(list)
 
     def __init__(self, db, direction, *, engine=None) -> None:
         """Build without exposing content or calling a provider; e.g. opening Progress does not start a round."""
@@ -45,6 +47,7 @@ class Panel(QtWidgets.QWidget):
         self._engine = engine or comprehension_service.ComprehensionService(db)
         self._run, self._task = Run(), None
         self._view = library_comprehension_view.View(db, self._direction, self._engine.audio)
+        self._view.source.read_requested.connect(self.passage_requested)
         self._checks = library_checks.Checks.shared(db, kind='comprehension')
         self._checks.changed.connect(self._changed)
         self._view.action.clicked.connect(self._action)
@@ -135,6 +138,7 @@ class Panel(QtWidgets.QWidget):
         self._db.set_setting(self._view.options.key, opts.model_dump_json())
         self._run.phase = 'preparing'
         self._run.row = None
+        self.speech_changed.emit(0, '')
         self._view.source.clear()
         self._view.card.idle(i18n.tr('Preparing text…'), i18n.tr('The text and all questions are independently checked.'))
         self._view.action.hide()
@@ -197,6 +201,7 @@ class Panel(QtWidgets.QWidget):
         """Offer a deliberate retry without starting another request; e.g. an error page never loops through paid generation."""
 
         self._run.phase, self._run.row = 'error', None
+        self.speech_changed.emit(0, '')
         self._view.card.idle(title, message)
         self._view.options.setEnabled(True)
         self._view.cancel.hide()
@@ -250,6 +255,9 @@ class Panel(QtWidgets.QWidget):
         self._run.restoring = False
         self._input()
         self._outline()
+        if self._direction == comp.Direction.READ:
+            text = row['content']['prompt'] if row['outcome'] != 'invalid' else ''
+            self.speech_changed.emit(row['id'], text)
         if changed and self._direction == comp.Direction.LISTEN and summary['submitted'] == 0:
             QtCore.QTimer.singleShot(0, self, lambda: self._view.source.audio.play())
 
@@ -387,6 +395,7 @@ class Panel(QtWidgets.QWidget):
         """Retain the rail and source for review without generating another round; e.g. a finished passage is still inspectable."""
 
         self._run.row, self._run.phase = None, 'summary'
+        self.speech_changed.emit(0, '')
         result = self._db.comprehension_summary(self._run.session)
         score = i18n.number(result['score'], '.0%') if result['score'] is not None else '—'
         self._view.card.idle(i18n.tr('Round complete') if not result['unseen'] and result['graded'] == result['submitted'] else i18n.tr('Your answers are saved'),

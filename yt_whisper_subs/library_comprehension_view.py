@@ -19,6 +19,8 @@ from yt_whisper_subs import library_sentence_review
 class PassagePane(QtWidgets.QWidget):
     """Own display-safe source presentation; e.g. transcript text never enters a hidden browser before explicit post-submission reveal."""
 
+    read_requested = QtCore.Signal(list)
+
     def __init__(self, db, direction, audio) -> None:
         """Keep audio separate from the visible transcript; e.g. source playback can proceed while an open answer is typed."""
 
@@ -38,11 +40,15 @@ class PassagePane(QtWidgets.QWidget):
         self.reveal = QtWidgets.QPushButton(i18n.tr('View transcript'))
         self.reveal.setAutoDefault(False)
         self.reveal.clicked.connect(self._reveal)
+        self._read = QtWidgets.QPushButton(i18n.tr('Read passage aloud'))
+        self._read.setAutoDefault(False)
+        self._read.clicked.connect(self._read_passage)
         self.note = QtWidgets.QLabel(i18n.tr('The text stays hidden until all answers are submitted.'))
         self.note.setWordWrap(True)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.addWidget(self.title)
+        layout.addWidget(self._read)
         layout.addWidget(self.audio)
         layout.addWidget(self.note)
         layout.addWidget(self.reveal)
@@ -61,6 +67,7 @@ class PassagePane(QtWidgets.QWidget):
         self.audio.hide()
         self.note.hide()
         self.reveal.hide()
+        self._read.hide()
 
     def load(self, session: dict, summary: dict) -> bool:
         """Reveal reading text immediately and listening text only on request; e.g. arriving feedback cannot bypass the transcript gate."""
@@ -74,12 +81,13 @@ class PassagePane(QtWidgets.QWidget):
         self._allowed = summary['submitted'] == summary['planned']
         listen = self._direction == comp.Direction.LISTEN
         self.audio.setVisible(listen)
+        self._read.setVisible(not listen)
         if listen:
             self.audio.load(session)
         self.reveal.setVisible(listen and not self._revealed)
         self.reveal.setEnabled(self._allowed)
         self.note.setVisible(listen and not self._revealed)
-        self.layout().setStretch(5, int(listen and not self._revealed))
+        self.layout().setStretch(self.layout().count() - 1, int(listen and not self._revealed))
         self.title.setText(self._content['title'] if self._revealed else i18n.tr('Listen to the text'))
         if self._revealed:
             if changed or not self.browser.toPlainText():
@@ -88,6 +96,12 @@ class PassagePane(QtWidgets.QWidget):
         else:
             self.browser.hide()
         return changed
+
+    def _read_passage(self) -> None:
+        """Read the displayed article only, e.g. no listening transcript goes through optional pronunciation."""
+
+        if self._direction == comp.Direction.READ and self._content and self.browser.isVisible():
+            self.read_requested.emit(self._content['paragraphs'])
 
     def _show_text(self) -> None:
         """Escape every model-supplied string before rich rendering; e.g. an angle bracket in the story cannot become an interactive link."""
@@ -106,7 +120,7 @@ class PassagePane(QtWidgets.QWidget):
             self.browser.show()
             self.reveal.hide()
             self.note.hide()
-            self.layout().setStretch(5, 0)
+            self.layout().setStretch(self.layout().count() - 1, 0)
             self.title.setText(self._content['title'])
 
 
