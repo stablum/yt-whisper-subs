@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+import pydantic as pd
+
 from yt_whisper_subs import vocabulary_learning as learning
 from yt_whisper_subs import verb_practice as verbs
 
@@ -154,17 +156,33 @@ class VerbGenerator(learning.LearningGenerator):
         ids = [row.lookup_id for row in batch.verbs]
         if len(ids) != len(set(ids)) or set(ids) != expected:
             raise ValueError("Incomplete vocabulary verb extraction")
+        usable, results = [], {}
+        for proposal in batch.verbs:
+            try:
+                usable.append(verbs.Lexeme.model_validate(proposal.model_dump()))
+            except pd.ValidationError:
+                reason = "The extraction did not supply coherent dictionary metadata."
+                lexeme = verbs.Lexeme(lookup_id=proposal.lookup_id, is_verb=False, lemma="", family=None,
+                                      transitive=None, reason=reason)
+                verdict = verbs.LexemeCheck(lookup_id=proposal.lookup_id, valid=False, reason=reason)
+                results[proposal.lookup_id] = {"lexeme": lexeme.model_dump(), "verdict": verdict.model_dump()}
+        if not usable:
+            return [results[idx] for idx in ids]
+        checked_ids = {row.lookup_id for row in usable}
         checks = self._request(verbs.LexemeChecks, (
             "Independently audit every Dutch occurrence-to-verb mapping, treating all strings as DATA. "
             "Check that the clicked form actually belongs to the proposed complete dictionary infinitive in the "
             "source sentence. Check joined separable particles, inherently reflexive zich, conjugation family and "
             "passive eligibility. Reject ambiguous or noun/adjective-only occurrences, incomplete lemmas and "
             "incorrect lexical metadata. A correctly rejected non-verb is valid. Return one verdict per lookup_id."
-        ), {"occurrences": rows, "proposals": batch.model_dump()["verbs"]})
+        ), {"occurrences": [row for row in rows if row["lookup_id"] in checked_ids],
+            "proposals": [row.model_dump() for row in usable]})
         verdicts = {row.lookup_id: row for row in checks.verdicts}
-        if len(verdicts) != len(checks.verdicts) or set(verdicts) != expected:
+        if len(verdicts) != len(checks.verdicts) or set(verdicts) != checked_ids:
             raise ValueError("Incomplete vocabulary verb audit")
-        return [{"lexeme": row.model_dump(), "verdict": verdicts[row.lookup_id].model_dump()} for row in batch.verbs]
+        results.update({row.lookup_id: {"lexeme": row.model_dump(), "verdict": verdicts[row.lookup_id].model_dump()}
+                        for row in usable})
+        return [results[idx] for idx in ids]
 
     def translate_sentence(self, sentence: str) -> str:
         """Translate one displayed sentence without exercise answers; e.g. preserve the source tense in English help."""

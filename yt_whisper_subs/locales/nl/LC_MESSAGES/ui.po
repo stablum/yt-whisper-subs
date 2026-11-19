@@ -493,11 +493,6 @@ msgstr "Kanaal controleren op nieuwe video's…"
 msgid "Checking channels…"
 msgstr "Kanalen controleren…"
 
-#: yt_whisper_subs/verb_vocabulary.py:56
-#, python-brace-format
-msgid "Checking saved vocabulary verbs {value}–{value2} / {len}…"
-msgstr "Opgeslagen werkwoorden controleren: {value}–{value2} / {len}…"
-
 #: yt_whisper_subs/sentence_service.py:187
 msgid "Checking your Dutch transcription…"
 msgstr "Je Nederlandse transcriptie controleren…"
@@ -506,13 +501,18 @@ msgstr "Je Nederlandse transcriptie controleren…"
 msgid "Checking your answer and the meanings of words used…"
 msgstr "Je antwoord en de betekenis van gebruikte woorden beoordelen…"
 
-#: yt_whisper_subs/verb_service.py:144
+#: yt_whisper_subs/verb_service.py:166
 msgid "Checking your sentence…"
 msgstr "Je zin controleren…"
 
 #: yt_whisper_subs/sentence_service.py:195
 msgid "Checking your translation…"
 msgstr "Je vertaling controleren…"
+
+#: yt_whisper_subs/verb_vocabulary.py:106
+#, python-brace-format
+msgid "Checking {len} saved vocabulary verbs…"
+msgstr "{len} opgeslagen werkwoorden controleren…"
 
 #: yt_whisper_subs/library_written.py:286
 msgid "Checking…"
@@ -1725,7 +1725,7 @@ msgstr "Er is nog geen kanaalcontrole voltooid."
 msgid "No chapter plan yet · generated from your subtitles"
 msgstr "Nog geen hoofdstukplan · gemaakt op basis van je ondertitels"
 
-#: yt_whisper_subs/verb_service.py:42
+#: yt_whisper_subs/verb_service.py:61
 msgid "No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
 msgstr ""
 "Geen gecontroleerde werkwoorden uit je woordenschat voldoen aan deze filters. Sla Nederlandse "
@@ -2141,7 +2141,7 @@ msgstr "{len} antwoordopties voorbereiden en controleren…"
 msgid "Preparing and checking {len} sentence pairs…"
 msgstr "{len} zinsparen voorbereiden en controleren…"
 
-#: yt_whisper_subs/verb_service.py:95
+#: yt_whisper_subs/verb_service.py:117
 #, python-brace-format
 msgid "Preparing and checking {len} verb exercises…"
 msgstr "{len} werkwoordoefeningen voorbereiden en controleren…"
@@ -2345,7 +2345,7 @@ msgstr "Herstel · {len} onderbroken verwerkingen klaar om te hervatten"
 msgid "Reference speaker"
 msgstr "Referentiespreker"
 
-#: yt_whisper_subs/verb_vocabulary.py:77
+#: yt_whisper_subs/verb_vocabulary.py:116
 #, python-brace-format
 msgid "Refining {len} unconfirmed vocabulary verb mappings…"
 msgstr "{len} onbevestigde werkwoordkoppelingen verfijnen…"
@@ -2644,11 +2644,11 @@ msgstr ""
 msgid "Saved words per sentence"
 msgstr "Opgeslagen woorden per zin"
 
-#: yt_whisper_subs/verb_vocabulary.py:70
+#: yt_whisper_subs/verb_vocabulary.py:109
 msgid "Saving checked vocabulary verbs…"
 msgstr "Gecontroleerde werkwoorden opslaan…"
 
-#: yt_whisper_subs/verb_service.py:154
+#: yt_whisper_subs/verb_service.py:176
 msgid "Saving correction…"
 msgstr "Correctie opslaan…"
 
@@ -2656,7 +2656,7 @@ msgstr "Correctie opslaan…"
 msgid "Saving sentence and vocabulary feedback…"
 msgstr "Feedback over zin en woordenschat opslaan…"
 
-#: yt_whisper_subs/verb_service.py:171
+#: yt_whisper_subs/verb_service.py:193
 msgid "Saving sentence translation…"
 msgstr "Zinsvertaling opslaan…"
 
@@ -3046,11 +3046,11 @@ msgstr "De tekst is afgelopen. Je kunt opnieuw luisteren."
 msgid "The text stays hidden until all answers are submitted."
 msgstr "De tekst blijft verborgen tot alle antwoorden zijn ingediend."
 
-#: yt_whisper_subs/verb_service.py:43
+#: yt_whisper_subs/verb_service.py:62
 msgid "These filters have no valid Dutch forms. Change the round options."
 msgstr "Deze filters leveren geen geldige Nederlandse vormen op. Wijzig de ronde-opties."
 
-#: yt_whisper_subs/verb_service.py:53
+#: yt_whisper_subs/verb_service.py:65
 msgid "These verb forms are not due yet. Try other forms or practise early."
 msgstr "Deze werkwoordsvormen zijn nog niet aan herhaling toe. Probeer andere vormen of oefen vroeg."
 
@@ -3135,7 +3135,7 @@ msgstr "Vertaal de hele zin naar het {target}."
 msgid "Translating"
 msgstr "Vertalen"
 
-#: yt_whisper_subs/verb_service.py:169
+#: yt_whisper_subs/verb_service.py:191
 msgid "Translating the original sentence…"
 msgstr "Oorspronkelijke zin vertalen…"
 
@@ -3857,7 +3857,7 @@ msgstr ""
 msgid "{len} checked sentences ready"
 msgstr "{len} gecontroleerde zinnen klaar"
 
-#: yt_whisper_subs/verb_service.py:71
+#: yt_whisper_subs/verb_service.py:83
 #, python-brace-format
 msgid "{len} checked verb exercises ready"
 msgstr "{len} gecontroleerde werkwoordoefeningen klaar"

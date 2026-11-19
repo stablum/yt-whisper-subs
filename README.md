@@ -2840,8 +2840,14 @@ an independent contextual audit of infinitive, conjugation family and passive
 eligibility. Known, unambiguous dictionary lemmas reuse existing lexical facts.
 One repair is allowed for failed audits; unconfirmed mappings are held out and
 can be checked again after a day or when their source/model policy changes.
-The first sync can take time when many saved verbs need checking; later rounds
-reuse unchanged decisions and inspect newly translated vocabulary incrementally.
+Incomplete dictionary metadata is handled per lookup. The other proposals
+still receive their independent audit and are saved before the repair.
+The library checks newly translated vocabulary in the background in up to two
+parallel batches, even when a complete standby round is already cached.
+Round preparation reuses checked mappings and consumes matching standby stock.
+A round can start with the checked verbs already available. If the chosen
+source and filters leave too few eligible targets, opening a new round checks
+only as many additional batches as needed to find enough.
 
 Each accepted lookup links to one deduplicated verb, preserving the clicked
 occurrence and its original video/context references. Repeated clicks and

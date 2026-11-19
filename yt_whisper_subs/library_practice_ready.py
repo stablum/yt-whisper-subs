@@ -38,6 +38,7 @@ class PracticeReady(QtCore.QObject):
         self._speech = pronunciation_stock.Stock(db) if speech is None and not self._custom else speech
         self._speech_task = None
         self._speech_retry = 0.0
+        self._verb_index = None
         self._pool = QtCore.QThreadPool(self)
         self._pool.setMaxThreadCount(2)
         self._candidate.connect(self._schedule, QtCore.Qt.ConnectionType.QueuedConnection)
@@ -145,6 +146,7 @@ class PracticeReady(QtCore.QObject):
 
         if self._stopped:
             return
+        self._check_verb_index()
         self._check_speech()
         capacity = self._pool.maxThreadCount() - len(self._tasks)
         if capacity <= 0:
@@ -166,6 +168,35 @@ class PracticeReady(QtCore.QObject):
         task.signals.cancelled.connect(self._end_scan)
         task.signals.failed.connect(self._scan_failed)
         self._pool.start(task)
+
+    def _check_verb_index(self) -> None:
+        """Index saved verbs independently of the round-generation slots."""
+
+        if self._verb_index or (self._custom and "verb" not in self._modes):
+            return
+
+        def index(report):
+            """Honor the saved source filter while preparing new lexical evidence."""
+
+            for track, opts, engine in self._requests():
+                if track == practice_tracks.Track.VERBS and opts.source != "starter":
+                    return engine.warm_vocabulary(report)
+            return False
+
+        task = library_workers.BackgroundTask(index)
+        self._verb_index = task
+        task.signals.finished.connect(self._verb_index_finished)
+        task.signals.failed.connect(lambda _message, _trace: self._verb_index_finished(False))
+        task.signals.cancelled.connect(lambda: self._verb_index_finished(False))
+        QtCore.QThreadPool.globalInstance().start(task, -1)
+
+    @QtCore.Slot(object)
+    def _verb_index_finished(self, changed) -> None:
+        """Refill standby stock as soon as new mappings are available."""
+
+        self._verb_index = None
+        if changed and not self._stopped:
+            QtCore.QTimer.singleShot(0, self, self.check)
 
     def _check_speech(self) -> None:
         """Keep one low-priority speech job outside the round-generation pool."""
@@ -257,3 +288,5 @@ class PracticeReady(QtCore.QObject):
             self._speech_task.cancel()
         for task in self._tasks.values():
             task.cancel()
+        if self._verb_index:
+            self._verb_index.cancel()

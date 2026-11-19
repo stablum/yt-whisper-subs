@@ -27,6 +27,18 @@ class VerbService:
 
         self._db = db
         self._provider = provider or verb_generate.VerbGenerator()
+        self._vocabulary = verb_vocabulary.VocabularySync(db, self._provider)
+
+    def warm_vocabulary(self, report) -> bool:
+        """Fill a bounded slice on its own lease, even when a standby round already exists."""
+
+        status = self._db.practice_prepare_status(verb_vocabulary.TRACK)
+        if max(status["lease_until"], status["next_at"]) > time.time():
+            return False
+        if not self._vocabulary.sync(report, batches=2):
+            return False
+        self._db.practice_prepare_reconsider("verb")
+        return True
 
     @practice_ready.serialized("verb", verb_generate.PROMPT_VERSION)
     def start(self, opts: verbs.Options, report, *, cached_first: bool = True, background: bool = False) -> str:
@@ -34,21 +46,21 @@ class VerbService:
 
         policy = practice.ReviewPolicy()
         if opts.source != "starter":
-            verb_vocabulary.VocabularySync(self._db, self._provider).sync(report)
-        candidates = verb_syllabus.candidates(self._db.verb_catalog(), self._db.verb_targets(), opts)
-        if background:
-            candidates = self._db.practice_spare_candidates("verb", opts, candidates)
+            self._vocabulary.link_known()
+        generation = practice_ready.question_policy(self)
+        unused = self._db.practice_unused("verb", generation)
+        selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
+        candidates = self._candidates(opts, unused, background=background)
+        selected = selector.select(candidates, metrics, opts, time.time())
+        while not background and opts.source != "starter" and len(selected) < opts.count:
+            if not self._vocabulary.sync(report, batches=1):
+                break
+            candidates = self._candidates(opts, unused, background=False)
+            selected = selector.select(candidates, metrics, opts, time.time())
         if not candidates:
             message = (i18n.tr('No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs.')
                        if opts.source == "vocabulary" else i18n.tr('These filters have no valid Dutch forms. Change the round options.'))
-            raise practice_round.NothingToPractice("no_questions", message)
-        generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
-                      "prompt_version": verb_generate.PROMPT_VERSION}
-        unused = self._db.practice_unused("verb", generation)
-        for row in candidates:
-            row["unused"] = row.get("target_id") in unused
-        selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
-        selected = selector.select(candidates, metrics, opts, time.time())
+            raise practice_round.NothingToPractice("no_words" if opts.source == "vocabulary" else "no_questions", message)
         if not selected:
             raise practice_round.NothingToPractice("not_due", i18n.tr('These verb forms are not due yet. Try other forms or practise early.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
@@ -72,6 +84,16 @@ class VerbService:
         if background:
             return self._db.practice_stage("verb", opts, questions)
         return self._db.verb_create(opts, questions, policy.document())
+
+    def _candidates(self, opts: verbs.Options, unused: set[int], *, background: bool) -> list[dict]:
+        """Read only checked verbs, protecting current targets when building a spare."""
+
+        candidates = verb_syllabus.candidates(self._db.verb_catalog(), self._db.verb_targets(), opts)
+        if background:
+            candidates = self._db.practice_spare_candidates("verb", opts, candidates)
+        for row in candidates:
+            row["unused"] = row.get("target_id") in unused
+        return candidates
 
     def _content(self, targets: list[dict], build: practice_round.Build) -> list[dict]:
         """Cache each initial batch before shared replacement work; e.g. one rejection never regenerates its approved neighbours."""

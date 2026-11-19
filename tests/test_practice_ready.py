@@ -83,7 +83,7 @@ class ReadyTests(unittest.TestCase):
 
         ready.stop()
         self.assertTrue(ready._pool.waitForDone(15000))
-        if ready._speech_task:
+        if ready._speech_task or ready._verb_index:
             self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(15000))
         self.app.processEvents()
 
@@ -152,6 +152,39 @@ class ReadyTests(unittest.TestCase):
         standby = [json.loads(row['body_json'])['surface'] for row in spare]
         self.assertEqual(speech.calls[0][0], resumed)
         self.assertEqual(len(reader.prepare([resumed, *standby], lambda _: None)), 1 + len(standby))
+
+    def test_ready_verb_round_opens_while_vocabulary_is_audited(self) -> None:
+        """The real scheduler indexes unfamiliar words even with a complete standby."""
+
+        db, provider, engine, opts, ready = self._case("verb")
+        opts = opts.model_copy(update={"source": "all"})
+        db.set_setting(practice_tracks.Track.VERBS.settings_key, opts.model_dump_json())
+        verb_fixtures.seed_vocab(db, [{"surface": "fietste", "lemma": "fietsen"}])
+        ready.prepare(lambda _: None)
+        self.assertEqual(len(self._stock(db, engine, opts)), opts.count)
+        self.assertFalse(provider.lexical_calls)
+        entered, release = threading.Event(), threading.Event()
+        original = provider.lexemes
+
+        def blocked(rows):
+            """Hold the lexical provider without blocking access to standby stock."""
+
+            entered.set()
+            if not release.wait(8):
+                raise TimeoutError("Test did not consume the prepared round")
+            return original(rows)
+
+        with mock.patch.object(provider, "lexemes", side_effect=blocked):
+            try:
+                ready.check()
+                self.assertTrue(entered.wait(5))
+                session = engine.start(opts, lambda _: None)
+                self.assertEqual(db.verb_summary(session)["planned"], opts.count)
+                self.assertEqual(db.verb_summary(session)["shown"], 0)
+            finally:
+                release.set()
+            self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(8000))
+        self.assertIn("fietsen", db.verb_lexemes())
 
     def test_pending_answer_allows_one_spare_without_replacing_the_active_round(self) -> None:
         """Prepare ahead while corrections arrive; e.g. one queued answer cannot strand next-round preparation or create an unlimited backlog."""

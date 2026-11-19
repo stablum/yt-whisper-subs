@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-19 02:06+0100\n"
+"POT-Creation-Date: 2026-11-19 02:20+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -475,11 +475,6 @@ msgstr ""
 msgid "Checking channels…"
 msgstr ""
 
-#: yt_whisper_subs/verb_vocabulary.py:56
-#, python-brace-format
-msgid "Checking saved vocabulary verbs {value}–{value2} / {len}…"
-msgstr ""
-
 #: yt_whisper_subs/sentence_service.py:187
 msgid "Checking your Dutch transcription…"
 msgstr ""
@@ -488,12 +483,17 @@ msgstr ""
 msgid "Checking your answer and the meanings of words used…"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:144
+#: yt_whisper_subs/verb_service.py:166
 msgid "Checking your sentence…"
 msgstr ""
 
 #: yt_whisper_subs/sentence_service.py:195
 msgid "Checking your translation…"
+msgstr ""
+
+#: yt_whisper_subs/verb_vocabulary.py:106
+#, python-brace-format
+msgid "Checking {len} saved vocabulary verbs…"
 msgstr ""
 
 #: yt_whisper_subs/library_written.py:286
@@ -1678,7 +1678,7 @@ msgstr ""
 msgid "No chapter plan yet · generated from your subtitles"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:42
+#: yt_whisper_subs/verb_service.py:61
 msgid "No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs."
 msgstr ""
 
@@ -2085,7 +2085,7 @@ msgstr ""
 msgid "Preparing and checking {len} sentence pairs…"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:95
+#: yt_whisper_subs/verb_service.py:117
 #, python-brace-format
 msgid "Preparing and checking {len} verb exercises…"
 msgstr ""
@@ -2289,7 +2289,7 @@ msgstr ""
 msgid "Reference speaker"
 msgstr ""
 
-#: yt_whisper_subs/verb_vocabulary.py:77
+#: yt_whisper_subs/verb_vocabulary.py:116
 #, python-brace-format
 msgid "Refining {len} unconfirmed vocabulary verb mappings…"
 msgstr ""
@@ -2578,11 +2578,11 @@ msgstr ""
 msgid "Saved words per sentence"
 msgstr ""
 
-#: yt_whisper_subs/verb_vocabulary.py:70
+#: yt_whisper_subs/verb_vocabulary.py:109
 msgid "Saving checked vocabulary verbs…"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:154
+#: yt_whisper_subs/verb_service.py:176
 msgid "Saving correction…"
 msgstr ""
 
@@ -2590,7 +2590,7 @@ msgstr ""
 msgid "Saving sentence and vocabulary feedback…"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:171
+#: yt_whisper_subs/verb_service.py:193
 msgid "Saving sentence translation…"
 msgstr ""
 
@@ -2969,11 +2969,11 @@ msgstr ""
 msgid "The text stays hidden until all answers are submitted."
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:43
+#: yt_whisper_subs/verb_service.py:62
 msgid "These filters have no valid Dutch forms. Change the round options."
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:53
+#: yt_whisper_subs/verb_service.py:65
 msgid "These verb forms are not due yet. Try other forms or practise early."
 msgstr ""
 
@@ -3055,7 +3055,7 @@ msgstr ""
 msgid "Translating"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:169
+#: yt_whisper_subs/verb_service.py:191
 msgid "Translating the original sentence…"
 msgstr ""
 
@@ -3731,7 +3731,7 @@ msgstr ""
 msgid "{len} checked sentences ready"
 msgstr ""
 
-#: yt_whisper_subs/verb_service.py:71
+#: yt_whisper_subs/verb_service.py:83
 #, python-brace-format
 msgid "{len} checked verb exercises ready"
 msgstr ""

@@ -107,6 +107,12 @@ class ReadyDbMixin:
             row = conn.execute("SELECT * FROM practice_preparation WHERE track=?", (track,)).fetchone()
             return dict(row) if row else {"next_at": 0, "lease_until": 0, "error": ""}
 
+    def practice_prepare_reconsider(self, track: str) -> None:
+        """Wake a delayed round after its vocabulary changes, without interrupting an active owner."""
+
+        with self._connect() as conn:
+            conn.execute("UPDATE practice_preparation SET next_at=0 WHERE track=? AND owner IS NULL", (track,))
+
     def practice_ready(self, kind: str, opts, policy: dict) -> str | None:
         """Reuse a matching unexposed round; e.g. prefetch never marks a question shown or shuffles its saved choices."""
 

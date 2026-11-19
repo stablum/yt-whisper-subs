@@ -15,6 +15,12 @@ from yt_whisper_subs import word_reviews
 class VerbCatalogDbMixin:
     """Own lexicon provenance independently of exercise transactions; e.g. catalog updates never rewrite past questions."""
 
+    def verb_lexemes(self) -> dict[str, dict]:
+        """Read validated dictionary metadata without aggregating clicks or practice history."""
+
+        with self._connect() as conn:
+            return {row["lemma"]: dict(row) for row in conn.execute("SELECT lemma,family,transitive FROM verb_lemmas")}
+
     def verb_catalog(self) -> list[dict]:
         """Combine starter verbs with captured lemmas and click counts; e.g. vocabulary verbs receive selection priority."""
 

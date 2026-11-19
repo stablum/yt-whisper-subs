@@ -140,8 +140,8 @@ class Verdicts(practice.Content):
     verdicts: list[Verdict]
 
 
-class Lexeme(practice.Content):
-    """Normalize a saved occurrence into validated lexical facts; e.g. vergiste becomes zich vergissen."""
+class LexemeProposal(practice.Content):
+    """Parse each extraction's fields before checking their coherence."""
 
     lookup_id: int
     is_verb: bool
@@ -149,6 +149,10 @@ class Lexeme(practice.Content):
     family: Literal["regular", "strong", "irregular", "separable", "reflexive", "modal"] | None
     transitive: bool | None
     reason: str = pd.Field(min_length=3, max_length=700)
+
+
+class Lexeme(LexemeProposal):
+    """Normalize a saved occurrence into validated lexical facts; e.g. vergiste becomes zich vergissen."""
 
     @pd.model_validator(mode="after")
     def check(self) -> Lexeme:
@@ -170,7 +174,7 @@ class Lexeme(practice.Content):
 class Lexemes(practice.Content):
     """Keep extraction batches bounded and ID-addressed; e.g. several clicked forms may identify one infinitive."""
 
-    verbs: list[Lexeme]
+    verbs: list[LexemeProposal]
 
 
 class LexemeCheck(practice.Content):

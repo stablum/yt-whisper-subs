@@ -114,6 +114,55 @@ class VocabularyVerbTests(unittest.TestCase):
         with self.db._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM verb_vocab_links").fetchone()[0], 0)
 
+    def test_incomplete_dictionary_metadata_retries_only_the_bad_lookup(self) -> None:
+        """Keep independently audited neighbours when one extraction lacks passive eligibility."""
+
+        ids = verb_fixtures.seed_vocab(self.db, [{"surface": "fietste", "lemma": "fietsen"},
+                                               {"surface": "knutselde", "lemma": "knutselen"}])
+        generator = verb_generate.VerbGenerator()
+        calls = []
+
+        def respond(model, _prompt, document):
+            """Reproduce a valid JSON response with one incoherent verb, then fix that row."""
+
+            occurrences = document["occurrences"]
+            calls.append((model, [row["lookup_id"] for row in occurrences]))
+            if model is verbs.LexemeChecks:
+                return model(verdicts=[dict(lookup_id=row["lookup_id"], valid=True, reason="Independently checked")
+                                       for row in occurrences])
+            proposals = [dict(lookup_id=row["lookup_id"], is_verb=True, lemma=row["lemma"], family="regular",
+                              transitive=None if row["lookup_id"] == ids[1] and len(occurrences) == 2 else False,
+                              reason="Saved context contains the clicked inflection") for row in occurrences]
+            return model(verbs=proposals)
+
+        with mock.patch.object(generator, "_request", side_effect=respond):
+            sync = verb_vocabulary.VocabularySync(self.db, generator)
+            sync.sync(lambda _: None)
+            sync.sync(lambda _: None)
+        self.assertEqual(calls, [(verbs.Lexemes, ids), (verbs.LexemeChecks, ids[:1]),
+                                 (verbs.Lexemes, ids[1:]), (verbs.LexemeChecks, ids[1:])])
+        saved = {row["lemma"]: row["lookups"] for row in self.db.verb_catalog()}
+        self.assertEqual((saved["fietsen"], saved["knutselen"]), (1, 1))
+
+    def test_standby_and_lexicon_prepare_independently(self) -> None:
+        """Keep a complete round ready while unseen vocabulary is still being audited."""
+
+        verb_fixtures.seed_vocab(self.db, [{"surface": "fietste", "lemma": "fietsen"}])
+        opts = verb_fixtures.options(2)
+        with mock.patch.object(self.provider, "lexemes", side_effect=AssertionError("unexpected on the round path")):
+            self.engine.start(opts, lambda _: None, background=True)
+        self.assertFalse(any(row["lemma"] == "fietsen" for row in self.db.verb_catalog()))
+        self.assertTrue(self.db.practice_prepare_claim("verb", "fixture"))
+        self.db.practice_prepare_done("verb", "fixture", "Earlier lexical validation failed")
+        self.assertGreater(self.db.practice_prepare_status("verb")["next_at"], time.time())
+        self.assertTrue(self.engine.warm_vocabulary(lambda _: None))
+        self.assertEqual(self.db.practice_prepare_status("verb")["next_at"], 0)
+        self.assertIn("fietsen", self.db.verb_lexemes())
+        self.assertFalse(self.engine.warm_vocabulary(lambda _: None))
+        self.provider.available = False
+        session = self.engine.start(opts, lambda _: None)
+        self.assertEqual(self.db.verb_summary(session)["planned"], opts.count)
+
     def test_changed_lookup_cannot_receive_a_stale_lexical_decision(self) -> None:
         """Check the original source stamp at commit; e.g. a retranslation finishing during the audit invalidates its result."""
 
