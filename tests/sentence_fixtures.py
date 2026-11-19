@@ -12,6 +12,12 @@ from yt_whisper_subs import sentence_practice as sentences
 
 DUTCH = "De slimste buurman zou eventueel naar de fietsen lopen."
 ENGLISH = "The cleverest neighbour would possibly walk to the bicycles."
+MEANING_LINKS = [
+    {"dutch": ["De slimste buurman"], "english": ["The cleverest neighbour"]},
+    {"dutch": ["zou", "lopen"], "english": ["would", "walk"]},
+    {"dutch": ["eventueel"], "english": ["possibly"]},
+    {"dutch": ["naar de fietsen"], "english": ["to the bicycles"]},
+]
 ENTRIES = [
     {"surface": "slim", "lemma": "slim", "pos": "adjective", "sentence": "Hij is slim.", "meaning": "clever"},
     {"surface": "fiets", "lemma": "fiets", "pos": "noun", "sentence": "Mijn fiets is rood.", "meaning": "bicycle"},

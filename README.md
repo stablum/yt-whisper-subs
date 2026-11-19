@@ -3032,7 +3032,12 @@ early review rather than silently producing fewer questions.
 Generation and a separate quality audit use **`gpt-6-luna` / `medium`** with the
 existing practice credentials, strict structured responses and `store: false`.
 Audits check naturalness, saved senses, matching bilingual meaning, evidence for
-each form and answer alternatives. Every question has its own required named
+each form and answer alternatives. The audit also aligns exact phrases across
+both sentences, including supporting details outside the saved targets such as
+where an action happens or what it applies to. Local checks reject approvals
+with missing or invented phrase evidence. Natural paraphrases and split Dutch
+constructions can pass. This uses the existing audit request.
+Every question has its own required named
 audit-response slot, with identifiers bound locally instead of asking the model
 to copy them. Overlapping target words cannot merge the verdicts. An incomplete
 audit response gets one bounded **audit-only retry** of the same drafts, without
@@ -3041,6 +3046,9 @@ as a form annotation absent from its sentence become specific rejections too;
 valid questions in the batch stay approved while only missing questions need
 bounded replacement or content repair.
 Checked content is cached under the exact source lookups and model/prompt policy.
+New translation and dictation rounds use the current audit policy, including
+rounds prepared in the background. Previously opened rounds and their feedback
+remain available.
 Fresh-context slots prefer approved **never-shown** cached content. Already-used
 sentences return through the limited due-review slots, rather than bypassing the
 variety quota through a full variant pool. Historical variants remain stored with

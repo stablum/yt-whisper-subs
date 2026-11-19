@@ -297,9 +297,9 @@ class SentenceTests(unittest.TestCase):
         wrong = fixtures.DUTCH.replace("slimste", "slimmere")
         grade_doc = {"direction": "en_nl", "exercise": item["draft"], "learner_answer": wrong}
         grade = self.provider.grade(grade_doc)
+        decision = {"valid": True, "reason": item["verdict"]["reason"], "links": fixtures.MEANING_LINKS}
         request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"]]})},
-                               {"output_text": json.dumps({f"q_{item['draft']['anchor_word_id']}":
-                                                             {key: item["verdict"][key] for key in ("valid", "reason")}})},
+                               {"output_text": json.dumps({f"q_{item['draft']['anchor_word_id']}": decision})},
                                {"output_text": grade.model_dump_json()}]
         provider = sentence_generate.SentenceGenerator()
         self.assertEqual(provider.generate([document], opts.direction, []), [item])
@@ -324,8 +324,10 @@ class SentenceTests(unittest.TestCase):
         items = self.provider.generate(documents, opts.direction, [])
         decisions = {f"q_{item['draft']['anchor_word_id']}": {"valid": idx != 1, "reason": f"Independent check {idx}"}
                      for idx, item in enumerate(reversed(items))}
+        audited = {key: {**decision, "links": fixtures.MEANING_LINKS if decision["valid"] else []}
+                   for key, decision in decisions.items()}
         request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"] for item in items]})},
-                               {"output_text": json.dumps(decisions)}]
+                               {"output_text": json.dumps(audited)}]
         result = sentence_generate.SentenceGenerator().generate(documents, opts.direction, [])
         for item in result:
             anchor = item["draft"]["anchor_word_id"]
@@ -335,7 +337,40 @@ class SentenceTests(unittest.TestCase):
         self.assertEqual(set(schema["required"]), set(decisions))
         self.assertEqual(set(json.loads(audit["input"])["questions"]), set(decisions))
         self.assertFalse(schema["additionalProperties"])
-        self.assertNotIn("anchor_word_id", schema["$defs"]["Decision"]["properties"])
+        self.assertNotIn("anchor_word_id", schema["$defs"]["AuditDecision"]["properties"])
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_sentence_audit_requires_evidence_for_the_menu_detail(self, request) -> None:
+        """Reject missing or invented support despite an approval; e.g. removing a dish must retain 'from the menu'."""
+
+        plan = {"anchor_word_id": 1, "scene": "food", "allow_context_change": False, "words": [{"word_id": 1}]}
+        english = "I would keep the recipe and oppose removing this dish from the menu."
+        dutch = "Ik zou het recept bewaren en me verzetten tegen het schrappen van dit gerecht"
+        draft = {"anchor_word_id": 1, "scene": "food", "english": english, "alternatives": [],
+                 "explanation": "Gerecht refers to a dish.", "words": [{
+                     "word_id": 1, "dutch_forms": ["gerecht"], "english_forms": ["dish"],
+                     "features": ["singular"], "explanation": "Both sentences refer to one dish.",
+                 }]}
+        links = [
+            {"english": ["I would keep the recipe"], "dutch": ["Ik zou het recept bewaren"]},
+            {"english": ["and oppose"], "dutch": ["en me verzetten tegen"]},
+            {"english": ["removing this dish"], "dutch": ["het schrappen van dit gerecht"]},
+        ]
+        menu = {"english": ["from the menu"], "dutch": ["van de kaart"]}
+        for text, alignment, reason in (
+            (dutch + ".", links, "from the menu"),
+            (dutch + ".", [*links, menu], "absent from its sentence"),
+            (dutch + " van de kaart.", [*links, menu], "Checked independently"),
+            (dutch + " van de kaart vandaag.", [*links, menu], "vandaag"),
+        ):
+            with self.subTest(text=text, reason=reason):
+                request.side_effect = [
+                    {"output_text": json.dumps({"questions": [{**draft, "dutch": text}]})},
+                    {"output_text": json.dumps({"q_1": {"valid": True, "reason": "Checked independently", "links": alignment}})},
+                ]
+                verdict = sentence_generate.SentenceGenerator().generate([plan], practice.Direction.EN_NL, [])[0]["verdict"]
+                self.assertEqual(verdict["valid"], reason == "Checked independently")
+                self.assertIn(reason, verdict["reason"])
 
     @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
     def test_incomplete_audit_retries_only_review_without_regenerating_paid_drafts(self, request) -> None:
@@ -345,7 +380,9 @@ class SentenceTests(unittest.TestCase):
         plan = sentence_select.Selector(practice.ReviewPolicy()).plans(rows[:1], rows, fixtures.options(), {}, time.time())[0]
         document = self.engine._document(plan)
         item = self.provider.generate([document], practice.Direction.EN_NL, [])[0]
-        decision = {f"q_{item['draft']['anchor_word_id']}": {"valid": True, "reason": "Checked independently"}}
+        decision = {f"q_{item['draft']['anchor_word_id']}": {
+            "valid": True, "reason": "Checked independently", "links": fixtures.MEANING_LINKS,
+        }}
         request.side_effect = [{"output_text": json.dumps({"questions": [item["draft"]]})},
                                {"output_text": "{}"}, {"output_text": json.dumps(decision)}]
         result = sentence_generate.SentenceGenerator().generate([document], practice.Direction.EN_NL, [])
@@ -398,7 +435,9 @@ class SentenceTests(unittest.TestCase):
                     bad_anchor = items[0]["draft"]["anchor_word_id"]
                     items[0]["draft"]["words"][0]["english_forms"] = ["absent invented annotation"]
                 return {"output_text": json.dumps({"questions": [item["draft"] for item in items]})}
-            return {"output_text": json.dumps({key: {"valid": True, "reason": "Independently checked"} for key in data["questions"]})}
+            decisions = {key: {"valid": True, "reason": "Independently checked", "links": fixtures.MEANING_LINKS}
+                         for key in data["questions"]}
+            return {"output_text": json.dumps(decisions)}
 
         request.side_effect = respond
         engine = sentence_service.SentenceService(self.db, sentence_generate.SentenceGenerator())

@@ -6,6 +6,7 @@ Example: a wrong superlative can fail form recall while preserving credit for th
 from __future__ import annotations
 
 import enum
+import re
 from typing import Literal
 
 import pydantic as pd
@@ -121,6 +122,40 @@ class Decision(practice.Content):
 
     valid: bool
     reason: str
+
+
+class MeaningLink(practice.Content):
+    """Align exact fragments of one idea; e.g. 'would walk' can match 'zou' and 'lopen'."""
+
+    dutch: list[str] = pd.Field(min_length=1)
+    english: list[str] = pd.Field(min_length=1)
+
+
+class AuditDecision(Decision):
+    """Require evidence beyond the saved words; e.g. 'from the menu' needs a Dutch counterpart."""
+
+    links: list[MeaningLink]
+
+    def check(self, draft: Draft) -> None:
+        """Check that accepted links exist and cover both texts; e.g. a fabricated counterpart cannot pass."""
+
+        for language in ("dutch", "english"):
+            text = getattr(draft, language)
+            covered = set()
+            for link in self.links:
+                for fragment in getattr(link, language):
+                    fragment = fragment.strip()
+                    if not re.search(r"\w", fragment):
+                        raise ValueError(f"A {language.capitalize()} audit fragment contains no words.")
+                    pattern = rf"(?<!\w){re.escape(fragment)}(?!\w)"
+                    matches = list(re.finditer(pattern, text, re.IGNORECASE))
+                    if not matches:
+                        raise ValueError(f"The {language.capitalize()} audit fragment {fragment!r} is absent from its sentence.")
+                    for match in matches:
+                        covered.update(range(match.start(), match.end()))
+            missing = [word.group() for word in re.finditer(r"\w+", text) if word.start() not in covered]
+            if missing:
+                raise ValueError(f"{language.capitalize()} details without a matched counterpart: {' '.join(missing)}.")
 
 
 class Verdict(Decision):
