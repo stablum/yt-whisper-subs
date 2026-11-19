@@ -935,7 +935,7 @@ msgstr "Vidéos téléchargées prêtes à lire"
 msgid "Downloading"
 msgstr "Téléchargement"
 
-#: yt_whisper_subs/listening_tts.py:121
+#: yt_whisper_subs/listening_tts.py:161
 msgid "Downloading verified Dutch speech voice (first use only)…"
 msgstr "Téléchargement de la voix néerlandaise vérifiée (première utilisation seulement)…"
 
@@ -2121,7 +2121,7 @@ msgstr "Préparer un nouveau texte"
 msgid "Preparing"
 msgstr "Préparation"
 
-#: yt_whisper_subs/listening_tts.py:159
+#: yt_whisper_subs/listening_tts.py:199
 msgid "Preparing Dutch listening audio…"
 msgstr "Préparation de l’audio néerlandais…"
 
@@ -2164,7 +2164,7 @@ msgstr "Préparation du texte…"
 msgid "Preparing voice preview…"
 msgstr "Préparation de l’aperçu vocal…"
 
-#: yt_whisper_subs/listening_tts.py:188
+#: yt_whisper_subs/listening_tts.py:230
 msgid "Preparing voice: "
 msgstr "Préparation de la voix : "
 
@@ -2862,7 +2862,7 @@ msgstr "Moteur vocal"
 msgid "Speech preparation paused."
 msgstr "Préparation audio en pause."
 
-#: yt_whisper_subs/library_pronunciation.py:124 yt_whisper_subs/library_pronunciation.py:136
+#: yt_whisper_subs/library_pronunciation.py:138 yt_whisper_subs/library_pronunciation.py:150
 msgid "Speech unavailable"
 msgstr "Lecture audio indisponible"
 

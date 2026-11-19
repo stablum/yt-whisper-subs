@@ -155,7 +155,7 @@ def isolated_process_kwargs(
     return kwargs
 
 
-def request_process_tree_termination(process: subprocess.Popen[str]) -> None:
+def request_process_tree_termination(process: subprocess.Popen[str], *, wait: bool = False) -> None:
     """Request immediate termination of one isolated process and descendants.
 
     Example: cancelling Whisper also stops its ffmpeg or model child processes.
@@ -170,7 +170,13 @@ def request_process_tree_termination(process: subprocess.Popen[str]) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        threading.Thread(target=killer.wait, daemon=True, name="yt-whisper-subs-process-stop").start()
+        if wait:
+            try:
+                killer.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                _terminate_process(killer)
+        else:
+            threading.Thread(target=killer.wait, daemon=True, name="yt-whisper-subs-process-stop").start()
         return
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
@@ -261,8 +267,9 @@ def _read_stream_chars(stream: TextIO, output_q: queue.Queue[str | None]) -> Non
     """
 
     try:
-        while chunk := stream.read(1):
-            output_q.put(chunk)
+        with stream:
+            while chunk := stream.read(1):
+                output_q.put(chunk)
     finally:
         output_q.put(None)
 
@@ -291,6 +298,7 @@ def _stream_process_output(
     capture_stdout: bool,
     silence_seconds: float | None,
     quiet: bool = False,
+    timeout: float | None = None,
 ) -> tuple[int, str | None]:
     """Drain subprocess output while reporting long periods with no text.
 
@@ -309,6 +317,7 @@ def _stream_process_output(
 
     captured_parts: list[str] = []
     last_output_time = time.monotonic()
+    deadline = None if timeout is None else last_output_time + timeout
     reader_done = False
     silence_limit = silence_seconds or 0.0
     from yt_whisper_subs import task_cancel
@@ -318,6 +327,8 @@ def _stream_process_output(
     while not reader_done or process.poll() is None:
         if control:
             control.checkpoint()
+        if deadline is not None and time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(process.args, timeout)
         try:
             chunk = output_q.get(timeout=_OUTPUT_POLL_SECONDS)
         except queue.Empty:
@@ -343,7 +354,6 @@ def _stream_process_output(
 
     returncode = process.wait()
     reader.join(timeout=1)
-    process.stdout.close()
     stdout_text = "".join(captured_parts) if capture_stdout else None
     return returncode, stdout_text
 
@@ -357,6 +367,7 @@ def run(
     silence_seconds: float | None = cfg.DEFAULT_SUBPROCESS_SILENCE_SECONDS,
     window: ChildWindow = ChildWindow.HIDDEN,
     quiet: bool = False,
+    timeout: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Execute a command while preserving live output in the run log.
 
@@ -369,7 +380,7 @@ def run(
         print(f"> {command_text(cmd)}")
     command = [str(part) for part in cmd]
 
-    if capture_stdout and not stream_stdout:
+    if capture_stdout and not stream_stdout and timeout is None:
         result = subprocess.run(
             command,
             **child_process_kwargs(window),
@@ -384,7 +395,7 @@ def run(
         from yt_whisper_subs import task_cancel
 
         control = task_cancel.current()
-        kwargs = isolated_process_kwargs(window) if control else child_process_kwargs(window)
+        kwargs = isolated_process_kwargs(window) if control or timeout is not None else child_process_kwargs(window)
         process = subprocess.Popen(
             command,
             **kwargs,
@@ -399,11 +410,16 @@ def run(
             scope = control.controllable(lambda: request_process_tree_termination(process), tree.suspend, tree.resume) if control else contextlib.nullcontext()
             with scope:
                 returncode, stdout_text = _stream_process_output(
-                    process, capture_stdout=capture_stdout, silence_seconds=silence_seconds, quiet=quiet,
+                    process, capture_stdout=capture_stdout, silence_seconds=silence_seconds,
+                    quiet=quiet or (capture_stdout and not stream_stdout),
+                    timeout=timeout,
                 )
-        except BaseException:
+        except BaseException as exc:
+            if isinstance(exc, subprocess.TimeoutExpired) or (control and control.cancelled):
+                # A Windows Python launcher may leave its interpreter holding the
+                # output pipe. Stop descendants before closing the reader.
+                request_process_tree_termination(process, wait=True)
             _terminate_process(process)
-            process.stdout.close()
             raise
         result = subprocess.CompletedProcess(command, returncode, stdout=stdout_text)
 

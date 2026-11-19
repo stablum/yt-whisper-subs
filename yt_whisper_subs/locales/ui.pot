@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-19 02:20+0100\n"
+"POT-Creation-Date: 2026-11-19 02:37+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -905,7 +905,7 @@ msgstr ""
 msgid "Downloading"
 msgstr ""
 
-#: yt_whisper_subs/listening_tts.py:121
+#: yt_whisper_subs/listening_tts.py:161
 msgid "Downloading verified Dutch speech voice (first use only)…"
 msgstr ""
 
@@ -2059,7 +2059,7 @@ msgstr ""
 msgid "Preparing"
 msgstr ""
 
-#: yt_whisper_subs/listening_tts.py:159
+#: yt_whisper_subs/listening_tts.py:199
 msgid "Preparing Dutch listening audio…"
 msgstr ""
 
@@ -2102,7 +2102,7 @@ msgstr ""
 msgid "Preparing voice preview…"
 msgstr ""
 
-#: yt_whisper_subs/listening_tts.py:188
+#: yt_whisper_subs/listening_tts.py:230
 msgid "Preparing voice: "
 msgstr ""
 
@@ -2779,7 +2779,7 @@ msgstr ""
 msgid "Speech preparation paused."
 msgstr ""
 
-#: yt_whisper_subs/library_pronunciation.py:124 yt_whisper_subs/library_pronunciation.py:136
+#: yt_whisper_subs/library_pronunciation.py:138 yt_whisper_subs/library_pronunciation.py:150
 msgid "Speech unavailable"
 msgstr ""
 

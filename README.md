@@ -2605,8 +2605,11 @@ prepares and caches recordings with the selected **Voice** in the background
 for resumable and standby rounds, including passages and known Dutch answer forms. This
 also makes **Read aloud** available from the cache when autoplay is off.
 Fresh rounds opened before preparation finishes and newly generated
-corrections may still need a first render. The same preset also supplies dictation
-and listening comprehension.
+corrections may still need a first render. A visible read-aloud request gets
+priority at the next render batch. Piper and Zonos have separate synthesis
+queues. If a native speech worker stalls and times out, **Read aloud** can retry
+the current sentence. The same preset also supplies dictation and listening
+comprehension.
 
 ### Adaptive Vocabulary Practice
 

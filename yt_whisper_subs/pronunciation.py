@@ -2,6 +2,7 @@
 
 import wave
 from functools import lru_cache
+from itertools import batched
 from pathlib import Path
 
 from yt_whisper_subs import comprehension_audio
@@ -34,9 +35,9 @@ class Audio:
         """Return verified clips in spoken order, e.g. a long article can play paragraph by paragraph."""
 
         texts = [part['text'] for part in comprehension_audio.segments(paragraphs)]
-        return self._prepare(texts, self._engine(), report)
+        return self._prepare(texts, self._engine(), report, foreground=True)
 
-    def _prepare(self, texts: list[str], engine, report) -> list[Clip]:
+    def _prepare(self, texts: list[str], engine, report, *, foreground: bool) -> list[Clip]:
         """Use one sound identity per job so switching voices cannot mix recordings."""
 
         keys = {text: listening_tts.Recordings.key(engine.profile, text) for text in texts}
@@ -47,10 +48,11 @@ class Audio:
                 clips[text] = clip
             else:
                 missing[text] = key
-        if missing:
-            with listening_tts.cache_writes():
+        batch_size = getattr(engine, 'batch_size', _WARM_BATCH)
+        for batch in batched(missing.items(), batch_size):
+            with listening_tts.cache_writes(engine.profile, foreground=foreground):
                 jobs = []
-                for text, key in missing.items():
+                for text, key in batch:
                     if clip := self._cached(key):
                         clips[text] = clip
                     else:
@@ -77,7 +79,7 @@ class Audio:
                 if len(batch) == _WARM_BATCH:
                     break
         if batch:
-            self._prepare(batch, engine, report)
+            self._prepare(batch, engine, report, foreground=False)
         return bool(batch)
 
     def _engine(self):

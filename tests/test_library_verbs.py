@@ -21,13 +21,16 @@ from PySide6 import QtTest
 from PySide6 import QtWidgets
 import shiboken6
 
+from tests import listening_fixtures
 from tests import practice_fixtures
 from tests import verb_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice
 from yt_whisper_subs import library_theme
+from yt_whisper_subs import listening_tts
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import pronunciation
 from yt_whisper_subs import verb_service
 from yt_whisper_subs import verb_stats
 
@@ -99,6 +102,33 @@ class VerbFlowTests(unittest.TestCase):
             answer = answer.replace("werkt", "werk").replace("maakt", "maak")
         self.panel._view.card.editor.setPlainText(answer)
         QtTest.QTest.keyClick(self.panel._view.card.editor, QtCore.Qt.Key.Key_Return)
+
+    def test_verb_autoplay_does_not_wait_for_another_engine(self) -> None:
+        """Play both visible verb sentences while a different voice's render is still busy."""
+
+        class Piper(listening_fixtures.Speech):
+            """Use the real Piper scheduling lane with deterministic offline waveforms."""
+
+            def render_many(self, jobs, report) -> None:
+                """Render fixture audio under the same lane as the native backend."""
+
+                with listening_tts.synthesis("piper"):
+                    super().render_many(jobs, report)
+
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        controls = self.dialog._pronunciation
+        speaker = Piper()
+        controls._audio = pronunciation.Audio(self.db, speech=speaker)
+        with (listening_tts.cache_writes("test-unrelated-voice"), listening_tts.synthesis("zonos"),
+              mock.patch.object(controls._player, "play") as play):
+            controls._auto.click()
+            self._wait(lambda: play.call_count == 1)
+            self.assertEqual(speaker.calls[0][0], self.panel._run.row["content"]["source"])
+            self._answer()
+            self._wait(lambda: play.call_count == 2)
+            self.assertEqual(speaker.calls[1][0], self.panel._run.row["grade"]["corrected"])
+            self.assertFalse(controls._status.text())
 
     def test_auto_first_question_submit_feedback_and_separate_continue(self) -> None:
         """Require no Start round action and no automatic advancement; e.g. Enter checks, then a fresh gesture continues."""

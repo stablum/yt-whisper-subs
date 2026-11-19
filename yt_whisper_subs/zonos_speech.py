@@ -3,6 +3,7 @@
 Example: two named presets share one model while keeping independent cached normal and slow recordings.
 """
 
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -14,6 +15,8 @@ from yt_whisper_subs import zonos_install
 
 class ZonosSpeech:
     """Own one audible preset without a resident model server; e.g. closed practice cannot leave an idle GPU allocation behind."""
+
+    batch_size = 1
 
     def __init__(self, config: listening_voices.Config) -> None:
         """Bind reproducible settings to a voice identity; e.g. labels can change while audio is reused."""
@@ -47,7 +50,7 @@ class ZonosSpeech:
         """Publish verified WAVs atomically and keep source text out of progress logs; e.g. preparing a hidden question cannot display its transcript."""
 
         install = zonos_install.installation()
-        with listening_tts.synthesis():
+        with listening_tts.synthesis("zonos"):
             for idx, (text, paths) in enumerate(jobs, 1):
                 for speed, path in paths.items():
                     report(f"Preparing {self.config.voice} · {idx}/{len(jobs)} · {speed}")
@@ -55,7 +58,7 @@ class ZonosSpeech:
                     temp = path.with_name(path.name + f".{uuid.uuid4().hex}.wav")
                     try:
                         command = self._command(install, text, temp, speed)
-                        result = proc.run(command, capture_stdout=True, stream_stdout=True, check=False, quiet=True)
+                        result = proc.run(command, capture_stdout=True, stream_stdout=True, check=False, quiet=True, timeout=120)
                         if result.returncode or "eos_frame=-1" in (result.stdout or ""):
                             log = zonos_install.root() / "last-error.log"
                             log.write_text(result.stdout or "Native speech worker failed.", encoding="utf-8")
@@ -67,6 +70,8 @@ class ZonosSpeech:
                         listening_tts.duration(temp)
                         self._gain(temp)
                         temp.replace(path)
+                    except subprocess.TimeoutExpired:
+                        raise TimeoutError("Zonos speech synthesis timed out. Preview this preset or try another voice.") from None
                     finally:
                         temp.unlink(missing_ok=True)
 

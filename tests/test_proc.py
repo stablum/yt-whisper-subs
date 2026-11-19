@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -167,6 +168,18 @@ class ChildProcessOptionsTests(unittest.TestCase):
             proc.run(["child"])
 
         terminate.assert_called_once_with(popen.return_value)
+
+    def test_streaming_timeout_terminates_silent_child(self) -> None:
+        """Bound a stopped native synthesis worker and release its caller's render slot."""
+
+        started = time.monotonic()
+        with mock.patch.object(proc, "_terminate_process", wraps=proc._terminate_process) as terminate:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                proc.run([sys.executable, "-c", "import time; time.sleep(60)"],
+                         capture_stdout=True, stream_stdout=True, quiet=True, timeout=.1)
+            terminate.assert_called_once()
+            self.assertIsNotNone(terminate.call_args.args[0].poll())
+        self.assertLess(time.monotonic() - started, 8)
 
     @mock.patch("yt_whisper_subs.proc.managed_module_available", return_value=True)
     @mock.patch("yt_whisper_subs.proc.run")

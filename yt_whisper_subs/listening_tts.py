@@ -7,12 +7,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 import sys
 import threading
 import urllib.request
 import uuid
 import wave
 import contextlib
+from contextvars import ContextVar
+from itertools import batched
 from pathlib import Path
 
 from yt_whisper_subs import i18n
@@ -30,8 +33,7 @@ _BASE = f"https://huggingface.co/rhasspy/piper-voices/resolve/{REVISION}/nl/nl_N
 _FILES = {f"{VOICE}.onnx": ("sha256", "c6b69203247c9ff9aaadf59ec51147fffb16bb2c2892eb92d5b75d2f9d096622"),
           f"{VOICE}.onnx.json": ("git", "0b7184d816827c955ec15e47f366d65effa7b1a3"),
           "MODEL_CARD": ("git", "fad44433d0cb18ae198c43ae4ba29fb960272ad4")}
-_LOCK = threading.Lock()
-_CACHE_LOCK = threading.Lock()
+_FOREGROUND = ContextVar("speech_foreground", default=False)
 
 
 def _checkpoint() -> None:
@@ -41,30 +43,67 @@ def _checkpoint() -> None:
         control.checkpoint()
 
 
+class _Lane:
+    """Grant the next turn to visible speech ahead of another standby batch."""
+
+    def __init__(self) -> None:
+        """Separate busy state from the count of foreground requests waiting to speak."""
+
+        self._changed = threading.Condition()
+        self._busy = False
+        self._waiting = 0
+
+    @contextlib.contextmanager
+    def turn(self):
+        """Wait cooperatively and release the lane even on cancellation or synthesis failure."""
+
+        foreground = _FOREGROUND.get()
+        with self._changed:
+            self._waiting += foreground
+            try:
+                while self._busy or (self._waiting and not foreground):
+                    _checkpoint()
+                    self._changed.wait(.25)
+                _checkpoint()
+                self._busy = True
+            finally:
+                self._waiting -= foreground
+                self._changed.notify_all()
+        try:
+            yield
+        finally:
+            with self._changed:
+                self._busy = False
+                self._changed.notify_all()
+
+
+_ENGINES = {name: _Lane() for name in ("piper", "zonos")}
+_WRITERS: dict[str, _Lane] = {}
+_WRITERS_LOCK = threading.Lock()
+
+
 @contextlib.contextmanager
-def synthesis():
-    """Share bounded CPU synthesis across engines; e.g. a preview waits cooperatively for a preparing round."""
+def synthesis(engine: str):
+    """Serialize each engine separately, e.g. slow Zonos work does not hold Piper's lane."""
 
-    while not _LOCK.acquire(timeout=0.25):
-        _checkpoint()
-    try:
-        _checkpoint()
+    with _ENGINES[engine].turn():
         yield
-    finally:
-        _LOCK.release()
 
 
 @contextlib.contextmanager
-def cache_writes():
-    """Recheck cache misses under one lock, e.g. when a playback request overlaps preparation."""
+def cache_writes(profile: str, *, foreground: bool = False):
+    """Coalesce writes to the same voice cache without blocking unrelated presets."""
 
-    while not _CACHE_LOCK.acquire(timeout=.25):
-        _checkpoint()
+    with _WRITERS_LOCK:
+        lane = _WRITERS.get(profile)
+        if lane is None:
+            lane = _WRITERS[profile] = _Lane()
+    token = _FOREGROUND.set(foreground)
     try:
-        _checkpoint()
-        yield
+        with lane.turn():
+            yield
     finally:
-        _CACHE_LOCK.release()
+        _FOREGROUND.reset(token)
 
 
 def digest(path: Path, algorithm: str = "sha256") -> str:
@@ -96,6 +135,7 @@ class PiperSpeech:
     """Keep one CPU voice per preparation service without competing for Whisper's GPU; e.g. no sentence is sent to a speech API."""
 
     profile = PROFILE
+    batch_size = 8
 
     def __init__(self, root: Path, *, config=None) -> None:
         """Store assets beside the catalog; e.g. a custom output root has its own durable speech cache."""
@@ -141,7 +181,7 @@ class PiperSpeech:
         """Load one voice in an isolated native worker per batch; e.g. a phonemizer exit cannot close the library application."""
 
         manifest = self._root / f"synthesis-{uuid.uuid4().hex}.json"
-        with synthesis():
+        with synthesis("piper"):
             self._render_worker(jobs, report, manifest)
 
     def _render_worker(self, jobs, report, manifest: Path) -> None:
@@ -158,9 +198,11 @@ class PiperSpeech:
             boot = "import sys; sys.path.insert(0,sys.argv[1]); from yt_whisper_subs.listening_synth import main; main(sys.argv[2])"
             report(i18n.tr('Preparing Dutch listening audio…'))
             result = proc.run([python, "-c", boot, str(cfg.PROJECT_DIR), str(manifest.resolve())],
-                              capture_stdout=True, stream_stdout=True, check=False)
+                              capture_stdout=True, stream_stdout=True, check=False, timeout=90)
             if result.returncode:
                 raise RuntimeError("Dutch speech synthesis failed: " + (result.stdout or "native worker exited")[-1400:])
+        except subprocess.TimeoutExpired:
+            raise TimeoutError("Piper speech synthesis timed out. Try Read aloud again.") from None
         finally:
             manifest.unlink(missing_ok=True)
 
@@ -232,8 +274,11 @@ class Recordings:
     def prepare(self, engine, texts: list[str], report) -> dict[str, str]:
         """Coalesce concurrent repair and narration work; e.g. a foreground retry rechecks stock after waiting for background synthesis."""
 
-        with cache_writes():
-            return self._prepare(engine, texts, report)
+        assets = {}
+        for group in batched(dict.fromkeys(texts), getattr(engine, "batch_size", PiperSpeech.batch_size)):
+            with cache_writes(engine.profile):
+                assets.update(self._prepare(engine, group, report))
+        return assets
 
     def _prepare(self, engine, texts, report) -> dict[str, str]:
         """Batch only missing files and publish after validation; e.g. one broken speed reuses its intact counterpart."""

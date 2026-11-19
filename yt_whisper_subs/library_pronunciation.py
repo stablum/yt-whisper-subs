@@ -103,9 +103,23 @@ class Controls(QtWidgets.QWidget):
         self._status.setText(i18n.tr('Preparing Dutch speech…'))
         task = library_workers.BackgroundTask(lambda report: self._audio.prepare(paragraphs, report))
         self._task = task
+        task.signals.progress.connect(lambda message: self._progress(task, message))
         task.signals.finished.connect(lambda clips: self._prepared(task, clips))
         task.signals.failed.connect(lambda message, _trace: self._failed(task, message))
-        QtCore.QThreadPool.globalInstance().start(task)
+        task.signals.cancelled.connect(lambda: self._cancelled(task))
+        QtCore.QThreadPool.globalInstance().start(task, 1)
+
+    def _progress(self, task, message: str) -> None:
+        """Show current synthesis progress without reviving a previous question's status."""
+
+        if shiboken6.isValid(self) and self._task is task:
+            self._status.setText(message)
+
+    def _cancelled(self, task) -> None:
+        """Clear the preparing indicator after a cancellation from the speech worker."""
+
+        if shiboken6.isValid(self) and self._task is task:
+            self.stop()
 
     def _prepared(self, task, clips) -> None:
         """Play only the latest result, e.g. a completed old render cannot speak over a new question."""
