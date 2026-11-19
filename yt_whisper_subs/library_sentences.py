@@ -141,6 +141,7 @@ class SentenceCard(written.WritingCard):
         score = sentence_score.partial(row["answer_text"], grade["corrected"])
         targets = [f"{' … '.join(word['dutch_forms'])} — {' … '.join(word['english_forms'])}" for word in row["content"]["words"]]
         self.show_feedback(written.Feedback(correct=grade["correct"], corrected=grade["corrected"],
+                                            spoken_answer=self.dutch_speech(row) if row["direction"] == practice.Direction.EN_NL else "",
                                             translation=grade["corrected_meaning"], explanation=grade["explanation"],
                                             errors=grade["errors"], targets=i18n.tr('Practised: ') + ";  ".join(targets),
                                             vocabulary=grade.get("vocabulary", []), summary=i18n.tr('Partial score: {score:.0%}', score=score)))

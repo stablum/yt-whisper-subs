@@ -34,6 +34,7 @@ class Feedback(pd.BaseModel):
     translation: str
     explanation: str
     errors: list[dict]
+    spoken_answer: str = ""
     targets: str = ""
     vocabulary: list[dict] = pd.Field(default_factory=list)
     summary: str = ""
@@ -158,8 +159,13 @@ class WritingCard(controls.ContinueSurface):
         self.editor.submitted.connect(self.submitted)
         self._verdict = QtWidgets.QLabel()
         self._verdict.setStyleSheet("font-size: 14pt; font-weight: 600;")
+        self._audio_heading = QtWidgets.QLabel(i18n.tr('Model answer · Read aloud'))
+        self._audio_heading.setStyleSheet("font-size: 12pt; color: #b8c7d9;")
+        self._audio_heading.hide()
         self._correction = QtWidgets.QLabel()
         self._correction.setStyleSheet("font-size: 20pt; font-weight: 600; color: #83e5af;")
+        self._personal_correction = QtWidgets.QLabel()
+        self._personal_correction.setStyleSheet("font-size: 14pt; color: #dce6f2;")
         self._translation = QtWidgets.QLabel()
         self._translation.setStyleSheet("font-size: 15pt; color: #91d9ef;")
         self._targets = QtWidgets.QLabel()
@@ -169,12 +175,14 @@ class WritingCard(controls.ContinueSurface):
         body = QtWidgets.QVBoxLayout(self)
         body.setContentsMargins(12, 12, 12, 12)
         body.setSpacing(16)
-        for label in (self._source, self._target, self._instruction, self._verdict, self._correction, self._translation, self._targets, self._details):
+        for label in (self._source, self._target, self._instruction, self._verdict, self._audio_heading,
+                      self._correction, self._personal_correction, self._translation, self._targets, self._details):
             label.setTextFormat(QtCore.Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             label.setAttribute(QtCore.Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         for widget in (self._source, self.meaning, self._target, self._instruction, self.editor,
-                       self._verdict, self._correction, self._translation, self._targets, self._details):
+                       self._verdict, self._audio_heading, self._correction, self._personal_correction,
+                       self._translation, self._targets, self._details):
             body.addWidget(widget)
         body.addStretch()
 
@@ -189,7 +197,10 @@ class WritingCard(controls.ContinueSurface):
         self._instruction.setText(message)
         self.editor.hide()
         self._verdict.clear()
+        self._audio_heading.hide()
         self._correction.clear()
+        self._personal_correction.clear()
+        self._personal_correction.hide()
         self._translation.clear()
         self._details.clear()
 
@@ -208,7 +219,9 @@ class WritingCard(controls.ContinueSurface):
         self.editor.setPlainText(content.draft or "")
         self.editor.setReadOnly(content.draft is not None)
         self.editor.show()
-        for label in (self._verdict, self._correction, self._translation, self._targets, self._details):
+        self._audio_heading.hide()
+        for label in (self._verdict, self._correction, self._personal_correction, self._translation,
+                      self._targets, self._details):
             label.clear()
             label.hide()
         self._targets.hide()
@@ -221,7 +234,13 @@ class WritingCard(controls.ContinueSurface):
         self.editor.setReadOnly(True)
         verdict = i18n.tr('Correct') if content.correct else i18n.tr('Not quite · here is the correction')
         self._verdict.setText(verdict + (f" · {content.summary}" if content.summary else ""))
-        self._correction.setText(content.corrected)
+        displayed = content.spoken_answer or content.corrected
+        distinct = displayed != content.corrected
+        self._audio_heading.setVisible(distinct)
+        self._correction.setText(displayed)
+        correction = i18n.tr('Correction for your answer\n{sentence}', sentence=content.corrected) if distinct else ""
+        self._personal_correction.setText(correction)
+        self._personal_correction.setVisible(distinct)
         self._translation.setText(content.translation)
         concepts = {lexeme["lemma"]: lexeme["meaning"] for fix in content.vocabulary
                     for role in ("intended", "confused") if (lexeme := fix[role]) is not None}

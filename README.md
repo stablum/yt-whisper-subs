@@ -2597,8 +2597,9 @@ translation, and reading comprehension. For Dutch-to-English exercises it
 reads the Dutch prompt. For English-to-Dutch exercises it waits until the Dutch
 answer is shown in the feedback. Verb transformations read both the original
 sentence and the checked model answer. English-to-Dutch sentence translation
-also reads the checked model answer, which can differ in wording from the
-individual correction. Hover over **Read aloud** to see the spoken wording.
+also reads the checked model answer. The green feedback sentence shows the
+exact wording used for audio. When your individualized correction differs,
+it appears underneath with its own label.
 
 Reading comprehension can read its current question or, with **Read passage
 aloud**, the entire passage. **Stop** interrupts playback. Moving to another

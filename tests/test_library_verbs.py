@@ -147,6 +147,11 @@ class VerbFlowTests(unittest.TestCase):
             self.panel._view.action.click()
             self._wait(lambda: controls._player.calls == [source_clip, answer_clip])
             self.assertEqual(self.panel._run.row["grade"]["corrected"], variant)
+            card = self.panel._view.card
+            self.assertEqual(card._correction.text(), answer)
+            self.assertEqual(controls._listen.toolTip(), card._correction.text())
+            self.assertTrue(card._audio_heading.isVisible())
+            self.assertIn(variant, card._personal_correction.text())
             self.assertEqual(len(speaker.calls), calls)
             self.assertFalse(controls._status.text())
 

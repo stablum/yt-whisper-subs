@@ -116,6 +116,9 @@ class SentenceFlowTests(unittest.TestCase):
             first = self.panel._run.row
             controls = self.dialog._pronunciation
             approved = first["content"]["dutch"]
+            card = self.panel._view.card
+            self.assertFalse(card._audio_heading.isVisible())
+            self.assertFalse(card._personal_correction.isVisible())
             self.assertFalse(controls._listen.isEnabled())
             self.assertFalse(controls._player.calls)
             cached = audio.cached([approved])
@@ -128,6 +131,10 @@ class SentenceFlowTests(unittest.TestCase):
             self.panel._jump(first["id"])
             self._wait(lambda: bool(controls._player.calls))
             self.assertEqual(controls._player.calls, cached)
+            self.assertEqual(card._correction.text(), approved)
+            self.assertEqual(controls._listen.toolTip(), card._correction.text())
+            self.assertTrue(card._audio_heading.isVisible())
+            self.assertIn(variant, card._personal_correction.text())
             self.assertEqual(self.panel._run.row["grade"]["corrected"], variant)
             self.assertEqual(len(voice.calls), calls)
 
@@ -152,6 +159,8 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertIn("superlative", card._details.text())
         self.assertIn("Partial score: 89%", card._verdict.text())
         self.assertEqual(card._correction.text(), fixtures.DUTCH)
+        self.assertFalse(card._audio_heading.isVisible())
+        self.assertFalse(card._personal_correction.isVisible())
         self.assertEqual(card._translation.text(), fixtures.ENGLISH)
         self.assertIn("slimste", card._targets.text())
         self.assertEqual([item.cursor.selectedText() for item in card.editor.extraSelections()], ["slimmere"])
