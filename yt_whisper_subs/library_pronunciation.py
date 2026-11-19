@@ -27,6 +27,7 @@ class Controls(QtWidgets.QWidget):
         self._player = player or library_listening.WavePlayer(self)
         self._player.finished.connect(self._next)
         self._prompt = None
+        self._reading = None
         self._task = None
         self._clips = deque()
         self._wake = QtCore.QTimer(self)
@@ -81,12 +82,23 @@ class Controls(QtWidgets.QWidget):
         if self._prompt:
             self.read([self._prompt[1]])
 
+    def voice_changed(self) -> None:
+        """Replay the visible request with the new preset, e.g. an article keeps using the chosen voice."""
+
+        reading = self._reading
+        self.stop()
+        if reading:
+            self.read(reading)
+        elif self._auto.isChecked() and self.isVisible():
+            self._repeat()
+
     def read(self, paragraphs: list[str]) -> None:
         """Prepare only the requested text off the GUI thread, e.g. read a visible article on demand."""
 
         if not self.isVisible() or self.window().isMinimized() or not paragraphs:
             return
         self.stop()
+        self._reading = paragraphs
         self._stop.setEnabled(True)
         self._status.setText(i18n.tr('Preparing Dutch speech…'))
         task = library_workers.BackgroundTask(lambda report: self._audio.prepare(paragraphs, report))
@@ -129,6 +141,7 @@ class Controls(QtWidgets.QWidget):
         """Silence playback and cancel obsolete work, e.g. switching to dictation cannot play two voices."""
 
         self._wake.stop()
+        self._reading = None
         if self._task:
             self._task.cancel()
             self._task = None

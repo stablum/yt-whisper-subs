@@ -176,7 +176,22 @@ class PracticeReady(QtCore.QObject):
         self._speech_task = task
         task.signals.finished.connect(self._speech_finished)
         task.signals.failed.connect(self._speech_failed)
+        task.signals.cancelled.connect(self._speech_cancelled)
         QtCore.QThreadPool.globalInstance().start(task, -1)
+
+    def voice_changed(self) -> None:
+        """Give missing recordings for the new selection an immediate preparation turn."""
+
+        self._speech_retry = 0
+        if self._speech_task:
+            self._speech_task.cancel()
+        self.check()
+
+    @QtCore.Slot()
+    def _speech_cancelled(self) -> None:
+        """Replace the cancelled warm-up once it releases the speech engine."""
+
+        self._speech_finished(True)
 
     @QtCore.Slot(object)
     def _speech_finished(self, warmed) -> None:

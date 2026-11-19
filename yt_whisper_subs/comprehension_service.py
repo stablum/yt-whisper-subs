@@ -39,37 +39,33 @@ class ComprehensionService:
         if self._missing_resume_audio(opts):
             return True
         if ready := self._db.comprehension_ready(opts, self.policy):
-            return opts.direction == comp.Direction.LISTEN and not self.audio.ready(ready['passage_id'], opts)
+            return opts.direction == comp.Direction.LISTEN and not self.audio.ready(ready['passage_id'])
         active = self._db.comprehension_active(opts.direction.value)
         return not active or bool(self._db.comprehension_summary(active)['submitted'])
 
-    def _missing_resume_audio(self, opts: comp.Options) -> tuple[dict, comp.Options] | None:
-        """Check the voice actually used by the resumable passage; e.g. a warm spare cannot hide a deleted recording in the active round."""
+    def _missing_resume_audio(self, opts: comp.Options) -> dict | None:
+        """Check the shared voice on resumed work, e.g. a warm spare cannot hide a missing active recording."""
 
         if opts.direction != comp.Direction.LISTEN:
             return None
         if session_id := self._db.comprehension_resume(opts.direction.value):
             session = self._db.comprehension_session(session_id)
-            saved = comp.Options.model_validate_json(session['options_json'])
-            if not self.audio.ready(session['passage_id'], saved):
-                return session, saved
+            if not self.audio.ready(session['passage_id']):
+                return session
         return None
 
     def start(self, opts: comp.Options, report, *, cached_first=True, background=False) -> str:
         """Prepare exactly the requested two question counts under shared ownership; e.g. a failed narrator never purchases a replacement passage."""
 
         track = 'comprehension:' + opts.direction.value
-        if opts.direction == comp.Direction.LISTEN and not opts.voice_id:
-            opts = opts.model_copy(update={'voice_id': self.audio.preset(opts).id})
         with practice_ready.preparing(self._db, track, report) as progress:
-            if background and (missing := self._missing_resume_audio(opts)):
-                session, saved = missing
-                self.prepare_media(session['passage_id'], saved, progress)
+            if background and (session := self._missing_resume_audio(opts)):
+                self.prepare_media(session['passage_id'], opts, progress)
                 return session['id']
             active = self._db.comprehension_active(opts.direction.value)
             if active and cached_first and not background:
                 session = self._db.comprehension_session(active)
-                self.prepare_media(session['passage_id'], comp.Options.model_validate_json(session['options_json']), progress)
+                self.prepare_media(session['passage_id'], opts, progress)
                 return active
             if ready := self._db.comprehension_ready(opts, self.policy):
                 self.prepare_media(ready['passage_id'], opts, progress)
@@ -140,7 +136,7 @@ class ComprehensionService:
 
         if opts.direction == comp.Direction.LISTEN:
             report(i18n.tr('Preparing and checking speech clips…'))
-            self.audio.prepare(passage_id, opts, report)
+            self.audio.prepare(passage_id, report)
 
     def check(self, presentation_id: int, report) -> dict:
         """Grade one immutable open answer and retain partial credit; e.g. an outage cannot turn a pending answer into a zero."""

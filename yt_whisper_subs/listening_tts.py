@@ -177,7 +177,12 @@ class AudioCache:
     def prepare(self, questions: list[dict], report, *, preset=None) -> None:
         """Repair absent audio by content identity without regenerating text; e.g. two rounds reusing a sentence reuse its recordings."""
 
-        presets = [preset] if preset else listening_voices.read(self._db).enabled
+        if preset is None:
+            voices = listening_voices.read(self._db)
+            selected = voices.selected
+            presets = [selected, *(row for row in voices.enabled if row.id != selected.id)]
+        else:
+            presets = [preset]
         for row in presets:
             _checkpoint()
             report(i18n.tr('Preparing voice: ') + row.name)

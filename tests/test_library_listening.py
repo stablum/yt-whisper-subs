@@ -25,6 +25,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_practice
 from yt_whisper_subs import library_checks
+from yt_whisper_subs import listening_voices
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice as sentences
@@ -77,8 +78,38 @@ class ListeningFlowTests(unittest.TestCase):
 
         end = time.monotonic() + 6
         while not predicate() and time.monotonic() < end:
-            QtTest.QTest.qWait(10)
+            self.app.processEvents()
+            time.sleep(.01)
         self.assertTrue(predicate())
+
+    def test_header_voice_applies_to_dictation_and_read_aloud(self) -> None:
+        """Change the common preset from a real practice page and reuse its audio across players."""
+
+        card = self.panel._view.card
+        self._wait(lambda: bool(card._player.calls))
+        card.editor.setPlainText("Mijn concept")
+        selection = listening_voices.read(self.db)
+        preset = listening_voices.Preset(id="second", name="Second voice", config=listening_voices.Config(pace=.8))
+        selection.presets.append(preset)
+        self.db.set_setting(listening_voices.SETTING, selection.model_dump_json())
+        bar = self.dialog._voice_bar
+        bar._load()
+        self.assertTrue(bar.isVisible())
+        self.assertTrue(bar._configure.isVisible())
+
+        second = audio.Speech()
+        second.profile = "second-practice-voice"
+        self.engine.audio._speech = None
+        play_count = len(card._player.calls)
+        with mock.patch.object(listening_voices, "speech", return_value=second) as synth:
+            bar._pick.setCurrentIndex(bar._pick.findData(preset.id))
+            bar._pick.activated.emit(bar._pick.currentIndex())
+            self._wait(lambda: len(card._player.calls) > play_count)
+            self.assertEqual(card.editor.toPlainText(), "Mijn concept")
+            self.assertEqual(listening_voices.read(self.db).selected.id, preset.id)
+            self.dialog._pronunciation._audio.prepare(["Goedemorgen"], lambda _: None)
+            self.assertEqual(synth.call_args.args[1], preset.config)
+            self.assertTrue(any(text == "Goedemorgen" for text, _ in second.calls))
 
     def test_script_is_concealed_then_feedback_reveals_dutch_and_english(self) -> None:
         """Verify real labels, assistance, correction and separate analytics; e.g. source text cannot leak through a hidden help control."""

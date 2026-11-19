@@ -148,9 +148,9 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(next(iter(self.engines.values())).config.engine, "piper")
 
     def test_two_voices_switch_on_the_same_draft_with_exact_play_provenance(self) -> None:
-        """Drive real voice tabs without rendering again; e.g. listening twice never counts as two answers."""
+        """Apply the shared voice without rendering again; e.g. listening twice never counts as two answers."""
 
-        self._save()
+        settings = self._save()
         session = self.engine.start(self.options, lambda _: None)
         row = self.db.sentence_current(session)
         card = self._own(library_listening.ListeningCard(self.db, player=audio.Player(), audio_cache=lambda: self.engine.audio))
@@ -159,7 +159,8 @@ class VoiceTests(unittest.TestCase):
         card.show()
         self._wait(lambda: bool(card._player.calls))
         card.editor.setPlainText("Mijn unfinished draft")
-        card._voices.setCurrentIndex(1)
+        voices.select(self.db, settings.enabled[1].id)
+        card.voice_changed()
         self.assertEqual(len(card._player.calls), 2)
         self.assertEqual(card.editor.toPlainText(), "Mijn unfinished draft")
         self.assertNotEqual(card._player.calls[0][0], card._player.calls[1][0])
@@ -305,7 +306,8 @@ class VoiceTests(unittest.TestCase):
             card.present(row)
             card.show()
             self._wait(entered.is_set)
-            card._voices.setCurrentIndex(1)
+            voices.select(self.db, settings.enabled[1].id)
+            card.voice_changed()
             release.set()
             self._wait(lambda: bool(card._player.calls))
         asset = self.db.listening_audio(row["question_id"], second.profile)
@@ -352,7 +354,8 @@ class VoiceTests(unittest.TestCase):
     def test_reordering_and_removing_presets_keeps_each_configuration(self) -> None:
         """Avoid intermediate list-selection writes; e.g. moving a row cannot copy its sliders into another speaker."""
 
-        self._save([voices.Config(pace=.8), voices.Config(pace=1.2), voices.Config(volume=.5)])
+        settings = self._save([voices.Config(pace=.8), voices.Config(pace=1.2), voices.Config(volume=.5)])
+        voices.select(self.db, settings.presets[0].id)
         dialog = self._own(library_voice_config.VoiceDialog(self.db))
         dialog._list.setCurrentRow(0)
         dialog._move(1)
@@ -360,7 +363,9 @@ class VoiceTests(unittest.TestCase):
         dialog._remove()
         self.assertEqual([row.config.pace for row in dialog._presets], [1.2, 1])
         self.assertEqual(dialog._presets[1].config.volume, .5)
-        dialog.reject()
+        dialog._save()
+        self.assertEqual(dialog.result(), QtWidgets.QDialog.DialogCode.Accepted)
+        self.assertEqual(voices.read(self.db).selected_id, settings.presets[1].id)
 
     def test_preview_is_cached_separate_from_practice_and_cannot_play_after_closure(self) -> None:
         """Use public sample text without learner events; e.g. cancelling a dialog suppresses even an already queued completion."""

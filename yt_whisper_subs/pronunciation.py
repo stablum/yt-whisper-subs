@@ -1,4 +1,4 @@
-"""Cache normal-speed Dutch pronunciation using the existing local Piper engine."""
+"""Cache normal-speed Dutch pronunciation with the shared practice voice."""
 
 import wave
 from functools import lru_cache
@@ -6,6 +6,7 @@ from pathlib import Path
 
 from yt_whisper_subs import comprehension_audio
 from yt_whisper_subs import listening_tts
+from yt_whisper_subs import listening_voices
 
 
 type Clip = tuple[Path, float]
@@ -27,13 +28,18 @@ class Audio:
 
         root = db.path.parent / 'practice-audio'
         self._db, self._root = db, root / 'pronunciation'
-        self._speech = speech or listening_tts.PiperSpeech(root)
+        self._speech = speech
 
     def prepare(self, paragraphs: list[str], report) -> list[Clip]:
         """Return verified clips in spoken order, e.g. a long article can play paragraph by paragraph."""
 
         texts = [part['text'] for part in comprehension_audio.segments(paragraphs)]
-        keys = {text: self._key(text) for text in texts}
+        return self._prepare(texts, self._engine(), report)
+
+    def _prepare(self, texts: list[str], engine, report) -> list[Clip]:
+        """Use one sound identity per job so switching voices cannot mix recordings."""
+
+        keys = {text: listening_tts.Recordings.key(engine.profile, text) for text in texts}
         clips = {}
         missing = {}
         for text, key in keys.items():
@@ -50,7 +56,7 @@ class Audio:
                     else:
                         jobs.append((text, {'normal': self._path(key)}))
                 if jobs:
-                    self._speech.render_many(jobs, report)
+                    engine.render_many(jobs, report)
                     for text, paths in jobs:
                         path = paths['normal']
                         clips[text] = path, listening_tts.duration(path)
@@ -59,22 +65,25 @@ class Audio:
     def warm(self, texts: list[str], report) -> bool:
         """Fill one small batch ahead of use, e.g. release the CPU between standby jobs."""
 
+        if not texts:
+            return False
+        engine = self._engine()
         batch = []
         for part in comprehension_audio.segments(texts):
             text = part['text']
-            key = self._key(text)
+            key = listening_tts.Recordings.key(engine.profile, text)
             if text not in batch and not self._cached(key):
                 batch.append(text)
                 if len(batch) == _WARM_BATCH:
                     break
         if batch:
-            self.prepare(batch, report)
+            self._prepare(batch, engine, report)
         return bool(batch)
 
-    def _key(self, text: str) -> str:
-        """Share the text and voice identity with dictation, e.g. 'Goedemorgen' reuses its take."""
+    def _engine(self):
+        """Resolve the selected preset once per job; e.g. standby respects a new voice without restarting."""
 
-        return listening_tts.Recordings.key(self._speech.profile, text)
+        return self._speech or listening_voices.speech(self._db, listening_voices.read(self._db).selected.config)
 
     def _path(self, key: str) -> Path:
         """Locate the shared optional recording for both prewarming and replay."""

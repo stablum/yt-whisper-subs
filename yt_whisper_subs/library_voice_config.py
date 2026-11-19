@@ -30,7 +30,7 @@ class VoiceDialog(QtWidgets.QDialog):
         self.finished.connect(self.deleteLater)
         from yt_whisper_subs import library_listening
 
-        self.setWindowTitle(i18n.tr('Listening voices'))
+        self.setWindowTitle(i18n.tr('Practice voices'))
         self.resize(1120, 780)
         self._db = db
         self._presets = listening_voices.read(db).presets
@@ -299,7 +299,9 @@ class VoiceDialog(QtWidgets.QDialog):
         for idx, preset in enumerate(self._presets):
             preset.enabled = self._list.item(idx).checkState() == QtCore.Qt.CheckState.Checked
         try:
-            voices = listening_voices.Voices(presets=self._presets)
+            current_id = listening_voices.read(self._db).selected.id
+            voices = listening_voices.Voices(presets=self._presets, selected_id=current_id)
+            voices.selected_id = voices.selected.id
             for row in voices.enabled:
                 listening_voices.speech(self._db, row.config)  # Validate local reference identity before committing.
                 if row.config.engine == "zonos":

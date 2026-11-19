@@ -10,7 +10,6 @@ from PySide6 import QtWidgets
 import shiboken6
 
 from yt_whisper_subs import i18n
-from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import listening_voices
@@ -28,20 +27,11 @@ class Narration(QtWidgets.QWidget):
         self._player = player or library_listening.WavePlayer(self)
         self._player.finished.connect(self._next)
         self._session = None
-        self._opts = None
+        self._preset = None
         self._rows = []
         self._index, self._speed, self._playing = 0, 'normal', False
         self._task = None
         self._wanted = False
-        self._voice = QtWidgets.QComboBox()
-        self._voice.setAccessibleName(i18n.tr('Voice for this listening text'))
-        self._voice.activated.connect(lambda _: self._select_voice(self._voice.currentData()))
-        configure = QtWidgets.QPushButton(i18n.tr('Configure voices…'))
-        configure.setAutoDefault(False)
-        configure.clicked.connect(self._configure_voices)
-        voices = QtWidgets.QFormLayout()
-        voices.addRow(i18n.tr('Voice'), self._voice)
-        voices.addRow(configure)
         self._note = QtWidgets.QLabel(i18n.tr('Listen to the text and answer the questions.'))
         self._note.setWordWrap(True)
         self._note.setTextFormat(QtCore.Qt.TextFormat.PlainText)
@@ -60,34 +50,23 @@ class Narration(QtWidgets.QWidget):
         controls.addWidget(self._paragraph, 2, 0, 1, 2)
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addLayout(voices)
         layout.addLayout(controls)
         layout.addWidget(self._note)
 
-    def load(self, session: dict, *, refresh=False) -> None:
-        """Bind saved modality and narrator choices; e.g. revisiting a correction does not interrupt already playing speech."""
+    def load(self, session: dict) -> bool:
+        """Bind the passage to the shared voice, preserving the position on a voice switch."""
 
         same = self._session is not None and self._session['id'] == session['id']
-        opts = comp.Options.model_validate_json(session['options_json'])
-        if same and self._opts.voice_id == opts.voice_id and not refresh:
-            return
+        preset = listening_voices.read(self._db).selected
+        if same and self._preset == preset:
+            return False
         self.shutdown()
-        self._session, self._rows, self._opts = session, [], opts
+        self._session, self._rows, self._preset = session, [], preset
         if not same:
             self._index = 0
-        self._voices()
-        self._load_recordings()
-        self._warm()
-
-    def _load_recordings(self) -> None:
-        """Refresh the selected voice from disk; e.g. a background fill can make an open passage ready without user input."""
-
-        try:
-            self._rows = self._audio.rows(self._session['passage_id'], self._opts)
-            self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._voice.currentText()))
-        except (ValueError, OSError, RuntimeError):
-            self._rows = []
         self._paragraphs()
+        self._warm()
+        return True
 
     def _warm(self) -> None:
         """Start missing narration at entry without requesting playback; e.g. Play can join a render already underway."""
@@ -95,44 +74,11 @@ class Narration(QtWidgets.QWidget):
         if self.isVisible() and self._session and not self._rows and not self._task:
             self._repair()
 
-    def _voices(self) -> None:
-        """Refresh shared presets without emitting an accidental selection; e.g. renaming a voice does not reset the passage."""
+    def voice_changed(self) -> None:
+        """Apply the practice-wide selection and replay the current fragment when visible."""
 
-        self._voice.clear()
-        for preset in listening_voices.read(self._db).presets:
-            if preset.enabled or preset.id == self._opts.voice_id:
-                self._voice.addItem(preset.name, preset.id)
-        self._voice.setCurrentIndex(self._voice.findData(self._opts.voice_id))
-
-    def _select_voice(self, voice_id: str) -> None:
-        """Apply a voice immediately to the same text and remember it; e.g. comparing Piper and Zonos preserves the typed answer and paragraph."""
-
-        if not self._session or not voice_id:
-            return
-        speed = self._speed
-        self.shutdown()
-        try:
-            opts = self._opts.model_copy(update=dict(voice_id=voice_id))
-            self._audio.preset(opts)
-            session = self._db.comprehension_voice(self._session['id'], voice_id)
-            self.load(session, refresh=True)
-            self.play(speed)
-        except (ValueError, OSError) as exc:
-            self._voices()
-            self._note.setText(i18n.tr('Could not change voice: ') + str(exc))
-
-    def _configure_voices(self) -> None:
-        """Edit the existing sound presets where they are played; e.g. saving changed Zonos sliders refreshes the same voice ID's recording."""
-
-        from yt_whisper_subs import library_voice_config
-
-        self.stop()
-        if library_voice_config.VoiceDialog(self._db, self).exec() == QtWidgets.QDialog.DialogCode.Accepted:
-            voices = listening_voices.read(self._db)
-            selected = self._opts.voice_id
-            if not any(p.id == selected for p in voices.presets):
-                selected = voices.enabled[0].id
-            self._select_voice(selected)
+        if self._session and self.load(self._session) and self.isVisible():
+            self.play(self._speed)
 
     def _paragraphs(self) -> None:
         """Refresh available paragraph jumps after loading or repair; e.g. deleted initial audio can recover its navigation too."""
@@ -167,7 +113,7 @@ class Narration(QtWidgets.QWidget):
             self._playing = True
             self._note.setText(i18n.tr(
                 '{value} · paragraph {paragraph} · clip {value3}/{len} · {value5}',
-                value=self._voice.currentText(),
+                value=self._preset.name,
                 paragraph=row['paragraph'],
                 value3=self._index + 1,
                 len=len(self._rows),
@@ -213,16 +159,19 @@ class Narration(QtWidgets.QWidget):
     def _repair(self) -> None:
         """Recover cached media without generating another passage; e.g. deleting a WAV does not lose typed answers."""
 
-        passage_id, opts = self._session['passage_id'], self._opts
+        passage_id, preset = self._session['passage_id'], self._preset
         def prepare(report):
             """Join cache preparation in a worker and return verified recordings for playback."""
 
-            self._audio.prepare(passage_id, opts, report)
-            return self._audio.rows(passage_id, opts)
+            try:
+                return self._audio.rows(passage_id, preset=preset)
+            except (ValueError, OSError):
+                self._audio.prepare(passage_id, report, preset=preset)
+                return self._audio.rows(passage_id, preset=preset)
 
         task = library_workers.BackgroundTask(prepare)
         self._task = task
-        self._note.setText(i18n.tr('Preparing voice: {value}…', value=self._voice.currentText()))
+        self._note.setText(i18n.tr('Preparing voice: {value}…', value=preset.name))
         task.signals.progress.connect(lambda message: self._progress(task, message))
         task.signals.finished.connect(lambda rows: self._repaired(task, rows))
         task.signals.failed.connect(lambda message: self._failed(task, message))
@@ -235,7 +184,7 @@ class Narration(QtWidgets.QWidget):
         if shiboken6.isValid(self) and self._task is task:
             count = re.search(r'(\d+/\d+)$', message.strip())
             progress = i18n.tr(' · clip ') + count.group(1) if count else '…'
-            self._note.setText(i18n.tr('Preparing voice: {value}{progress}', value=self._voice.currentText(), progress=progress))
+            self._note.setText(i18n.tr('Preparing voice: {value}{progress}', value=self._preset.name, progress=progress))
 
     def _repaired(self, task, rows) -> None:
         """Use repaired audio only for the same visible passage; e.g. a late completion cannot speak over another practice mode."""
@@ -244,7 +193,7 @@ class Narration(QtWidgets.QWidget):
             self._rows = rows
             self._task = None
             self._paragraphs()
-            self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._voice.currentText()))
+            self._note.setText(i18n.tr('Voice ready: {value}. Choose Listen to play.', value=self._preset.name))
             if self._wanted:
                 self.play(self._speed)
 

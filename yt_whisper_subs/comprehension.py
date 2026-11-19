@@ -44,7 +44,6 @@ class Options(pd.BaseModel):
     open: int = pd.Field(default=3, ge=0, le=15)
     words: int = pd.Field(default=8, ge=1, le=20)
     include_early: bool = False
-    voice_id: str = ""
 
     @pd.model_validator(mode="after")
     def questions_required(self):
@@ -63,7 +62,7 @@ class Options(pd.BaseModel):
     def content_key(self) -> str:
         """Reuse unused content across narration changes; e.g. changing a speaker spends no passage-generation tokens."""
 
-        data = self.model_dump(mode="json", exclude={"direction", "voice_id", "include_early"})
+        data = self.model_dump(mode="json", exclude={"direction", "include_early"})
         return json.dumps(data, sort_keys=True)
 
 

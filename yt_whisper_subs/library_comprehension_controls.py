@@ -14,7 +14,7 @@ from yt_whisper_subs import library_written_controls as written
 
 
 class Options(QtWidgets.QWidget):
-    """Keep independent question counts and text settings together; e.g. listening's narrator is selected before preparation."""
+    """Keep content settings together, e.g. reading and listening can have different question counts."""
 
     restart_requested = QtCore.Signal()
     finish_requested = QtCore.Signal()
@@ -24,7 +24,6 @@ class Options(QtWidgets.QWidget):
         """Restore one modality's preferences without generating text; e.g. inspecting tracking remains free of API calls."""
 
         super().__init__()
-        self._db = db
         self.direction = comp.Direction(direction)
         self.key = 'comprehension:' + self.direction.value + '_options'
         try:
@@ -81,12 +80,8 @@ class Options(QtWidgets.QWidget):
         """Validate the complete next-round request; e.g. zero choices and eight open questions is a supported exercise."""
 
         values = {key: spin.value() for key, spin in self._numbers.items()}
-        try:
-            voice_id = comp.Options.model_validate_json(self._db.setting(self.key, '{}')).voice_id
-        except ValueError:
-            voice_id = ''
         return comp.Options(direction=self.direction, genre=self._genre.currentData(), level=self._level.currentText(),
-                            include_early=self._early.isChecked(), voice_id=voice_id, **values)
+                            include_early=self._early.isChecked(), **values)
 
     def _restart(self) -> None:
         """Close the popover before exposing content; e.g. Enter in a count field cannot accidentally submit a question."""

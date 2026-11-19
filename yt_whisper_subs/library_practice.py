@@ -16,6 +16,7 @@ from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_practice_nav
 from yt_whisper_subs import library_practice_progress
 from yt_whisper_subs import library_practice_sequence
+from yt_whisper_subs import library_practice_voices
 from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_sentence_progress
 from yt_whisper_subs import library_sentences
@@ -70,6 +71,7 @@ class PracticeDialog(QtWidgets.QDialog):
     """Compose independent direction-bound panels without owning their rounds; e.g. navigating to tracking cannot start hidden practice."""
 
     activity_changed = QtCore.Signal()
+    voice_changed = QtCore.Signal()
 
     def __init__(self, service, parent=None, *, engine=None) -> None:
         """Construct direct practice destinations with one native page state; e.g. each direction keeps its draft when another is selected."""
@@ -92,6 +94,11 @@ class PracticeDialog(QtWidgets.QDialog):
                         Page.LISTEN_COMPREHENSION: self._comprehension[comprehension.Direction.LISTEN]}
         self._tabs = QtWidgets.QTabWidget()
         self._pronunciation = library_pronunciation.Controls(self._db)
+        self._voice_bar = library_practice_voices.VoiceBar(self._db)
+        self._listeners = (self._listening._view.card,
+                           self._comprehension[comprehension.Direction.LISTEN]._view.source.audio)
+        self._voice_bar.changed.connect(self._change_voice)
+        self._voice_bar.configuring.connect(self._stop_audio)
         self._spoken = {page: (0, '') for page in self._panels
                         if page not in {Page.LISTENING, Page.LISTEN_COMPREHENSION}}
         self._comprehension[comprehension.Direction.READ].passage_requested.connect(self._pronunciation.read)
@@ -117,7 +124,11 @@ class PracticeDialog(QtWidgets.QDialog):
         heading.addWidget(self._sequence, 1)
         navigation = QtWidgets.QHBoxLayout()
         navigation.addWidget(self._nav, 1)
-        navigation.addWidget(self._pronunciation, 0, QtCore.Qt.AlignmentFlag.AlignTop)
+        audio_controls = QtWidgets.QVBoxLayout()
+        audio_controls.addWidget(self._voice_bar)
+        audio_controls.addWidget(self._pronunciation)
+        audio_controls.addStretch()
+        navigation.addLayout(audio_controls)
         layout = QtWidgets.QVBoxLayout(self)
         layout.addLayout(heading)
         layout.addLayout(navigation)
@@ -150,6 +161,7 @@ class PracticeDialog(QtWidgets.QDialog):
     def _tab_changed(self, idx: int) -> None:
         """Activate only the selected destination; e.g. opening a reverse quiz cannot expose its sibling's next question."""
 
+        self._voice_bar.setVisible(idx in self._panels)
         self._pronunciation.setVisible(idx in self._spoken)
         ident, text = self._spoken.get(idx, (0, ''))
         self._pronunciation.prompt((idx, ident), text)
@@ -180,6 +192,21 @@ class PracticeDialog(QtWidgets.QDialog):
         self._spoken[page] = ident, text
         if self._tabs.currentIndex() == page:
             self._pronunciation.prompt((page, ident), text)
+
+    def _stop_audio(self) -> None:
+        """Silence every player before opening a voice preview or minimizing Practice."""
+
+        self._pronunciation.stop()
+        for listener in self._listeners:
+            listener.shutdown()
+
+    def _change_voice(self) -> None:
+        """Apply the saved voice to playback and wake background preparation."""
+
+        for listener in self._listeners:
+            listener.voice_changed()
+        self._pronunciation.voice_changed()
+        self.voice_changed.emit()
 
     def _last_track(self) -> practice_tracks.Track:
         """Restore the last explicit direction; e.g. a practice reminder resumes Dutch writing rather than a generic category."""
@@ -238,7 +265,7 @@ class PracticeDialog(QtWidgets.QDialog):
     def reject(self) -> None:
         """Pause all destinations without losing drafts or queued corrections; e.g. closing one dialog does not discard the reverse direction."""
 
-        self._pronunciation.stop()
+        self._stop_audio()
         for panel in self._panels.values():
             panel.shutdown()
         super().reject()
@@ -247,5 +274,5 @@ class PracticeDialog(QtWidgets.QDialog):
         """Silence the current clip when minimizing via the title bar."""
 
         if event.type() == QtCore.QEvent.Type.WindowStateChange and self.isMinimized():
-            self._pronunciation.stop()
+            self._stop_audio()
         super().changeEvent(event)

@@ -118,27 +118,6 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
         with self._connect() as conn:
             return dict(conn.execute("SELECT * FROM comprehension_sessions WHERE id=?", (session_id,)).fetchone())
 
-    def comprehension_voice(self, session_id: str, voice_id: str) -> dict:
-        """Change narration without replacing the passage or answers; e.g. a Zonos comparison also becomes the next round's preferred voice."""
-
-        key = 'comprehension:listen_options'
-        with self._connect() as conn:
-            conn.execute('BEGIN IMMEDIATE')
-            row = conn.execute('SELECT s.* FROM comprehension_sessions s JOIN comprehension_passages t ON t.id=s.passage_id '
-                               "WHERE s.id=? AND s.direction='listen' AND t.flagged_at IS NULL", (session_id,)).fetchone()
-            if row is None:
-                raise ValueError('Deze luistertekst is niet beschikbaar.')
-            conn.execute("UPDATE comprehension_sessions SET options_json=json_set(options_json,'$.voice_id',?) WHERE id=?", (voice_id, session_id))
-            saved = conn.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
-            try:
-                opts = comp.Options.model_validate_json(saved[0] if saved else row['options_json'])
-            except ValueError:
-                opts = comp.Options(direction=comp.Direction.LISTEN)
-            opts.direction = comp.Direction.LISTEN
-            opts.voice_id = voice_id
-            conn.execute('INSERT INTO settings VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, opts.model_dump_json()))
-        return self.comprehension_session(session_id)
-
     def comprehension_create(self, passage_id: int, opts, scheduler: str, *, background=False) -> str:
         """Replace an active round only after content and media succeed; e.g. a failed new round preserves the previous draft."""
 

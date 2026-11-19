@@ -26,6 +26,7 @@ from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_comprehension
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_listening
+from yt_whisper_subs import library_practice_voices
 from yt_whisper_subs import listening_voices
 from yt_whisper_subs import practice_activity
 
@@ -241,7 +242,7 @@ class ComprehensionFlowTests(unittest.TestCase):
         row = self.db.comprehension_history(session)[0]
         self.db.comprehension_open(row['id'])
         self.db.comprehension_submit(row['id'], row['content']['correct_idx'], 1000)
-        self.engine.audio.rows(row['passage_id'], opts)[0]['paths']['normal'].unlink()
+        self.engine.audio.rows(row['passage_id'])[0]['paths']['normal'].unlink()
         entered = threading.Event()
         render = self.speech.render_many
 
@@ -288,31 +289,34 @@ class ComprehensionFlowTests(unittest.TestCase):
             self._wait(lambda: bool(audio._player.calls))
             panel._view.card.editor.setPlainText('Mijn voorlopige antwoord')
             row_id, session = panel._run.row['id'], panel._run.session
+            options = self.db.comprehension_session(session)['options_json']
+            selector = library_practice_voices.VoiceBar(self.db)
+            selector.changed.connect(audio.voice_changed)
             first = audio._player.calls[-1][0]
             audio._player.finished.emit()
             position = audio._index
-            audio._voice.setCurrentIndex(audio._voice.findData('second'))
-            audio._voice.activated.emit(audio._voice.currentIndex())
+            selector._pick.setCurrentIndex(selector._pick.findData('second'))
+            selector._pick.activated.emit(selector._pick.currentIndex())
             self._wait(lambda: audio._task is None and audio._playing and audio._player.calls[-1][0] != first)
             self.assertEqual(audio._index, position)
             self.assertIn('Second voice', audio._note.text())
             self.assertEqual(panel._run.row['id'], row_id)
             self.assertEqual(panel._view.card.editor.toPlainText(), 'Mijn voorlopige antwoord')
-            self.assertEqual(comp.Options.model_validate_json(self.db.comprehension_session(session)['options_json']).voice_id, 'second')
-            self.assertEqual(panel._view.options.options().voice_id, 'second')
+            self.assertEqual(listening_voices.read(self.db).selected.id, 'second')
+            self.assertEqual(self.db.comprehension_session(session)['options_json'], options)
             self.assertEqual(len(self.provider.generated), 1)
             self.assertEqual(practice_activity.read(self.db).answers, 0)
             self.assertEqual(panel._view.source.browser.toPlainText(), '')
             previous = audio._player.calls[-1][0]
-            voices.presets[1].config.pace = .9
+            voices = listening_voices.read(self.db)
+            voices.selected.config.pace = .9
             self.db.set_setting(listening_voices.SETTING, voices.model_dump_json())
-            audio._select_voice('second')
+            audio.voice_changed()
             self._wait(lambda: audio._task is None and audio._playing and audio._player.calls[-1][0] != previous)
             calls = len(audio._player.calls)
-            audio._voice.setCurrentIndex(audio._voice.findData('piper'))
-            audio._voice.activated.emit(audio._voice.currentIndex())
-            self.assertEqual(len(audio._player.calls), calls + 1)
-            self.assertIsNone(audio._task)
+            selector._pick.setCurrentIndex(selector._pick.findData('piper'))
+            selector._pick.activated.emit(selector._pick.currentIndex())
+            self._wait(lambda: len(audio._player.calls) == calls + 1 and audio._task is None)
             self.assertEqual(len(engines), 3)
 
     def test_switching_back_while_voice_prepares_ignores_obsolete_results(self):
@@ -326,14 +330,14 @@ class ComprehensionFlowTests(unittest.TestCase):
         self._wait(lambda: bool(audio._player.calls))
         entered = threading.Event()
 
-        def missing(passage_id, opts):
+        def missing(passage_id, *, preset=None):
             """Make only the second narrator require synthesis; e.g. returning to the original narrator is already cached."""
 
-            if opts.voice_id == 'second':
+            if preset and preset.id == 'second':
                 raise ValueError('Not cached')
-            return rows(passage_id, opts)
+            return rows(passage_id, preset=preset)
 
-        def blocked(_passage_id, _opts, report):
+        def blocked(_passage_id, report, *, preset):
             """Keep the obsolete worker alive across a selection change; e.g. its late error must not affect the current sound."""
 
             entered.set()
@@ -343,11 +347,13 @@ class ComprehensionFlowTests(unittest.TestCase):
         rows = self.engine.audio.rows
         with mock.patch.object(self.engine.audio, 'rows', side_effect=missing), \
              mock.patch.object(self.engine.audio, 'prepare', side_effect=blocked):
-            audio._select_voice('second')
+            listening_voices.select(self.db, 'second')
+            audio.voice_changed()
             self._wait(entered.is_set)
             obsolete = audio._task
-            audio._select_voice('piper')
-            self.assertTrue(audio._playing)
+            listening_voices.select(self.db, 'piper')
+            audio.voice_changed()
+            self._wait(lambda: audio._playing)
             self.release.set()
             QtCore.QThreadPool.globalInstance().waitForDone(5000)
             self.app.processEvents()

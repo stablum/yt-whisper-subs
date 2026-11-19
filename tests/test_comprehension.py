@@ -109,10 +109,10 @@ class ComprehensionTests(unittest.TestCase):
         self.speech.available, self.provider.available = True, False
         session = self._start(opts)
         state = self.db.comprehension_session(session)
-        rows = self.engine.audio.rows(state['passage_id'], opts)
+        rows = self.engine.audio.rows(state['passage_id'])
         self.assertGreater(len(rows), 3)
         rows[0]['paths']['slow'].unlink()
-        self.assertFalse(self.engine.audio.ready(state['passage_id'], opts))
+        self.assertFalse(self.engine.audio.ready(state['passage_id']))
         before = len(self.speech.calls)
         self.engine.prepare_media(state['passage_id'], opts, lambda _: None)
         self.assertEqual(len(self.speech.calls), before + 1)
@@ -140,15 +140,15 @@ class ComprehensionTests(unittest.TestCase):
         self.assertNotEqual(active, standby)
         self.assertFalse(self.engine.needs(opts))
         passage = self.db.comprehension_session(active)['passage_id']
-        self.engine.audio.rows(passage, opts)[0]['paths']['slow'].unlink()
+        self.engine.audio.rows(passage)[0]['paths']['slow'].unlink()
         next_passage = self.db.comprehension_session(standby)['passage_id']
-        self.assertTrue(self.engine.audio.ready(next_passage, opts))
+        self.assertTrue(self.engine.audio.ready(next_passage))
         self.assertTrue(self.engine.needs(opts))
         before = len(self.speech.calls)
         self.provider.available = False
 
         self.assertEqual(self.engine.start(opts, lambda _: None, background=True), active)
-        self.assertTrue(self.engine.audio.ready(passage, opts))
+        self.assertTrue(self.engine.audio.ready(passage))
         self.assertEqual(len(self.speech.calls), before + 1)
         self.assertFalse(self.engine.needs(opts))
         self.assertEqual(self.db.comprehension_active('listen'), active)

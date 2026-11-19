@@ -225,7 +225,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | Ready practice rounds | eight independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
-| Listening speech | local CPU Piper 1.7.0 by default; optional ZONOS3-Mini with named voice/style presets; cached normal and slower audio for every enabled preset; no speech API fees |
+| Practice voice | one saved preset for dictation, listening comprehension, and read-aloud; **Voice** and **Configure voices…** in the Practice header; local Piper 1.7.0 by default and optional ZONOS3-Mini |
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
 | Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); B2; 5 paragraphs, 5 four-choice and 3 open questions; learning content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
 | Comprehension narration | local Piper/Zonos presets; normal and slow clips prepared in the background for the selected voice, live switching on the same passage; transcript and feedback concealed until all listening answers are submitted |
@@ -2601,12 +2601,12 @@ and the corrected sentence.
 Reading comprehension can read its current question or, with **Read passage
 aloud**, the entire passage. **Stop** interrupts playback. Moving to another
 question or practice mode cancels speech for the previous one. The library
-prepares and caches local Piper recordings in the background for resumable
-and standby rounds, including passages and known Dutch answer forms. This
+prepares and caches recordings with the selected **Voice** in the background
+for resumable and standby rounds, including passages and known Dutch answer forms. This
 also makes **Read aloud** available from the cache when autoplay is off.
 Fresh rounds opened before preparation finishes and newly generated
-corrections may still need a first render. Dictation and listening comprehension
-keep their own voice and playback controls.
+corrections may still need a first render. The same preset also supplies dictation
+and listening comprehension.
 
 ### Adaptive Vocabulary Practice
 
@@ -3262,12 +3262,12 @@ Unsubmitted drafts and review positions survive closing the window.
 Leesbegrip displays the passage alongside independently scrolling questions.
 Luisterbegrip uses the same local speech strategies and presets as dictation,
 preparing both normal and slower clips for **one selected narrator at a time**.
-Select **Stem** beside playback to hear the **same passage** through a different
+Select **Voice** in the Practice header to hear the **same passage** through a different
 preset without starting a new round or losing a draft. Cached voices switch
 directly. Choosing an uncached voice starts preparation and shows progress,
-then plays from the current fragment. The selected voice is saved for this
-round and future rounds. **Stemmen instellen…** opens the existing full preset
-editor; saving new sound parameters refreshes that voice's recordings too.
+then plays from the current fragment. The selected voice is saved for all
+practice modes. **Configure voices…** in the same header opens the preset editor.
+Saving new sound parameters refreshes that voice's recordings.
 Obsolete or cancelled voice jobs cannot change the new selection or its status.
 Paragraph navigation, replay, restart and stop do not generate new text. Bounded
 fragments preserve every word and avoid an oversized expressive-speech job.
@@ -3282,8 +3282,8 @@ Preparation uses the existing two-worker scheduler and per-destination leases,
 keeping one unexposed spare after answering begins. Generated text is saved before
 its independent audit; approved text is saved before speech. A network failure,
 restart, narrator change or missing WAV can therefore resume only its unfinished
-stage. Reading preparations do not load speech models. Changing a narrator reuses
-unused approved content. Actual question exposure, answers, feedback consultation,
+stage. Reading text becomes usable while its optional read-aloud clips prepare
+separately. Changing a narrator reuses approved content. Actual question exposure, answers, feedback consultation,
 word assessments and played fragments have separate relational records.
 Shared text-pool reservation is serialized across the two comprehension modes;
 speech synthesis occurs after that reservation, allowing reading to prepare while
@@ -3372,13 +3372,13 @@ practice API whenever approved unused stock is insufficient.
 
 #### Voice presets and expression
 
-Open **Listening → Voices…**, available beside round options even before a round
-is ready. Presets have names, enable checkboxes, duplication, removal and ordering
-controls. Enable the voices you want to compare: each gets a labeled tab above
-the same listening question. Clicking a voice plays that sentence immediately
-from its own recording; **Listen slowly** uses that selected voice's slower take.
-The first enabled voice is the initial automatic choice; a later selection stays
-selected across questions. At least one preset must remain enabled.
+Open **Configure voices…** in the Practice header, even before a round is ready.
+Presets have names, enable checkboxes, duplication, removal and ordering controls.
+Enable the voices you want to compare, then select one from the shared **Voice**
+menu. In dictation and listening comprehension, switching voices replays the
+current sentence or passage fragment. **Listen slowly** uses the same preset's
+slower take. The first enabled preset supplies the initial choice and the fallback
+if the selected preset is removed or disabled. At least one preset must remain enabled.
 
 Piper is initially enabled. Two editable Zonos starters, **Zonos · clear** and
 **Zonos · conversational**, are initially unchecked. Select a preset to edit its

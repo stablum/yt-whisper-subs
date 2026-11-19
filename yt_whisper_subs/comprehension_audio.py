@@ -30,35 +30,27 @@ class Audio:
 
         self._db, self._speech = db, speech
 
-    def preset(self, opts):
-        """Resolve a saved narrator without changing its sound; e.g. disabling it for future rounds still permits finishing the current one."""
-
-        voices = listening_voices.read(self._db)
-        preset = next((p for p in voices.presets if p.id == opts.voice_id), None) if opts.voice_id else voices.enabled[0]
-        if preset is None:
-            raise ValueError('De verteller bestaat niet meer. Kies een andere stem voor een nieuwe ronde.')
-        return preset
-
-    def engine(self, opts):
+    def _engine(self, preset):
         """Use the same local speech strategies as dictation; e.g. Piper and the user's Zonos experiments remain available."""
 
-        return self._speech or listening_voices.speech(self._db, self.preset(opts).config)
+        preset = preset or listening_voices.read(self._db).selected
+        return self._speech or listening_voices.speech(self._db, preset.config)
 
-    def prepare(self, passage_id: int, opts, report) -> None:
+    def prepare(self, passage_id: int, report, *, preset=None) -> None:
         """Finish all normal and slow segments before publishing readiness; e.g. a failed last paragraph leaves approved text reusable."""
 
         passage = self._db.comprehension_passage(passage_id)['content']
         parts = segments(passage['paragraphs'])
-        assets = listening_tts.Recordings(self._db).prepare(self.engine(opts), [p['text'] for p in parts], report)
+        assets = listening_tts.Recordings(self._db).prepare(self._engine(preset), [p['text'] for p in parts], report)
         with self._db._connect() as conn:
             conn.executemany('INSERT OR IGNORE INTO comprehension_audio VALUES(?,?,?)',
                              [(passage_id, part['index'], assets[part['text']]) for part in parts])
 
-    def rows(self, passage_id: int, opts) -> list[dict]:
+    def rows(self, passage_id: int, *, preset=None) -> list[dict]:
         """Return playback metadata without requiring a visible transcript; e.g. progress labels show paragraph numbers only."""
 
         passage = self._db.comprehension_passage(passage_id)['content']
-        profile, result = self.engine(opts).profile, []
+        profile, result = self._engine(preset).profile, []
         for part in segments(passage['paragraphs']):
             key = listening_tts.Recordings.key(profile, part['text'])
             asset = self._db.audio_asset(key)
@@ -67,11 +59,11 @@ class Audio:
             result.append(dict(index=part['index'], paragraph=part['paragraph'], paths=self._db.listening_paths(key), **asset))
         return result
 
-    def ready(self, passage_id: int, opts) -> bool:
+    def ready(self, passage_id: int) -> bool:
         """Check both speeds without synthesis; e.g. prefetch repairs a deleted segment rather than generating another article."""
 
         try:
-            return bool(self.rows(passage_id, opts))
+            return bool(self.rows(passage_id))
         except (OSError, ValueError):
             return False
 

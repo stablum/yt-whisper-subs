@@ -96,6 +96,7 @@ class Voices(pd.BaseModel):
     """Store an ordered, enabled set for one-click listening comparisons; e.g. only enabled presets are pre-rendered."""
 
     model_config = pd.ConfigDict(extra="forbid")
+    selected_id: str = ""
     presets: list[Preset] = pd.Field(default_factory=lambda: [
         Preset(id="piper", name="Piper"),
         Preset(id="zonos-clear", name="Zonos · clear", enabled=False,
@@ -120,12 +121,29 @@ class Voices(pd.BaseModel):
 
         return [row for row in self.presets if row.enabled]
 
+    @property
+    def selected(self) -> Preset:
+        """Resolve the practice-wide voice, falling back to the first enabled preset."""
+
+        enabled = self.enabled
+        return next((row for row in enabled if row.id == self.selected_id), enabled[0])
+
 
 def read(db) -> Voices:
     """Load the library's shared voice choices; e.g. new rounds and current-question comparisons see the same presets."""
 
     saved = db.setting(SETTING, "")
     return Voices.model_validate_json(saved) if saved else Voices()
+
+
+def select(db, preset_id: str) -> None:
+    """Remember one enabled preset for all practice playback, e.g. dictation and reading use the same voice."""
+
+    voices = read(db)
+    if preset_id not in {row.id for row in voices.enabled}:
+        raise ValueError("Choose an enabled voice")
+    voices.selected_id = preset_id
+    db.set_setting(SETTING, voices.model_dump_json())
 
 
 def speech(db, cfg: Config):
