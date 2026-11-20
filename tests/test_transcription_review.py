@@ -132,7 +132,7 @@ class TranscriptionReviewTests(unittest.TestCase):
                                       ("wil", "wit"), ("their", "there")):
             cues = [srt.SubtitleCue(0, 1000, original)]
             candidate = review.Edit(**edit(word=1, original=original, replacement=replacement))
-            self.assertFalse(review._safe(candidate, cues, range(1, 2)))
+            self.assertIsNotNone(review._word_rejection(candidate, cues, range(1, 2)))
 
     def test_duplicate_cue_edits_are_all_rejected(self) -> None:
         """Limit each cue to one replacement; e.g. two copies of a suggestion cannot compound."""
@@ -157,6 +157,51 @@ class TranscriptionReviewTests(unittest.TestCase):
         self.assertEqual(self._pair.sidecar.read_text(), source.replace("middelig\ngebruik", "middelengebruik"))
         self.assertEqual(self._pair.archive.read_text(), self._pair.sidecar.read_text())
 
+    def test_hyphenated_sound_alike_reaches_verifier(self) -> None:
+        """Allow three letter changes inside the reported compound; e.g. ex-fro → ex-vrouw."""
+
+        source = "1\n00:00:57,860 --> 00:01:00,020\nIk draag het huis over aan mijn ex-fro.\n\n"
+        self._pair.sidecar.write_text(source, encoding="utf-8")
+        self._pair.sync_archive()
+        proposal = edit(word=8, original="ex-fro", replacement="ex-vrouw")
+        for approve in (False, True):
+            with self.subTest(approve=approve):
+                self._review.begin()
+                self._run({"edits": [proposal]}, verdict(approve))
+                expected = source.replace("ex-fro", "ex-vrouw") if approve else source
+                self.assertEqual(self._pair.sidecar.read_text(), expected)
+                self.assertEqual(self._pair.archive.read_text(), expected)
+
+    def test_bounded_word_and_hyphen_changes(self) -> None:
+        """Admit close compound repairs while retaining structural guards; e.g. do not alter names or numbers."""
+
+        for original, replacement, allowed in (
+            ("asverstrooi", "asverstrooiing", True),
+            ("koerswindverhouding", "koers-winstverhouding", True),
+            ("koers-winstverhouding", "koerswinstverhouding", True),
+            ("haar-vro", "haar-vrouw", False),
+            ("ex-Fro", "ex-vrouw", False),
+            ("ex-fro", "ex-vrouw!", False),
+            ("ex-fro", "ex-vrouw-kind", False),
+            ("ex-fro", "ex-vrouw2", False),
+            ("ex-fro", "ex-baas", False),
+            ("woord", "baard", False),
+        ):
+            with self.subTest(original=original, replacement=replacement):
+                candidate = review.Edit(**edit(word=1, original=original, replacement=replacement))
+                cues = [srt.SubtitleCue(0, 1000, original)]
+                self.assertEqual(review._word_rejection(candidate, cues, range(1, 2)) is None, allowed)
+
+    def test_ineligible_edit_does_not_block_another_edit_in_same_cue(self) -> None:
+        """Keep one valid candidate when a second fails locally; e.g. a short-word change is excluded."""
+
+        self._review.begin()
+        other = edit(word=3, original="erg", replacement="er")
+        api = self._run({"edits": [other, edit()]}, verdict())
+        doc = json.loads(api.call_args.args[1]["input"])
+        self.assertEqual([item["original"] for item in doc["candidates"]], ["leiden"])
+        self.assertEqual(self._pair.sidecar.read_text(), self._source.replace("leiden", "lijden"))
+
     def test_compound_boundaries_do_not_allow_phrase_rewrites_or_punctuation_removal(self) -> None:
         """Keep the exception within one lexical span; e.g. no crossing commas, names or negation."""
 
@@ -170,7 +215,8 @@ class TranscriptionReviewTests(unittest.TestCase):
         for text, original, replacement in cases:
             with self.subTest(text=text, replacement=replacement):
                 candidate = review.Edit(**edit(word=1, original=original, replacement=replacement))
-                self.assertFalse(review._safe(candidate, [srt.SubtitleCue(0, 1000, text)], range(1, 2)))
+                cues = [srt.SubtitleCue(0, 1000, text)]
+                self.assertIsNotNone(review._word_rejection(candidate, cues, range(1, 2)))
 
     def test_compound_split_and_join_preserve_surrounding_cue_text(self) -> None:
         """Permit only close boundary repairs; e.g. word positions still refer to the unedited cue."""
@@ -248,13 +294,27 @@ class TranscriptionReviewTests(unittest.TestCase):
         self.assertEqual(self._pair.sidecar.read_text(), content.replace("leiden", "lijden"))
 
     def test_excessive_edits_reject_whole_batch(self) -> None:
-        """Reject suspiciously dense editing before verification; e.g. two edits in sixteen words."""
+        """Count only verified edits toward the density cap; e.g. one of two proposals can survive."""
 
-        self._pair.sidecar.write_text(self._source + self._source.replace("1\n00:", "2\n00:"), encoding="utf-8")
-        self._pair.sync_archive()
-        self._review.begin()
-        self._run({"edits": [edit(), edit(cue=2)]})
-        self.assertNotIn("lijden", self._pair.sidecar.read_text())
+        source = self._source + self._source.replace("1\n00:", "2\n00:")
+        for approve_both in (False, True):
+            with self.subTest(approve_both=approve_both):
+                self._pair.sidecar.write_text(source, encoding="utf-8")
+                self._pair.sync_archive()
+                self._review.begin()
+                decisions = verdict()
+                decisions["decisions"].append({"index": 2, "approve": approve_both, "reason": "Checked context."})
+                self._run({"edits": [edit(), edit(cue=2)]}, decisions)
+                expected = source if approve_both else source.replace("leiden", "lijden", 1)
+                self.assertEqual(self._pair.sidecar.read_text(), expected)
+
+    def test_edit_allowance_rounds_up_for_partial_groups(self) -> None:
+        """Avoid a gap in proportionate allowances; e.g. 101 words can contain two verified errors."""
+
+        for words, limit in ((0, 1), (100, 1), (101, 2), (200, 2), (201, 3)):
+            with self.subTest(words=words):
+                cues = [srt.SubtitleCue(0, 1000, "tekst " * words)]
+                self.assertEqual(review._edit_limit(cues), limit)
 
     def test_external_edits_and_corrupt_progress_are_preserved(self) -> None:
         """Do not overwrite manual work or silently skip cues; e.g. malformed checkpoint bounds."""
@@ -307,6 +367,21 @@ class TranscriptionReviewTests(unittest.TestCase):
                "replacement": "Ze bleef erg leiden, onder de pijn.", "reason": "Comma separates a phrase."}
         self._run({"edits": [], "formatting": [fmt]}, verdict(False))
         self.assertEqual(self._pair.sidecar.read_text(), self._source)
+
+    def test_long_cue_can_pass_more_than_four_punctuation_edits(self) -> None:
+        """Permit several boundaries in long speech; e.g. a recap with four commas and a period."""
+
+        original = ("Na afloop zag ik Emma bij de ingang daarna sprak ik Noor bij de uitgang "
+                    "toen kwam ik thuis aten we samen en gingen we naar bed")
+        replacement = ("Na afloop zag ik Emma bij de ingang, daarna sprak ik Noor bij de uitgang, "
+                       "toen kwam ik thuis, aten we samen, en gingen we naar bed.")
+        source = self._source.replace("Ze bleef erg leiden\nonder de pijn.", original)
+        self._pair.sidecar.write_text(source, encoding="utf-8")
+        self._pair.sync_archive()
+        self._review.begin()
+        fmt = {"cue": 1, "original": original, "replacement": replacement, "reason": "Clear pauses."}
+        self._run({"edits": [], "formatting": [fmt]}, verdict())
+        self.assertEqual(self._pair.sidecar.read_text(), source.replace(original, replacement))
 
     def test_publish_failure_and_policy_change_do_not_retain_unreported_edits(self) -> None:
         """Resume a partially published pair safely; e.g. the new model rejects the old suggestion."""

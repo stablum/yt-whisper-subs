@@ -61,6 +61,9 @@ adjacent words into one or split one into two, with nearly identical letters and
 Copy the complete original span and use the word index of its FIRST word. No general phrase
 replacement is allowed. One example is 'koffie apparaat' -> 'koffieapparaat'; a sound-alike
 letter correction may accompany the boundary repair. Keep this within the same cue.
+A hyphenated compound is one word for indexing. Correct the full compound, including its
+hyphen when appropriate. Similarity is about pronunciation: a close spoken match can have
+several letter differences, as in 'ex-fro' -> 'ex-vrouw'.
 Before proposing an edit, read the resulting cue. If the error is a misrecognized compound,
 repair the WHOLE compound span in that one edit, including its incorrectly separated neighbor.
 Do not propose a partial word fix that leaves the recognized compound split incorrectly.
@@ -138,7 +141,7 @@ def _format(*, verification: bool = False) -> dict:
 
 
 def _distance(left: str, right: str) -> int:
-    """Bound spelling distance as an extra rejection filter; e.g. two letter edits maximum."""
+    """Count character insertions, deletions and substitutions; e.g. fro and vrouw differ by three."""
 
     row = list(range(len(right) + 1))
     for i, a in enumerate(left, 1):
@@ -148,37 +151,45 @@ def _distance(left: str, right: str) -> int:
     return row[-1]
 
 
-def _safe(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> bool:
-    """Reject anything beyond an isolated close word; e.g. punctuation and pronouns cannot change."""
+def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> str | None:
+    """Explain local ineligibility for verification; e.g. a correction touches a protected pronoun."""
 
     if edit.cue not in targets or not 1 <= edit.cue <= len(cues):
-        return False
+        return "cue is outside the editable range"
     old, new = edit.original, edit.replacement
-    old_parts, new_parts = old.split(" "), new.split(" ")
-    if (len(old_parts), len(new_parts)) not in {(1, 1), (1, 2), (2, 1)}:
-        return False
-    if any(not part.isalpha() or len(part) < 3 for part in [*old_parts, *new_parts]):
-        return False
-    old_letters, new_letters = "".join(old_parts), "".join(new_parts)
-    if max(len(old_letters), len(new_letters)) > 40:
-        return False
-    if any(part.casefold() in _PROTECTED for part in [*old_parts, *new_parts]):
-        return False
     if edit.confidence != "very_high" or not edit.context_reason.strip() or not edit.sound_reason.strip():
-        return False
-    # Capitalized tokens may be names. False negatives are preferable to speculative edits.
-    if not old.islower() or not new.islower() or old == new:
-        return False
+        return "missing high confidence or supporting reasons"
+    if old == new:
+        return "no text change"
+    if not old.islower() or not new.islower():
+        return "capitalized words may be names"
+    old_words, new_words = old.split(" "), new.split(" ")
+    if (len(old_words), len(new_words)) not in {(1, 1), (1, 2), (2, 1)}:
+        return "phrase replacements are outside the review scope"
+    old_parts = old.replace("-", " ").split(" ")
+    new_parts = new.replace("-", " ").split(" ")
+    if (max(len(old_parts), len(new_parts)) > 2
+            or any(not part.isalpha() or len(part) < 2 for part in [*old_parts, *new_parts])
+            or any(len(word.replace("-", "")) < 3 for word in [*old_words, *new_words])):
+        return "expected whole words or a compound with one internal separator"
+    if any(part in _PROTECTED for part in [*old_parts, *new_parts]):
+        return "contains a protected word"
+    old_letters, new_letters = "".join(old_parts), "".join(new_parts)
+    length = max(len(old_letters), len(new_letters))
+    if length > 40:
+        return "word span exceeds 40 letters"
     text = cues[edit.cue - 1].text
     if (span := _span(text, edit)) is None:
-        return False
+        return "original text does not match the indexed word span"
     start, end = span
-    if (start and text[start - 1].isalnum()) or (
-        end < len(text) and text[end].isalnum()
-    ):
-        return False
+    neighbors = text[max(0, start - 1):start] + text[end:end + 1]
+    if any(char.isalnum() or char == "_" for char in neighbors):
+        return "span touches a number or identifier"
     distance = _distance(old_letters, new_letters)
-    return distance <= 2 and distance / max(len(old_letters), len(new_letters)) <= 0.34
+    # Leave pronunciation to the independent verifier while bounding orthographic drift.
+    if distance > 3 or 7 * distance > 3 * length:
+        return f"spelling differs by {distance} edits across {length} letters"
+    return None
 
 
 def _span(text: str, edit: Edit, *, match_case: bool = True) -> tuple[int, int] | None:
@@ -240,14 +251,16 @@ def _format_safe(edit: FormatEdit, cues: list[srt.SubtitleCue], targets: range) 
            for a, b in zip(old_tokens, new_tokens, strict=True)):
         return False
     # Case folding can expand letters (e.g. ß → ss); require the same alphabetic tokens too.
-    if [word.lower() for word in _WORD.findall(old)] != [word.lower() for word in _WORD.findall(new)]:
+    old_words, new_words = _WORD.findall(old), _WORD.findall(new)
+    if [word.lower() for word in old_words] != [word.lower() for word in new_words]:
         return False
-    if len(new) > len(old) + 4:
+    limit = max(4, min(8, len(old_words) // 4))
+    if abs(len(new) - len(old)) > limit:
         return False
     punct_edits = sum(_distance(a.lower(), b.lower()) for a, b in zip(old_tokens, new_tokens, strict=True))
-    if punct_edits > 4:
+    if punct_edits > limit:
         return False
-    for old_word, new_word in zip(_WORD.findall(old), _WORD.findall(new), strict=True):
+    for old_word, new_word in zip(old_words, new_words, strict=True):
         if new_word != old_word and new_word.isupper() and len(new_word) > 1:
             return False  # Sentence capitalization must not turn ordinary words into shouted acronyms.
     return re.findall(r"\d+(?:[.,:/-]\d+)*", old) == re.findall(r"\d+(?:[.,:/-]\d+)*", new)
@@ -282,9 +295,10 @@ def _apply(source: str, edits: list[Edit], formatting: list[FormatEdit]) -> str:
 
 
 def _edit_limit(cues: list[srt.SubtitleCue]) -> int:
-    """Cap sparse corrections consistently across batches and resumes; e.g. at most one in 100 words."""
+    """Allow one verified correction per started 100 words; e.g. 101 words allow two."""
 
-    return max(1, sum(len(_WORD.findall(cue.text)) for cue in cues) // 100)
+    words = sum(len(_WORD.findall(cue.text)) for cue in cues)
+    return max(1, (words + 99) // 100)
 
 
 class TranscriptionReview:
@@ -311,7 +325,7 @@ class TranscriptionReview:
     def _policy(self) -> dict:
         """Fingerprint settings that affect cached decisions; e.g. switching models restarts the audit."""
 
-        return {"version": 2, "batch_cues": BATCH_CUES,
+        return {"version": 3, "batch_cues": BATCH_CUES,
                 "model": getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
                 "reasoning": getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
                 "language": self._args.language}
@@ -377,9 +391,8 @@ class TranscriptionReview:
         for start in range(state["next_cue"], len(cues) + 1, BATCH_CUES):
             targets = range(start, min(start + BATCH_CUES, len(cues) + 1))
             batch, fmt_batch = self._batch(cues, targets)
-            # One confusion per cue; at most one correction span per 100 words (minimum one).
             if len(edits) + len(batch) > _edit_limit(cues):
-                print("Rejected word corrections: transcript edit limit exceeded.", flush=True)
+                print("Rejected verified word corrections: transcript edit limit exceeded.", flush=True)
                 batch = []
             for change in [*batch, *fmt_batch]:
                 print(f"Transcription cue {change.cue}: {change.original!r} → {change.replacement!r}", flush=True)
@@ -439,7 +452,7 @@ class TranscriptionReview:
         if next_cue != len(cues) + 1 and (next_cue - 1) % BATCH_CUES:
             raise RuntimeError("Invalid transcription checkpoint batch boundary")
         if (len(edits) > _edit_limit(cues) or len({edit.cue for edit in edits}) != len(edits)
-                or any(not _safe(edit, cues, range(1, next_cue)) for edit in edits)):
+                or any(_word_rejection(edit, cues, range(1, next_cue)) for edit in edits)):
             raise RuntimeError("Unsafe transcription checkpoint edits")
         if (len({fmt.cue for fmt in formatting}) != len(formatting)
                 or any(not _format_safe(fmt, cues, range(1, next_cue)) for fmt in formatting)):
@@ -462,19 +475,25 @@ class TranscriptionReview:
             raise RuntimeError("Transcription review did not cover every requested cue exactly once")
         proposed = _edits(_parse(output, "edits"), Edit)
         formatting = _edits(_parse(output, "formatting"), FormatEdit)
-        counts = Counter(edit.cue for edit in proposed)
+        eligible = []
         for edit in proposed:
-            print(f"Proposed transcription cue {edit.cue}: {edit.original!r} → {edit.replacement!r}", flush=True)
-        eligible = [edit for edit in proposed if counts[edit.cue] == 1 and _safe(edit, cues, targets)]
-        limit = _edit_limit(cues[targets.start - 1:targets.stop - 1])
-        if len(eligible) > limit:
-            print("Rejected word corrections: batch edit limit exceeded.", flush=True)
-            eligible = []
-        if len(eligible) != len(proposed):
-            print(f"Rejected {len(proposed) - len(eligible)} unsafe transcription edit(s).", flush=True)
+            change = f"transcription cue {edit.cue}: {edit.original!r} → {edit.replacement!r}"
+            if reason := _word_rejection(edit, cues, targets):
+                print(f"Rejected {change} ({reason}).", flush=True)
+            else:
+                print(f"Proposed {change}", flush=True)
+                eligible.append(edit)
+        counts = Counter(edit.cue for edit in eligible)
+        for cue, count in counts.items():
+            if count > 1:
+                print(f"Rejected transcription cue {cue}: multiple eligible word edits.", flush=True)
+        eligible = [edit for edit in eligible if counts[edit.cue] == 1]
         fmt_counts = Counter(fmt.cue for fmt in formatting)
         eligible_fmt = [fmt for fmt in formatting if fmt_counts[fmt.cue] == 1 and _format_safe(fmt, cues, targets)]
         candidates = [*eligible, *eligible_fmt]
         verified = self._verify(candidates, document) if candidates else []
-        return ([edit for edit in verified if isinstance(edit, Edit)],
-                [fmt for fmt in verified if isinstance(fmt, FormatEdit)])
+        words = [edit for edit in verified if isinstance(edit, Edit)]
+        if len(words) > _edit_limit(cues[targets.start - 1:targets.stop - 1]):
+            print("Rejected verified word corrections: batch edit limit exceeded.", flush=True)
+            words = []
+        return words, [fmt for fmt in verified if isinstance(fmt, FormatEdit)]

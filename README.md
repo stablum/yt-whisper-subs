@@ -1751,32 +1751,34 @@ or uses Whisper; `--task translate` is not reviewed as an original transcript.
 The model reviews chronological batches of at most 40 cues, with three
 read-only neighboring cues on each side. Every editable cue must be accounted
 for exactly once; missing, duplicate or out-of-range coverage stops the batch.
-It proposes sparse changes rather
-than a rewritten SRT. A separate, fresh verification request checks eligible
-candidates; clean batches need only one request. Both requests use strict
+It proposes sparse changes. A separate, fresh verification request checks
+eligible candidates. Clean batches need only one request. Both requests use strict
 [structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
 with local validation of the permitted edits:
 
 - Word corrections normally replace one exact, lowercase word with one close word,
   only when the original is clearly wrong in context and the replacement sounds
-  nearly identical. Doubt means keep the original. Local guards allow at most
-  two letter edits and a spelling-distance ratio of 0.34. A narrow exception
-  permits joining two adjacent words into one compound, or splitting one into
-  two, with the same letter-distance limits after removing the space. For
-  example, `middelig gebruik` can become `middelengebruik` when the surrounding
-  substance-use discussion makes the error clear. Both words must belong to
-  the same cue, each token must have at least three letters, and no intervening
-  punctuation may be removed. General phrase replacements are rejected.
-  There is at most one correction span per cue and one span per 100 words per
-  batch and whole transcript, rounded down with a minimum allowance of one.
-  Suspiciously dense batches are rejected. Names, numbers,
+  nearly identical. Doubt means keep the original. The local validator measures
+  spelling distance after removing a compound's internal space or hyphen. It
+  allows at most three letter edits and a ratio of three edits per seven letters
+  of the longer form. The second check still judges pronunciation and context.
+  For example, `ex-fro` can become `ex-vrouw`, and `middelig gebruik` can become
+  `middelengebruik` when the surrounding context makes the error clear.
+  Each span stays within one cue and covers at most two neighboring words.
+  A single internal space or hyphen can be repaired in a compound. Each word
+  must have at least three letters in total. General phrase replacements and
+  spans containing other punctuation are rejected.
+  At most one eligible word edit per cue goes to verification. The batch and
+  transcript limits count only approved edits and allow one span per started
+  group of 100 words. Suspiciously dense batches are rejected. Names, numbers,
   quantities, pronouns, negation and modal verbs are excluded by the prompt;
   local guards additionally protect capitalized words and common Dutch/English
   negation, pronouns, number words and modals.
 - Punctuation and capitalization are checked separately. These edits must
   preserve every word and number, word order, apostrophe, hyphen and whitespace
-  boundary. Numeric punctuation cannot change. Each cue permits at most four
-  punctuation character edits; ordinary words cannot become all-caps. Sentence
+  boundary. Numeric punctuation cannot change. Each cue permits four punctuation
+  character edits, rising to one per four words in longer cues, up to eight.
+  Ordinary words cannot become all-caps. Sentence
   boundaries may continue across cues, so a cue end alone is no reason to add
   a period. These changes do not consume the rare-word correction allowance.
 - No grammar cleanup, paraphrasing, additions, deletions, translation or factual
@@ -1805,10 +1807,13 @@ any differing archive text is retained in its audit JSON. These files are includ
 normal exact per-video removal manifest.
 
 Version `0.5.24` adds compound repairs, smaller batches and explicit cue coverage.
+Version `0.6.28` admits hyphenated compounds and slightly wider spelling
+differences, checks edit density after verification, and scales the punctuation
+allowance for longer cues.
 Unfinished reviews from an older policy restart their audit using the stored
 original text. Completed older reviews remain cached until explicitly requested
-again. Logs now include proposed word edits and the verifier's approval or
-rejection reasons, so a missed correction can be traced.
+again. Logs give specific reasons for locally rejected word edits and record
+the separate verifier's decisions.
 
 Existing completed subtitles remain cached on ordinary runs. To review an
 existing video without downloading it or running Whisper again:
