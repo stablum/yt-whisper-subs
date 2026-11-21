@@ -6,6 +6,7 @@ Example: `python -m unittest tests.test_library_practice` uses an injected fake 
 from __future__ import annotations
 
 from contextlib import ExitStack
+from datetime import datetime, time as day_time, timedelta
 import os
 import tempfile
 import threading
@@ -144,7 +145,7 @@ class PracticeViewTests(unittest.TestCase):
                           'Reading comprehension\nText and questions', 'Listening comprehension\nText and questions', "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
-        self.assertEqual(labels, {"WORDS", "SENTENCES", "PASSAGES", "TRACKING"})
+        self.assertEqual(labels, {"WORDS", "SENTENCES", "PASSAGES", "TRACKING", "Today"})
         buttons = self.dialog._nav._buttons
         buttons.button(library_practice.Page.PROGRESS).click()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
@@ -177,6 +178,35 @@ class PracticeViewTests(unittest.TestCase):
         self.assertEqual(self.quiz._current["id"], row["id"])
         self.assertEqual(self.quiz._current["choices"], row["choices"])
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
+
+    def test_sidebar_tracks_today_independently_of_the_selected_exercise(self) -> None:
+        """Distinguish previews, partial and finished rounds, including after local midnight."""
+
+        self.quiz._controls.count.setValue(2)
+        self.dialog.show_page()
+        self._wait_ready()
+        page = library_practice.Page.WORD_NL_EN
+        mode = self.dialog._nav._buttons.button(page)
+        reverse = self.dialog._nav._buttons.button(library_practice.Page.WORD_EN_NL)
+        self.assertEqual(mode.accessibleDescription(), 'Not tried today')
+        self.quiz._answer(self.quiz._current['correct_idx'])
+        self.app.processEvents()
+        self.assertEqual(mode.accessibleDescription(), 'Started today')
+        self.quiz._advance()
+        self.quiz._answer(self.quiz._current['correct_idx'])
+        self.app.processEvents()
+        self.assertEqual(mode.accessibleDescription(), 'Completed today')
+        self.assertEqual(reverse.accessibleDescription(), 'Not tried today')
+        self.dialog.show_page(activity=True)
+        self.dialog.hide()
+        self.dialog.show()
+        self.app.processEvents()
+        self.assertEqual(mode.accessibleDescription(), 'Completed today')
+        tomorrow = datetime.combine(datetime.now().date() + timedelta(days=1), day_time.min)
+        with mock.patch.object(library_practice, 'datetime', wraps=datetime) as clock:
+            clock.now.return_value = tomorrow
+            self.dialog._refresh_nav()
+        self.assertEqual(mode.accessibleDescription(), 'Not tried today')
 
     def test_example_emphasizes_whole_words_inflections_and_hidden_answer_gaps(self) -> None:
         """Inspect actual rich-text rendering and answer secrecy; e.g. liep pops while liepen and literal HTML remain ordinary text."""
@@ -375,6 +405,10 @@ class PracticeViewTests(unittest.TestCase):
 
         self.dialog = self._dialog()
         self.assertEqual(self.dialog._sequence._start.text(), 'Resume full practice')
+        nav = self.dialog._nav._buttons
+        self.assertEqual(nav.button(library_practice.Page.WORD_EN_NL).accessibleDescription(), 'Completed today')
+        self.assertIn('Full practice resumes here', nav.button(library_practice.Page.SOUND).accessibleDescription())
+        self.assertIn('3/11', self.dialog._sequence._status.text())
         sound = self.dialog._quizzes[practice.Direction.SOUND]
         with mock.patch.object(sound, 'activate'), mock.patch.object(sound, 'enter_sequence'):
             self.dialog.show_page(sequence=True)
@@ -396,10 +430,16 @@ class PracticeViewTests(unittest.TestCase):
             for idx, track in enumerate(tracks):
                 self.app.processEvents()
                 self.assertEqual(bar.current, track)
-                self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.for_track(track))
+                page = library_practice.Page.for_track(track)
+                button = self.dialog._nav._buttons.button(page)
+                self.assertEqual(self.dialog._tabs.currentIndex(), page)
+                self.assertIn('Full practice resumes here', button.accessibleDescription())
                 if idx == 2:
                     self.dialog.show_page(True)
+                    self.app.processEvents()
                     self.assertIsNone(bar.current)
+                    self.assertFalse(button.isChecked())
+                    self.assertIn('Full practice resumes here', button.accessibleDescription())
                     bar._start.click()
                     self.assertEqual(bar.current, track)
                     bar._skip.click()
@@ -408,6 +448,8 @@ class PracticeViewTests(unittest.TestCase):
             self.app.processEvents()
         self.assertIsNone(bar.current)
         self.assertIn('10 completed · 1 skipped', bar._status.text())
+        self.assertFalse(any('Full practice resumes here' in button.accessibleDescription()
+                             for button in self.dialog._nav._buttons.buttons()))
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 0)
 
     def test_closing_during_generation_cancels_without_a_partial_round(self) -> None:

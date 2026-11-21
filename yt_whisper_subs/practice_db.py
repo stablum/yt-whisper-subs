@@ -76,6 +76,15 @@ FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.session_id
 """
 
+# The track keys match practice_tracks.Track; each answer column is the durable submission evidence.
+_DAY_SOURCES = (
+    ('practice', "'practice:' || s.direction", 'selected_idx'),
+    ('verb', "'verb'", 'answer_text'),
+    ('sentence', "'sentence:' || s.direction", 'answer_text'),
+    ('word_order', "CASE s.variant WHEN 'phrases' THEN 'word_order:phrases' ELSE 'word_order' END", 'answer_json'),
+    ('comprehension', "'comprehension:' || s.direction", 'answer_text'),
+)
+
 class PracticeDbMixin:
     """Keep immutable question/answer evidence alongside a rebuildable scheduling cache."""
 
@@ -132,6 +141,24 @@ class PracticeDbMixin:
                                 "AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at",
                                 (since, until, since, until, since, until, since, until, since, until))
             return [dict(row) for row in rows]
+
+    def practice_day_states(self, since: float, until: float) -> dict[str, bool]:
+        """Read attempted tracks and whether they finished a round in the interval; e.g. ignore previews and early stops."""
+
+        events = '\nUNION ALL\n'.join(f"""
+            SELECT {track} AS track, 0 AS completed
+            FROM {kind}_presentations p JOIN {kind}_sessions s ON s.id=p.session_id
+            WHERE p.answered_at BETWEEN :since AND :until AND p.{answer} IS NOT NULL
+            UNION ALL
+            SELECT {track}, 1 FROM {kind}_sessions s
+            WHERE s.finished_at BETWEEN :since AND :until AND s.status='completed'
+              AND EXISTS(SELECT 1 FROM {kind}_presentations p
+                         WHERE p.session_id=s.id AND p.{answer} IS NOT NULL)
+        """ for kind, track, answer in _DAY_SOURCES)
+        with self._connect() as conn:
+            rows = conn.execute(f"SELECT track, MAX(completed) FROM ({events}) GROUP BY track",
+                                {'since': since, 'until': until})
+            return {track: bool(completed) for track, completed in rows}
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:
         """Reuse only the requested generation policy; e.g. a model upgrade cannot silently serve older choices."""

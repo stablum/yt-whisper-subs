@@ -2609,8 +2609,10 @@ place in the sequence and its final counts of completed and skipped modes.
 
 **Pause full practice**, selecting another tab, or closing the window saves the
 sequence position. **Resume full practice** and **Practice now** return you to
-that position. Submissions go through their usual grading, vocabulary review,
-activity and reminder rules.
+that position. A blue chevron on the left of the sidebar points to the mode
+that Full practice will resume, even when another page is selected. The marker
+advances with the sequence and disappears when the sequence ends. Submissions
+go through their usual grading, vocabulary review, activity and reminder rules.
 
 ### Optional Dutch Pronunciation
 
@@ -2661,6 +2663,13 @@ The navigation exposes both Word quiz directions, Dutch verb transformations,
 Sound alike, both Sentences directions, Word order, Phrase and clause order,
 Dutch dictation, Leesbegrip and Luisterbegrip as **eleven buttons in the Practice
 sidebar**, alongside the separate **Tracking** group for Progress and Activity.
+The **Today** column shows a grey ring before the first submission, a half-filled
+amber ring once you submit an answer, and a green check once you complete a round.
+Opening a question, preparing a round, and skipping a mode leave the daily mark
+as it was. Ending a partial round keeps its submitted activity. A check remains
+for the rest of the day even if you start another round. The marks use your local
+calendar date, so they reset at midnight while the saved Full practice position
+persists. Hover over a mode to read its status.
 Each page remains one click away; tray shortcuts and native page
 navigation select the same grouped controls.
 Question content scrolls independently while the main Next and Report actions

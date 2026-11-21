@@ -6,12 +6,14 @@ Example: Word quiz and Sentences each expose Dutch-to-English and English-to-Dut
 from __future__ import annotations
 
 import enum
+from datetime import datetime, time, timedelta
 from functools import partial
 
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_practice_activity
 from yt_whisper_subs import library_practice_nav
 from yt_whisper_subs import library_practice_progress
@@ -26,6 +28,7 @@ from yt_whisper_subs import library_word_quiz
 from yt_whisper_subs import library_word_order
 from yt_whisper_subs import library_order_progress
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import word_order
@@ -120,6 +123,7 @@ class PracticeView(QtWidgets.QWidget):
             panel = self._panels[page]
             panel.activity_changed.connect(partial(self._record_activity, track))
             panel.round_reviewed.connect(partial(self._sequence.reviewed, track))
+            panel.round_reviewed.connect(self._schedule_nav_refresh)
             if page in self._spoken:
                 panel.before_question = partial(self._pronunciation.before_question, track)
                 panel.speech_changed.connect(partial(self._offer_pronunciation, page))
@@ -133,6 +137,13 @@ class PracticeView(QtWidgets.QWidget):
             (i18n.tr('Passages'), (Page.READ_COMPREHENSION, Page.LISTEN_COMPREHENSION)),
             (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
         ), short_labels)
+        self._nav_timer = QtCore.QTimer(self)
+        self._nav_timer.setSingleShot(True)
+        self._nav_timer.setTimerType(QtCore.Qt.TimerType.PreciseTimer)
+        self._nav_timer.timeout.connect(self._refresh_nav)
+        self._sequence.position_changed.connect(self._schedule_nav_refresh)
+        # A queued comprehension correction may finish before its page has been visited in this window.
+        library_checks.Checks.shared(self._db, kind='comprehension').changed.connect(self._schedule_nav_refresh)
         self._tabs.currentChanged.connect(self._tab_changed)
         audio_controls = QtWidgets.QHBoxLayout()
         audio_controls.setSpacing(16)
@@ -251,7 +262,25 @@ class PracticeView(QtWidgets.QWidget):
         """Checkpoint the guided mode alongside the normal answer notification."""
 
         self._sequence.bind(track, self._panels[Page.for_track(track)].round_id)
+        self._schedule_nav_refresh()
         self.activity_changed.emit()
+
+    def _schedule_nav_refresh(self) -> None:
+        """Coalesce answer and guided-sequence signals; e.g. grade and review can arrive together."""
+
+        if self.isVisible():
+            self._nav_timer.start(0)
+
+    def _refresh_nav(self) -> None:
+        """Sync markers with saved history and the resume position, then refresh again at local midnight."""
+
+        now = datetime.now()
+        statuses = {Page.for_track(track): status for track, status in practice_activity.day_states(self._db, now).items()}
+        resume = self._sequence.refresh_position()
+        self._nav.mark(statuses, Page.for_track(resume) if resume else None)
+        midnight = datetime.combine(now.date() + timedelta(days=1), time.min)
+        delay_ms = int((midnight.timestamp() - now.timestamp()) * 1000) + 1
+        self._nav_timer.start(delay_ms)
 
     def _show_sequence_track(self, track: practice_tracks.Track) -> None:
         """Select the same practice page used by manual navigation before opening the mode."""
@@ -271,6 +300,7 @@ class PracticeView(QtWidgets.QWidget):
         """Refresh the returned page; e.g. Activity includes answers saved while browsing the Library."""
 
         super().showEvent(event)
+        self._schedule_nav_refresh()
         idx = self._tabs.currentIndex()
         if idx == Page.ACTIVITY:
             self._activity.refresh()
@@ -284,6 +314,7 @@ class PracticeView(QtWidgets.QWidget):
     def hideEvent(self, event) -> None:
         """Stop playback when leaving Practice or minimizing the main window."""
 
+        self._nav_timer.stop()
         self._stop_audio()
         super().hideEvent(event)
 

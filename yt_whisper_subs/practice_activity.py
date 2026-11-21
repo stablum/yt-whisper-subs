@@ -5,11 +5,30 @@ Example: `read(db).week` includes zero-answer days and counts attempts even afte
 
 from __future__ import annotations
 
+import enum
 import json
 from datetime import date, datetime, time, timedelta
 
 import polars as pl
 import pydantic as pd
+
+from yt_whisper_subs import practice_tracks
+
+
+class DayStatus(enum.Enum):
+    """Represent today's effort for one exercise, e.g. a full round outweighs a later partial round."""
+
+    UNTRIED = enum.auto()
+    STARTED = enum.auto()
+    COMPLETED = enum.auto()
+
+
+def day_states(db, now: datetime) -> dict[practice_tracks.Track, DayStatus]:
+    """Read the current local day's submitted answers and completed rounds for the sidebar."""
+
+    start = datetime.combine(now.date(), time.min, now.tzinfo)
+    return {practice_tracks.Track(key): DayStatus.COMPLETED if complete else DayStatus.STARTED
+            for key, complete in db.practice_day_states(start.timestamp(), now.timestamp()).items()}
 
 
 class Day(pd.BaseModel):

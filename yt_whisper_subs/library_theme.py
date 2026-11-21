@@ -44,6 +44,7 @@ QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: w
 QPushButton#primaryButton:hover { background: #2b83db; }
 QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
 QPushButton#practicePageButton { background: transparent; border-color: transparent; text-align: left; padding: 3px 9px; }
+QPushButton#practicePageButton[exercise="true"] { padding-left: 23px; padding-right: 23px; }
 QPushButton#practicePageButton:hover { background: #202936; }
 QPushButton#practicePageButton:checked { background: #26364d; color: #8fc7ff; }
 QPushButton#practicePageButton:focus { border-color: #649bd0; }

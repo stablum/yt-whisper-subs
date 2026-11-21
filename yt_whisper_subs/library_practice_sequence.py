@@ -27,7 +27,12 @@ class Cursor(pd.BaseModel):
     def track(self) -> practice_tracks.Track | None:
         """Follow the same order as the practice buttons, from vocabulary to comprehension."""
 
-        idx = self.completed + self.skipped
+        return self.track_at_offset(0)
+
+    def track_at_offset(self, offset: int) -> practice_tracks.Track | None:
+        """Look ahead from the cursor, e.g. show where a recovered completion will resume."""
+
+        idx = self.completed + self.skipped + offset
         return self.order[idx] if idx < len(self.order) else None
 
     def round_reviewed(self, db) -> bool:
@@ -48,6 +53,7 @@ class SequenceBar(QtWidgets.QWidget):
     """Show the current mode and keep sequence navigation separate from answering exercises."""
 
     requested = QtCore.Signal(object)
+    position_changed = QtCore.Signal()
 
     def __init__(self, db) -> None:
         """Restore a saved cursor without opening a round until Full practice is selected."""
@@ -74,7 +80,7 @@ class SequenceBar(QtWidgets.QWidget):
         for button in (self._start, self._skip, self._pause):
             button.setAutoDefault(False)
             layout.addWidget(button)
-        self._render()
+        self.refresh_position()
 
     @property
     def current(self) -> practice_tracks.Track | None:
@@ -98,7 +104,8 @@ class SequenceBar(QtWidgets.QWidget):
 
         if self._following:
             self._following = False
-            self._render()
+            self.refresh_position()
+            self.position_changed.emit()
 
     def bind(self, track, round_id: str | None) -> None:
         """Remember the real round behind a submission so reopening avoids an extra round."""
@@ -133,24 +140,29 @@ class SequenceBar(QtWidgets.QWidget):
 
         self._save()
         self._following = self._cursor.track is not None
-        self._render()
+        self.refresh_position()
+        self.position_changed.emit()
         if self.current is not None:
             self.requested.emit(self.current)
 
-    def _render(self) -> None:
-        """Show the mode number while active and the completed/skipped counts when done."""
+    def refresh_position(self) -> practice_tracks.Track | None:
+        """Use the same resume destination in the header and sidebar, including after a recovered handoff."""
 
         track = self._cursor.track if self._cursor else None
         self._start.setText(i18n.tr('Resume full practice') if track else i18n.tr('Full practice'))
         self._start.setVisible(not self._following)
         self._skip.setVisible(self._following)
         self._pause.setVisible(self._following)
+        resume = track
         if track:
-            number = self._cursor.completed + self._cursor.skipped + 1
-            mode = track.label.replace('\n', ' · ')
+            recovered = not self._following and self._cursor.round_reviewed(self._db)
+            resume = self._cursor.track_at_offset(int(recovered))
+            number = self._cursor.completed + self._cursor.skipped + 1 + int(recovered and resume is not None)
+            mode = (resume or track).label.replace('\n', ' · ')
             self._status.setText(i18n.tr('Full practice {number}/{total} · {mode}', number=number, total=len(self._cursor.order), mode=mode))
         elif self._cursor:
             self._status.setText(i18n.tr('Full practice finished · {completed} completed · {skipped} skipped',
                                          completed=self._cursor.completed, skipped=self._cursor.skipped))
         else:
             self._status.clear()
+        return resume
