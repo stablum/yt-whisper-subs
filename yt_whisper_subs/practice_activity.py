@@ -27,6 +27,7 @@ class Day(pd.BaseModel):
     sentences: int = 0
     sentence_nl_en: int = 0
     word_order: int = 0
+    phrase_order: int = 0
     sentence_en_nl: int = 0
     listening: int = 0
     comprehension_read: int = 0
@@ -95,8 +96,9 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
             "correct": row["outcome"] == "correct", "graded": row["outcome"] in {"correct", "wrong"},
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
             "verbs": row["direction"] == "verbs",
-            "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en", "word_order"},
+            "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en", "word_order", "phrase_order"},
             "word_order": row["direction"] == "word_order",
+            "phrase_order": row["direction"] == "phrase_order",
             "listening": row["direction"] in {"sentence_listen_nl", "sound_nl"},
             'comprehension_read': row['direction'] == 'comprehension_read',
             'comprehension_listen': row['direction'] == 'comprehension_listen',
@@ -111,7 +113,7 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
         pl.col("word_id").filter(pl.col("verbs")).n_unique().alias("verb_lemmas"),
         pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
         pl.col("sentences").sum(), pl.col("sentence_nl_en").sum(), pl.col("sentence_en_nl").sum(),
-        pl.col("word_order").sum(),
+        pl.col("word_order").sum(), pl.col("phrase_order").sum(),
         pl.col("listening").sum(),
         pl.col('comprehension_read').sum(), pl.col('comprehension_listen').sum(),
     ).sort("day")

@@ -17,6 +17,7 @@ _FIELDS = {
     tracks.Track.SENTENCE_EN_NL: ('dutch',),
     tracks.Track.SENTENCE_NL_EN: ('dutch',),
     tracks.Track.WORD_ORDER: ('dutch',),
+    tracks.Track.PHRASE_ORDER: ('dutch',),
 }
 
 
@@ -57,8 +58,11 @@ class Stock:
 
         kind = track.kind
         get_active = getattr(self._db, f'{kind}_active')
-        active_id = get_active(track.direction.value) if track.direction else get_active()
+        scope = track.session_filter
+        active_id = get_active(scope[1]) if scope else get_active()
         review_id = self._db.sentence_unseen_session(track.direction.value) if kind == 'sentence' else None
+        if track.variant and active_id is None:
+            review_id = self._db.word_order_resume(track.variant)
         texts = self._session_texts(track, (active_id, review_id))
         policy = practice_ready.question_policy(engine)
         for row in self._db.practice_stock(track, opts, policy):

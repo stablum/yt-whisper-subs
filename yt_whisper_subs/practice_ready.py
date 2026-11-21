@@ -119,10 +119,10 @@ class ReadyDbMixin:
         if kind not in practice_tracks.QUESTION_KINDS:
             raise ValueError("Unknown practice mode")
         with self._connect() as conn:
-            track_direction = practice_tracks.Track.for_options(kind, opts).direction
-            direction = " AND direction=?" if track_direction else ""
-            params = (track_direction.value,) if track_direction else ()
-            row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active'{direction} ORDER BY created_at DESC LIMIT 1", params).fetchone()
+            scope = practice_tracks.Track.for_options(kind, opts).session_filter
+            where = f" AND {scope[0]}=?" if scope else ""
+            params = (scope[1],) if scope else ()
+            row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active'{where} ORDER BY created_at DESC LIMIT 1", params).fetchone()
             if row is None:
                 return None
             saved = ({"direction": row["direction"], "count": row["requested_count"], "include_early": bool(row["include_early"])}

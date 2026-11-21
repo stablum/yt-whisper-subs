@@ -14,6 +14,15 @@ from PySide6 import QtWidgets
 
 from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import word_order
+
+
+def _order_counts(row: practice_activity.Day) -> str:
+    """Identify the two ordering modes in the calendar and reminder details."""
+
+    return ''.join('\n' + i18n.tr('{mode}: {count}', mode=variant.label, count=count)
+                   for variant, count in ((word_order.Variant.WORDS, row.word_order),
+                                          (word_order.Variant.PHRASES, row.phrase_order)) if count)
 
 
 class ActivityChart(QtWidgets.QWidget):
@@ -97,9 +106,7 @@ class ActivityChart(QtWidgets.QWidget):
                 comprehension_read=row.comprehension_read,
                 comprehension_listen=row.comprehension_listen,
             ))
-            if row.word_order:
-                hint += '\n' + i18n.tr('Sentence builder: {count}', count=row.word_order)
-            self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
+            self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint + _order_counts(row)))
 
     def mouseMoveEvent(self, event) -> None:
         """Reveal dates and direction counts on hover; e.g. inspect a small stacked bar."""
@@ -286,9 +293,7 @@ class ActivityPanel(QtWidgets.QWidget):
             accuracy=accuracy,
             value=row.answers - row.graded,
         )
-        if row.word_order:
-            details += '\n' + i18n.tr('Sentence builder: {count}', count=row.word_order)
-        self._details.setText(details)
+        self._details.setText(details + _order_counts(row))
 
     def _show_month(self, *_args) -> None:
         """Summarize the displayed month independently of date selection; e.g. navigate to last month."""

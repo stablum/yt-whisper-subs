@@ -136,7 +136,8 @@ class PracticeDialogTests(unittest.TestCase):
 
         self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(self.dialog._tabs.count())],
                          ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Sound alike\nListen and choose",
-                          "Verbs\nDutch transformations", "Sentences\nDutch → English", "Sentences\nEnglish → Dutch", "Sentence builder",
+                          "Verbs\nDutch transformations", "Sentences\nDutch → English", "Sentences\nEnglish → Dutch", "Word order",
+                          "Phrase and clause order",
                           "Listening\nDutch dictation",
                           'Reading comprehension\nText and questions', 'Listening comprehension\nText and questions', "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
@@ -377,7 +378,7 @@ class PracticeDialogTests(unittest.TestCase):
             self.dialog.show_page(sequence=True)
             self.app.processEvents()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.SOUND)
-        self.assertIn('3/10', self.dialog._sequence._status.text())
+        self.assertIn('3/11', self.dialog._sequence._status.text())
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 2)
 
     def test_full_practice_survives_navigation_and_visits_every_mode_in_order(self) -> None:
@@ -404,7 +405,7 @@ class PracticeDialogTests(unittest.TestCase):
                     self.dialog._panels[library_practice.Page.for_track(track)].round_reviewed.emit()
             self.app.processEvents()
         self.assertIsNone(bar.current)
-        self.assertIn('9 completed · 1 skipped', bar._status.text())
+        self.assertIn('10 completed · 1 skipped', bar._status.text())
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 0)
 
     def test_closing_during_generation_cancels_without_a_partial_round(self) -> None:

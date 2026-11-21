@@ -82,6 +82,8 @@ class PracticeReady(QtCore.QObject):
                 opts = defaults
             if track.direction:
                 opts = opts.model_copy(update={"direction": track.direction})
+            elif track.variant:
+                opts = opts.model_copy(update={"variant": track.variant})
             requests.append((track, opts, engine))
         preferred = self._db.setting("practice_last_track", "")
         return sorted(requests, key=lambda request: request[0].value != preferred)
@@ -107,11 +109,12 @@ class PracticeReady(QtCore.QObject):
                 return not engine.audio.ready(self._db.listening_questions(session))
             return False
         active = getattr(self._db, track.kind + "_active")
-        session = active(track.direction.value) if track.direction else active()
+        scope = track.session_filter
+        session = active(scope[1]) if scope else active()
         if session:
             summary = getattr(self._db, track.kind + "_summary")(session)
             answered = summary.get("submitted", summary["correct"] + summary["wrong"])
-            if not answered and (track != practice_tracks.Track.WORD_ORDER or self._db.word_order_options(session) == opts):
+            if not answered and (not track.variant or self._db.word_order_options(session) == opts):
                 return False
         return True
 

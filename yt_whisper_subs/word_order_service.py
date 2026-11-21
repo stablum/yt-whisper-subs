@@ -49,7 +49,7 @@ class Service:
 
             return selector.select(pool, opts.model_copy(update={"count": count}), time.time())
 
-        patterns = _Patterns(self._db.word_order_results())
+        patterns = _Patterns(opts.variant, self._db.word_order_results(opts.variant))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         plan = practice_round.Plan(candidates=rows, initial=choose(rows, opts.count), select=choose,
                                    key=operator.itemgetter("word_id"),
@@ -94,19 +94,19 @@ class Service:
             data["recent_examples"] = [json.loads(q["body_json"])["english"] for q in stock.get(row["lookup_id"], [])[:2]]
             data["quality_feedback"] = row.get("quality_feedback", "")
             targets.append(data)
-        drafts = _by_word(self._provider.generate(targets, opts.extras), targets)
+        drafts = _by_word(self._provider.generate(targets, opts), targets)
         proposals = []
         for row, target in zip(rows, targets, strict=True):
             draft = drafts[row["word_id"]]
             try:
-                draft.check(row["word_id"], opts.extras)
+                draft.check(row["word_id"], opts)
                 if draft.pattern != target["pattern"]:
                     raise ValueError("Keep the requested clause or verb-order pattern.")
             except ValueError as exc:
                 row["quality_feedback"] = str(exc)
                 continue
             proposals.append((target, draft))
-        verdicts = _by_word(self._provider.audit(proposals), [target for target, _ in proposals]) if proposals else {}
+        verdicts = _by_word(self._provider.audit(proposals, opts.variant), [target for target, _ in proposals]) if proposals else {}
         ready = {}
         for row in rows:
             word_id = row["word_id"]
@@ -130,12 +130,12 @@ def _by_word(items: list, expected: list[dict]) -> dict:
 class _Patterns:
     """Favor troublesome Dutch structures while avoiding repetitive rounds."""
 
-    def __init__(self, history: list[dict]) -> None:
+    def __init__(self, variant: word_order.Variant, history: list[dict]) -> None:
         """Use the shared smoothed error weighting for constructions, e.g. missed verb clusters recur."""
 
         attempts = Counter(row["pattern"] for row in history)
         failures = Counter(row["pattern"] for row in history if row["outcome"] == "wrong")
-        self._labels = tuple(word_order.PATTERNS)
+        self._labels = variant.patterns
         self._weights = word_select.error_weight([attempts[key] for key in self._labels], [failures[key] for key in self._labels])
         self._chosen = Counter()
 

@@ -14,12 +14,12 @@ from yt_whisper_subs import word_order
 class Progress(QtWidgets.QWidget):
     """Display daily accuracy, partial credit and which Dutch constructions need work."""
 
-    def __init__(self, db) -> None:
+    def __init__(self, db, variant: word_order.Variant) -> None:
         """Reuse practice charts and tables so this page stays read-only."""
 
         super().__init__()
-        self._db = db
-        self._chart = library_practice_progress.TrendChart(i18n.tr('Sentence builder accuracy'), percent=True)
+        self._db, self._variant = db, variant
+        self._chart = library_practice_progress.TrendChart(i18n.tr('{mode} accuracy', mode=variant.label), percent=True)
         self._table = library_practice_tables.StatsTables({
             i18n.mark('Word-order patterns'): [i18n.tr('Pattern'), i18n.tr('Answers'), i18n.tr('Correct'),
                                              i18n.tr('Partial score')],
@@ -31,7 +31,7 @@ class Progress(QtWidgets.QWidget):
     def refresh(self) -> None:
         """Plot graded observations only, e.g. a reported exercise does not affect accuracy."""
 
-        rows = self._db.word_order_results()
+        rows = self._db.word_order_results(self._variant)
         days, skills = [], []
         if rows:
             for row in rows:

@@ -12,8 +12,11 @@ from PySide6 import QtCore, QtGui, QtTest, QtWidgets
 from tests import sentence_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_order_blocks
+from yt_whisper_subs import library_order_replay
 from yt_whisper_subs import library_word_order
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import practice_ready
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import word_order
 from yt_whisper_subs import word_order_service
 
@@ -24,7 +27,7 @@ class Provider:
     model, reasoning = "fixture-sentence-builder", "low"
     available = True
 
-    def generate(self, targets, extras):
+    def generate(self, targets, opts):
         """Use the selected word in a subordinate clause."""
 
         if not self.available:
@@ -32,17 +35,23 @@ class Provider:
         drafts = []
         for target in targets:
             tiles = ["ik blijf thuis", "omdat", "mijn buurman", f"graag wil {target['lemma']}", "als het regent"]
+            distractors = ["toch", "voordat"]
+            if opts.variant == word_order.Variant.PHRASES:
+                tiles = ["na het lange overleg", "bleven mijn nieuwe buren", "in de warme keuken",
+                         f"omdat ze graag wilden {target['lemma']}"]
+                distractors = ["vlak voor de deur", "terwijl de buurt sliep"]
             drafts.append(word_order.Draft(word_id=target["word_id"], english="I stay home because my neighbour likes to walk when it rains.",
                                            dutch=" ".join(tiles).capitalize() + ".", tiles=tiles,
-                                           extras=[word_order.Extra(text=x, why="This changes the meaning.") for x in ["toch", "voordat"][:extras]],
+                                           extras=[word_order.Extra(text=x, why="This changes the meaning.") for x in distractors[:opts.extras]],
                                            pattern=target["pattern"], explanation="After omdat, the finite verb follows the subject.",
                                            target_form=target["lemma"]))
         return drafts
 
-    def audit(self, proposals):
+    def audit(self, proposals, variant):
         """Approve a same-membership alternative, even if the canonical order differs."""
 
-        return [word_order.Verdict(word_id=draft.word_id, valid=True, reason="Grounded", orders=[[0, 1, 2, 3, 4], [0, 1, 4, 2, 3]])
+        orders = [[0, 1, 2, 3]] if variant == word_order.Variant.PHRASES else [[0, 1, 2, 3, 4], [0, 1, 4, 2, 3]]
+        return [word_order.Verdict(word_id=draft.word_id, valid=True, reason="Grounded", orders=orders)
                 for _, draft in proposals]
 
 
@@ -97,6 +106,48 @@ class OrderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verdict.check(word_order.Draft.model_validate_json(row["body_json"]))
 
+    def test_variants_consume_independent_stock_and_keep_both_rounds(self):
+        """Practice clauses without stopping a word round or mixing the two progress histories."""
+
+        opts = word_order.Options(count=1, extras=1)
+        phrases = opts.model_copy(update={"variant": word_order.Variant.PHRASES})
+        for request in (opts, phrases):
+            self.engine.start(request, lambda _: None, background=True)
+        self.provider.available = False
+        words = self.engine.start(opts, lambda _: None)
+        grouped = self.engine.start(phrases, lambda _: None)
+        self.assertEqual(self.db.word_order_resume(), words)
+        self.assertEqual(self.db.word_order_resume(phrases.variant), grouped)
+        row = self.db.word_order_current(grouped)
+        draft = word_order.Draft.model_validate_json(row["body_json"])
+        self.assertGreaterEqual(min(len(tile.split()) for tile in draft.bank), 2)
+        self.db.word_order_answer(row["id"], [0, 1, 2, 3], 1000)
+        day = practice_activity.read(self.db).week[-1]
+        self.assertEqual((day.word_order, day.phrase_order), (0, 1))
+        self.assertEqual(len(self.db.word_order_results(phrases.variant)), 1)
+        self.assertFalse(self.db.word_order_results(opts.variant))
+
+    def test_upgrade_preserves_original_drafts_and_checked_stock(self):
+        """Move a 0.6.31 word round and its untouched spare into the renamed mode."""
+
+        opts = word_order.Options(count=1)
+        session = self.engine.start(opts, lambda _: None)
+        row = self.db.word_order_current(session)
+        self.db.word_order_draft(row["id"], [3, 1])
+        self.engine.start(opts, lambda _: None, background=True)
+        with self.db._connect() as conn:
+            conn.execute("DROP INDEX idx_word_order_active")
+            for table in ("word_order_sessions", "word_order_questions"):
+                conn.execute(f"ALTER TABLE {table} DROP COLUMN variant")
+            conn.execute("CREATE UNIQUE INDEX idx_word_order_active ON word_order_sessions(status) WHERE status='active'")
+            for table in ("word_order_sessions", "word_order_stock"):
+                conn.execute(f"UPDATE {table} SET options_json=json_remove(options_json,'$.variant')")
+        self.db.initialize()
+        self.assertEqual(self.db.word_order_resume(), session)
+        self.assertEqual(json.loads(self.db.word_order_current(session)["draft_json"]), [3, 1])
+        policy = practice_ready.question_policy(self.engine)
+        self.assertEqual(len(self.db.practice_stock(practice_tracks.Track.WORD_ORDER, opts, policy)), 1)
+
     def test_click_drop_and_animated_feedback(self):
         """Click blocks, reorder through the drop handler, then verify native correction and saved draft."""
 
@@ -139,7 +190,38 @@ class OrderTests(unittest.TestCase):
         panel._check.click()
         app.processEvents()
         self.assertTrue(panel._moves.isVisible())
+        self.assertTrue(panel._board.isVisible())
+        self.assertTrue(panel._moves._canvas.isVisible())
+        panel._moves._clock.stop()
+        panel._moves._time.setValue(0)
+        start = panel._moves._canvas.grab().toImage()
+        panel._moves._time.setValue(1000)
+        self.assertNotEqual(start, panel._moves._canvas.grab().toImage())
+        panel._moves._view.setCurrentIndex(1)
+        self.assertTrue(panel._moves._arrows.isVisible())
+        self.assertFalse(panel._moves._canvas.isVisible())
         self.assertIn("Leave out", panel._note.text())
         self.assertFalse(panel._moves.grab().isNull())
         panel._next.click()
         self.assertTrue(panel._finished)
+
+    def test_phrase_replay_reflows_without_covering_controls(self):
+        """Wrap full clauses after resizing, while leaving the scrubber clear below the canvas."""
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        app.setQuitOnLastWindowClosed(False)
+        view = library_order_replay.Correction()
+        self.addCleanup(view.close)
+        view.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+        view.show()
+        bank = ["na het lange overleg", "bleven de nieuwe buren", "in de keuken",
+                "omdat ze samen naar huis wilden lopen", "vlak voor de deur"]
+        colors = {idx: "#90c7f3" for idx in range(len(bank))}
+        view.set_order(bank, colors, [3, 4, 0, 2], [0, 1, 2, 3])
+        view._clock.stop()
+        for width in (950, 545):
+            view.resize(width, view.layout().totalHeightForWidth(width))
+            app.processEvents()
+            canvas = view._canvas
+            self.assertGreaterEqual(canvas.height(), canvas.heightForWidth(canvas.width()))
+            self.assertLess(canvas.geometry().bottom(), view._time.geometry().top())

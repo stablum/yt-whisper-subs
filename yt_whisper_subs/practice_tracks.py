@@ -9,6 +9,7 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import comprehension
+from yt_whisper_subs import word_order
 
 
 class Track(str, enum.Enum):
@@ -21,6 +22,7 @@ class Track(str, enum.Enum):
     SENTENCE_NL_EN = "sentence:nl_en"
     SENTENCE_EN_NL = "sentence:en_nl"
     WORD_ORDER = "word_order"
+    PHRASE_ORDER = "word_order:phrases"
     LISTENING = "sentence:listen_nl"
     READ_COMPREHENSION = "comprehension:read"
     LISTEN_COMPREHENSION = "comprehension:listen"
@@ -36,8 +38,34 @@ class Track(str, enum.Enum):
         """Bind translation direction once; e.g. verb transformations operate only in Dutch."""
 
         value = self.value.partition(":")[2]
+        if self.kind == "word_order":
+            return None
         direction = {'sentence': sentence_practice.Direction, 'comprehension': comprehension.Direction}.get(self.kind, practice.Direction)
         return direction(value) if value else None
+
+    @property
+    def variant(self) -> word_order.Variant | None:
+        """Distinguish the two ordering modes that share a persistence family."""
+
+        if self.kind == "word_order":
+            return word_order.Variant.PHRASES if self == self.PHRASE_ORDER else word_order.Variant.WORDS
+        return None
+
+    @property
+    def session_filter(self) -> tuple[str, str] | None:
+        """Choose the scoped column and value for sessions and cached questions."""
+
+        if self.variant:
+            return "variant", self.variant.value
+        if direction := self.direction:
+            return "direction", direction.value
+        return None
+
+    @property
+    def stock_key(self) -> str:
+        """Use the track suffix to keep standalone and directional stock independent."""
+
+        return self.value.partition(":")[2]
 
     @property
     def label(self) -> str:
@@ -45,8 +73,8 @@ class Track(str, enum.Enum):
 
         if self == self.SOUND:
             return i18n.tr('Sound alike\nListen and choose')
-        if self == self.WORD_ORDER:
-            return i18n.tr('Sentence builder')
+        if self.variant:
+            return self.variant.label
         if self == self.LISTENING:
             return i18n.tr('Listening\nDutch dictation')
         if self.kind == 'comprehension':
@@ -58,7 +86,7 @@ class Track(str, enum.Enum):
     def button_label(self) -> str:
         """Use the group heading for context, e.g. a Passages button needs only 'Reading'."""
 
-        if self == self.WORD_ORDER:
+        if self.variant:
             return self.label
         if self == self.VERBS:
             return i18n.tr('Verb transformations')
@@ -77,6 +105,8 @@ class Track(str, enum.Enum):
         """Derive preparation ownership from the actual request; e.g. opposite directions cannot share a generation lease."""
 
         direction = getattr(opts, "direction", None)
+        if kind == "word_order":
+            return cls.PHRASE_ORDER if opts.variant == word_order.Variant.PHRASES else cls.WORD_ORDER
         return cls(f"{kind}:{direction.value}" if direction else kind)
 
 

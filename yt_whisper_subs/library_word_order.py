@@ -7,6 +7,7 @@ from PySide6 import QtCore, QtWidgets
 
 from yt_whisper_subs import i18n
 from yt_whisper_subs import library_order_blocks as blocks
+from yt_whisper_subs import library_order_replay
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import word_order
@@ -19,13 +20,14 @@ class Panel(QtWidgets.QWidget):
     activity_changed = QtCore.Signal()
     round_reviewed = QtCore.Signal()
     speech_changed = QtCore.Signal(int, str)
-    _key = practice_tracks.Track.WORD_ORDER.settings_key
-
-    def __init__(self, db, *, engine=None) -> None:
+    def __init__(self, db, *, variant=word_order.Variant.WORDS, engine=None) -> None:
         """Build the native board, feedback and compact round options."""
 
         super().__init__()
         self._db = db
+        self._variant = word_order.Variant(variant)
+        track = practice_tracks.Track.for_options("word_order", word_order.Options(variant=self._variant))
+        self._key = track.settings_key
         self._engine = engine or word_order_service.Service(db)
         self._round, self._row, self._task = None, None, None
         self._started, self._finished, self._closed = 0.0, False, False
@@ -35,8 +37,8 @@ class Panel(QtWidgets.QWidget):
         self._prompt = QtWidgets.QLabel()
         self._prompt.setObjectName("practicePrompt")
         self._hint = QtWidgets.QLabel()
-        self._board = blocks.Board()
-        self._moves = blocks.Moves()
+        self._moves = library_order_replay.Correction()
+        self._board = blocks.Board(self._moves)
         self._result = QtWidgets.QLabel()
         self._result.setObjectName("practiceResult")
         self._answer = QtWidgets.QLabel()
@@ -54,7 +56,7 @@ class Panel(QtWidgets.QWidget):
         self._again = self._button(i18n.tr('New round'), self._new, primary=True)
         self._cancel = self._button(i18n.tr('Cancel preparation'), self._cancel_task)
         self._lay_out()
-        self._idle(i18n.tr('Sentence builder'), '')
+        self._idle(self._variant.label, '')
 
     @property
     def round_id(self) -> str | None:
@@ -117,7 +119,7 @@ class Panel(QtWidgets.QWidget):
         self._scroll.setWidgetResizable(True)
         content = QtWidgets.QWidget()
         body = QtWidgets.QVBoxLayout(content)
-        for widget in (self._prompt, self._hint, self._board, self._result, self._answer, self._note, self._moves):
+        for widget in (self._prompt, self._hint, self._board, self._result, self._answer, self._note):
             body.addWidget(widget)
         body.addStretch()
         self._scroll.setWidget(content)
@@ -135,7 +137,7 @@ class Panel(QtWidgets.QWidget):
 
         if self._closed or self._task or self._finished or not self.isVisible():
             return
-        self._round = self._round or self._db.word_order_resume()
+        self._round = self._round or self._db.word_order_resume(self._variant)
         if self._round:
             self._open_question()
         else:
@@ -154,7 +156,8 @@ class Panel(QtWidgets.QWidget):
 
         if self._closed or self._task:
             return
-        opts = word_order.Options(count=self._count.value(), extras=self._extras.value(), include_early=self._early.isChecked())
+        opts = word_order.Options(count=self._count.value(), extras=self._extras.value(),
+                                 include_early=self._early.isChecked(), variant=self._variant)
         self._db.set_setting(self._key, opts.model_dump_json())
         self._idle(i18n.tr('Preparing Dutch sentence builds…'), '')
         self._again.hide()
@@ -230,11 +233,11 @@ class Panel(QtWidgets.QWidget):
         self._again.hide()
         self._report.show()
         self._board.open(draft.bank, json.loads(self._row["tray_json"]), selected)
+        self._board.show()
         if self._row["outcome"]:
             self._feedback(draft, selected)
         else:
             self._started = time.monotonic()
-            self._board.show()
             self._reset.show()
             self._check.setEnabled(bool(selected))
             self._check.show()
@@ -267,13 +270,15 @@ class Panel(QtWidgets.QWidget):
         self._hint.setText(i18n.tr(word_order.PATTERNS[draft.pattern]))
         self._result.setText(i18n.tr('Correct order') if grade.correct else i18n.tr('Order score: {score:.0%}', score=grade.partial))
         self._result.show()
+        self._board.reveal(None if grade.correct else grade.solution)
         if not grade.correct:
-            self._moves.set_order(draft.bank, self._board.colors, selected, grade.solution)
-            self._moves.show()
             self._replay.show()
         self._answer.setText(draft.dutch)
         self._answer.show()
         notes = [draft.explanation]
+        if grade.solution != list(range(len(draft.tiles))):
+            notes.append(i18n.tr('This order also works.') if grade.correct else
+                         i18n.tr('The replay uses the valid order closest to your submission.'))
         if grade.omitted:
             notes.append(i18n.tr('Missing blocks: {blocks}', blocks=' · '.join(draft.bank[idx] for idx in grade.omitted)))
         for idx in grade.excluded:
@@ -313,12 +318,12 @@ class Panel(QtWidgets.QWidget):
         self._hint.setText(hint)
         self._scroll.verticalScrollBar().setValue(0)
         self._again.show()
-        for widget in (self._board, self._moves, self._result, self._answer, self._note, self._check, self._reset,
+        for widget in (self._board, self._result, self._answer, self._note, self._check, self._reset,
                        self._replay, self._report, self._next, self._cancel):
             widget.hide()
 
     def showEvent(self, event) -> None:
-        """Resume a last-used Sentence builder page when the whole Practice window opens."""
+        """Resume the last-used ordering page when the Practice window opens."""
 
         super().showEvent(event)
         QtCore.QTimer.singleShot(0, self, self.activate)

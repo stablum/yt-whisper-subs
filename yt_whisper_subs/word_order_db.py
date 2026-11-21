@@ -4,7 +4,9 @@ import json
 import random
 import time
 import uuid
+from itertools import permutations
 
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import word_order
 
 
@@ -20,7 +22,8 @@ CREATE TABLE IF NOT EXISTS word_order_questions (
     reasoning TEXT NOT NULL,
     prompt_version INTEGER NOT NULL,
     created_at REAL NOT NULL,
-    flagged_at REAL
+    flagged_at REAL,
+    variant TEXT NOT NULL DEFAULT 'words' CHECK(variant IN ('words','phrases'))
 );
 CREATE INDEX IF NOT EXISTS idx_word_order_lookup ON word_order_questions(lookup_id,extras,flagged_at);
 CREATE TABLE IF NOT EXISTS word_order_sessions (
@@ -28,9 +31,9 @@ CREATE TABLE IF NOT EXISTS word_order_sessions (
     options_json TEXT NOT NULL,
     created_at REAL NOT NULL,
     finished_at REAL,
-    status TEXT NOT NULL CHECK(status IN ('active','completed','stopped'))
+    status TEXT NOT NULL CHECK(status IN ('active','completed','stopped')),
+    variant TEXT NOT NULL DEFAULT 'words' CHECK(variant IN ('words','phrases'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_word_order_active ON word_order_sessions(status) WHERE status='active';
 CREATE TABLE IF NOT EXISTS word_order_presentations (
     id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES word_order_sessions(id),
@@ -59,6 +62,22 @@ JOIN word_order_sessions s ON s.id=p.session_id
 """
 
 
+def upgrade(conn) -> None:
+    """Keep original questions, drafts and stock in Word order while allowing a second active round."""
+
+    migrated = False
+    for table in ("word_order_questions", "word_order_sessions"):
+        if "variant" not in {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN variant TEXT NOT NULL DEFAULT 'words' CHECK(variant IN ('words','phrases'))")
+            migrated = True
+    if migrated:
+        conn.execute("DROP INDEX IF EXISTS idx_word_order_active")
+        for table in ("word_order_sessions", "word_order_stock"):
+            conn.execute(f"UPDATE {table} SET options_json=json_set(options_json,'$.variant','words') "
+                         "WHERE json_type(options_json,'$.variant') IS NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_word_order_active ON word_order_sessions(variant) WHERE status='active'")
+
+
 class WordOrderDbMixin:
     """Store block identities and verified solutions, e.g. restarting never reshuffles a draft."""
 
@@ -69,14 +88,15 @@ class WordOrderDbMixin:
             rows = conn.execute(
                 "SELECT q.*,COUNT(p.shown_at) AS uses FROM word_order_questions q "
                 "LEFT JOIN word_order_presentations p ON p.question_id=q.id WHERE q.flagged_at IS NULL "
-                "AND q.extras=:extras AND q.model=:model AND q.reasoning=:reasoning AND q.prompt_version=:prompt_version "
-                "GROUP BY q.id ORDER BY uses,q.id DESC", {**policy, "extras": opts.extras})
+                "AND q.variant=:variant AND q.extras=:extras AND q.model=:model AND q.reasoning=:reasoning "
+                "AND q.prompt_version=:prompt_version GROUP BY q.id ORDER BY uses,q.id DESC",
+                {**policy, "extras": opts.extras, "variant": opts.variant.value})
             return [dict(row) for row in rows]
 
     def word_order_cache(self, draft, verdict, target: dict, opts, policy: dict) -> dict:
         """Cache only independently verified bilingual builds linked to their exact vocabulary sighting."""
 
-        draft.check(target["word_id"], opts.extras)
+        draft.check(target["word_id"], opts)
         verdict.check(draft)
         with self._connect() as conn:
             row = conn.execute("SELECT word_id FROM vocab_lookups WHERE id=?", (target["lookup_id"],)).fetchone()
@@ -84,9 +104,9 @@ class WordOrderDbMixin:
                 raise ValueError("The source vocabulary identity changed")
             cursor = conn.execute(
                 "INSERT INTO word_order_questions(lookup_id,extras,pattern,body_json,validation_json,model,reasoning,"
-                "prompt_version,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                "prompt_version,created_at,variant) VALUES(?,?,?,?,?,?,?,?,?,?)",
                 (target["lookup_id"], opts.extras, draft.pattern, draft.model_dump_json(), verdict.model_dump_json(),
-                 policy["model"], policy["reasoning"], policy["prompt_version"], time.time()))
+                 policy["model"], policy["reasoning"], policy["prompt_version"], time.time(), opts.variant.value))
             return dict(conn.execute("SELECT * FROM word_order_questions WHERE id=?", (cursor.lastrowid,)).fetchone())
 
     def word_order_create(self, opts, questions: list[dict], _scheduler: str) -> str:
@@ -101,27 +121,33 @@ class WordOrderDbMixin:
             displays = []
             for idx, question_id in enumerate(ids, 1):
                 q = conn.execute("SELECT body_json,validation_json FROM word_order_questions WHERE id=? "
-                                 "AND extras=? AND flagged_at IS NULL", (question_id, opts.extras)).fetchone()
+                                 "AND extras=? AND variant=? AND flagged_at IS NULL",
+                                 (question_id, opts.extras, opts.variant.value)).fetchone()
                 if q is None:
                     raise ValueError("A sentence builder question is no longer available")
                 draft = word_order.Draft.model_validate_json(q["body_json"])
                 verdict = word_order.Verdict.model_validate_json(q["validation_json"])
                 tray = list(range(len(draft.bank)))
                 random.shuffle(tray)
-                while [block for block in tray if block < len(draft.tiles)] in verdict.orders:
-                    random.shuffle(tray)
+                slots = [pos for pos, block in enumerate(tray) if block < len(draft.tiles)]
+                accepted = {tuple(order) for order in verdict.orders}
+                mixed = next(order for order in permutations([tray[pos] for pos in slots]) if order not in accepted)
+                for pos, block in zip(slots, mixed, strict=True):
+                    tray[pos] = block
                 displays.append((session_id, question_id, idx, json.dumps(tray)))
-            self._word_order_close(conn, "stopped")
-            self._practice_consume_stock(conn, "word_order")
-            conn.execute("INSERT INTO word_order_sessions VALUES(?,?,?,NULL,'active')", (session_id, opts.model_dump_json(), now))
+            self._word_order_close(conn, "stopped", opts.variant)
+            track = practice_tracks.Track.for_options("word_order", opts)
+            self._practice_consume_stock(conn, "word_order", track.stock_key)
+            conn.execute("INSERT INTO word_order_sessions(id,options_json,created_at,status,variant) VALUES(?,?,?,'active',?)",
+                         (session_id, opts.model_dump_json(), now, opts.variant.value))
             conn.executemany("INSERT INTO word_order_presentations(session_id,question_id,ordinal,tray_json) VALUES(?,?,?,?)", displays)
         return session_id
 
-    def word_order_active(self) -> str | None:
+    def word_order_active(self, variant: word_order.Variant = word_order.Variant.WORDS) -> str | None:
         """Read the active round without marking any question shown."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT id FROM word_order_sessions WHERE status='active'").fetchone()
+            row = conn.execute("SELECT id FROM word_order_sessions WHERE status='active' AND variant=?", (variant,)).fetchone()
             return row[0] if row else None
 
     def word_order_options(self, session_id: str) -> word_order.Options:
@@ -131,14 +157,14 @@ class WordOrderDbMixin:
             saved = conn.execute("SELECT options_json FROM word_order_sessions WHERE id=?", (session_id,)).fetchone()
         return word_order.Options.model_validate_json(saved[0])
 
-    def word_order_resume(self) -> str | None:
+    def word_order_resume(self, variant: word_order.Variant = word_order.Variant.WORDS) -> str | None:
         """Resume unfinished feedback as well as untouched questions."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT s.id FROM word_order_sessions s WHERE s.status='active' OR EXISTS ("
+            row = conn.execute("SELECT s.id FROM word_order_sessions s WHERE s.variant=? AND (s.status='active' OR EXISTS ("
                                "SELECT 1 FROM word_order_presentations p WHERE p.session_id=s.id "
-                               "AND p.outcome IN ('correct','wrong') AND p.viewed_at IS NULL) "
-                               "ORDER BY s.status='active' DESC,s.created_at DESC LIMIT 1").fetchone()
+                               "AND p.outcome IN ('correct','wrong') AND p.viewed_at IS NULL)) "
+                               "ORDER BY s.status='active' DESC,s.created_at DESC LIMIT 1", (variant,)).fetchone()
             return row[0] if row else None
 
     def word_order_current(self, session_id: str) -> dict | None:
@@ -201,13 +227,13 @@ class WordOrderDbMixin:
                 self._word_order_close(conn, "completed")
 
     @staticmethod
-    def _word_order_close(conn, status: str) -> None:
+    def _word_order_close(conn, status: str, variant: word_order.Variant | None = None) -> None:
         """Complete fully resolved rounds, or stop the old round when explicitly replaced."""
 
         ready = "" if status == "stopped" else (
             "AND NOT EXISTS (SELECT 1 FROM word_order_presentations p WHERE p.session_id=s.id AND p.outcome IS NULL)")
-        conn.execute(f"UPDATE word_order_sessions AS s SET status=?,finished_at=? WHERE s.status='active' {ready}",
-                     (status, time.time()))
+        conn.execute(f"UPDATE word_order_sessions AS s SET status=?,finished_at=? WHERE s.status='active' "
+                     f"AND (? IS NULL OR s.variant=?) {ready}", (status, time.time(), variant, variant))
 
     def word_order_summary(self, session_id: str) -> dict:
         """Supply the shared guided practice and scheduling contracts."""
@@ -219,11 +245,11 @@ class WordOrderDbMixin:
                 "COUNT(*) FILTER(WHERE outcome IN ('correct','wrong') AND viewed_at IS NULL) AS unseen "
                 "FROM word_order_presentations WHERE session_id=?", (session_id,)).fetchone())
 
-    def word_order_results(self) -> list[dict]:
+    def word_order_results(self, variant: word_order.Variant) -> list[dict]:
         """Read non-disputed scores for grammar selection and date-based progress."""
 
         with self._connect() as conn:
             rows = conn.execute("SELECT p.answered_at,p.outcome,q.pattern,json_extract(p.grade_json,'$.partial') AS partial "
                                 "FROM word_order_presentations p JOIN word_order_questions q ON q.id=p.question_id "
-                                "WHERE p.outcome IN ('correct','wrong') ORDER BY p.answered_at")
+                                "WHERE p.outcome IN ('correct','wrong') AND q.variant=? ORDER BY p.answered_at", (variant,))
             return [dict(row) for row in rows]

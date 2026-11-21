@@ -16,7 +16,15 @@ _COLORS = (
 )
 
 
-def _chip(painter, rect, label, color, *, focused=False) -> None:
+def chip_size(metrics, label: str, available: int) -> QtCore.QSize:
+    """Measure the complete label, wrapping long phrases instead of clipping the answer."""
+
+    width = min(max(72, available), metrics.horizontalAdvance(label) + 32)
+    box = metrics.boundingRect(QtCore.QRect(0, 0, width - 24, 400), QtCore.Qt.TextFlag.TextWordWrap, label)
+    return QtCore.QSize(width, max(36, box.height() + 16))
+
+
+def paint_chip(painter, rect, label, color, *, focused=False) -> None:
     """Keep bright text on dark tiles with a shared accent outline for each block."""
 
     accent = QtGui.QColor(color)
@@ -31,9 +39,9 @@ def _chip(painter, rect, label, color, *, focused=False) -> None:
         painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(3, 3, -3, -3), 4, 4)
     painter.setPen(QtGui.QColor("#f1f5fb"))
-    inner = rect.adjusted(9, 0, -9, 0)
-    clipped = painter.fontMetrics().elidedText(label, QtCore.Qt.TextElideMode.ElideRight, max(0, int(inner.width())))
-    painter.drawText(inner, QtCore.Qt.AlignmentFlag.AlignCenter, clipped)
+    inner = rect.adjusted(10, 0, -10, 0)
+    flags = int(QtCore.Qt.AlignmentFlag.AlignCenter) | int(QtCore.Qt.TextFlag.TextWordWrap)
+    painter.drawText(inner, flags, label)
 
 
 class _Delegate(QtWidgets.QStyledItemDelegate):
@@ -46,8 +54,8 @@ class _Delegate(QtWidgets.QStyledItemDelegate):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setFont(option.font)
         selected = bool(option.state & (QtWidgets.QStyle.StateFlag.State_Selected | QtWidgets.QStyle.StateFlag.State_HasFocus))
-        _chip(painter, QtCore.QRectF(option.rect.adjusted(2, 2, -2, -2)), index.data(),
-              index.data(_ROLE + 1), focused=selected)
+        paint_chip(painter, QtCore.QRectF(option.rect.adjusted(2, 2, -2, -2)), index.data(),
+                   index.data(_ROLE + 1), focused=selected)
         painter.restore()
 
 
@@ -87,6 +95,17 @@ class _Tiles(QtWidgets.QListWidget):
         """A click appends to the answer or returns a block to its bank."""
 
         self.moved.emit(item.data(_ROLE), not self.answer, -1)
+
+    def resizeEvent(self, event) -> None:
+        """Reflow long blocks on narrow windows, including after a scrollbar appears."""
+
+        super().resizeEvent(event)
+        available = self.viewport().width() - 12
+        for idx in range(self.count()):
+            item = self.item(idx)
+            size = chip_size(self.fontMetrics(), item.text(), available)
+            if item.sizeHint() != size:
+                item.setSizeHint(size)
 
     def startDrag(self, _actions) -> None:
         """Move the block visually without allowing Qt to duplicate or delete a list item."""
@@ -151,20 +170,25 @@ class Board(QtWidgets.QWidget):
 
     changed = QtCore.Signal(list)
 
-    def __init__(self) -> None:
+    def __init__(self, correction) -> None:
         """Show both destinations at once, so returning an unwanted block is always possible."""
 
         super().__init__()
         self._blocks, self._tray, self._selected = [], [], []
         self._colors = {}
+        self._correction = correction
         self._bank, self._answer = _Tiles(self, answer=False), _Tiles(self, answer=True)
+        self._bank_label = QtWidgets.QLabel(i18n.tr('Available blocks'))
+        answer_label = QtWidgets.QLabel(i18n.tr('Your sentence'))
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        for text, view in ((i18n.tr('Available blocks'), self._bank), (i18n.tr('Your sentence'), self._answer)):
-            view.setAccessibleName(text)
-            layout.addWidget(QtWidgets.QLabel(text))
+        for label, view in ((self._bank_label, self._bank), (answer_label, self._answer)):
+            view.setAccessibleName(label.text())
+            layout.addWidget(label)
             layout.addWidget(view)
             view.moved.connect(self._move)
+        layout.addWidget(self._correction)
+        self._correction.hide()
 
     @property
     def selected(self) -> list[int]:
@@ -183,7 +207,24 @@ class Board(QtWidgets.QWidget):
 
         self._blocks, self._tray, self._selected = blocks, tray, selected.copy()
         self._colors = {block: _COLORS[idx] for idx, block in enumerate(tray)}
+        self._correction.hide()
+        self._bank_label.show()
+        self._bank.show()
+        self._bank.setEnabled(True)
+        self._answer.setEnabled(True)
+        self._answer.show()
         self._render()
+
+    def reveal(self, solution: list[int] | None) -> None:
+        """Keep the answer area in place while switching from editing to feedback."""
+
+        self._bank_label.hide()
+        self._bank.hide()
+        self._answer.setEnabled(False)
+        if solution is not None:
+            self._correction.set_order(self._blocks, self._colors, self._selected, solution)
+            self._answer.hide()
+            self._correction.show()
 
     def clear_answer(self) -> None:
         """Send all selected blocks back to the bank in its original order."""
@@ -216,7 +257,7 @@ class Board(QtWidgets.QWidget):
                 item.setData(_ROLE, block)
                 item.setData(_ROLE + 1, self._colors[block])
                 item.setToolTip(label)
-                item.setSizeHint(QtCore.QSize(view.fontMetrics().horizontalAdvance(label) + 28, 36))
+                item.setSizeHint(chip_size(view.fontMetrics(), label, view.viewport().width() - 12))
                 if view.answer == answer and block == focus:
                     view.setCurrentItem(item)
                     view.scrollToItem(item)
@@ -243,7 +284,7 @@ class Moves(QtWidgets.QWidget):
         """Show the actual and closest valid order, e.g. an omitted finite verb enters from the center."""
 
         self._blocks, self._colors, self._before, self._after = blocks, colors, before, after
-        self.setMinimumHeight(36 + 32 * max(len(before), len(after)))
+        self._fit_height()
         self.setAccessibleDescription(" → ".join((" ".join(blocks[idx] for idx in before), " ".join(blocks[idx] for idx in after))))
         self.replay()
 
@@ -259,6 +300,37 @@ class Moves(QtWidgets.QWidget):
         self._t = value
         self.update()
 
+    def resizeEvent(self, event) -> None:
+        """Give both columns room for wrapped phrase labels."""
+
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def _fit_height(self) -> None:
+        """Fit the longest side of the before/after diagram."""
+
+        col, right = self._columns()
+        _, left_height = self._slots(self._before, 5, col)
+        _, right_height = self._slots(self._after, right, col)
+        self.setMinimumHeight(max(left_height, right_height) + 6)
+
+    def _columns(self) -> tuple[float, float]:
+        """Leave a center lane wide enough to see crossing arrows."""
+
+        lane = min(150, self.width() * .26)
+        col = (self.width() - lane - 10) / 2
+        return col, col + lane + 5
+
+    def _slots(self, ids, x, width) -> tuple[dict[int, QtCore.QRectF], int]:
+        """Lay out a legible chip per row, allowing long blocks to wrap."""
+
+        slots, y = {}, 28
+        for block in ids:
+            height = chip_size(self.fontMetrics(), self._blocks[block], int(width)).height()
+            slots[block] = QtCore.QRectF(x, y, width, height - 4)
+            y += height + 2
+        return slots, y
+
     def paintEvent(self, _event) -> None:
         """Link color-matched blocks across two columns and animate the moved blocks along the arrows."""
 
@@ -266,20 +338,18 @@ class Moves(QtWidgets.QWidget):
         painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
         painter.setPen(QtGui.QColor("#d7e2ee"))
         width = self.width()
-        lane = min(150, width * .26)
-        col = (width - lane - 10) / 2
-        right = col + lane + 5
+        col, right = self._columns()
         painter.drawText(5, 18, i18n.tr('Your sentence'))
         painter.drawText(int(right), 18, i18n.tr('Correct order'))
-        lhs = {block: QtCore.QRectF(5, 28 + idx * 32, col, 27) for idx, block in enumerate(self._before)}
-        rhs = {block: QtCore.QRectF(right, 28 + idx * 32, col, 27) for idx, block in enumerate(self._after)}
+        lhs, _ = self._slots(self._before, 5, col)
+        rhs, _ = self._slots(self._after, right, col)
         for block in (*self._before, *[idx for idx in self._after if idx not in lhs]):
             left, dest = lhs.get(block), rhs.get(block)
             color = self._colors[block]
             if left is not None:
-                _chip(painter, left, self._blocks[block], color)
+                paint_chip(painter, left, self._blocks[block], color)
             if dest is not None:
-                _chip(painter, dest, self._blocks[block], color)
+                paint_chip(painter, dest, self._blocks[block], color)
             start = QtCore.QPointF(col + 11, left.center().y()) if left else QtCore.QPointF(width / 2, dest.center().y())
             end = QtCore.QPointF(right - 6, dest.center().y()) if dest else QtCore.QPointF(width / 2, left.center().y())
             self._arrow(painter, start, end, color, left is None or dest is None)

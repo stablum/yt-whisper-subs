@@ -1,5 +1,6 @@
 """Define bilingual sentence-building questions and instant, alternative-aware grading."""
 
+import enum
 import re
 
 import pydantic as pd
@@ -15,7 +16,32 @@ PATTERNS = {
     "relative": i18n.mark("Relative clauses"),
     "verb_cluster": i18n.mark("Verb clusters"),
     "separable": i18n.mark("Separable verbs"),
+    "clause_order": i18n.mark("Main and subordinate clause order"),
+    "fronting": i18n.mark("Fronted phrases and clauses"),
+    "embedded": i18n.mark("Embedded and relative clauses"),
+    "coordination": i18n.mark("Coordinated clauses"),
 }
+
+
+class Variant(enum.StrEnum):
+    """Distinguish local word placement from ordering whole sentence constituents."""
+
+    WORDS = "words"
+    PHRASES = "phrases"
+
+    @property
+    def label(self) -> str:
+        """Name the movable units directly on the practice and progress buttons."""
+
+        return i18n.tr('Word order') if self == self.WORDS else i18n.tr('Phrase and clause order')
+
+    @property
+    def patterns(self) -> tuple[str, ...]:
+        """Choose patterns that can be tested at the practiced level."""
+
+        if self == self.WORDS:
+            return ("subordinate", "inversion", "relative", "verb_cluster", "separable")
+        return ("clause_order", "fronting", "embedded", "coordination")
 
 
 class Options(pd.BaseModel):
@@ -24,12 +50,13 @@ class Options(pd.BaseModel):
     count: int = pd.Field(default=10, ge=1, le=30)
     extras: int = pd.Field(default=2, ge=0, le=4)
     include_early: bool = False
+    variant: Variant = Variant.WORDS
 
 
 class Extra(practice.Content):
     """Keep a plausible extra block and an explanation of why it does not fit."""
 
-    text: str = pd.Field(min_length=1, max_length=60)
+    text: str = pd.Field(min_length=1, max_length=95)
     why: str = pd.Field(min_length=3, max_length=450)
 
 
@@ -39,7 +66,7 @@ class Draft(practice.Content):
     word_id: int
     english: str = pd.Field(min_length=12, max_length=330)
     dutch: str = pd.Field(min_length=12, max_length=330)
-    tiles: list[str] = pd.Field(min_length=5, max_length=10)
+    tiles: list[str] = pd.Field(min_length=4, max_length=10)
     extras: list[Extra] = pd.Field(max_length=4)
     pattern: str
     explanation: str = pd.Field(min_length=16, max_length=850)
@@ -51,15 +78,23 @@ class Draft(practice.Content):
 
         return self.tiles + [extra.text for extra in self.extras]
 
-    def check(self, word_id: int, extras: int) -> None:
+    def check(self, word_id: int, opts: Options) -> None:
         """Reject malformed builds before audit, e.g. two visually indistinguishable tiles."""
 
-        if self.word_id != word_id or self.pattern not in PATTERNS or len(self.extras) != extras:
+        phrases = opts.variant == Variant.PHRASES
+        allowed = range(4, 8) if phrases else range(5, 11)
+        if (self.word_id != word_id or self.pattern not in opts.variant.patterns
+                or len(self.extras) != opts.extras or len(self.tiles) not in allowed):
             raise ValueError("Sentence builder targets, patterns or extra block counts do not match")
         labels = [normalized(tile) for tile in self.bank]
+        limit = 95 if phrases else 60
         if (not all(labels) or len(set(labels)) != len(labels)
-                or any(len(tile) > 60 or tile != tile.strip() or '\n' in tile for tile in self.bank)):
+                or any(len(tile) > limit or tile != tile.strip() or '\n' in tile for tile in self.bank)):
             raise ValueError("Each block needs distinct, readable text")
+        if phrases:
+            lengths = [len(label.split()) for label in labels]
+            if min(lengths) < 2 or sum(length >= 4 for length in lengths[:len(self.tiles)]) < 2:
+                raise ValueError("Use multiword constituents throughout, with at least two solution blocks of four words or more")
         if normalized(self.dutch) != normalized(" ".join(self.tiles)):
             raise ValueError("The source blocks do not reconstruct the Dutch sentence")
         if not re.search(rf"(?<!\w){re.escape(self.target_form.strip())}(?!\w)", self.dutch, re.I):
@@ -89,6 +124,8 @@ class Verdict(practice.Content):
             raise ValueError(self.reason or "The independent review rejected the exercise")
         if tuple(expected) not in orders or any(sorted(order) != expected for order in orders):
             raise ValueError("The reviewer did not independently reconstruct the required blocks")
+        if len(expected) == 4 and len(set(orders)) == 24:
+            raise ValueError("Every ordering works, so this exercise cannot test order")
 
 
 class Verdicts(practice.Content):

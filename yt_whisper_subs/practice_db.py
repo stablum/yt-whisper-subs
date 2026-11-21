@@ -125,7 +125,8 @@ class PracticeDbMixin:
                                 "json_extract(q.body_json,'$.word_ids') FROM comprehension_presentations p "
                                 "JOIN comprehension_sessions s ON s.id=p.session_id JOIN comprehension_questions q ON q.id=p.question_id "
                                 "WHERE p.answer_text IS NOT NULL AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
-                                "SELECT p.answered_at,NULL,p.answer_json,p.outcome,'word_order',l.word_id,NULL "
+                                "SELECT p.answered_at,NULL,p.answer_json,p.outcome,"
+                                "CASE q.variant WHEN 'phrases' THEN 'phrase_order' ELSE 'word_order' END,l.word_id,NULL "
                                 "FROM word_order_presentations p JOIN word_order_questions q ON q.id=p.question_id "
                                 "JOIN vocab_lookups l ON l.id=q.lookup_id WHERE p.answer_json IS NOT NULL "
                                 "AND p.answered_at>=? AND p.answered_at<=? ORDER BY answered_at",

@@ -33,8 +33,9 @@ class StockDbMixin:
         """Exclude questions already assigned to an active round from background stock; e.g. its unseen last question is not also next round's first."""
 
         track = practice_tracks.Track.for_options(kind, opts)
-        where = " AND s.direction=?" if track.direction else ""
-        params = (track.direction.value,) if track.direction else ()
+        scope = track.session_filter
+        where = f" AND s.{scope[0]}=?" if scope else ""
+        params = (scope[1],) if scope else ()
         with self._connect() as conn:
             return {row[0] for row in conn.execute(f"SELECT p.question_id FROM {kind}_presentations p "
                     f"JOIN {kind}_sessions s ON s.id=p.session_id WHERE s.status='active'{where}", params)}
@@ -45,8 +46,9 @@ class StockDbMixin:
         track = practice_tracks.Track.for_options(kind, opts)
         value = {"practice": "l.word_id", "word_order": "l.word_id", "sentence": "q.anchor_word_id", "verb": "q.target_id"}[kind]
         extra = " JOIN vocab_lookups l ON l.id=q.lookup_id" if kind in {"practice", "word_order"} else ""
-        where = " AND s.direction=?" if track.direction else ""
-        params = (track.direction.value,) if track.direction else ()
+        scope = track.session_filter
+        where = f" AND s.{scope[0]}=?" if scope else ""
+        params = (scope[1],) if scope else ()
         with self._connect() as conn:
             active = {row[0] for row in conn.execute(f"SELECT {value} FROM {kind}_presentations p "
                       f"JOIN {kind}_questions q ON q.id=p.question_id JOIN {kind}_sessions s ON s.id=p.session_id{extra} "
@@ -61,7 +63,7 @@ class StockDbMixin:
         """Stage complete checked content without sessions or exposures; e.g. pending sentence corrections can finish while the next round is ready."""
 
         track = practice_tracks.Track.for_options(kind, opts)
-        direction = track.direction.value if track.direction else ""
+        direction = track.stock_key
         if len(questions) != opts.count or len({row["id"] for row in questions}) != opts.count:
             raise ValueError("A standby round needs its full requested number of distinct questions")
         with self._connect() as conn:
@@ -77,14 +79,15 @@ class StockDbMixin:
         """Read matching, still-approved questions in stored order; e.g. a disputed question cannot remain playable in a ready round."""
 
         kind = track.kind
-        direction = track.direction.value if track.direction else ""
+        direction = track.stock_key
+        scope = track.session_filter
         with self._connect() as conn:
             row = conn.execute(f"SELECT options_json FROM {kind}_stock WHERE direction=?", (direction,)).fetchone()
             if row is None or json.loads(row[0]) != opts.model_dump(mode="json"):
                 return []
             rows = conn.execute(f"SELECT q.*,p.display_json FROM {kind}_stock_questions p JOIN {kind}_questions q ON q.id=p.question_id "
                                 "WHERE p.direction=? ORDER BY p.ordinal", (direction,)).fetchall()
-            valid = len(rows) == opts.count and all(row["flagged_at"] is None and (not track.direction or row["direction"] == direction)
+            valid = len(rows) == opts.count and all(row["flagged_at"] is None and (not scope or row[scope[0]] == scope[1])
                                                    and all(row[key] == value for key, value in policy.items()) for row in rows)
             return [{**dict(row), **json.loads(row["display_json"])} for row in rows] if valid else []
 
