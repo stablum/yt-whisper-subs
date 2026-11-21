@@ -158,6 +158,8 @@ class Panel(QtWidgets.QWidget):
                 return self._engine.start(opts, report, cached_first=cached)
             except practice_round.NothingToPractice as empty:
                 return empty
+            except comp.DraftRejected as rejected:
+                return rejected
 
         task = library_workers.BackgroundTask(prepare)
         self._task = task
@@ -177,6 +179,10 @@ class Panel(QtWidgets.QWidget):
         self._view.cancel.hide()
         if isinstance(result, practice_round.NothingToPractice):
             self._rest(i18n.tr('No round available yet'), str(result))
+            return
+        if isinstance(result, comp.DraftRejected):
+            self._rest(i18n.tr('Preparation failed'),
+                       i18n.tr('The text and questions did not pass the independent review. Try again for a new draft.'))
             return
         self._run.session, self._run.phase = result, 'ready'
         if self.isVisible():

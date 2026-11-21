@@ -40,8 +40,15 @@ class ComprehensionService:
             return True
         if ready := self._db.comprehension_ready(opts, self.policy):
             return opts.direction == comp.Direction.LISTEN and not self.audio.ready(ready['passage_id'])
-        active = self._db.comprehension_active(opts.direction.value)
-        return not active or bool(self._db.comprehension_summary(active)['submitted'])
+        return not self._untouched_match(self._db.comprehension_active(opts.direction.value), opts)
+
+    def _untouched_match(self, session_id: str | None, opts: comp.Options) -> bool:
+        """A fresh round covers matching settings only, e.g. eight old questions cannot fill a new four-question request."""
+
+        if not session_id:
+            return False
+        saved = comp.Options.model_validate_json(self._db.comprehension_session(session_id)['options_json'])
+        return saved.content_key() == opts.content_key() and not self._db.comprehension_summary(session_id)['submitted']
 
     def _missing_resume_audio(self, opts: comp.Options) -> dict | None:
         """Check the shared voice on resumed work, e.g. a warm spare cannot hide a missing active recording."""
@@ -70,7 +77,7 @@ class ComprehensionService:
             if ready := self._db.comprehension_ready(opts, self.policy):
                 self.prepare_media(ready['passage_id'], opts, progress)
                 return ready['id'] if background else self._db.comprehension_use_ready(ready['id'], opts)
-            if active and background and not self._db.comprehension_summary(active)['submitted']:
+            if background and self._untouched_match(active, opts):
                 return active
             session = self._reserve(opts, progress)
             passage_id = self._db.comprehension_session(session)['passage_id']
@@ -85,25 +92,44 @@ class ComprehensionService:
             row = self._db.comprehension_pool(opts, self.policy)
             if row is None:
                 row = self._generate(opts, progress)
-            for attempt in range(2):
-                passage_id = row['id']
-                if row['validation_json'] is not None:
-                    break
+            repaired = redrafted = False
+            while row['validation_json'] is None:
                 passage = comp.Passage.model_validate_json(row['body_json'])
+                targets = json.loads(row['targets_json'])
                 try:
-                    passage.check(opts, {t['word_id'] for t in json.loads(row['targets_json'])})
-                    progress('Tekst en vragen onafhankelijk controleren…')
-                    verdict = self._provider.audit(passage)
-                    verdict.check(passage)
-                except ValueError as exc:
-                    self._db.comprehension_reject(passage_id, str(exc))
-                    if attempt:
+                    self._audit_draft(row['id'], passage, opts, targets, progress)
+                    break
+                except comp.DraftRejected as exc:
+                    reason = str(exc)
+                    if exc.questions and not repaired:
+                        repaired = True
+                        progress(i18n.tr('Revising questions flagged by the independent review…'))
+                        try:
+                            fixed = self._provider.repair_questions(passage, exc.questions)
+                        except ValueError as repair_error:
+                            reason += f"\n{repair_error}"
+                        else:
+                            pid = self._db.comprehension_cache(fixed, opts, targets, self.policy,
+                                                               replaces=(row['id'], reason))
+                            row = self._db.comprehension_passage(pid)
+                            continue
+                    if redrafted:
+                        self._db.comprehension_reject(row['id'], reason)
                         raise
-                    row = self._generate(opts, progress, rejected=row, reason=str(exc))
-                    continue
-                self._db.comprehension_approve(passage_id, verdict)
-                break
-            return self._db.comprehension_create(passage_id, opts, practice.ReviewPolicy().document(), background=True)
+                    redrafted = True
+                    row = self._generate(opts, progress, rejected=row, reason=reason)
+            return self._db.comprehension_create(row['id'], opts, practice.ReviewPolicy().document(), background=True)
+
+    def _audit_draft(self, passage_id: int, passage: comp.Passage, opts, targets: list[dict], report) -> None:
+        """Distinguish content defects from reviewer failures so a broken audit leaves its draft reusable."""
+
+        try:
+            passage.check(opts, {target['word_id'] for target in targets})
+        except ValueError as exc:
+            raise comp.DraftRejected(str(exc)) from exc
+        report(i18n.tr('The text and all questions are independently checked.'))
+        verdict = self._provider.audit(passage)
+        self._db.comprehension_approve(passage_id, verdict)
 
     def _generate(self, opts, report, *, rejected=None, reason='') -> dict:
         """Use the existing FSRS/error-weighted word selector without multiplying vocabulary constraints; e.g. mastered future words defer naturally."""
@@ -128,7 +154,8 @@ class ComprehensionService:
                         previous_draft=json.loads(rejected['body_json']) if rejected else None)
         report(i18n.tr('Preparing a Dutch text with exactly the requested questions…'))
         passage = self._provider.generate(document)
-        pid = self._db.comprehension_cache(passage, opts, targets, self.policy)
+        replaces = (rejected['id'], reason) if rejected else None
+        pid = self._db.comprehension_cache(passage, opts, targets, self.policy, replaces=replaces)
         return self._db.comprehension_passage(pid)
 
     def prepare_media(self, passage_id: int, opts, report) -> None:

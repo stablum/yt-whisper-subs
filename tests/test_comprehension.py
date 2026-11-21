@@ -67,16 +67,51 @@ class ComprehensionTests(unittest.TestCase):
         self.assertFalse(reopened.needs(self.opts))
 
     def test_exact_question_counts_and_bounded_quality_repair(self):
-        """Reject an undersized round instead of exposing it; e.g. a repaired set still contains every requested question."""
+        """Repair a leaked answer without regenerating the source or changing either question count."""
 
         self.provider.reject_first = True
         opts = fixtures.options(mc=4, open=2)
         session = self._start(opts)
         rows = self.db.comprehension_history(session)
         self.assertEqual([sum(r['kind'] == kind for r in rows) for kind in ('mc', 'open')], [4, 2])
+        self.assertEqual(len(self.provider.generated), 1)
+        self.assertEqual([[item.key for item in batch] for batch in self.provider.repaired], [[1]])
+        before, after = self.provider.audited
+        self.assertEqual((before.paragraphs, before.targets, before.questions[1:]),
+                         (after.paragraphs, after.targets, after.questions[1:]))
+        self.assertNotEqual(before.questions[0].prompt, after.questions[0].prompt)
+        self.assertIn('verraadt', self.db.comprehension_passage(1)['error'])
+
+    def test_incomplete_audit_retains_generated_text_for_retry(self):
+        """A missing reviewer result cannot trigger a paid rewrite or silently approve a question."""
+
+        audit = self.provider.audit
+        with mock.patch.object(self.provider, 'audit', side_effect=lambda passage: audit(passage).model_copy(update={'questions': []})):
+            with self.assertRaisesRegex(ValueError, 'niet volledig'):
+                self._start()
+        self.assertEqual(self.db.comprehension_passage(1)['error'], '')
+        self.assertIsNone(self.db.comprehension_active('read'))
+        self._start()
+        self.assertEqual(len(self.provider.generated), 1)
+
+    def test_persistent_question_rejection_never_publishes_a_round(self):
+        """Limit one focused repair and one new draft even if every audit flags a question."""
+
+        audit = self.provider.audit
+
+        def reject(passage):
+            """Flag an answer leak on every independently checked draft."""
+
+            verdict = audit(passage)
+            verdict.questions[0].valid = False
+            return verdict
+
+        with mock.patch.object(self.provider, 'audit', side_effect=reject), self.assertRaises(comp.DraftRejected):
+            self._start()
         self.assertEqual(len(self.provider.generated), 2)
-        self.assertTrue(self.provider.generated[1]['previous_rejection'])
-        self.assertEqual(self.provider.generated[0]['words'], self.provider.generated[1]['words'])
+        self.assertEqual(len(self.provider.repaired), 1)
+        self.assertEqual(len(self.provider.audited), 3)
+        self.assertIsNone(self.db.comprehension_active('read'))
 
     def test_omitted_questions_never_publish_and_are_bounded_to_two_drafts(self):
         """Keep paid rejected drafts for diagnosis without accepting missing content; e.g. a smaller output cannot silently become the requested round."""
@@ -239,6 +274,18 @@ class ComprehensionTests(unittest.TestCase):
         self.assertTrue(all(r['shown_at'] is None for r in self.db.comprehension_history(spare)))
         self.assertEqual(len(self.provider.generated), 2)
         self.assertEqual(self.engine.start(self.opts, lambda _: None, cached_first=False), spare)
+
+    def test_changed_counts_prepare_stock_beside_an_untouched_active_round(self):
+        """Changing counts should warm a matching round while the previous exercise stays resumable."""
+
+        active = self._start()
+        opts = self.opts.model_copy(update={'mc': 1})
+        self.assertTrue(self.engine.needs(opts))
+        ready = self.engine.start(opts, lambda _: None, background=True)
+        self.assertNotEqual(ready, active)
+        self.assertEqual(self.db.comprehension_active('read'), active)
+        self.assertFalse(self.engine.needs(opts))
+        self.assertEqual(len(self.db.comprehension_history(ready)), opts.count)
 
     def test_reporting_while_a_grade_is_pending_cannot_publish_late_feedback(self):
         """Make reporting win over late results; e.g. a bad passage adds activity but no review successes or failures."""

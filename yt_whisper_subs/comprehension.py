@@ -161,6 +161,16 @@ class AuditQuestion(practice.Content):
     explanation: str
 
 
+class DraftRejected(ValueError):
+    """Carry quality feedback and repairable questions, e.g. two questions that give each other away."""
+
+    def __init__(self, message: str, questions: tuple[AuditQuestion, ...] = ()) -> None:
+        """Keep the reviewer notes available for a focused repair."""
+
+        super().__init__(message)
+        self.questions = questions
+
+
 class Audit(practice.Content):
     """Approve every question explicitly; e.g. omitted verdicts are never treated as approval."""
 
@@ -171,13 +181,33 @@ class Audit(practice.Content):
     def check(self, passage: Passage) -> None:
         """Compare independent decisions with the complete draft; e.g. two defensible choices require a repair."""
 
-        results = {item.key: item for item in self.questions}
-        if not self.natural_dutch or not self.coherent or len(results) != len(passage.questions) or len(self.questions) != len(results):
+        expected = {q.key: q.correct_idx for q in passage.questions}
+        if {item.key for item in self.questions} != expected.keys() or len(self.questions) != len(expected):
             raise ValueError("De onafhankelijke tekstcontrole is niet volledig geslaagd.")
-        for q in passage.questions:
-            result = results.get(q.key)
-            if result is None or not result.valid or result.answer_idx != q.correct_idx:
-                raise ValueError(f"Vraag {q.key} is niet eenduidig goedgekeurd: {result.explanation if result else 'controle ontbreekt'}")
+        if not self.natural_dutch or not self.coherent:
+            raise DraftRejected("De tekst is taalkundig of inhoudelijk niet goedgekeurd.")
+        rejected = tuple(q for q in self.questions if not q.valid or q.answer_idx != expected[q.key])
+        if rejected:
+            reason = "\n".join(f"Vraag {q.key} is niet eenduidig goedgekeurd: {q.explanation}" for q in rejected)
+            raise DraftRejected(reason, rejected)
+
+
+class QuestionRepairs(practice.Content):
+    """Replace only flagged questions, e.g. keep other independently supported answers verbatim."""
+
+    questions: list[Question]
+
+    def apply(self, passage: Passage, rejected: tuple[AuditQuestion, ...]) -> Passage:
+        """Keep each question's number and kind so a repair cannot silently shrink the round."""
+
+        replacements = {q.key: q for q in self.questions}
+        wanted = {q.key for q in rejected}
+        if replacements.keys() != wanted or len(self.questions) != len(wanted):
+            raise ValueError("De reparatie mist afgekeurde vragen of bevat extra vragen.")
+        questions = [replacements.get(q.key, q) for q in passage.questions]
+        if any(old.kind != new.kind for old, new in zip(passage.questions, questions, strict=True)):
+            raise ValueError("De reparatie veranderde de gevraagde vraagsoorten.")
+        return passage.model_copy(update={'questions': questions})
 
 
 class CriterionResult(practice.Content):

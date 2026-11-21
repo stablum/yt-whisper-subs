@@ -28,6 +28,7 @@ class Provider:
         """Control failures at the actual provider boundaries; e.g. an audio outage is independent from generation availability."""
 
         self.generated, self.audited, self.graded = [], [], []
+        self.repaired = []
         self.available, self.audit_available = True, True
         self.reject_first, self.omit_question = False, False
         self.grade_result = None
@@ -68,9 +69,19 @@ class Provider:
         self.audited.append(passage)
         if not self.audit_available:
             raise OSError('Auditor unavailable')
-        valid = not self.reject_first or len(self.audited) > 1
-        return comp.Audit(natural_dutch=True, coherent=True, questions=[comp.AuditQuestion(key=q.key, valid=valid, answer_idx=q.correct_idx,
-                                                                                      explanation='Eenduidig onderbouwd.' if valid else 'Twee keuzes zijn mogelijk.') for q in passage.questions])
+        flag = self.reject_first and len(self.audited) == 1
+        return comp.Audit(natural_dutch=True, coherent=True, questions=[
+            comp.AuditQuestion(key=q.key, valid=not (flag and q.key == 1), answer_idx=q.correct_idx,
+                               explanation='Vraag 2 verraadt het antwoord.' if flag and q.key == 1 else 'Eenduidig onderbouwd.')
+            for q in passage.questions])
+
+    def repair_questions(self, passage, rejected):
+        """Mark the replacement while leaving the text and other questions unchanged."""
+
+        self.repaired.append(rejected)
+        questions = [q.model_copy(update={'prompt': f'Herziene vraag {q.key} over de tekst?'})
+                     for q in passage.questions if any(item.key == q.key for item in rejected)]
+        return comp.QuestionRepairs(questions=questions).apply(passage, rejected)
 
     def grade(self, document):
         """Award one of two content points with separate language status; e.g. a missing qualification gives genuine partial credit."""

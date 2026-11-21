@@ -28,13 +28,18 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
                                (opts.content_key(), policy['model'], policy['reasoning'], policy['version'])).fetchone()
             return dict(row) if row else None
 
-    def comprehension_cache(self, passage: comp.Passage, opts, targets: list[dict], policy: dict) -> int:
+    def comprehension_cache(self, passage: comp.Passage, opts, targets: list[dict], policy: dict,
+                            *, replaces: tuple[int, str] | None = None) -> int:
         """Checkpoint generated text before independent review; e.g. a reviewer outage leaves a reusable draft."""
 
         with self._connect() as conn:
             cursor = conn.execute("INSERT INTO comprehension_passages(content_key,body_json,targets_json,model,reasoning,version,created_at) "
                                   "VALUES(?,?,?,?,?,?,?)", (opts.content_key(), passage.model_dump_json(), json.dumps(targets),
                                                           policy['model'], policy['reasoning'], policy['version'], time.time()))
+            if replaces:
+                old_id, reason = replaces
+                conn.execute("UPDATE comprehension_passages SET error=? WHERE id=? AND validation_json IS NULL",
+                             (reason[:3000], old_id))
             return cursor.lastrowid
 
     def comprehension_passage(self, passage_id: int) -> dict:

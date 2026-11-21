@@ -3246,11 +3246,11 @@ and seeks remain responsive even while a paused player emits no events.
 
 ### Dutch Reading And Listening Comprehension
 
-Choose **Practice → Leesbegrip** or **Luisterbegrip** directly from the top-level
-practice buttons (added in **0.6.8**). These are longer-text comprehension exercises, with Dutch
-questions, answers, explanations and writing corrections. Their interface controls
-follow the selected library language. They use
-the configured practice model (`gpt-6-luna`, reasoning `medium`).
+Choose **Practice → Passages → Reading comprehension** or **Listening comprehension**
+(**Leesbegrip** or **Luisterbegrip** in Dutch). These longer texts come with Dutch
+questions, answers, explanations and writing corrections. The controls follow
+the library language. Both modes use the configured practice model
+(`gpt-6-luna`, reasoning `medium`).
 
 **Round options** (**Ronde-opties** in Dutch) configures each mode independently:
 
@@ -3268,8 +3268,11 @@ supported and the other plausible answers are wrong for a concrete reason.
 Questions cover detail, inference, cause, argument, tone and reference; weak
 question skills help guide future composition. Every question retains exact
 supporting quotes and paragraph references. Evidence and counts are checked
-locally as well. An ambiguous or incomplete set gets at most one repaired draft,
-using the same vocabulary, before preparation stops with its yields preserved.
+locally as well. If one question reveals another answer or has unsupported evidence,
+preparation first replaces the flagged questions and checks the entire set again.
+Each preparation has at most one focused repair and one replacement passage using
+the same vocabulary. An incomplete audit leaves its cached draft available for
+retry, and an existing round remains available if a new draft fails review.
 This is a quality safeguard, not a guarantee that an LLM can never make a mistake;
 **Tekst of vraag melden** excludes a problematic passage from scores and shared
 review while preserving actual submitted activity.
@@ -3321,10 +3324,11 @@ the background. Pressing Listen during that work queues playback on the same
 job. Audio recovery uses the existing passage and keeps your current draft.
 
 Preparation uses the existing two-worker scheduler and per-destination leases,
-keeping one unexposed spare after answering begins. Generated text is saved before
-its independent audit; approved text is saved before speech. A network failure,
-restart, narrator change or missing WAV can therefore resume only its unfinished
-stage. Reading text becomes usable while its optional read-aloud clips prepare
+keeping one unexposed spare after answering begins. If the passage settings
+change, it can warm a matching round while the previous one remains resumable.
+The app saves generated text before auditing it and approved text before preparing
+speech. After a network failure, restart, narrator change or missing WAV, the app
+can resume at the unfinished stage. Reading text becomes usable while its optional read-aloud clips prepare
 separately. Changing a narrator reuses approved content. Actual question exposure, answers, feedback consultation,
 word assessments and played fragments have separate relational records.
 Shared text-pool reservation is serialized across the two comprehension modes;
