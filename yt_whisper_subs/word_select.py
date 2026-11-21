@@ -41,8 +41,8 @@ class Selector:
         frequency = np.log1p([row.get("clicks", 0) + 2 * row.get("videos", 0) + row.get("mistakes", 0) for row in rows])
         return error_weight(attempts, failures) * (1 + 2 * (1 - recall)) * (1 + np.minimum(1, frequency / 5))
 
-    def select(self, rows: list[dict], opts, now: float) -> list[dict]:
-        """Reserve one in five slots for new words and defer future reviews; e.g. choose distinct anchors instead of spamming one difficult term."""
+    def select(self, rows: list[dict], opts, now: float, *, cached_first: bool = False) -> list[dict]:
+        """Balance due and new words, optionally using eligible checked stock before generating more."""
 
         rows = [row for row in rows if not row["card_json"] or row["due_at"] <= now or opts.include_early]
         if not rows:
@@ -54,11 +54,15 @@ class Selector:
         unused = np.array([row.get("unused", False) for row in rows])
         selected = []
         for idx in range(min(opts.count, len(rows))):
-            pool = available & (due if idx % 5 != 4 and np.any(available & due) else new)
+            # A changed round size can reuse already approved questions under the same due-date rules.
+            candidates = available
+            if cached_first and np.any(ready := available & unused):
+                candidates = ready
+            pool = candidates & (due if idx % 5 != 4 and np.any(candidates & due) else new)
             if not np.any(pool):
-                pool = available & due
+                pool = candidates & due
             if not np.any(pool):
-                pool = available.copy()
+                pool = candidates
             pool = prefer_stock(pool, due, unused)
             probs = np.where(pool, weights, 0)
             pick = int(self._rng.choice(len(rows), p=probs / probs.sum()))

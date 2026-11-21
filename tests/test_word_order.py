@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -14,6 +15,7 @@ from yt_whisper_subs import library_db
 from yt_whisper_subs import library_order_blocks
 from yt_whisper_subs import library_order_replay
 from yt_whisper_subs import library_word_order
+from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_tracks
@@ -147,6 +149,54 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(json.loads(self.db.word_order_current(session)["draft_json"]), [3, 1])
         policy = practice_ready.question_policy(self.engine)
         self.assertEqual(len(self.db.practice_stock(practice_tracks.Track.WORD_ORDER, opts, policy)), 1)
+
+    def test_resize_uses_checked_questions_before_uncached_due_words(self):
+        """Reuse unseen approvals from a differently sized round and pay only for a shortfall."""
+
+        opts = word_order.Options(count=2, variant=word_order.Variant.PHRASES)
+        self.engine.start(opts, lambda _: None, background=True)
+        policy = practice_ready.question_policy(self.engine)
+        stock = self.db.practice_stock(practice_tracks.Track.PHRASE_ORDER, opts, policy)
+        approved = {row["lookup_id"] for row in stock}
+        due = next(row for row in self.db.word_candidates("en_nl") if row["lookup_id"] not in approved)
+        stamp = time.time() - 60
+        with self.db._connect() as conn:
+            conn.execute("INSERT INTO practice_states(word_id,direction,card_json,due_at) VALUES(?,?,?,?)",
+                         (due["word_id"], "en_nl", practice.ReviewPolicy.new_card(due["word_id"], stamp), stamp))
+
+        with mock.patch.object(self.provider, "generate", wraps=self.provider.generate) as generate:
+            smaller = self.engine.start(opts.model_copy(update={"count": 1}), lambda _: None)
+            generate.assert_not_called()
+            self.assertEqual(self.db.word_order_summary(smaller)["planned"], 1)
+            larger = self.engine.start(opts.model_copy(update={"count": 3}), lambda _: None)
+            self.assertEqual(self.db.word_order_summary(larger)["planned"], 3)
+            generate.assert_called_once()
+            self.assertEqual([target["word_id"] for target in generate.call_args.args[0]], [due["word_id"]])
+
+    def test_failed_replacement_clears_old_counter_until_resumed(self):
+        """Keep a prior draft available and show its count only when it is actually open."""
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        app.setQuitOnLastWindowClosed(False)
+        opts = word_order.Options(count=2, variant=word_order.Variant.PHRASES)
+        previous = self.engine.start(opts, lambda _: None)
+        panel = library_word_order.Panel(self.db, variant=opts.variant, engine=self.engine)
+        self.addCleanup(panel.close)
+        panel.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+        panel.show()
+        panel.activate()
+        app.processEvents()
+        self.assertEqual(panel._counter.text(), "0 / 2 answered")
+        panel._count.setValue(3)
+        with mock.patch.object(self.engine, "start", side_effect=ValueError("Round unavailable")):
+            panel._new()
+            self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(5000))
+            app.processEvents()
+        self.assertEqual(panel._counter.text(), "")
+        self.assertEqual(panel._prompt.text(), "Could not prepare this round")
+        self.assertEqual(self.db.word_order_active(opts.variant), previous)
+        panel._next.click()
+        self.assertEqual(panel._counter.text(), "0 / 2 answered")
 
     def test_click_drop_and_animated_feedback(self):
         """Click blocks, reorder through the drop handler, then verify native correction and saved draft."""

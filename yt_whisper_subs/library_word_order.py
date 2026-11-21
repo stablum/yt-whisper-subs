@@ -159,6 +159,7 @@ class Panel(QtWidgets.QWidget):
         opts = word_order.Options(count=self._count.value(), extras=self._extras.value(),
                                  include_early=self._early.isChecked(), variant=self._variant)
         self._db.set_setting(self._key, opts.model_dump_json())
+        self._counter.clear()
         self._idle(i18n.tr('Preparing Dutch sentence builds…'), '')
         self._again.hide()
         self._cancel.show()

@@ -573,7 +573,7 @@ msgstr "Filters wissen"
 msgid "Clear sentence"
 msgstr "Wis zin"
 
-#: yt_whisper_subs/library_word_order.py:232
+#: yt_whisper_subs/library_word_order.py:233
 msgid "Click blocks to build the Dutch sentence. Drag to rearrange or click to return a block."
 msgstr ""
 "Klik op blokken om de Nederlandse zin te bouwen. Sleep om ze te verplaatsen of klik om een blok "
@@ -629,7 +629,7 @@ msgstr "Vergrotende trappen"
 msgid "Completed"
 msgstr "Afgerond"
 
-#: yt_whisper_subs/library_comprehension.py:205 yt_whisper_subs/library_word_order.py:199
+#: yt_whisper_subs/library_comprehension.py:205 yt_whisper_subs/library_word_order.py:200
 msgid "Completed parts remain available."
 msgstr "Voltooide onderdelen blijven beschikbaar."
 
@@ -739,7 +739,7 @@ msgid "Correct"
 msgstr "Goed"
 
 #: yt_whisper_subs/library_order_blocks.py:343 yt_whisper_subs/library_order_replay.py:164
-#: yt_whisper_subs/library_word_order.py:271
+#: yt_whisper_subs/library_word_order.py:272
 msgid "Correct order"
 msgstr "Juiste volgorde"
 
@@ -840,7 +840,7 @@ msgstr "Afspelen is niet gelukt: "
 msgid "Could not prepare audio. Click Listen again to retry. "
 msgstr "Audio voorbereiden mislukt. Klik op Opnieuw luisteren om opnieuw te proberen. "
 
-#: yt_whisper_subs/library_word_order.py:193 yt_whisper_subs/library_word_quiz.py:274
+#: yt_whisper_subs/library_word_order.py:194 yt_whisper_subs/library_word_quiz.py:274
 #: yt_whisper_subs/library_written.py:353
 msgid "Could not prepare this round"
 msgstr "Deze ronde kon niet worden voorbereid"
@@ -1466,7 +1466,7 @@ msgstr "Laatst gezien"
 msgid "Leave out"
 msgstr "Weglaten"
 
-#: yt_whisper_subs/library_word_order.py:285
+#: yt_whisper_subs/library_word_order.py:286
 #, python-brace-format
 msgid "Leave out “{block}”. {reason}"
 msgstr "Laat ‘{block}’ weg. {reason}"
@@ -1679,7 +1679,7 @@ msgstr "Metadata: {ready:,} in wachtrij{deferred} · ≤1/min"
 msgid "Missing"
 msgstr "Ontbreekt"
 
-#: yt_whisper_subs/library_word_order.py:283
+#: yt_whisper_subs/library_word_order.py:284
 #, python-brace-format
 msgid "Missing blocks: {blocks}"
 msgstr "Ontbrekende blokken: {blocks}"
@@ -1793,7 +1793,7 @@ msgstr "Volgende"
 msgid "Next correction →"
 msgstr "Volgende correctie →"
 
-#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:288
+#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:289
 msgid "Next question"
 msgstr "Volgende vraag"
 
@@ -1953,7 +1953,7 @@ msgstr "Bewerking geannuleerd"
 msgid "Optional local voice recording"
 msgstr "Optionele lokale stemopname"
 
-#: yt_whisper_subs/library_word_order.py:271
+#: yt_whisper_subs/library_word_order.py:272
 #, python-brace-format
 msgid "Order score: {score:.0%}"
 msgstr "Woordvolgordescore: {score:.0%}"
@@ -2247,12 +2247,12 @@ msgstr "Voorbereiden"
 msgid "Preparing Dutch listening audio…"
 msgstr "Nederlandse luisteraudio voorbereiden…"
 
-#: yt_whisper_subs/library_word_order.py:162 yt_whisper_subs/word_order_service.py:76
+#: yt_whisper_subs/library_word_order.py:163 yt_whisper_subs/word_order_service.py:76
 msgid "Preparing Dutch sentence builds…"
 msgstr "Nederlandse zinsbouwoefeningen voorbereiden…"
 
 #: yt_whisper_subs/library_pronunciation.py:74 yt_whisper_subs/library_pronunciation.py:237
-#: yt_whisper_subs/library_word_order.py:218
+#: yt_whisper_subs/library_word_order.py:219
 msgid "Preparing Dutch speech…"
 msgstr "Nederlandse spraak voorbereiden…"
 
@@ -2680,7 +2680,7 @@ msgstr "Huidige verwerking hervatten"
 msgid "Resume full practice"
 msgstr "Volledige oefensessie hervatten"
 
-#: yt_whisper_subs/library_comprehension.py:219 yt_whisper_subs/library_word_order.py:211
+#: yt_whisper_subs/library_comprehension.py:219 yt_whisper_subs/library_word_order.py:212
 msgid "Resume previous round"
 msgstr "Vorige ronde hervatten"
 
@@ -2754,7 +2754,7 @@ msgstr "Vragen uit de onafhankelijke controle worden aangepast…"
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr "Herschrijf een Nederlandse zin voor een nieuw onderwerp, een andere tijd of situatie."
 
-#: yt_whisper_subs/library_comprehension.py:410 yt_whisper_subs/library_word_order.py:226
+#: yt_whisper_subs/library_comprehension.py:410 yt_whisper_subs/library_word_order.py:227
 #: yt_whisper_subs/library_word_quiz.py:472
 msgid "Round complete"
 msgstr "Ronde afgerond"
@@ -3221,7 +3221,7 @@ msgstr "Tekstsoort"
 msgid "The listed language belongs to the reference recording. It does not change the exercise language."
 msgstr "De vermelde taal hoort bij de referentieopname. De oefentaal verandert niet."
 
-#: yt_whisper_subs/library_word_order.py:281
+#: yt_whisper_subs/library_word_order.py:282
 msgid "The replay uses the valid order closest to your submission."
 msgstr "De animatie toont de juiste volgorde die het meest op jouw antwoord lijkt."
 
@@ -3267,7 +3267,7 @@ msgstr "Deze woorden zijn nog niet aan herhaling toe. Schakel vroeg oefenen in a
 msgid "This library is already open. Use its window or system tray icon."
 msgstr "Deze bibliotheek is al geopend. Gebruik het venster of het systeemvakpictogram."
 
-#: yt_whisper_subs/library_word_order.py:280
+#: yt_whisper_subs/library_word_order.py:281
 msgid "This order also works."
 msgstr "Deze volgorde is ook goed."
 
@@ -3902,7 +3902,7 @@ msgstr "zij (zij, enkelvoud)"
 msgid "zij (they)"
 msgstr "zij (zij, meervoud)"
 
-#: yt_whisper_subs/library_word_order.py:223
+#: yt_whisper_subs/library_word_order.py:224
 #, python-brace-format
 msgid "{answered} / {total} answered"
 msgstr "{answered} / {total} beantwoord"
@@ -3946,7 +3946,7 @@ msgstr "{answers} beoordelingen · begrip {score:.0%}"
 msgid "{attempts} checked answers"
 msgstr "{attempts} gecontroleerde antwoorden"
 
-#: yt_whisper_subs/library_word_order.py:226
+#: yt_whisper_subs/library_word_order.py:227
 #, python-brace-format
 msgid "{correct} correct out of {total}"
 msgstr "{correct} goed van de {total}"

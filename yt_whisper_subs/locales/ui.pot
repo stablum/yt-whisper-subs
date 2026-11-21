@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-21 16:49+0100\n"
+"POT-Creation-Date: 2026-11-21 17:09+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -555,7 +555,7 @@ msgstr ""
 msgid "Clear sentence"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:232
+#: yt_whisper_subs/library_word_order.py:233
 msgid "Click blocks to build the Dutch sentence. Drag to rearrange or click to return a block."
 msgstr ""
 
@@ -604,7 +604,7 @@ msgstr ""
 msgid "Completed"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:205 yt_whisper_subs/library_word_order.py:199
+#: yt_whisper_subs/library_comprehension.py:205 yt_whisper_subs/library_word_order.py:200
 msgid "Completed parts remain available."
 msgstr ""
 
@@ -714,7 +714,7 @@ msgid "Correct"
 msgstr ""
 
 #: yt_whisper_subs/library_order_blocks.py:343 yt_whisper_subs/library_order_replay.py:164
-#: yt_whisper_subs/library_word_order.py:271
+#: yt_whisper_subs/library_word_order.py:272
 msgid "Correct order"
 msgstr ""
 
@@ -811,7 +811,7 @@ msgstr ""
 msgid "Could not prepare audio. Click Listen again to retry. "
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:193 yt_whisper_subs/library_word_quiz.py:274
+#: yt_whisper_subs/library_word_order.py:194 yt_whisper_subs/library_word_quiz.py:274
 #: yt_whisper_subs/library_written.py:353
 msgid "Could not prepare this round"
 msgstr ""
@@ -1427,7 +1427,7 @@ msgstr ""
 msgid "Leave out"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:285
+#: yt_whisper_subs/library_word_order.py:286
 #, python-brace-format
 msgid "Leave out “{block}”. {reason}"
 msgstr ""
@@ -1628,7 +1628,7 @@ msgstr ""
 msgid "Missing"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:283
+#: yt_whisper_subs/library_word_order.py:284
 #, python-brace-format
 msgid "Missing blocks: {blocks}"
 msgstr ""
@@ -1742,7 +1742,7 @@ msgstr ""
 msgid "Next correction →"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:288
+#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:289
 msgid "Next question"
 msgstr ""
 
@@ -1898,7 +1898,7 @@ msgstr ""
 msgid "Optional local voice recording"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:271
+#: yt_whisper_subs/library_word_order.py:272
 #, python-brace-format
 msgid "Order score: {score:.0%}"
 msgstr ""
@@ -2187,12 +2187,12 @@ msgstr ""
 msgid "Preparing Dutch listening audio…"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:162 yt_whisper_subs/word_order_service.py:76
+#: yt_whisper_subs/library_word_order.py:163 yt_whisper_subs/word_order_service.py:76
 msgid "Preparing Dutch sentence builds…"
 msgstr ""
 
 #: yt_whisper_subs/library_pronunciation.py:74 yt_whisper_subs/library_pronunciation.py:237
-#: yt_whisper_subs/library_word_order.py:218
+#: yt_whisper_subs/library_word_order.py:219
 msgid "Preparing Dutch speech…"
 msgstr ""
 
@@ -2612,7 +2612,7 @@ msgstr ""
 msgid "Resume full practice"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:219 yt_whisper_subs/library_word_order.py:211
+#: yt_whisper_subs/library_comprehension.py:219 yt_whisper_subs/library_word_order.py:212
 msgid "Resume previous round"
 msgstr ""
 
@@ -2686,7 +2686,7 @@ msgstr ""
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:410 yt_whisper_subs/library_word_order.py:226
+#: yt_whisper_subs/library_comprehension.py:410 yt_whisper_subs/library_word_order.py:227
 #: yt_whisper_subs/library_word_quiz.py:472
 msgid "Round complete"
 msgstr ""
@@ -3138,7 +3138,7 @@ msgstr ""
 msgid "The listed language belongs to the reference recording. It does not change the exercise language."
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:281
+#: yt_whisper_subs/library_word_order.py:282
 msgid "The replay uses the valid order closest to your submission."
 msgstr ""
 
@@ -3182,7 +3182,7 @@ msgstr ""
 msgid "This library is already open. Use its window or system tray icon."
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:280
+#: yt_whisper_subs/library_word_order.py:281
 msgid "This order also works."
 msgstr ""
 
@@ -3797,7 +3797,7 @@ msgstr ""
 msgid "zij (they)"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:223
+#: yt_whisper_subs/library_word_order.py:224
 #, python-brace-format
 msgid "{answered} / {total} answered"
 msgstr ""
@@ -3829,7 +3829,7 @@ msgstr ""
 msgid "{attempts} checked answers"
 msgstr ""
 
-#: yt_whisper_subs/library_word_order.py:226
+#: yt_whisper_subs/library_word_order.py:227
 #, python-brace-format
 msgid "{correct} correct out of {total}"
 msgstr ""

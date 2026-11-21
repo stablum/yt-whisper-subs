@@ -45,9 +45,9 @@ class Service:
             row["unused"] = any(not q["uses"] for q in stock.get(row["lookup_id"], []))
 
         def choose(pool, count):
-            """Keep due and new terms in the same balance as English-to-Dutch Word quiz."""
+            """Use eligible unseen builds first, keeping the shared vocabulary weights inside each pool."""
 
-            return selector.select(pool, opts.model_copy(update={"count": count}), time.time())
+            return selector.select(pool, opts.model_copy(update={"count": count}), time.time(), cached_first=cached_first)
 
         patterns = _Patterns(opts.variant, self._db.word_order_results(opts.variant))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)

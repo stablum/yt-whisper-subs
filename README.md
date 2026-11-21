@@ -3276,7 +3276,10 @@ extra block is unsuitable. The shared read-aloud controls can play the displayed
 Dutch model sentence after checking.
 
 New questions use the Word quiz's English-to-Dutch vocabulary selector, including
-its review dates and error weights. Results track word order separately and make
+its review dates and error weights. If the round length changes, both modes reuse
+eligible, unseen questions that match the other settings before generating the
+missing questions. Previous progress is shown when the previous round is resumed.
+Results track word order separately and make
 difficult constructions more likely in later rounds. The two mode tabs under
 **Tracking → Progress** show exact accuracy, partial credit based on the longest
 correctly ordered block sequence, and results by construction. Each submission
