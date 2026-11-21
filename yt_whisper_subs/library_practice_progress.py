@@ -39,7 +39,13 @@ class TrendChart(QtWidgets.QWidget):
     def set_series(self, series: list[dict]) -> None:
         """Use actual observations rather than invented zero days; e.g. no practice yesterday is a gap."""
 
-        self._series = series
+        self._series = []
+        for line in series:
+            if self._percent:
+                points = [(day, value, f"{hint} ({i18n.number(value / 100, '.1%')})")
+                          for day, value, hint in line["points"]]
+                line = {**line, "points": points}
+            self._series.append(line)
         self.update()
 
     def paintEvent(self, _event) -> None:
@@ -170,7 +176,16 @@ class ProgressPanel(QtWidgets.QWidget):
                       for row in data["daily"] if row["direction"] == direction.value and row["accuracy"] is not None]
             series.append({"label": direction.label, "color": tint, "points": points})
         self._accuracy.set_series(series)
-        points = [(row["day"], row["words"], i18n.tr('{words} distinct words', words=row['words'])) for row in data["coverage"]]
+        points = []
+        saved_total = data["saved_total"]
+        for row in data["coverage"]:
+            hint = i18n.tr('{words} distinct words', words=row['words'])
+            if saved_total:
+                hint += '\n' + i18n.tr(
+                    '{saved}/{total} current saved Dutch words ({share:.1%})',
+                    saved=row['saved_words'], total=saved_total, share=row['saved_words'] / saved_total,
+                )
+            points.append((row["day"], row["words"], hint))
         self._coverage.set_series([{"label": i18n.tr('Words explored'), "color": "#9ae78f", "points": points}])
         self._show_terms(data["terms"])
         self._show_rounds(data["rounds"])

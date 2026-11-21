@@ -2812,18 +2812,24 @@ you switch to statistics during preparation, the ready round waits until the
 Word quiz page is visible before recording its first presentation. The round
 page scrolls for long context/explanations and smaller windows.
 
-The **Progress** tab shows daily accuracy separately for both directions,
+The **Progress** tab shows daily accuracy separately by direction and for Sound alike,
 cumulative distinct words encountered, actual presentation and answer counts,
 correct/incorrect totals, median response time, due reviews, and a study-day
-streak. Hover chart points for dates and sample sizes. The sortable per-word
-table keeps the two directions separate and includes the next review date.
+streak. Hover an accuracy or score point for its percentage and sample size,
+for example `20/44 correct (45.5%)`. Coverage tooltips also show the share of
+the current saved Dutch vocabulary that had appeared in practice by that date.
+The sortable per-word table keeps the two directions separate and includes the
+next review date.
 The **Rounds** table retains completed, stopped, and resumable round results,
 including direction, actual presentations, correct/wrong totals, accuracy,
 answer time, and start date.
 
 The **Activity** tab shows effort separately from accuracy: a zero-filled weekly
 bar chart, weekly/all-time answer totals, active-day counts, distinct words,
-current/longest study streaks, and a browsable monthly calendar. Each calendar
+current/longest study streaks, and a browsable monthly calendar. Hover a bar in
+Activity or in the practice reminder for the day's answer counts and its
+accuracy among graded answers. The daily checked-answer charts also include
+the corresponding accuracy or comprehension score on hover. Each calendar
 tile shows that day's answer count; stronger teal indicates more answers.
 Select a date by mouse or keyboard to see questions answered, distinct words,
 both vocabulary direction counts, verb and sentence submissions (including both

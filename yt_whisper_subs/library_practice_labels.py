@@ -32,3 +32,12 @@ def term(key: str) -> str:
     """Translate known codes while preserving unexpected diagnostics; e.g. old raw errors remain readable."""
 
     return i18n.tr(_TERMS.get(key, key))
+
+
+def graded_accuracy(correct: int, graded: int) -> str:
+    """Label accuracy in activity details, e.g. pending answers contribute to effort only."""
+
+    return i18n.tr(
+        '{value:.1%} correct ({correct}/{graded} graded)',
+        value=correct / graded, correct=correct, graded=graded,
+    ) if graded else i18n.tr('No graded answers')

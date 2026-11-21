@@ -12,6 +12,7 @@ from datetime import date, datetime
 import polars as pl
 
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import word_reviews
 
 
@@ -26,7 +27,7 @@ def _aggregate(frame: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
         pl.when(pl.col("attempts") > 0).then(pl.col("correct") / pl.col("attempts")).otherwise(None).alias("accuracy"))
 
 
-def _history(db) -> tuple[list[dict], list[dict], list[dict]]:
+def _history(db) -> tuple[list[dict], list[dict], list[dict], set[int]]:
     """Read all related histories in one SQLite snapshot; e.g. a background answer cannot split totals."""
 
     with db._connect() as conn:
@@ -49,17 +50,21 @@ def _history(db) -> tuple[list[dict], list[dict], list[dict]]:
             "COALESCE(SUM(CASE WHEN p.outcome IN ('correct','wrong') THEN p.elapsed_ms ELSE 0 END),0) AS answer_ms "
             "FROM practice_sessions s LEFT JOIN practice_presentations p ON p.session_id=s.id "
             "GROUP BY s.id ORDER BY s.created_at DESC")]
-    return rows, states, rounds
+        saved = {row[0] for row in conn.execute(
+            f"SELECT DISTINCT l.word_id FROM ({vocabulary_db.OCCURRENCES}) e "
+            "JOIN vocab_lookups l ON l.id=e.lookup_id JOIN vocab_words w ON w.id=l.word_id WHERE w.language='nl'"
+        )}
+    return rows, states, rounds, saved
 
 
 def snapshot(db) -> dict:
     """Aggregate real presentations with explicit grading rules; e.g. compare both learning directions."""
 
-    rows, states, rounds = _history(db)
+    rows, states, rounds, saved = _history(db)
     activity = practice_activity.read(db)
     empty = {"shown": 0, "correct": 0, "wrong": 0, "invalid": 0, "attempts": 0, "accuracy": None, "median_ms": None}
     if not rows:
-        return {"daily": [], "coverage": [], "terms": [], "rounds": rounds,
+        return {"daily": [], "coverage": [], "saved_total": len(saved), "terms": [], "rounds": rounds,
                 "totals": empty, "due": 0, "established": 0, "streak": activity.streaks[0], "activity": activity}
     for row in rows:
         row["shown_day"] = datetime.fromtimestamp(row["shown_at"]).date().isoformat()
@@ -86,13 +91,16 @@ def snapshot(db) -> dict:
         term["due_at"] = state["due_at"] if state else None
         term["stability"] = card.get("stability") or 0
         established += term["correct"] >= 3 and last_outcome.get(key) == "correct" and term["stability"] >= 21
-    coverage = frame.group_by("word_id").agg(pl.col("shown_day").min().alias("day")).group_by("day").len().sort("day")
-    coverage = coverage.with_columns(pl.col("len").cum_sum().alias("words"), pl.col("day").str.to_date())
+    # Keep historical exposure, but count only words still in Vocabulary for the current coverage share.
+    first_seen = frame.group_by("word_id").agg(pl.col("shown_day").min().alias("day"))
+    coverage = first_seen.group_by("day").agg(
+        pl.len().alias("words"), pl.col("word_id").is_in(list(saved)).sum().alias("saved_words"),
+    ).sort("day").with_columns(pl.col("words", "saved_words").cum_sum(), pl.col("day").str.to_date())
     first, last = coverage["day"].min(), date.fromisoformat(max(frame["day"].max(), frame["shown_day"].max()))
     calendar = pl.DataFrame({"day": pl.date_range(first, last, eager=True)})
-    coverage = calendar.join(coverage, on="day", how="left").with_columns(pl.col("words").forward_fill())
-    coverage = coverage.select(pl.col("day").dt.to_string("%Y-%m-%d"), "words").to_dicts()
-    return {"daily": daily, "coverage": coverage, "terms": terms, "rounds": rounds,
+    coverage = calendar.join(coverage, on="day", how="left").with_columns(pl.col("words", "saved_words").forward_fill())
+    coverage = coverage.select(pl.col("day").dt.to_string("%Y-%m-%d"), "words", "saved_words").to_dicts()
+    return {"daily": daily, "coverage": coverage, "saved_total": len(saved), "terms": terms, "rounds": rounds,
             "totals": _aggregate(frame, ["all"]).drop("all").row(0, named=True),
             "due": sum(row["due_at"] <= time.time() for row in states), "established": established,
             "streak": activity.streaks[0], "activity": activity}

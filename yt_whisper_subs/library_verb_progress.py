@@ -77,7 +77,8 @@ class VerbProgress(QtWidgets.QWidget):
         points = [(row["day"], row["correct"] / row["attempts"] * 100,
                    i18n.tr('{correct}/{attempts} correct', correct=row['correct'], attempts=row['attempts'])) for row in data["daily"]]
         self._accuracy.set_series([{"label": i18n.tr('Full sentence'), "color": "#c4a1ff", "points": points}])
-        points = [(row["day"], row["attempts"], i18n.tr('{attempts} checked answers', attempts=row['attempts'])) for row in data["daily"]]
+        points = [(row["day"], row["attempts"], labels.graded_accuracy(row["correct"], row["attempts"]))
+                  for row in data["daily"]]
         self._activity.set_series([{"label": i18n.tr('Checked answers'), "color": "#66d9ef", "points": points}])
         catalog = {row["lemma"]: row for row in self._db.verb_catalog()}
         names = {str(row["id"]): row["lemma"] for row in catalog.values()}

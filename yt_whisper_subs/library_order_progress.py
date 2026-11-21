@@ -42,7 +42,9 @@ class Progress(QtWidgets.QWidget):
             days = frame.group_by("day").agg(*columns).sort("day").to_dicts()
             skills = frame.group_by("pattern").agg(*columns).sort("answers", descending=True).to_dicts()
         series = [{"label": label, "color": color,
-                   "points": [(day["day"], day[key] * 100, day["answers"]) for day in days]}
+                   "points": [(day["day"], day[key] * 100,
+                               i18n.nt('{count} graded answer', '{count} graded answers', day['answers']))
+                              for day in days]}
                   for key, label, color in (("correct", i18n.tr('Correct'), "#91d8ae"),
                                             ("partial", i18n.tr('Partial score'), "#9dc7fa"))]
         self._chart.set_series(series)

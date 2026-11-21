@@ -13,6 +13,7 @@ from PySide6 import QtGui
 from PySide6 import QtWidgets
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_practice_labels as labels
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import word_order
 
@@ -106,7 +107,8 @@ class ActivityChart(QtWidgets.QWidget):
                 comprehension_read=row.comprehension_read,
                 comprehension_listen=row.comprehension_listen,
             ))
-            self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint + _order_counts(row)))
+            hint += _order_counts(row) + '\n' + labels.graded_accuracy(row.correct, row.graded)
+            self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
 
     def mouseMoveEvent(self, event) -> None:
         """Reveal dates and direction counts on hover; e.g. inspect a small stacked bar."""
@@ -267,12 +269,6 @@ class ActivityPanel(QtWidgets.QWidget):
         if not row.answers:
             self._details.setText(i18n.tr('No answers on this day.'))
             return
-        accuracy = i18n.tr(
-            '{value:.0%} correct ({correct}/{graded} graded)',
-            value=row.correct / row.graded,
-            correct=row.correct,
-            graded=row.graded,
-        ) if row.graded else i18n.tr('No graded answers')
         details = i18n.tr(
             '{answers} answers · {words} words · {verb_lemmas} verbs\n\nWords Dutch → English: {nl_en}\n'
             'Words English → Dutch: {en_nl}\nVerb transformations: {verbs}\nSentences English → Dutch: '
@@ -290,7 +286,7 @@ class ActivityPanel(QtWidgets.QWidget):
             listening=row.listening,
             comprehension_read=row.comprehension_read,
             comprehension_listen=row.comprehension_listen,
-            accuracy=accuracy,
+            accuracy=labels.graded_accuracy(row.correct, row.graded),
             value=row.answers - row.graded,
         )
         self._details.setText(details + _order_counts(row))

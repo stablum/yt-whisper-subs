@@ -71,13 +71,21 @@ class Progress(QtWidgets.QWidget):
             language_answers=data['language_answers'],
             plays=data['plays'],
         ))
-        for chart, metric in ((self._score, 'score'), (self._activity, 'answers')):
-            series = []
-            for kind, label, color in (('mc', i18n.tr('Multiple choice'), '#ffd166'), ('open', i18n.tr('Open questions'), '#83e5af')):
-                points = [(r['day'], r[metric] * (100 if metric == 'score' else 1), i18n.tr('{answers} graded · comprehension {score:.0%}', answers=r['answers'], score=r['score']))
-                          for r in data['daily'] if r['kind'] == kind]
-                series.append(dict(label=label, color=color, points=points))
-            chart.set_series(series)
+        scores, activity = [], []
+        for kind, label, color in (('mc', i18n.tr('Multiple choice'), '#ffd166'), ('open', i18n.tr('Open questions'), '#83e5af')):
+            score_points, activity_points = [], []
+            for row in data['daily']:
+                if row['kind'] != kind:
+                    continue
+                day, score, count = row['day'], row['score'], row['answers']
+                graded = i18n.nt('{count} graded answer', '{count} graded answers', count)
+                score_points.append((day, score * 100, graded))
+                hint = i18n.tr('{graded} · comprehension {score:.1%}', graded=graded, score=score)
+                activity_points.append((day, count, hint))
+            scores.append(dict(label=label, color=color, points=score_points))
+            activity.append(dict(label=label, color=color, points=activity_points))
+        self._score.set_series(scores)
+        self._activity.set_series(activity)
         self._tables.fill('Answers', [[i18n.date_text(datetime.fromtimestamp(r['answered_at']), '%d-%m %H:%M'),
                           i18n.tr('Multiple choice') if r['kind'] == 'mc' else i18n.tr('Open'), i18n.tr(comp.SKILLS[r['skill']]), percent(r['score']),
                           i18n.tr('Reported') if r['outcome'] == 'invalid' else '—' if r['language_correct'] is None else i18n.tr('Yes') if r['language_correct'] else i18n.tr('No'), r['prompt'], r['answer_text']] for r in data['answers']])

@@ -303,8 +303,15 @@ class PracticeTests(unittest.TestCase):
         data = practice_stats.snapshot(self.db)
         self.assertEqual(len(data["coverage"]), 3)
         self.assertTrue(all(point["words"] == 1 for point in data["coverage"]))
+        self.assertTrue(all(point["saved_words"] == 1 for point in data["coverage"]))
+        self.assertEqual(data["saved_total"], 4)
         graded_day = next(point for point in data["daily"] if point["attempts"])
         self.assertEqual(graded_day["day"], data["coverage"][-1]["day"])
+        self.db.remove_vocabulary([dict(language="nl", lemma=row["content"]["surface"],
+                                        reason="Verify removed words are excluded from coverage", evidence=["fixture"])])
+        data = practice_stats.snapshot(self.db)
+        self.assertEqual(data["saved_total"], 3)
+        self.assertTrue(all(point["words"] == 1 and point["saved_words"] == 0 for point in data["coverage"]))
 
     def test_uncached_generation_error_leaves_no_partial_round(self) -> None:
         """A failed provider cannot create phantom study activity; e.g. fix credentials and retry later."""

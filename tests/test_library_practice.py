@@ -513,6 +513,16 @@ class PracticeViewTests(unittest.TestCase):
         self.assertIn(self.quiz._current["content"]["surface"], self.quiz._result.text())
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.app.processEvents()
+        accuracy = self.dialog._progress._accuracy
+        point, _ = accuracy._hits[0]
+        pos = point.toPoint()
+        move = QtGui.QMouseEvent(QtCore.QEvent.Type.MouseMove, point, accuracy.mapToGlobal(pos),
+                                 QtCore.Qt.MouseButton.NoButton, QtCore.Qt.MouseButton.NoButton,
+                                 QtCore.Qt.KeyboardModifier.NoModifier)
+        self.app.sendEvent(accuracy, move)
+        self.assertIn("3/4 correct (75.0%)", QtWidgets.QToolTip.text())
+        QtWidgets.QToolTip.hideText()
+        self.assertIn("4/4 current saved Dutch words (100.0%)", self.dialog._progress._coverage._hits[-1][1])
         self.assertEqual(self.dialog._progress._terms.rowCount(), 8)
         self.assertEqual(self.dialog._progress._rounds.rowCount(), 13)
         self.dialog._progress._terms.sortItems(5, QtCore.Qt.SortOrder.AscendingOrder)

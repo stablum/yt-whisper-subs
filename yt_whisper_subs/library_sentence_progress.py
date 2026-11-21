@@ -137,13 +137,11 @@ class SentenceProgress(QtWidgets.QWidget):
             )) for row in rows]
             accuracy_series.append({"label": direction.label, "color": color, "points": points})
             points = [(row["day"], row["partial_score"] * 100,
-                       i18n.tr(
-                           '{partial_score:.1%} average partial score · {attempts} checked sentences',
-                           partial_score=row['partial_score'],
-                           attempts=row['attempts'],
-                       )) for row in rows]
+                       i18n.nt('{count} checked sentence', '{count} checked sentences', row['attempts']))
+                      for row in rows]
             partial_series.append({"label": direction.label, "color": color, "points": points})
-            points = [(row["day"], row["attempts"], f"{row['attempts']} sentences") for row in rows]
+            points = [(row["day"], row["attempts"], labels.graded_accuracy(row["correct"], row["attempts"]))
+                      for row in rows]
             activity_series.append({"label": direction.label, "color": color, "points": points})
         self._accuracy.set_series(accuracy_series)
         self._partial.set_series(partial_series)
