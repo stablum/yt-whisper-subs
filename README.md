@@ -15,7 +15,7 @@ downloaded and remote channel videos in a searchable library, persists YouTube
 metadata, tracks channel uploads, optionally runs the existing subtitle
 pipeline for new videos, and opens downloaded entries through the same `mpv`
 dual-subtitle playback implementation. It is a PySide6 desktop application
-with YouTube Library and Practice tabs in one maximizable window.
+with YouTube Library, Practice, and Vocabulary tabs in one maximizable window.
 
 This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
@@ -279,7 +279,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Library watched-progress sample | every `5` seconds during mpv playback |
 | mpv Left / Right arrows | exact `−1.5` / `+1.5` second seeks; configurable in Library Settings and with `--mpv-seek-seconds` |
 | mpv word capture | clickable text tracks; committed selections turn green and underlined |
-| Vocabulary review | Library → Vocabulary; `Ctrl+Shift+W` in the library |
+| Vocabulary review | Vocabulary tab or `Ctrl+Shift+W` |
 | Word translation | on-demand contextual OpenAI lookup; English meaning and source dictionary form |
 | Vocabulary persistence | every intentional click, including repeats; same catalog SQLite file |
 | Library watched rule | configurable threshold, default more than `95%`; confirmed mpv end-of-file or manual marking also completes |
@@ -854,12 +854,13 @@ downloads.
 ## Native YouTube Library
 
 The desktop library is a native PySide6/Qt application with a dark Windows UI.
-Use **YouTube Library** and **Practice** at the top to switch between the video
-catalog and your exercises. Both use the full main window and keep their place
-when you switch, including the catalog filters and the open practice question.
-**Ctrl+Shift+R** opens Practice and **Escape** returns from Practice to the
+Use **YouTube Library**, **Practice**, and **Vocabulary** at the top to switch
+between videos, exercises, and saved words. Each uses the full main window
+and keeps its place when you switch, including the catalog filters, the open
+practice question, and the selected vocabulary occurrence. **Ctrl+Shift+R**
+opens Practice, **Ctrl+Shift+W** opens Vocabulary, and **Escape** returns to the
 catalog. Tray actions and reminders reuse the same window and preserve its
-maximized state. Practice widgets load on the first visit.
+maximized state. Practice and Vocabulary load on their first visit.
 
 The library contains:
 
@@ -2366,14 +2367,15 @@ lease prevents GUI and CLI processes from translating the same context concurren
 results include sentence/span/context, language, model, reasoning, and prompt
 version in their identity; a spelling alone is never a translation-cache key.
 
-Choose **Library → Vocabulary…** (`Ctrl+Shift+W`) to search captured words,
+Choose the **Vocabulary** tab (`Ctrl+Shift+W`) to search captured words,
 inspect **Clicks**, practice **Mistakes** and **Videos** separately, optionally group inflections by
 their dictionary form, and see every occurrence with its local click date,
 source video, original sentence, and contextual translation. Double-click an
 occurrence or choose **Play occurrence** to seek/open its video at the cue start.
 **Open source** opens the original video URL or local input file. Use
-**Retry failed translations** after restoring internet access or credentials.
-The dialog updates when background translations complete.
+**Retry failed lookups / enrichment** after restoring internet access or credentials.
+The tab refreshes while visible and catches up on background work when you
+return. **Ctrl+F** focuses the vocabulary search.
 
 Vocabulary lives in `<output root>/library/catalog.sqlite3`, including CLI
 captures. Four related tables separate durable source references (`vocab_sources`),
@@ -2683,8 +2685,8 @@ caches approved choices and the selected voice’s target recordings.
 
 ### Adaptive Vocabulary Practice
 
-Choose the **Practice** tab (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
-window, then choose **Word quiz** for the three-choice vocabulary exercise.
+Choose the **Practice** tab (`Ctrl+Shift+R`), then choose **Word quiz** for the
+three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
 Sound alike, both Sentences directions, Word order, Phrase and clause order,
 Dutch dictation, Leesbegrip and Luisterbegrip as **eleven buttons in the Practice
@@ -3283,7 +3285,7 @@ python -m unittest tests.test_sentence_practice tests.test_sentence_grading test
 
 The regular tests cover Unicode token spans, repeated events and video counts,
 contextual cache isolation, leases, retries, nonblocking saves, shutdown draining,
-structured response validation, and the native vocabulary dialog. Run the
+structured response validation, and the Vocabulary tab. Run the
 opt-in real-mpv test with synthetic media and a fake translation provider:
 
 ```powershell
@@ -4060,7 +4062,7 @@ High-level groups:
 | `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
 | `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
-| `yt_whisper_subs.library_gui` | Main native window, Library and Practice tab routing, catalog layout, and widget wiring. |
+| `yt_whisper_subs.library_gui` | Main native window, tab routing, catalog layout, and widget wiring. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 | `yt_whisper_subs.windows_startup` | Exact per-user HKCU Run registration and safely quoted quiet-tray launch command. |
 

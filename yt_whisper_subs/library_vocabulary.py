@@ -1,6 +1,6 @@
 """Native vocabulary browsing with occurrence history and contextual translations.
 
-Example: Library → Vocabulary shows clicks grouped by spelling or dictionary form.
+Example: the Vocabulary tab shows clicks grouped by spelling or dictionary form.
 """
 
 from __future__ import annotations
@@ -29,24 +29,21 @@ def _time(seconds: float) -> str:
     return openai_chapters.format_time(round(seconds * 1000))
 
 
-class VocabularyDialog(QtWidgets.QDialog):
+class VocabularyView(QtWidgets.QWidget):
     """Keep derived counts and immutable history in one review surface; e.g. repeated `liep`."""
 
     play_requested = QtCore.Signal(object)
-    practice_requested = QtCore.Signal()
 
     def __init__(self, service: library_service.LibraryService, parent: QtWidgets.QWidget | None = None) -> None:
-        """Bind the review window to one output root; e.g. the currently open library."""
+        """Bind the review page to one output root; e.g. the currently open library."""
 
         super().__init__(parent)
-        self.setWindowTitle(i18n.tr('Vocabulary · subtitles and practice'))
-        self.resize(1180, 760)
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self._service = service
         self._snapshot = None
         self._events: list[dict] = []
         self._search = QtWidgets.QLineEdit()
         self._search.setPlaceholderText(i18n.tr('Search words, meanings, or dictionary forms…'))
+        self._search.setClearButtonEnabled(True)
         self._group = QtWidgets.QCheckBox(i18n.tr('Group by dictionary form'))
         self._status = QtWidgets.QLabel()
         self._words = self._table([i18n.tr('Word'), i18n.tr('Language'), i18n.tr('Dictionary form'), i18n.tr('Meaning'), i18n.tr('Clicks'), i18n.tr('Mistakes'), i18n.tr('Videos'), i18n.tr('Compounds'), i18n.tr('Last seen'), i18n.tr('Translation')])
@@ -63,9 +60,6 @@ class VocabularyDialog(QtWidgets.QDialog):
         self._timer = QtCore.QTimer(self)
         self._timer.setInterval(2000)
         self._timer.timeout.connect(self.refresh)
-        self._timer.start()
-        self._service.vocabulary.start()
-        self.refresh()
 
     def _arrange(self) -> None:
         """Compose resizable panels and their native actions; e.g. replay a selected occurrence."""
@@ -73,23 +67,21 @@ class VocabularyDialog(QtWidgets.QDialog):
         retry = QtWidgets.QPushButton(i18n.tr('Retry failed lookups / enrichment'))
         play = QtWidgets.QPushButton(i18n.tr('Play occurrence'))
         source = QtWidgets.QPushButton(i18n.tr('Open source'))
-        close = QtWidgets.QPushButton(i18n.tr('Close'))
-        practice = QtWidgets.QPushButton(i18n.tr('Practice…'))
-        practice.setObjectName("primaryButton")
         self._play, self._source = play, source
         top = QtWidgets.QHBoxLayout()
         top.addWidget(self._search, 1)
         top.addWidget(self._group)
         actions = QtWidgets.QHBoxLayout()
-        for button in (practice, play, source, retry):
-            actions.addWidget(button)
+        actions.addWidget(play)
+        actions.addWidget(source)
         actions.addStretch()
-        actions.addWidget(close)
+        actions.addWidget(retry)
         split = QtWidgets.QSplitter(QtCore.Qt.Orientation.Vertical)
         for widget in (self._words, self._history, self._detail):
             split.addWidget(widget)
         split.setSizes([340, 180, 170])
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(22, 18, 22, 16)
         layout.addLayout(top)
         layout.addWidget(self._status)
         layout.addWidget(split, 1)
@@ -102,8 +94,25 @@ class VocabularyDialog(QtWidgets.QDialog):
         play.clicked.connect(self._play_occurrence)
         source.clicked.connect(self._open_source)
         retry.clicked.connect(self._retry)
-        close.clicked.connect(self.close)
-        practice.clicked.connect(self.practice_requested)
+
+    def showEvent(self, event: QtGui.QShowEvent) -> None:
+        """Catch up on new words and translations when the user returns to the tab."""
+
+        super().showEvent(event)
+        self.refresh()
+        self._timer.start()
+
+    def hideEvent(self, event: QtGui.QHideEvent) -> None:
+        """Pause table polling while the page is hidden; background lookups keep running."""
+
+        self._timer.stop()
+        super().hideEvent(event)
+
+    def focus_search(self) -> None:
+        """Focus the tab's filter field so Ctrl+F can replace the current word query."""
+
+        self._search.setFocus()
+        self._search.selectAll()
 
     @staticmethod
     def _table(labels: list[str]) -> QtWidgets.QTableWidget:

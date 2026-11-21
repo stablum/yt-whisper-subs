@@ -502,6 +502,41 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertIn('2/11', view._sequence._status.text())
         self.assertIsNone(db.practice_last_answer(time.time()))
 
+    def test_vocabulary_tab_can_open_before_practice_and_keep_its_selection(self) -> None:
+        """Exercise both lazy tabs and keep the chosen occurrence when returning via the shortcut."""
+
+        practice_fixtures.seed(self._service.db)
+        window = self._window
+        tabs = window._workspace_tabs
+        window.show()
+        self._app.processEvents()
+        self.assertIsNone(window._vocabulary)
+        QtTest.QTest.mouseClick(tabs, QtCore.Qt.MouseButton.LeftButton, pos=tabs.tabRect(2).center())
+        view = window._vocabulary
+        self.assertIs(view.window(), window)
+        view._group.setChecked(True)
+        view._search.setText('liep')
+        view._words.selectRow(0)
+        selected = view._selected_event()['id']
+        self.assertTrue(view._timer.isActive())
+        self.assertFalse(window._practice_in_foreground())
+
+        activity = next(action for action in window._tray_menu.actions() if action.text() == 'Practice activity…')
+        activity.trigger()
+        self.assertIs(window._workspaces.currentWidget(), window._practice)
+        self.assertFalse(view._timer.isActive())
+        modifiers = QtCore.Qt.KeyboardModifier.ControlModifier | QtCore.Qt.KeyboardModifier.ShiftModifier
+        QtTest.QTest.keyClick(window._practice, QtCore.Qt.Key.Key_W, modifiers)
+        self.assertIs(window._workspaces.currentWidget(), view)
+        self.assertTrue(view._timer.isActive())
+        self.assertTrue(view._group.isChecked())
+        self.assertEqual(view._search.text(), 'liep')
+        self.assertEqual(view._selected_event()['id'], selected)
+        QtTest.QTest.keyClick(view, QtCore.Qt.Key.Key_F, QtCore.Qt.KeyboardModifier.ControlModifier)
+        self.assertTrue(view._search.hasFocus())
+        QtTest.QTest.keyClick(view._search, QtCore.Qt.Key.Key_Escape)
+        self.assertTrue(window._ui.catalog.table.isVisible())
+
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:
         """Keep the entire list accessible instead of truncating a native toast.
 

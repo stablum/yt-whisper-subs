@@ -26,7 +26,7 @@ from yt_whisper_subs import vocabulary as words
 from yt_whisper_subs import vocabulary_translate
 
 
-class VocabularyDialogTests(unittest.TestCase):
+class VocabularyViewTests(unittest.TestCase):
     """Verify the displayed view reflects the relational history; e.g. repeated inflections."""
 
     @classmethod
@@ -55,14 +55,17 @@ class VocabularyDialogTests(unittest.TestCase):
         while row := self._service.db.claim_word_lookup("test"):
             meaning = words.Meaning("walked", "lopen", "to walk", "verb", "Past tense", "", False)
             self._service.db.finish_word_lookup(row["id"], "test", meaning)
-        self._dialog = library_vocabulary.VocabularyDialog(self._service)
-        self._dialog.setStyleSheet(library_theme.STYLE)
-        self.addCleanup(self._dialog.close)
+        self._view = library_vocabulary.VocabularyView(self._service)
+        self._view.resize(1180, 760)
+        self._view.setStyleSheet(library_theme.STYLE)
+        self._view.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+        self._view.show()
+        self.addCleanup(self._view.close)
 
     def test_counts_grouping_and_immutable_occurrence_replay(self) -> None:
         """Show both click and video counts, then group inflections without losing history."""
 
-        dialog = self._dialog
+        dialog = self._view
         self.assertEqual(dialog._words.rowCount(), 2)
         dialog._group.setChecked(True)
         self.assertEqual(dialog._words.rowCount(), 1)
@@ -84,7 +87,7 @@ class VocabularyDialogTests(unittest.TestCase):
     def test_search_and_retry_do_not_change_history(self) -> None:
         """Filter derived rows and reschedule failed lookups; e.g. no artificial extra clicks."""
 
-        dialog = self._dialog
+        dialog = self._view
         dialog._search.setText("nothing matches")
         self.assertEqual(dialog._words.rowCount(), 0)
         self.assertEqual(dialog._history.rowCount(), 0)
@@ -111,9 +114,7 @@ class VocabularyDialogTests(unittest.TestCase):
         """Optionally capture the actual widget for visual QA; e.g. a review artifact."""
 
         if path := os.environ.get("YTW_VOCAB_PREVIEW"):
-            self._dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
-            self._dialog._group.setChecked(True)
-            self._dialog._words.selectRow(0)
-            self._dialog.show()
+            self._view._group.setChecked(True)
+            self._view._words.selectRow(0)
             self._app.processEvents()
-            self.assertTrue(self._dialog.grab().save(path))
+            self.assertTrue(self._view.grab().save(path))

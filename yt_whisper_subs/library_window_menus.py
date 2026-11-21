@@ -22,8 +22,6 @@ class MenusMixin:
         file_menu = self.menuBar().addMenu(i18n.tr('Library'))
         settings = file_menu.addAction(i18n.tr('Settings…'))
         settings.triggered.connect(self._edit_settings)
-        vocabulary = file_menu.addAction(i18n.tr('Vocabulary…'), self._show_vocabulary)
-        vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
         file_menu.addSeparator()
         quit_action = file_menu.addAction(i18n.tr('Quit'))
         quit_action.triggered.connect(self._quit)

@@ -36,7 +36,7 @@ from yt_whisper_subs import pipeline_progress as progress
 
 
 WINDOW_TITLE = i18n.mark("YouTube Library · yt-whisper-subs v{version}")
-_LIBRARY_TAB, _PRACTICE_TAB = range(2)
+_LIBRARY_TAB, _PRACTICE_TAB, _VOCABULARY_TAB = range(3)
 
 if TYPE_CHECKING:
     from yt_whisper_subs import library_practice
@@ -160,7 +160,7 @@ class LibraryWindow(
         self._channel_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
-        self._vocabulary_dialog: library_vocabulary.VocabularyDialog | None = None
+        self._vocabulary: library_vocabulary.VocabularyView | None = None
         self._practice: library_practice.PracticeView | None = None
         self._ui = self._build_ui()
         self._layout_timer = QtCore.QTimer(self)
@@ -253,8 +253,13 @@ class LibraryWindow(
         self._workspace_tabs.setExpanding(False)
         self._workspace_tabs.setDrawBase(False)
         self._workspace_tabs.addTab(i18n.tr('YouTube Library'))
-        self._workspace_tabs.addTab(i18n.tr('Practice'))
-        self._workspace_tabs.setTabToolTip(_PRACTICE_TAB, 'Ctrl+Shift+R')
+        for title, shortcut, show in (
+            (i18n.tr('Practice'), 'Ctrl+Shift+R', self._show_practice),
+            (i18n.tr('Vocabulary'), 'Ctrl+Shift+W', self._show_vocabulary),
+        ):
+            idx = self._workspace_tabs.addTab(title)
+            self._workspace_tabs.setTabToolTip(idx, shortcut)
+            QtGui.QShortcut(QtGui.QKeySequence(shortcut), self, show)
         self._workspace_tabs.currentChanged.connect(self._workspace_changed)
         shell = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(shell)
@@ -409,38 +414,31 @@ class LibraryWindow(
         header.sectionMoved.connect(self._schedule_layout_store)
         header.sectionResized.connect(self._schedule_layout_store)
         self._ui.catalog.splitter.splitterMoved.connect(self._schedule_layout_store)
-        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+R"), self, self._show_practice)
         app = QtWidgets.QApplication.instance()
         if app:
             app.aboutToQuit.connect(self._store_ui_layout)
 
     def _show_vocabulary(self) -> None:
-        """Reuse one native vocabulary window; e.g. inspect repeated words during playback."""
+        """Reuse the vocabulary page so returning to it preserves the inspected occurrence."""
 
-        if self._vocabulary_dialog is None:
-            self._vocabulary_dialog = library_vocabulary.VocabularyDialog(self._service, self)
-            self._vocabulary_dialog.play_requested.connect(self._play_word)
-            self._vocabulary_dialog.practice_requested.connect(self._vocabulary_dialog.hide)
-            self._vocabulary_dialog.practice_requested.connect(self._show_practice)
-            self._vocabulary_dialog.destroyed.connect(lambda: setattr(self, "_vocabulary_dialog", None))
-        self._vocabulary_dialog.show()
-        self._vocabulary_dialog.raise_()
-        self._vocabulary_dialog.activateWindow()
+        if self._vocabulary is None:
+            self._vocabulary = library_vocabulary.VocabularyView(self._service, self._workspaces)
+            self._vocabulary.play_requested.connect(self._play_word)
+            self._workspaces.addWidget(self._vocabulary)
+        self._select_workspace(_VOCABULARY_TAB, self._vocabulary)
 
     def _workspace_changed(self, idx: int) -> None:
-        """Handle the top tabs without rebuilding either page; e.g. retain the catalog search."""
+        """Route top tabs through the same entry points as their shortcuts and tray actions."""
 
-        if idx == _LIBRARY_TAB:
-            self._show_library()
-        else:
-            self._show_practice()
+        show = (self._show_library, self._show_practice, self._show_vocabulary)[idx]
+        show()
 
-    def _select_workspace(self, idx: int) -> None:
-        """Keep tab selection and content aligned, including when opened from the tray."""
+    def _select_workspace(self, idx: int, page: QtWidgets.QWidget) -> None:
+        """Select by widget so visiting Vocabulary first does not change Practice routing."""
 
         with QtCore.QSignalBlocker(self._workspace_tabs):
             self._workspace_tabs.setCurrentIndex(idx)
-        self._workspaces.setCurrentIndex(idx)
+        self._workspaces.setCurrentWidget(page)
         self._ui.metadata_status.setVisible(idx == _LIBRARY_TAB)
         self._ui.check_status.setVisible(idx == _LIBRARY_TAB)
         if not self.isActiveWindow() or not self.isVisible() or self.isMinimized():
@@ -449,7 +447,7 @@ class LibraryWindow(
     def _show_library(self) -> None:
         """Return to the same catalog view; e.g. Escape leaves the current practice round in place."""
 
-        self._select_workspace(_LIBRARY_TAB)
+        self._select_workspace(_LIBRARY_TAB, self._workspaces.widget(_LIBRARY_TAB))
 
     def _show_practice(self, activity: bool = False, *, sequence: bool = False) -> None:
         """Open the embedded page, optionally routing a reminder to Activity or Full practice."""
@@ -468,17 +466,17 @@ class LibraryWindow(
             self._practice.show_page(activity, sequence=sequence)
         elif activity or sequence:
             self._practice.show_page(activity, sequence=sequence)
-        self._select_workspace(_PRACTICE_TAB)
+        self._select_workspace(_PRACTICE_TAB, self._practice)
 
     def _practice_in_foreground(self) -> bool:
         """Defer reminders only while the Practice tab is visible in the foreground window."""
 
-        return self._workspaces.currentIndex() == _PRACTICE_TAB and self.isActiveWindow() and not self.isMinimized()
+        return self._workspace_tabs.currentIndex() == _PRACTICE_TAB and self.isActiveWindow() and not self.isMinimized()
 
     def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
-        """Let Escape return to Library after the focused practice control handles its own keys."""
+        """Let Escape return to Library after the focused control handles its own keys."""
 
-        if event.key() == QtCore.Qt.Key.Key_Escape and self._workspaces.currentIndex() == _PRACTICE_TAB:
+        if event.key() == QtCore.Qt.Key.Key_Escape and self._workspace_tabs.currentIndex() != _LIBRARY_TAB:
             self._show_library()
             event.accept()
         else:
@@ -546,6 +544,9 @@ class LibraryWindow(
         Example: View → Focus search makes keyboard filtering immediate.
         """
 
+        if self._workspace_tabs.currentIndex() == _VOCABULARY_TAB:
+            self._vocabulary.focus_search()
+            return
         self._show_library()
         self._ui.header.search.setFocus()
         self._ui.header.search.selectAll()

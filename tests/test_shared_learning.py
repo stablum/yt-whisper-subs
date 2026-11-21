@@ -187,17 +187,16 @@ class SharedLearningTests(unittest.TestCase):
         """Expose the new source in the normal vocabulary UI; e.g. a mistake-only word has zero videos and no Play action."""
 
         self._wrong()
-        service = SimpleNamespace(db=self.db,vocabulary=SimpleNamespace(start=lambda:None))
-        dialog = library_vocabulary.VocabularyDialog(service)
-        self.addCleanup(dialog.close)
-        dialog._search.setText("veilig")
-        self.assertEqual(dialog._words.rowCount(),1)
-        dialog._words.selectRow(0)
+        view = library_vocabulary.VocabularyView(SimpleNamespace(db=self.db))
+        self.addCleanup(view.close)
+        view._search.setText("veilig")
+        self.assertEqual(view._words.rowCount(),1)
+        view._words.selectRow(0)
         self.app.processEvents()
-        self.assertFalse(dialog._play.isEnabled())
-        self.assertIn("zekerder",dialog._detail.toPlainText())
-        self.assertEqual(dialog._words.item(0,4).data(QtCore.Qt.ItemDataRole.DisplayRole),0)
-        self.assertEqual(dialog._words.item(0,5).data(QtCore.Qt.ItemDataRole.DisplayRole),1)
+        self.assertFalse(view._play.isEnabled())
+        self.assertIn("zekerder",view._detail.toPlainText())
+        self.assertEqual(view._words.item(0,4).data(QtCore.Qt.ItemDataRole.DisplayRole),0)
+        self.assertEqual(view._words.item(0,5).data(QtCore.Qt.ItemDataRole.DisplayRole),1)
 
     def _quiz(self, word: dict, correct: bool, at: float) -> dict:
         """Use a real quiz presentation for subsequent review; e.g. reporting it must retain earlier transferred failures."""
