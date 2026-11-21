@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-21 21:11+0100\n"
+"POT-Creation-Date: 2026-11-21 21:18+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -297,7 +297,7 @@ msgstr ""
 msgid "Appointments and services"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:49
+#: yt_whisper_subs/comprehension.py:55
 msgid "Arguments"
 msgstr ""
 
@@ -398,7 +398,7 @@ msgstr ""
 msgid "Cancel current operation"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension_view.py:166 yt_whisper_subs/library_word_order.py:57
+#: yt_whisper_subs/library_comprehension_view.py:167 yt_whisper_subs/library_word_order.py:57
 #: yt_whisper_subs/library_word_quiz.py:155
 msgid "Cancel preparation"
 msgstr ""
@@ -428,7 +428,7 @@ msgstr ""
 msgid "Capture Dutch words in mpv and let their translations finish first."
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:48
+#: yt_whisper_subs/comprehension.py:54
 msgid "Cause and effect"
 msgstr ""
 
@@ -501,7 +501,7 @@ msgstr ""
 msgid "Checking your Dutch transcription…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:179
+#: yt_whisper_subs/comprehension_service.py:205
 msgid "Checking your answer and the meanings of words used…"
 msgstr ""
 
@@ -604,7 +604,7 @@ msgstr ""
 msgid "Completed"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:206 yt_whisper_subs/library_word_order.py:200
+#: yt_whisper_subs/library_comprehension.py:208 yt_whisper_subs/library_word_order.py:200
 msgid "Completed parts remain available."
 msgstr ""
 
@@ -627,14 +627,14 @@ msgstr ""
 msgid "Comprehension"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:413
+#: yt_whisper_subs/library_comprehension.py:416
 #, python-brace-format
 msgid ""
 "Comprehension {score} · {correct} fully correct. Choose an earlier question on the left or start "
 "a new text."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:296
+#: yt_whisper_subs/library_comprehension.py:299
 #, python-brace-format
 msgid "Comprehension {score} · {correct}/{graded} fully correct · {unseen} unseen corrections"
 msgstr ""
@@ -663,7 +663,7 @@ msgstr ""
 msgid "Configure voices…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:49
+#: yt_whisper_subs/comprehension.py:55
 msgid "Connections and references"
 msgstr ""
 
@@ -880,7 +880,7 @@ msgstr ""
 msgid "Degree"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:48
+#: yt_whisper_subs/comprehension.py:54
 msgid "Details"
 msgstr ""
 
@@ -1122,7 +1122,7 @@ msgstr ""
 msgid "Failed · {download_error}"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:47
+#: yt_whisper_subs/comprehension.py:53
 msgid "Fictional news article"
 msgstr ""
 
@@ -1331,11 +1331,11 @@ msgstr ""
 msgid "Incomplete · {resolved}"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:197
+#: yt_whisper_subs/comprehension_service.py:223
 msgid "Independently checking new word meanings…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:48
+#: yt_whisper_subs/comprehension.py:54
 msgid "Inferences"
 msgstr ""
 
@@ -1577,6 +1577,10 @@ msgstr ""
 msgid "Marked watched · {title}"
 msgstr ""
 
+#: yt_whisper_subs/library_comprehension_controls.py:46
+msgid "Maximum words from your vocabulary"
+msgstr ""
+
 #: yt_whisper_subs/library_practice_labels.py:22 yt_whisper_subs/library_vocabulary.py:49
 #: yt_whisper_subs/library_vocabulary.py:50
 msgid "Meaning"
@@ -1643,7 +1647,7 @@ msgstr ""
 msgid "Mistakes"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:47
+#: yt_whisper_subs/comprehension.py:53
 msgid "Mixed"
 msgstr ""
 
@@ -1717,7 +1721,7 @@ msgstr ""
 msgid "New sentence round"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:419
+#: yt_whisper_subs/library_comprehension.py:422
 msgid "New text"
 msgstr ""
 
@@ -1737,7 +1741,7 @@ msgstr ""
 msgid "News and public life"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:258
+#: yt_whisper_subs/library_comprehension.py:261
 msgid "Next"
 msgstr ""
 
@@ -1794,10 +1798,6 @@ msgstr ""
 
 #: yt_whisper_subs/library_removal_actions.py:72
 msgid "No removable downloads or generated files matched the captured filters."
-msgstr ""
-
-#: yt_whisper_subs/library_comprehension.py:182
-msgid "No round available yet"
 msgstr ""
 
 #: yt_whisper_subs/practice_service.py:63
@@ -2170,11 +2170,12 @@ msgstr ""
 msgid "Preparation cancelled."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:185 yt_whisper_subs/library_comprehension.py:199
+#: yt_whisper_subs/library_comprehension.py:183 yt_whisper_subs/library_comprehension.py:187
+#: yt_whisper_subs/library_comprehension.py:201
 msgid "Preparation failed"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:206
+#: yt_whisper_subs/library_comprehension.py:208
 msgid "Preparation paused"
 msgstr ""
 
@@ -2203,11 +2204,11 @@ msgstr ""
 msgid "Preparing Dutch speech…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:155
+#: yt_whisper_subs/comprehension_service.py:179
 msgid "Preparing a Dutch text with exactly the requested questions…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:165
+#: yt_whisper_subs/comprehension_service.py:191
 msgid "Preparing and checking speech clips…"
 msgstr ""
 
@@ -2230,7 +2231,7 @@ msgstr ""
 msgid "Preparing correction…"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:145
+#: yt_whisper_subs/library_comprehension.py:147
 msgid "Preparing text…"
 msgstr ""
 
@@ -2437,7 +2438,7 @@ msgstr ""
 msgid "Refining {len} unconfirmed vocabulary verb mappings…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:47
+#: yt_whisper_subs/comprehension.py:53
 msgid "Reflective essay"
 msgstr ""
 
@@ -2565,7 +2566,7 @@ msgstr ""
 msgid "Report question"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:458 yt_whisper_subs/library_comprehension_view.py:165
+#: yt_whisper_subs/library_comprehension.py:461 yt_whisper_subs/library_comprehension_view.py:166
 msgid "Report text or question"
 msgstr ""
 
@@ -2610,7 +2611,7 @@ msgstr ""
 msgid "Resume full practice"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:221 yt_whisper_subs/library_word_order.py:212
+#: yt_whisper_subs/library_comprehension_view.py:165 yt_whisper_subs/library_word_order.py:212
 msgid "Resume previous round"
 msgstr ""
 
@@ -2660,7 +2661,7 @@ msgstr ""
 msgid "Return to Word quiz to continue."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:192
+#: yt_whisper_subs/library_comprehension.py:194
 msgid "Return to begin."
 msgstr ""
 
@@ -2681,7 +2682,7 @@ msgstr ""
 msgid "Review the explanation"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:106
+#: yt_whisper_subs/comprehension_service.py:131
 msgid "Revising questions flagged by the independent review…"
 msgstr ""
 
@@ -2689,7 +2690,7 @@ msgstr ""
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:412 yt_whisper_subs/library_word_order.py:227
+#: yt_whisper_subs/library_comprehension.py:415 yt_whisper_subs/library_word_order.py:227
 #: yt_whisper_subs/library_word_quiz.py:472
 msgid "Round complete"
 msgstr ""
@@ -2725,7 +2726,7 @@ msgstr ""
 msgid "Save and translate some Dutch vocabulary words before sentence practice."
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:142 yt_whisper_subs/word_order_service.py:35
+#: yt_whisper_subs/word_order_service.py:35
 msgid "Save some Dutch words with translations first."
 msgstr ""
 
@@ -3050,7 +3051,7 @@ msgstr ""
 msgid "Stopped"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:47
+#: yt_whisper_subs/comprehension.py:53
 msgid "Story"
 msgstr ""
 
@@ -3096,7 +3097,7 @@ msgstr ""
 msgid "Submit answer"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:258
+#: yt_whisper_subs/library_comprehension.py:261
 msgid "Submit answer and continue"
 msgstr ""
 
@@ -3133,7 +3134,7 @@ msgstr ""
 msgid "Text and questions"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:464
+#: yt_whisper_subs/library_comprehension.py:467
 msgid "Text reported"
 msgstr ""
 
@@ -3149,6 +3150,10 @@ msgstr ""
 msgid "The replay uses the valid order closest to your submission."
 msgstr ""
 
+#: yt_whisper_subs/library_comprehension.py:184
+msgid "The review was incomplete. Try again to recheck the saved draft."
+msgstr ""
+
 #: yt_whisper_subs/library_voice_controls.py:115
 msgid "The same variation number and settings reproduce the same take."
 msgstr ""
@@ -3157,11 +3162,11 @@ msgstr ""
 msgid "The sentence you heard"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:130 yt_whisper_subs/library_comprehension.py:145
+#: yt_whisper_subs/comprehension_service.py:148 yt_whisper_subs/library_comprehension.py:147
 msgid "The text and all questions are independently checked."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:186
+#: yt_whisper_subs/library_comprehension.py:188
 msgid "The text and questions did not pass the independent review. Try again for a new draft."
 msgstr ""
 
@@ -3179,10 +3184,6 @@ msgstr ""
 
 #: yt_whisper_subs/verb_service.py:73
 msgid "These verb forms are not due yet. Try other forms or practise early."
-msgstr ""
-
-#: yt_whisper_subs/comprehension_service.py:146
-msgid "These words are not due yet. Enable early review to continue."
 msgstr ""
 
 #: yt_whisper_subs/library_app.py:76
@@ -3222,7 +3223,7 @@ msgstr ""
 msgid "Toggle automatic download"
 msgstr ""
 
-#: yt_whisper_subs/comprehension.py:49
+#: yt_whisper_subs/comprehension.py:55
 msgid "Tone and intent"
 msgstr ""
 
@@ -3288,7 +3289,7 @@ msgstr ""
 msgid "Travel and directions"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:221 yt_whisper_subs/library_word_quiz.py:275
+#: yt_whisper_subs/library_comprehension.py:224 yt_whisper_subs/library_word_quiz.py:275
 #: yt_whisper_subs/library_word_quiz.py:289 yt_whisper_subs/library_word_quiz.py:297
 #: yt_whisper_subs/library_written.py:214 yt_whisper_subs/library_written.py:353
 msgid "Try again"
@@ -3531,7 +3532,7 @@ msgstr ""
 msgid "Well understood"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:458
+#: yt_whisper_subs/library_comprehension.py:461
 msgid "What is wrong?"
 msgstr ""
 
@@ -3608,10 +3609,6 @@ msgstr ""
 msgid "Words explored"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension_controls.py:46
-msgid "Words from your vocabulary"
-msgstr ""
-
 #: yt_whisper_subs/sentence_practice.py:20
 msgid "Work and study"
 msgstr ""
@@ -3672,7 +3669,7 @@ msgstr ""
 msgid "Your answer"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:412
+#: yt_whisper_subs/library_comprehension.py:415
 msgid "Your answers are saved"
 msgstr ""
 
@@ -3698,7 +3695,7 @@ msgstr ""
 msgid "Your practice history will appear here"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:199
+#: yt_whisper_subs/library_comprehension.py:201
 msgid "Your previous answers and prepared text are saved. Try again."
 msgstr ""
 
@@ -3723,7 +3720,7 @@ msgstr ""
 msgid "Your sentence targets and writing reviews are not due yet. Try early practice if you wish."
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:464
+#: yt_whisper_subs/library_comprehension.py:467
 msgid "Your submitted answers remain in your activity but no longer count toward scores."
 msgstr ""
 
@@ -3731,7 +3728,7 @@ msgstr ""
 msgid "Your text"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:192
+#: yt_whisper_subs/library_comprehension.py:194
 msgid "Your text is ready"
 msgstr ""
 
@@ -4007,7 +4004,7 @@ msgid ""
 "forms due · {pending} awaiting correction"
 msgstr ""
 
-#: yt_whisper_subs/library_comprehension.py:304
+#: yt_whisper_subs/library_comprehension.py:307
 #, python-brace-format
 msgid "{submitted}/{planned} submitted · {value} pending · {unseen} unseen corrections"
 msgstr ""

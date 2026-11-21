@@ -159,6 +159,25 @@ class ComprehensionFlowTests(unittest.TestCase):
         self.assertTrue(panel.rect().contains(view.action.mapTo(panel, view.action.rect().bottomRight())))
         self.assertEqual(practice_activity.read(self.db).answers, 3)
 
+    def test_retry_rechecks_saved_draft_when_previous_round_can_be_resumed(self):
+        """Try again continues the requested preparation while an earlier round stays resumable."""
+
+        panel = self._panel(direction=comp.Direction.LISTEN)
+        previous = panel.round_id
+        audit = self.provider.audit
+        with mock.patch.object(self.provider, 'audit', side_effect=lambda p, level: audit(p, level).model_copy(update={'questions': []})):
+            panel._view.options.restart_requested.emit()
+            self._wait(lambda: panel._run.phase == 'error')
+
+        self.assertTrue(panel._view.resume.isVisible())
+        self.assertEqual(panel._view.action.text(), 'Try again')
+        self.assertEqual(self.db.comprehension_session(previous)['status'], 'active')
+        generated = len(self.provider.generated)
+        panel._view.action.click()
+        self._wait(lambda: panel.round_id != previous and panel._run.row is not None)
+        self.assertEqual(len(self.provider.generated), generated)
+        self.assertFalse(panel._view.resume.isVisible())
+
     def test_pending_open_answer_does_not_block_or_replace_next_draft(self):
         """Let the learner keep writing during grading; e.g. a late answer-one correction leaves answer two untouched."""
 

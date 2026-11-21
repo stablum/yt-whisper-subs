@@ -111,15 +111,16 @@ class ComprehensionTests(unittest.TestCase):
 
         audit = self.provider.audit
         with mock.patch.object(self.provider, 'audit', side_effect=lambda passage, level: audit(passage, level).model_copy(update={'questions': []})):
-            with self.assertRaisesRegex(ValueError, 'niet volledig'):
+            with self.assertRaisesRegex(comp.AuditIncomplete, 'niet volledig'):
                 self._start()
+        self.assertEqual(len(self.provider.audited), 2)
         self.assertEqual(self.db.comprehension_passage(1)['error'], '')
         self.assertIsNone(self.db.comprehension_active('read'))
         self._start()
         self.assertEqual(len(self.provider.generated), 1)
 
     def test_persistent_question_rejection_never_publishes_a_round(self):
-        """Limit one focused repair and one new draft even if every audit flags a question."""
+        """Bound whole drafts and focused repairs even if every audit flags a question."""
 
         audit = self.provider.audit
 
@@ -132,17 +133,18 @@ class ComprehensionTests(unittest.TestCase):
 
         with mock.patch.object(self.provider, 'audit', side_effect=reject), self.assertRaises(comp.DraftRejected):
             self._start()
-        self.assertEqual(len(self.provider.generated), 2)
-        self.assertEqual(len(self.provider.repaired), 1)
-        self.assertEqual(len(self.provider.audited), 3)
+        self.assertEqual(len(self.provider.generated), 3)
+        self.assertEqual(len(self.provider.repaired), 3)
+        self.assertEqual(len(self.provider.audited), 6)
+        self.assertEqual(self.provider.generated[-1]['words'], [])
         self.assertIsNone(self.db.comprehension_active('read'))
 
     def test_a1_audit_replaces_off_level_passage_and_accepts_short_paragraphs(self):
         """Keep shorter paragraphs after the audit rejects a passage for exceeding A1 difficulty."""
 
-        opts = fixtures.options(level='A1')
+        opts = fixtures.options(level='A1', direction=comp.Direction.LISTEN)
         paragraphs = [
-            'De slimste buurman ziet de fietsen. De kinderen lopen naar school. Het besluit is nog niet definitief.',
+            'De buurman ziet de fietsen. De kinderen lopen naar school. Het besluit is nog niet definitief.',
             'Noor gaat naar de winkel. Er staan veel fietsen voor de deur.',
             'Noor loopt naar huis. Haar buurman zit buiten. Hij drinkt koffie met Noor.',
         ]
@@ -159,7 +161,7 @@ class ComprehensionTests(unittest.TestCase):
 
             self.assertEqual(level, comp.Level.A1)
             verdict = audit(passage, level)
-            verdict.level_issue = '' if passage.paragraphs == paragraphs else 'De zinnen zijn te moeilijk voor A1.'
+            verdict.passage_issue = '' if passage.paragraphs == paragraphs else 'De zinnen zijn te moeilijk voor A1.'
             return verdict
 
         with (
@@ -169,19 +171,95 @@ class ComprehensionTests(unittest.TestCase):
             session = self._start(opts)
 
         self.assertEqual(self.provider.generated[1]['previous_rejection'], 'De zinnen zijn te moeilijk voor A1.')
+        self.assertEqual(len(self.provider.generated[0]['words']), opts.words)
+        self.assertEqual(self.provider.generated[1]['words'], [])
+        self.assertEqual(self.provider.generated[0]['options'], self.provider.generated[1]['options'])
         pid = self.db.comprehension_session(session)['passage_id']
         self.assertEqual(self.db.comprehension_passage(pid)['content']['paragraphs'], paragraphs)
+        self.assertTrue(self.engine.audio.ready(pid))
 
-    def test_omitted_questions_never_publish_and_are_bounded_to_two_drafts(self):
+    def test_omitted_questions_never_publish_and_are_bounded(self):
         """Keep paid rejected drafts for diagnosis without accepting missing content; e.g. a smaller output cannot silently become the requested round."""
 
         self.provider.omit_question = True
         with self.assertRaises(ValueError):
             self._start()
-        self.assertEqual(len(self.provider.generated), 2)
+        self.assertEqual(len(self.provider.generated), 3)
         self.assertIsNone(self.db.comprehension_active('read'))
         with self.db._connect() as conn:
-            self.assertEqual(conn.execute('SELECT COUNT(*) FROM comprehension_passages').fetchone()[0], 2)
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM comprehension_passages').fetchone()[0], 3)
+
+    def test_only_used_words_are_saved_and_unsupported_tags_do_not_reject_questions(self):
+        """Keep valid content when the writer skips candidates or mislabels a question as lexical."""
+
+        generate, audit = self.provider.generate, self.provider.audit
+
+        def use_one(document):
+            """Pick a single suitable candidate from the ranked list."""
+
+            return generate(dict(document, words=document['words'][:1]))
+
+        def review(passage, level):
+            """Remove one unsupported tag while clearing the rest of the exercise."""
+
+            verdict = audit(passage, level)
+            verdict.questions[0].unsupported_word_ids = passage.questions[0].word_ids
+            return verdict
+
+        with (
+            mock.patch.object(self.provider, 'generate', side_effect=use_one),
+            mock.patch.object(self.provider, 'audit', side_effect=review),
+        ):
+            session = self._start()
+
+        pid = self.db.comprehension_session(session)['passage_id']
+        first, second, *_ = self.db.comprehension_history(session)
+        self.assertEqual(first['content']['word_ids'], [])
+        with self.db._connect() as conn:
+            used = [row[0] for row in conn.execute('SELECT word_id FROM comprehension_targets WHERE passage_id=?', (pid,))]
+        self.assertEqual(used, second['content']['word_ids'])
+        self.assertEqual(len(used), 1)
+        self.assertEqual(len(self.provider.audited), 1)
+        self.assertFalse(self.provider.repaired)
+
+    def test_bad_evidence_is_repaired_before_independent_review(self):
+        """Replace a bad quote on a fixed passage before asking the auditor to solve it."""
+
+        generate, repair = self.provider.generate, self.provider.repair_questions
+        quote = 'Het besluit is nog niet definitief.'
+
+        def bad_quote(document):
+            """Simulate a quote that paraphrases the source."""
+
+            passage = generate(document)
+            passage.questions[0].evidence[0].quote = 'Het besluit is voorlopig.'
+            return passage
+
+        def fix_quote(passage, issues, level):
+            """Repair the verbatim quote with the original passage still frozen."""
+
+            fixed = repair(passage, issues, level).model_copy(deep=True)
+            fixed.questions[0].evidence[0].quote = quote
+            return fixed
+
+        with (
+            mock.patch.object(self.provider, 'generate', side_effect=bad_quote),
+            mock.patch.object(self.provider, 'repair_questions', side_effect=fix_quote),
+        ):
+            session = self._start()
+
+        self.assertEqual(len(self.provider.generated), 1)
+        self.assertEqual(len(self.provider.audited), 1)
+        self.assertIn('bewijsplaats', self.provider.repaired[0][0].explanation)
+        self.assertEqual(self._open(session)['content']['evidence'][0]['quote'], quote)
+
+    def test_passage_works_without_eligible_vocabulary(self):
+        """Allow a comprehension-only exercise, e.g. a new learner has no saved Dutch words."""
+
+        with mock.patch.object(self.db, 'word_candidates', return_value=[]):
+            session = self._start()
+        self.assertEqual(self.provider.generated[0]['words'], [])
+        self.assertEqual(len(self.db.comprehension_history(session)), self.opts.count)
 
     def test_audit_outage_reuses_its_saved_draft(self):
         """Checkpoint between generation and review; e.g. retrying an unavailable auditor does not generate another article."""

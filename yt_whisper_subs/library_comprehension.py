@@ -16,7 +16,6 @@ from yt_whisper_subs import comprehension_service
 from yt_whisper_subs import library_checks
 from yt_whisper_subs import library_comprehension_view
 from yt_whisper_subs import library_workers
-from yt_whisper_subs import practice_round
 
 
 class Run(pd.BaseModel):
@@ -52,6 +51,7 @@ class Panel(QtWidgets.QWidget):
         self._checks = library_checks.Checks.shared(db, kind='comprehension')
         self._checks.changed.connect(self._changed)
         self._view.action.clicked.connect(self._action)
+        self._view.resume.clicked.connect(self._resume)
         self._view.card.submitted.connect(self._submit)
         self._view.card.chosen.connect(self._choose)
         self._view.card.continued.connect(self._next)
@@ -71,7 +71,8 @@ class Panel(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._view)
         self._view.card.idle(self._direction.label, i18n.tr('Read or listen to a Dutch text and answer the questions.'))
-        for widget in (self._view.action, self._view.flag, self._view.retry, self._view.cancel, self._view.rail, self._view.bar):
+        for widget in (self._view.action, self._view.resume, self._view.flag, self._view.retry,
+                       self._view.cancel, self._view.rail, self._view.bar):
             widget.hide()
 
     @property
@@ -112,6 +113,7 @@ class Panel(QtWidgets.QWidget):
     def _resume(self) -> None:
         """Prefer saved navigation, then unfinished work or unseen feedback; e.g. reopening cannot silently mark a correction viewed."""
 
+        self._view.resume.hide()
         rows = self._db.comprehension_history(self._run.session)
         try:
             cursor = json.loads(self._db.setting(self._view.options.key + '_cursor', '{}'))
@@ -144,6 +146,7 @@ class Panel(QtWidgets.QWidget):
         self._view.source.clear()
         self._view.card.idle(i18n.tr('Preparing text…'), i18n.tr('The text and all questions are independently checked.'))
         self._view.action.hide()
+        self._view.resume.hide()
         self._view.flag.hide()
         self._view.retry.hide()
         self._view.rail.hide()
@@ -153,14 +156,12 @@ class Panel(QtWidgets.QWidget):
         self._view.bar.show()
 
         def prepare(report):
-            """Return healthy scheduling states separately; e.g. no due words is not a broken model response."""
+            """Show quality failures separately from transport or audio failures."""
 
             try:
                 return self._engine.start(opts, report, cached_first=cached)
-            except practice_round.NothingToPractice as empty:
-                return empty
-            except comp.DraftRejected as rejected:
-                return rejected
+            except (comp.DraftRejected, comp.AuditIncomplete) as err:
+                return err
 
         task = library_workers.BackgroundTask(prepare)
         self._task = task
@@ -178,8 +179,9 @@ class Panel(QtWidgets.QWidget):
             return
         self._view.options.setEnabled(True)
         self._view.cancel.hide()
-        if isinstance(result, practice_round.NothingToPractice):
-            self._rest(i18n.tr('No round available yet'), str(result))
+        if isinstance(result, comp.AuditIncomplete):
+            self._rest(i18n.tr('Preparation failed'),
+                       i18n.tr('The review was incomplete. Try again to recheck the saved draft.'))
             return
         if isinstance(result, comp.DraftRejected):
             self._rest(i18n.tr('Preparation failed'),
@@ -218,7 +220,8 @@ class Panel(QtWidgets.QWidget):
         self._view.rail.hide()
         self._view.flag.hide()
         self._view.retry.hide()
-        self._view.action.setText(i18n.tr('Resume previous round') if self._run.session else i18n.tr('Try again'))
+        self._view.resume.setVisible(bool(self._run.session))
+        self._view.action.setText(i18n.tr('Try again'))
         self._view.action.setEnabled(True)
         self._view.action.show()
 
@@ -379,8 +382,8 @@ class Panel(QtWidgets.QWidget):
 
         if self._task or self._run.closed or not self.isVisible():
             return
-        if self._run.phase == 'error' and self._run.session:
-            self._resume()
+        if self._run.phase == 'error':
+            self._new(cached=False)
             return
         if self._run.row is None:
             self._new(cached=True)

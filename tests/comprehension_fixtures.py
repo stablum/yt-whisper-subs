@@ -44,7 +44,8 @@ class Provider:
         opts = document['options']
         paragraphs = [PARAGRAPHS[i % 3] for i in range(opts['paragraphs'])]
         forms = dict(slim=['slimste'], fiets=['fietsen'], lopen=['lopen'])
-        targets = [comp.Target(word_id=w['word_id'], forms=forms[w['lemma']]) for w in document['words']]
+        targets = [comp.Target(word_id=w['word_id'], forms=forms[w['lemma']]) for w in document['words'] if w['lemma'] in forms]
+        word_ids = [targets[0].word_id] if targets else []
         questions = []
         count = opts['mc'] + opts['open'] - int(self.omit_question)
         for idx in range(count):
@@ -59,7 +60,7 @@ class Provider:
                 choices=choices, correct_idx=1 if multiple else None,
                 answer='De gemeente wil minder verkeer, maar het besluit is nog niet definitief.',
                 rubric=[] if multiple else [comp.Criterion(key='doel', text='Noemt minder verkeer.'), comp.Criterion(key='voorbehoud', text='Noemt het voorlopige karakter.')],
-                evidence=[comp.Evidence(paragraph=1, quote='Het besluit is nog niet definitief.')], word_ids=[targets[0].word_id]))
+                evidence=[comp.Evidence(paragraph=1, quote='Het besluit is nog niet definitief.')], word_ids=word_ids))
         return comp.Passage(title=f'Een proef in de wijk {len(self.generated)}', genre='article' if opts['genre'] == 'mixed' else opts['genre'],
                             paragraphs=paragraphs, targets=targets, questions=questions)
 
@@ -70,8 +71,8 @@ class Provider:
         if not self.audit_available:
             raise OSError('Auditor unavailable')
         flag = self.reject_first and len(self.audited) == 1
-        return comp.Audit(natural_dutch=True, coherent=True, level_issue='', questions=[
-            comp.AuditQuestion(key=q.key, valid=not (flag and q.key == 1), answer_idx=q.correct_idx,
+        return comp.Audit(passage_issue='', questions=[
+            comp.AuditQuestion(key=q.key, valid=not (flag and q.key == 1), answer_idx=q.correct_idx, unsupported_word_ids=[],
                                explanation='Vraag 2 verraadt het antwoord.' if flag and q.key == 1 else 'Eenduidig onderbouwd.')
             for q in passage.questions])
 

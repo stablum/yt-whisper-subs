@@ -38,6 +38,12 @@ class Level(enum.StrEnum):
     C1 = 'C1'
 
     @property
+    def beginner(self) -> bool:
+        """Identify the levels where unsuitable vocabulary can prevent a viable passage, e.g. A1."""
+
+        return self in (self.A1, self.A2)
+
+    @property
     def min_paragraph_words(self) -> int:
         """Allow very short A1 paragraphs; e.g. two short sentences can form a paragraph."""
 
@@ -58,7 +64,7 @@ class Options(pd.BaseModel):
     paragraphs: int = pd.Field(default=5, ge=2, le=10)
     mc: int = pd.Field(default=5, ge=0, le=20)
     open: int = pd.Field(default=3, ge=0, le=15)
-    words: int = pd.Field(default=8, ge=1, le=20)
+    words: int = pd.Field(default=8, ge=0, le=20)
     include_early: bool = False
 
     @pd.model_validator(mode="after")
@@ -134,84 +140,112 @@ class Passage(practice.Content):
     title: str = pd.Field(min_length=3, max_length=180)
     genre: Literal["story", "article", "essay"]
     paragraphs: list[str] = pd.Field(min_length=2, max_length=10)
-    targets: list[Target] = pd.Field(min_length=1, max_length=20)
+    targets: list[Target] = pd.Field(max_length=20)
     questions: list[Question] = pd.Field(min_length=1, max_length=30)
 
-    def check(self, opts: Options, target_ids: set[int]) -> None:
-        """Reject omissions and unsupported evidence locally; e.g. requested counts cannot become a smaller round after audit."""
+    def check(self, opts: Options, candidate_ids: set[int]) -> None:
+        """Check the requested shape and collect question defects for focused repair, e.g. a wrong quote."""
 
         if len(self.paragraphs) != opts.paragraphs or any(len(p.split()) < opts.level.min_paragraph_words for p in self.paragraphs):
-            raise ValueError("Het aantal alinea's of de tekstlengte klopt niet.")
+            raise DraftRejected("Het aantal alinea's of de tekstlengte klopt niet.")
         if sum(q.kind == "mc" for q in self.questions) != opts.mc or sum(q.kind == "open" for q in self.questions) != opts.open:
-            raise ValueError("Het aantal meerkeuzevragen en open vragen klopt niet.")
+            raise DraftRejected("Het aantal meerkeuzevragen en open vragen klopt niet.")
         if opts.genre != "mixed" and self.genre != opts.genre:
-            raise ValueError("De tekstsoort klopt niet.")
-        if {t.word_id for t in self.targets} != target_ids or len(self.targets) != len(target_ids):
-            raise ValueError("De tekst mist geselecteerde woordenschat.")
+            raise DraftRejected("De tekstsoort klopt niet.")
+        target_ids = {t.word_id for t in self.targets}
+        if target_ids - candidate_ids or len(self.targets) != len(target_ids) or len(target_ids) > opts.words:
+            raise DraftRejected("De tekst verwijst naar onbekende of dubbele woordenschat.")
         text = "\n\n".join(self.paragraphs)
         for target in self.targets:
             if any(not form.strip() or not re.search(r"(?<!\w)" + re.escape(form) + r"(?!\w)", text, re.I) for form in target.forms):
-                raise ValueError("Een opgegeven woordvorm staat niet in de tekst.")
+                raise DraftRejected("Een opgegeven woordvorm staat niet in de tekst.")
         if {q.key for q in self.questions} != set(range(1, opts.count + 1)):
-            raise ValueError("Vraagnummers ontbreken of zijn dubbel.")
+            raise DraftRejected("Vraagnummers ontbreken of zijn dubbel.")
+        issues = []
         for q in self.questions:
-            if len(q.word_ids) != len(set(q.word_ids)) or set(q.word_ids) - target_ids:
-                raise ValueError("Een vraag verwijst naar onbekende woordenschat.")
-            for item in q.evidence:
-                if item.paragraph > len(self.paragraphs) or item.quote not in self.paragraphs[item.paragraph - 1]:
-                    raise ValueError("Een bewijsplaats staat niet in de genoemde alinea.")
-            if q.kind == "mc":
-                if len(q.choices) != 4 or q.correct_idx not in range(4) or q.rubric:
-                    raise ValueError("Een meerkeuzevraag heeft vier keuzes en één antwoord nodig.")
-                if len({c.text.casefold().strip() for c in q.choices}) != 4:
-                    raise ValueError("Dubbele antwoordkeuzes.")
-            elif q.choices or q.correct_idx is not None or not 1 <= len(q.rubric) <= 5:
-                raise ValueError("Een open vraag heeft vaste beoordelingscriteria nodig.")
-            if len({c.key for c in q.rubric}) != len(q.rubric):
-                raise ValueError("Dubbele beoordelingscriteria.")
+            if issue := self._question_issue(q, target_ids):
+                issues.append(QuestionIssue(key=q.key, explanation=issue))
+        if issues:
+            raise DraftRejected.from_questions(tuple(issues))
+
+    def _question_issue(self, q: Question, target_ids: set[int]) -> str | None:
+        """Identify a local violation, e.g. repeated options cannot pass independent review."""
+
+        if len(q.word_ids) != len(set(q.word_ids)) or set(q.word_ids) - target_ids:
+            return "Een vraag verwijst naar onbekende of dubbele woordenschat."
+        for item in q.evidence:
+            if item.paragraph > len(self.paragraphs) or item.quote not in self.paragraphs[item.paragraph - 1]:
+                return "Een bewijsplaats staat niet in de genoemde alinea."
+        if q.kind == "mc":
+            if len(q.choices) != 4 or q.correct_idx not in range(4) or q.rubric:
+                return "Een meerkeuzevraag heeft vier keuzes en één antwoord nodig."
+            if len({c.text.casefold().strip() for c in q.choices}) != 4:
+                return "Dubbele antwoordkeuzes."
+        elif q.choices or q.correct_idx is not None or not 1 <= len(q.rubric) <= 5:
+            return "Een open vraag heeft vaste beoordelingscriteria nodig."
+        if len({c.key for c in q.rubric}) != len(q.rubric):
+            return "Dubbele beoordelingscriteria."
+        return None
 
 
-class AuditQuestion(practice.Content):
-    """Require a blind independent answer and ambiguity check; e.g. disagreement with the proposed answer prevents publication."""
+class QuestionIssue(practice.Content):
+    """Pin a repair note to one question, e.g. its evidence is absent from paragraph two."""
 
     key: int
+    explanation: str
+
+
+class AuditQuestion(QuestionIssue):
+    """Require a blind independent answer and ambiguity check; e.g. disagreement with the proposed answer prevents publication."""
+
     valid: bool
     answer_idx: int | None
-    explanation: str
+    unsupported_word_ids: list[int]
 
 
 class DraftRejected(ValueError):
     """Carry quality feedback and repairable questions, e.g. two questions that give each other away."""
 
-    def __init__(self, message: str, questions: tuple[AuditQuestion, ...] = ()) -> None:
+    def __init__(self, message: str, questions: tuple[QuestionIssue, ...] = ()) -> None:
         """Keep the reviewer notes available for a focused repair."""
 
         super().__init__(message)
         self.questions = questions
 
+    @classmethod
+    def from_questions(cls, questions: tuple[QuestionIssue, ...]) -> DraftRejected:
+        """Keep question numbers in the diagnostic, e.g. a later audit can identify a repeat defect."""
+
+        reason = "\n".join(f"Vraag {q.key}: {q.explanation}" for q in questions)
+        return cls(reason, questions)
+
+
+class AuditIncomplete(ValueError):
+    """Keep the draft when the reviewer omitted or invented a verdict, e.g. a duplicate question number."""
+
 
 class Audit(practice.Content):
     """Approve every question explicitly; e.g. omitted verdicts are never treated as approval."""
 
-    natural_dutch: bool
-    coherent: bool
-    level_issue: str
+    passage_issue: str
     questions: list[AuditQuestion]
 
-    def check(self, passage: Passage) -> None:
-        """Compare independent decisions with the complete draft; e.g. two defensible choices require a repair."""
+    def check(self, passage: Passage) -> dict[int, set[int]]:
+        """Require independent content approval and return only confirmed bad vocabulary tags for removal."""
 
-        expected = {q.key: q.correct_idx for q in passage.questions}
-        if {item.key for item in self.questions} != expected.keys() or len(self.questions) != len(expected):
-            raise ValueError("De onafhankelijke tekstcontrole is niet volledig geslaagd.")
-        if not self.natural_dutch or not self.coherent:
-            raise DraftRejected("De tekst is taalkundig of inhoudelijk niet goedgekeurd.")
-        if self.level_issue.strip():
-            raise DraftRejected(self.level_issue)
-        rejected = tuple(q for q in self.questions if not q.valid or q.answer_idx != expected[q.key])
+        expected = {q.key: q for q in passage.questions}
+        verdicts = {q.key: q for q in self.questions}
+        if verdicts.keys() != expected.keys() or len(verdicts) != len(self.questions):
+            raise AuditIncomplete("De onafhankelijke tekstcontrole is niet volledig geslaagd.")
+        unsupported = {key: set(q.unsupported_word_ids) for key, q in verdicts.items()}
+        if any(ids.difference(expected[key].word_ids) for key, ids in unsupported.items()):
+            raise AuditIncomplete("De tekstcontrole verwijst naar onbekende woordlabels.")
+        if self.passage_issue.strip():
+            raise DraftRejected(self.passage_issue)
+        rejected = tuple(q for q in self.questions if not q.valid or q.answer_idx != expected[q.key].correct_idx)
         if rejected:
-            reason = "\n".join(f"Vraag {q.key} is niet eenduidig goedgekeurd: {q.explanation}" for q in rejected)
-            raise DraftRejected(reason, rejected)
+            raise DraftRejected.from_questions(rejected)
+        return unsupported
 
 
 class QuestionRepairs(practice.Content):
@@ -219,7 +253,7 @@ class QuestionRepairs(practice.Content):
 
     questions: list[Question]
 
-    def apply(self, passage: Passage, rejected: tuple[AuditQuestion, ...]) -> Passage:
+    def apply(self, passage: Passage, rejected: tuple[QuestionIssue, ...]) -> Passage:
         """Keep each question's number and kind so a repair cannot silently shrink the round."""
 
         replacements = {q.key: q for q in self.questions}

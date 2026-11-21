@@ -43,7 +43,7 @@ class Options(QtWidgets.QWidget):
         form.addRow(i18n.tr('Text type'), self._genre)
         form.addRow(i18n.tr('Language level'), self._level)
         for key, label, low, high in (('paragraphs', i18n.tr('Paragraphs'), 2, 10), ('mc', i18n.tr('Multiple-choice questions'), 0, 20),
-                                      ('open', i18n.tr('Open questions'), 0, 15), ('words', i18n.tr('Words from your vocabulary'), 1, 20)):
+                                      ('open', i18n.tr('Open questions'), 0, 15), ('words', i18n.tr('Maximum words from your vocabulary'), 0, 20)):
             spin = QtWidgets.QSpinBox()
             spin.setRange(low, high)
             spin.setValue(getattr(opts, key))

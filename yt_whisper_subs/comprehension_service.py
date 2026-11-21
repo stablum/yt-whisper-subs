@@ -6,15 +6,19 @@ Example: changing a narrator reuses the same approved article while an unfinishe
 import json
 import time
 
+import pydantic as pd
+
 from yt_whisper_subs import i18n
 from yt_whisper_subs import comprehension as comp
 from yt_whisper_subs import comprehension_audio
 from yt_whisper_subs import comprehension_generate
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ready
-from yt_whisper_subs import practice_round
 from yt_whisper_subs import word_select
 from yt_whisper_subs import verb_practice
+
+
+MAX_DRAFTS = 3
 
 
 class ComprehensionService:
@@ -90,72 +94,94 @@ class ComprehensionService:
         # Audio runs after this shared text lease so slow speech does not block reading.
         with practice_ready.preparing(self._db, 'comprehension:content', report) as progress:
             row = self._db.comprehension_pool(opts, self.policy)
-            if row is None:
-                row = self._generate(opts, progress)
-            repaired = redrafted = False
-            while row['validation_json'] is None:
-                passage = comp.Passage.model_validate_json(row['body_json'])
-                targets = json.loads(row['targets_json'])
-                try:
-                    self._audit_draft(row['id'], passage, opts, targets, progress)
-                    break
-                except comp.DraftRejected as exc:
-                    reason = str(exc)
-                    if exc.questions and not repaired:
-                        repaired = True
-                        progress(i18n.tr('Revising questions flagged by the independent review…'))
-                        try:
-                            fixed = self._provider.repair_questions(passage, exc.questions, opts.level)
-                        except ValueError as repair_error:
-                            reason += f"\n{repair_error}"
-                        else:
-                            pid = self._db.comprehension_cache(fixed, opts, targets, self.policy,
-                                                               replaces=(row['id'], reason))
-                            row = self._db.comprehension_passage(pid)
-                            continue
-                    if redrafted:
-                        self._db.comprehension_reject(row['id'], reason)
-                        raise
-                    redrafted = True
-                    row = self._generate(opts, progress, rejected=row, reason=reason)
+            if row is None or row['validation_json'] is None:
+                row = self._prepare_text(opts, row, progress)
             return self._db.comprehension_create(row['id'], opts, practice.ReviewPolicy().document(), background=True)
+
+    def _prepare_text(self, opts: comp.Options, row: dict | None, report) -> dict:
+        """Try a bounded number of fresh drafts; e.g. an unsuitable A1 draft is retried without vocabulary pressure."""
+
+        words = self._word_candidates(opts) if row is None else json.loads(row['targets_json'])
+        reason = ''
+        for attempt in range(1, MAX_DRAFTS + 1):
+            try:
+                row = row or self._generate(opts, words, report, reason=reason)
+                return self._review_draft(row, opts, report)
+            except comp.DraftRejected as exc:
+                reason = str(exc)
+                if row is not None:
+                    self._db.comprehension_reject(row['id'], reason)
+                if attempt == MAX_DRAFTS:
+                    raise
+                if opts.level.beginner or attempt == MAX_DRAFTS - 1:
+                    words = []
+                row = None
+
+    def _review_draft(self, row: dict, opts: comp.Options, report) -> dict:
+        """Repair just the flagged questions once per draft and recheck the full set before reserving it."""
+
+        passage = comp.Passage.model_validate_json(row['body_json'])
+        words = json.loads(row['targets_json'])
+        try:
+            self._audit_draft(row['id'], passage, opts, words, report)
+            return row
+        except comp.DraftRejected as exc:
+            if not exc.questions:
+                raise
+            report(i18n.tr('Revising questions flagged by the independent review…'))
+            try:
+                fixed = self._provider.repair_questions(passage, exc.questions, opts.level)
+            except ValueError as err:
+                raise comp.DraftRejected(f'{exc}\n{err}') from err
+            pid = self._db.comprehension_cache(fixed, opts, words, self.policy, replaces=(row['id'], str(exc)))
+        try:
+            self._audit_draft(pid, fixed, opts, words, report)
+        except comp.DraftRejected as exc:
+            self._db.comprehension_reject(pid, str(exc))
+            raise
+        return self._db.comprehension_passage(pid)
 
     def _audit_draft(self, passage_id: int, passage: comp.Passage, opts, targets: list[dict], report) -> None:
         """Distinguish content defects from reviewer failures so a broken audit leaves its draft reusable."""
 
-        try:
-            passage.check(opts, {target['word_id'] for target in targets})
-        except ValueError as exc:
-            raise comp.DraftRejected(str(exc)) from exc
+        passage.check(opts, {target['word_id'] for target in targets})
         report(i18n.tr('The text and all questions are independently checked.'))
-        verdict = self._provider.audit(passage, opts.level)
-        self._db.comprehension_approve(passage_id, verdict)
+        for attempt in range(2):
+            try:
+                verdict = self._provider.audit(passage, opts.level)
+                self._db.comprehension_approve(passage_id, verdict)
+            except (comp.AuditIncomplete, pd.ValidationError) as exc:
+                if attempt:
+                    raise comp.AuditIncomplete('De onafhankelijke tekstcontrole is niet volledig geslaagd.') from exc
+            else:
+                return
 
-    def _generate(self, opts, report, *, rejected=None, reason='') -> dict:
-        """Use the existing FSRS/error-weighted word selector without multiplying vocabulary constraints; e.g. mastered future words defer naturally."""
+    def _word_candidates(self, opts: comp.Options) -> list[dict]:
+        """Offer up to the configured limit of due/new words, e.g. an empty library still permits passages."""
 
-        if rejected:
-            targets = json.loads(rejected['targets_json'])
-        else:
-            rows = self._db.word_candidates('nl_en')
-            if not rows:
-                raise practice_round.NothingToPractice('no_words', i18n.tr('Save some Dutch words with translations first.'))
-            selection = practice.RoundOptions(direction=practice.Direction.NL_EN, count=opts.words, include_early=opts.include_early)
-            chosen = word_select.Selector(practice.ReviewPolicy()).select(rows, selection, time.time())
-            if not chosen:
-                raise practice_round.NothingToPractice('not_due', i18n.tr('These words are not due yet. Enable early review to continue.'))
-            targets = [{key: row[key] for key in ('word_id', 'lookup_id', 'lemma', 'surface', 'lemma_meaning', 'meaning', 'part_of_speech')} for row in chosen]
+        if not opts.words:
+            return []
+        rows = self._db.word_candidates(practice.Direction.NL_EN.value)
+        selection = practice.RoundOptions(direction=practice.Direction.NL_EN, count=opts.words, include_early=opts.include_early)
+        chosen = word_select.Selector(practice.ReviewPolicy()).select(rows, selection, time.time())
+        fields = ('word_id', 'lookup_id', 'lemma', 'surface', 'lemma_meaning', 'meaning', 'part_of_speech')
+        return [{field: row[field] for field in fields} for row in chosen]
+
+    def _generate(self, opts: comp.Options, words: list[dict], report, *, reason: str) -> dict:
+        """Checkpoint a fresh exercise, e.g. review errors guide it without copying the rejected text."""
+
         with self._db._connect() as conn:
             skills = [dict(row) for row in conn.execute("SELECT json_extract(q.body_json,'$.skill') AS skill,COUNT(*) AS attempts,"
                         "SUM(p.outcome='wrong') AS failures FROM comprehension_presentations p JOIN comprehension_questions q ON q.id=p.question_id "
                         "JOIN comprehension_sessions s ON s.id=p.session_id WHERE s.direction=? AND p.outcome IN ('correct','wrong') GROUP BY skill", (opts.direction.value,))]
-        document = dict(options=json.loads(opts.content_key()), words=targets, weak_skills=skills,
-                        recent_titles=self._db.comprehension_recent(), previous_rejection=reason,
-                        previous_draft=json.loads(rejected['body_json']) if rejected else None)
+        document = dict(options=json.loads(opts.content_key()), words=words, weak_skills=skills,
+                        recent_titles=self._db.comprehension_recent(), previous_rejection=reason)
         report(i18n.tr('Preparing a Dutch text with exactly the requested questions…'))
-        passage = self._provider.generate(document)
-        replaces = (rejected['id'], reason) if rejected else None
-        pid = self._db.comprehension_cache(passage, opts, targets, self.policy, replaces=replaces)
+        try:
+            passage = self._provider.generate(document)
+        except pd.ValidationError as exc:
+            raise comp.DraftRejected('De gegenereerde ronde heeft een ongeldige structuur.') from exc
+        pid = self._db.comprehension_cache(passage, opts, words, self.policy)
         return self._db.comprehension_passage(pid)
 
     def prepare_media(self, passage_id: int, opts, report) -> None:

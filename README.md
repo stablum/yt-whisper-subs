@@ -3357,7 +3357,8 @@ the library language. Both modes use the configured practice model
   A2 for 25–45, and B1 through C1 for 45–85.
 - Multiple-choice questions: 0–20 (default 5), each with four substantial buttons.
 - Open questions: 0–15 (default 3), answered in Dutch; together 1–30 questions.
-- Saved vocabulary targets: 1–20 (default 8), subject to eligible available words.
+- Maximum words from your vocabulary: 0–20 (default 8). The writer can use fewer
+  when eligible words are scarce or too difficult for the selected level.
 - Optional early review. Luisterbegrip's **Stem** selector and **Stemmen instellen…** sit beside its playback controls and apply to the current passage.
 
 A1 uses short sentences about everyday situations and questions about explicit
@@ -3371,17 +3372,24 @@ supported and the other plausible answers are wrong for a concrete reason.
 Questions cover detail, inference, cause, argument, tone and reference; weak
 question skills help guide future composition. Every question retains exact
 supporting quotes and paragraph references. Evidence and counts are checked
-locally as well. If one question reveals another answer or has unsupported evidence,
-preparation first replaces the flagged questions and checks the entire set again.
-Each preparation has at most one focused repair and one replacement passage using
-the same vocabulary. An incomplete audit leaves its cached draft available for
-retry, and an existing round remains available if a new draft fails review.
+locally as well. A bad quote or an answer revealed by another question triggers
+a focused repair and a fresh review of the entire set. If a question is valid
+but only mentions a tagged word, review removes that tag without changing the
+question or recording a vocabulary assessment for it.
+Preparation can try up to three drafts, with one focused question repair per
+draft. Replacements retain the selected level, genre, paragraph count and
+question mix. After an unsuccessful beginner draft, the next one has no saved
+vocabulary requirement. The final attempt can also omit saved words at higher
+levels. An incomplete audit is retried once on the same draft. If it remains
+incomplete, **Try again** rechecks the saved text and **Resume previous round**
+returns to the earlier round when one is available.
 This is a quality safeguard, not a guarantee that an LLM can never make a mistake;
 **Tekst of vraag melden** excludes a problematic passage from scores and shared
 review while preserving actual submitted activity.
 
-The shared FSRS/error-weighted word selector chooses target vocabulary, allowing
-natural inflections and unrestricted supporting vocabulary. New passages use
+The shared FSRS/error-weighted word selector proposes eligible vocabulary. The
+writer uses only candidates that fit the selected level and records the forms
+actually used. New passages use
 other contexts and recent approved titles to encourage variety. Reading and
 listening do not deliberately reuse a passage already exposed in either mode.
 Only words a question genuinely tests receive lexical assessment; an inference

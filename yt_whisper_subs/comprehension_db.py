@@ -64,10 +64,12 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
             if row['validation_json'] is not None:
                 return
             passage = comp.Passage.model_validate_json(row['body_json'])
-            passage.check(comp.Options.model_validate_json(row['content_key']), {t['word_id'] for t in json.loads(row['targets_json'])})
-            verdict.check(passage)
+            candidates = {t['word_id']: t['lookup_id'] for t in json.loads(row['targets_json'])}
+            passage.check(comp.Options.model_validate_json(row['content_key']), set(candidates))
+            unsupported = verdict.check(passage)
             rng, orders = np.random.default_rng(), {}
             for q in passage.questions:
+                q.word_ids = [wid for wid in q.word_ids if wid not in unsupported[q.key]]
                 if q.kind == 'mc':
                     order = rng.permutation(4).tolist()
                     orders[q.key] = order
@@ -75,8 +77,8 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
                     q.correct_idx = order.index(q.correct_idx)
                 conn.execute("INSERT INTO comprehension_questions(passage_id,ordinal,kind,body_json) VALUES(?,?,?,?)",
                              (passage_id, q.key, q.kind, q.model_dump_json()))
-            for target in json.loads(row['targets_json']):
-                conn.execute("INSERT INTO comprehension_targets VALUES(?,?,?)", (passage_id, target['word_id'], target['lookup_id']))
+            conn.executemany("INSERT INTO comprehension_targets VALUES(?,?,?)",
+                             [(passage_id, t.word_id, candidates[t.word_id]) for t in passage.targets])
             audit = dict(verdict=verdict.model_dump(), choice_orders=orders)
             conn.execute("UPDATE comprehension_passages SET body_json=?,validation_json=?,error='' WHERE id=?",
                          (passage.model_dump_json(), json.dumps(audit), passage_id))
@@ -85,7 +87,8 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
         """Retain rejected evidence without offering it again; e.g. repair generation can inspect the exact ambiguity."""
 
         with self._connect() as conn:
-            conn.execute("UPDATE comprehension_passages SET error=? WHERE id=? AND validation_json IS NULL", (error[:3000], passage_id))
+            conn.execute("UPDATE comprehension_passages SET error=? WHERE id=? AND validation_json IS NULL AND error=''",
+                         (error[:3000], passage_id))
 
     def comprehension_recent(self, limit: int = 5) -> list[dict]:
         """Guide variety without replaying old passages; e.g. a weak word appears in another situation next time."""
