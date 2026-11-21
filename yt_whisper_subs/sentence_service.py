@@ -46,16 +46,18 @@ class SentenceService:
                       "reasoning": self._provider.reasoning, "prompt_version": sentence_generate.PROMPT_VERSION}
         selector = sentence_select.Selector(policy)
         metrics = sentence_stats.metrics(self._db, opts.direction.value)
-        pool = self._db.sentence_pool(opts, generation)
-        unused = {row["anchor_word_id"] for row in pool}
+        reserved = self._db.practice_reserved("sentence", opts) if background else set()
+        stock = {}
+        for question in self._db.sentence_pool(opts, generation):
+            if question["id"] not in reserved:
+                stock.setdefault(question["anchor_word_id"], question)
         for row in rows:
-            row["unused"] = row["word_id"] in unused
+            row["unused"] = row["word_id"] in stock
         reviews = self._db.sentence_due(generation, now)
         if background:
             targets = {row["word_id"] for row in rows}
-            reserved = self._db.practice_reserved("sentence", opts)
             reviews = [row for row in reviews if row["anchor_word_id"] in targets and row["id"] not in reserved]
-        chosen, selected = selector.targets(rows, reviews, opts, now)
+        chosen, selected = selector.targets(rows, reviews, opts, now, cached_first=True)
         if not chosen and not selected:
             raise practice_round.NothingToPractice("not_due", i18n.tr('Your sentence targets and writing reviews are not due yet. Try early practice if you wish.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
@@ -63,8 +65,12 @@ class SentenceService:
         def load(anchors, job):
             """Plan only the missing sentence targets; e.g. checked cached sentences never get regenerated during a top-up."""
 
-            plans = selector.plans(anchors, rows, opts, metrics, now)
-            by_id = {row["word_id"]: row for row in anchors}
+            ready = {row["word_id"]: stock[row["word_id"]] for row in anchors if row["word_id"] in stock}
+            pending = [row for row in anchors if row["word_id"] not in ready]
+            if not pending:
+                return ready
+            plans = selector.plans(pending, rows, opts, metrics, now)
+            by_id = {row["word_id"]: row for row in pending}
             examples = self._db.sentence_examples(list(by_id), opts.direction.value)
             for item in plans:
                 item["previous_rejection"] = by_id[item["anchor_word_id"]].get("previous_rejection", "")
@@ -72,11 +78,17 @@ class SentenceService:
             checked = self._content(plans, generation, metrics, job)
             for item in plans:
                 by_id[item["anchor_word_id"]]["previous_rejection"] = item["previous_rejection"]
-            return {row["anchor_word_id"]: row for row in checked}
+            ready.update((row["anchor_word_id"], row) for row in checked)
+            return ready
+
+        def select(pool, count):
+            """Prefer cached targets when refilling a rejected slot, e.g. use another checked sentence first."""
+
+            resized = opts.model_copy(update={"count": count})
+            return selector.select(pool, resized, now, cached_first=True)
 
         plan = practice_round.Plan(candidates=rows, initial=selected, key=operator.itemgetter("word_id"), load=load,
-                                   seed={row["anchor_word_id"]: row for row in chosen},
-                                   select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), now))
+                                   seed={row["anchor_word_id"]: row for row in chosen}, select=select)
         questions = build.fill(plan)
         self.prepare_media(opts, questions, report)
         report(i18n.tr('{len} checked sentences ready', len=len(questions)))
@@ -109,20 +121,11 @@ class SentenceService:
         return True
 
     def _content(self, plans: list[dict], policy: dict, metrics: dict, build: practice_round.Build) -> list[dict]:
-        """Cache exact target-context sets before shared top-ups; e.g. only rejected pairs need replacement drafts."""
+        """Generate only uncached targets and store approvals before filling rejected slots."""
 
-        ready, pending = {}, []
-        reserved = self._db.practice_reserved("sentence", build.opts) if build.background else set()
-        pool = self._db.sentence_pool(build.opts, policy)
-        for plan in plans:
-            cached = [row for row in pool if row["anchor_word_id"] == plan["anchor_word_id"] and row["id"] not in reserved]
-            cached = cached or [row for row in self._db.sentence_cached(plan, policy) if row["uses"] == 0 and row["id"] not in reserved]
-            if cached:
-                ready[plan["anchor_word_id"]] = cached[0]
-            if not cached:
-                pending.append(plan)
-        for offset in range(0, len(pending), 4):
-            batch = build.take(pending[offset:offset + 4])
+        ready = {}
+        for offset in range(0, len(plans), 4):
+            batch = build.take(plans[offset:offset + 4])
             if not batch:
                 break
             document = [self._document(plan) for plan in batch]

@@ -46,17 +46,24 @@ class PracticeService:
             raise practice_round.NothingToPractice("no_words", i18n.tr('Capture Dutch words in mpv and let their translations finish first.'))
         generation = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                       "prompt_version": practice_generate.PROMPT_VERSION, "direction": opts.direction.value}
-        unused = self._db.practice_unused("practice", generation)
+        reserved = self._db.practice_reserved("practice", opts) if background else set()
+        unused = self._db.practice_unused("practice", generation, reserved=reserved)
         for row in candidates:
             row["unused"] = row["lookup_id"] in unused
         selector = word_select.Selector(policy)
-        selected = selector.select(candidates, opts, time.time())
+
+        def select(rows, count):
+            """Reapply eligibility and the cache preference when filling a shortfall."""
+
+            resized = opts.model_copy(update={"count": count})
+            return selector.select(rows, resized, time.time(), cached_first=True)
+
+        selected = select(candidates, opts.count)
         if not selected:
             raise practice_round.NothingToPractice("not_due", i18n.tr('No terms are due yet. Try the other direction, capture more words, or enable early review.'))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)
         plan = practice_round.Plan(candidates=candidates, initial=selected, key=operator.itemgetter("lookup_id"),
-                                   select=lambda rows, n: selector.select(rows, opts.model_copy(update={"count": n}), time.time()),
-                                   load=self._ensure_content)
+                                   select=select, load=lambda rows, job: self._ensure_content(rows, job, reserved))
         checked = build.fill(plan)
         questions = []
         for question in checked:
@@ -85,11 +92,10 @@ class PracticeService:
                    *content["distractors"]]
         return practice.display_choices(choices)
 
-    def _ensure_content(self, selected: list[dict], build: practice_round.Build) -> dict:
+    def _ensure_content(self, selected: list[dict], build: practice_round.Build, reserved: set[int]) -> dict:
         """Maintain a small approved variant pool; e.g. cached questions remain available during API outages."""
 
         cached, pending = {}, []
-        reserved = self._db.practice_reserved("practice", build.opts) if build.background else set()
         direction = build.opts.direction
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": practice_generate.PROMPT_VERSION}

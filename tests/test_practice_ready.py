@@ -26,15 +26,18 @@ from tests import verb_fixtures
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_practice_ready
+from yt_whisper_subs import listening_tts
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import pronunciation
 from yt_whisper_subs import pronunciation_stock
+from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import sentence_select
 from yt_whisper_subs import sentence_service
 from yt_whisper_subs import verb_service
+from yt_whisper_subs import verb_syllabus
 
 
 class ReadyTests(unittest.TestCase):
@@ -122,6 +125,82 @@ class ReadyTests(unittest.TestCase):
                     self.assertEqual(shown["correct_idx"], before_correct)
                 with db._connect() as conn:
                     self.assertEqual(conn.execute(f"SELECT COUNT(*) FROM {kind}_questions").fetchone()[0], before)
+
+    def test_resize_consumes_checked_stock_despite_uncached_due_targets(self) -> None:
+        """Exercise explicit resize for all quiz and writing directions, with cached listening audio."""
+
+        modes = [("practice", direction) for direction in practice.Direction]
+        modes += [("sentence", direction) for direction in sentence_practice.Direction]
+        modes.append(("verb", None))
+        for kind, direction in modes:
+            with self.subTest(kind=kind, direction=direction):
+                db, provider, engine, opts, ready = self._case(kind)
+                ready.stop()
+                if direction:
+                    opts = opts.model_copy(update={"direction": direction})
+                speech = listening_fixtures.Speech()
+                if kind == "sentence":
+                    engine.audio = listening_tts.AudioCache(db, speech)
+                elif direction == practice.Direction.SOUND:
+                    engine.audio = pronunciation.Audio(db, speech=speech)
+                if kind == "verb":
+                    catalog = [row for row in type(db).verb_catalog(db) if row["lemma"] in {"werken", "maken", "gaan"}]
+                    with mock.patch.object(db, "verb_catalog", return_value=catalog):
+                        self._check_resize(db, provider, engine, kind, opts, speech)
+                else:
+                    self._check_resize(db, provider, engine, kind, opts, speech)
+
+    def _check_resize(self, db, provider, engine, kind, opts, speech) -> None:
+        """Put a fresh due target outside stock and verify a smaller explicit round uses no provider."""
+
+        engine.start(opts, lambda _: None, background=True)
+        stock = self._stock(db, engine, opts)
+        stamp = time.time() - 60
+        with db._connect() as conn:
+            if kind == "verb":
+                approved = {row["target_id"] for row in stock}
+                rows = verb_syllabus.candidates(db.verb_catalog(), db.verb_targets(), opts)
+                candidate = next(row for row in rows if row.get("target_id") not in approved)
+                target = db.verb_target(candidate)["target_id"]
+                card = practice.ReviewPolicy.new_card(target, stamp)
+                conn.execute("INSERT INTO verb_states VALUES(?,?,?)", (target, card, stamp))
+            else:
+                direction = opts.direction.word_direction.value if kind == "sentence" else opts.direction.value
+                key = "word_id" if kind == "sentence" else "lookup_id"
+                approved = {row["anchor_word_id" if kind == "sentence" else "lookup_id"] for row in stock}
+                target = next(row["word_id"] for row in db.word_candidates(direction) if row[key] not in approved)
+                card = practice.ReviewPolicy.new_card(target, stamp)
+                conn.execute("INSERT INTO practice_states(word_id,direction,card_json,due_at) VALUES(?,?,?,?)",
+                             (target, direction, card, stamp))
+        speech_count = len(speech.calls)
+        smaller = opts.model_copy(update={"count": 1})
+        with mock.patch.object(provider, "generate", side_effect=AssertionError("Unexpected generation")) as generate:
+            session = engine.start(smaller, lambda _: None, cached_first=False)
+        generate.assert_not_called()
+        with db._connect() as conn:
+            used = [row[0] for row in conn.execute(f"SELECT question_id FROM {kind}_presentations WHERE session_id=?", (session,))]
+        self.assertEqual(len(used), 1)
+        self.assertIn(used[0], {row["id"] for row in stock})
+        self.assertEqual(len(speech.calls), speech_count)
+        with mock.patch.object(provider, "generate", wraps=provider.generate) as generate:
+            larger = opts.model_copy(update={"count": 3})
+            session = engine.start(larger, lambda _: None, cached_first=False)
+        generate.assert_called_once()
+        self.assertEqual(len(generate.call_args.args[0]), 1)
+        self.assertEqual(getattr(db, f"{kind}_summary")(session)["planned"], 3)
+
+    def test_untouched_round_with_old_size_allows_background_resize(self) -> None:
+        """Do not let an unanswered old round block the requested configuration from warming."""
+
+        for kind in ("practice", "verb", "sentence"):
+            with self.subTest(kind=kind):
+                db, _, engine, opts, ready = self._case(kind)
+                session = engine.start(opts, lambda _: None)
+                track = practice_tracks.Track.for_options(kind, opts)
+                resized = opts.model_copy(update={"count": 1})
+                self.assertFalse(ready._needed(track, opts, engine))
+                self.assertTrue(ready._needed(track, resized, engine))
+                self.assertEqual(getattr(db, f"{kind}_active")(), session)
 
     def test_background_pronunciation_is_ready_for_manual_read_and_autoplay(self) -> None:
         """Warm a resumed word and the spare with autoplay off, without scoring or replay synthesis."""

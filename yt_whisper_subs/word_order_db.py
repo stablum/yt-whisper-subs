@@ -150,13 +150,6 @@ class WordOrderDbMixin:
             row = conn.execute("SELECT id FROM word_order_sessions WHERE status='active' AND variant=?", (variant,)).fetchone()
             return row[0] if row else None
 
-    def word_order_options(self, session_id: str) -> word_order.Options:
-        """Read the frozen request, e.g. editing next-round options cannot change a saved bank."""
-
-        with self._connect() as conn:
-            saved = conn.execute("SELECT options_json FROM word_order_sessions WHERE id=?", (session_id,)).fetchone()
-        return word_order.Options.model_validate_json(saved[0])
-
     def word_order_resume(self, variant: word_order.Variant = word_order.Variant.WORDS) -> str | None:
         """Resume unfinished feedback as well as untouched questions."""
 

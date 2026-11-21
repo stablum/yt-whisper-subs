@@ -117,7 +117,7 @@ class Selector:
         lexical = word_select.error_weight([row.get("word_attempts", 0) for row in rows], [row.get("word_failures", 0) for row in rows])
         return (1 + 5 * difficulty) * (1 + 2 * (1 - recall)) * rare * vocab * lexical / counts[inverse]
 
-    def select(self, rows: list[dict], metrics: list[dict], opts: verbs.Options, now: float) -> list[dict]:
+    def select(self, rows: list[dict], metrics: list[dict], opts: verbs.Options, now: float, *, cached_first: bool = False) -> list[dict]:
         """Prefer due weak targets with exploration and verb variety; e.g. mastered combinations wait until due."""
 
         rows = [row for row in rows if not row["card_json"] or row["due_at"] <= now or opts.include_early]
@@ -131,12 +131,7 @@ class Selector:
         used = set()
         chosen = []
         for idx in range(min(opts.count, len(rows))):
-            pool = available & (due if idx % 5 != 4 and np.any(available & due) else new)
-            if not np.any(pool):
-                pool = available & due
-            if not np.any(pool):
-                pool = available.copy()
-            pool = word_select.prefer_stock(pool, due, unused)
+            pool = word_select.review_pool(idx, available, due, new, unused, cached_first=cached_first)
             varied = pool & np.array([row["verb_id"] not in used for row in rows])
             if np.any(varied):
                 pool = varied

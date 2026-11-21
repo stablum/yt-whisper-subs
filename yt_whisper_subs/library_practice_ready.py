@@ -114,7 +114,7 @@ class PracticeReady(QtCore.QObject):
         if session:
             summary = getattr(self._db, track.kind + "_summary")(session)
             answered = summary.get("submitted", summary["correct"] + summary["wrong"])
-            if not answered and (not track.variant or self._db.word_order_options(session) == opts):
+            if not answered and self._db.practice_session_matches(track.kind, session, opts):
                 return False
         return True
 

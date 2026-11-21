@@ -48,15 +48,23 @@ class VerbService:
         if opts.source != "starter":
             self._vocabulary.link_known()
         generation = practice_ready.question_policy(self)
-        unused = self._db.practice_unused("verb", generation)
+        reserved = self._db.practice_reserved("verb", opts) if background else set()
+        unused = self._db.practice_unused("verb", generation, reserved=reserved)
         selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
+
+        def select(rows, count):
+            """Keep eligible approved forms ahead of fresh generation on initial and replacement picks."""
+
+            resized = opts.model_copy(update={"count": count})
+            return selector.select(rows, metrics, resized, time.time(), cached_first=True)
+
         candidates = self._candidates(opts, unused, background=background)
-        selected = selector.select(candidates, metrics, opts, time.time())
+        selected = select(candidates, opts.count)
         while not background and opts.source != "starter" and len(selected) < opts.count:
             if not self._vocabulary.sync(report, batches=1):
                 break
             candidates = self._candidates(opts, unused, background=False)
-            selected = selector.select(candidates, metrics, opts, time.time())
+            selected = select(candidates, opts.count)
         if not candidates:
             message = (i18n.tr('No checked vocabulary verbs match these filters. Save Dutch verb words or include starter verbs.')
                        if opts.source == "vocabulary" else i18n.tr('These filters have no valid Dutch forms. Change the round options.'))
@@ -72,13 +80,12 @@ class VerbService:
             targets = [self._db.verb_target(row) for row in rows]
             for row, target in zip(rows, targets, strict=True):
                 target["previous_rejection"] = row.get("previous_rejection", "")
-            checked = {row["target_id"]: row for row in self._content(targets, job)}
+            checked = {row["target_id"]: row for row in self._content(targets, job, reserved)}
             for row, target in zip(rows, targets, strict=True):
                 row["previous_rejection"] = target["previous_rejection"]
             return {key(row): checked[row["target_id"]] for row in targets if row["target_id"] in checked}
 
-        plan = practice_round.Plan(candidates=candidates, initial=selected, key=key, load=load,
-                                   select=lambda rows, n: selector.select(rows, metrics, opts.model_copy(update={"count": n}), time.time()))
+        plan = practice_round.Plan(candidates=candidates, initial=selected, key=key, load=load, select=select)
         questions = build.fill(plan)
         report(i18n.tr('{len} checked verb exercises ready', len=len(questions)))
         if background:
@@ -95,13 +102,12 @@ class VerbService:
             row["unused"] = row.get("target_id") in unused
         return candidates
 
-    def _content(self, targets: list[dict], build: practice_round.Build) -> list[dict]:
+    def _content(self, targets: list[dict], build: practice_round.Build, reserved: set[int]) -> list[dict]:
         """Cache each initial batch before shared replacement work; e.g. one rejection never regenerates its approved neighbours."""
 
         policy = {"model": self._provider.model, "reasoning": self._provider.reasoning,
                   "prompt_version": verb_generate.PROMPT_VERSION}
         ready, pending = {}, []
-        reserved = self._db.practice_reserved("verb", build.opts) if build.background else set()
         for row in targets:
             cached = [item for item in self._db.verb_cached(row["target_id"], policy) if item["id"] not in reserved]
             if cached:

@@ -47,7 +47,7 @@ class Service:
         def choose(pool, count):
             """Use eligible unseen builds first, keeping the shared vocabulary weights inside each pool."""
 
-            return selector.select(pool, opts.model_copy(update={"count": count}), time.time(), cached_first=cached_first)
+            return selector.select(pool, opts.model_copy(update={"count": count}), time.time(), cached_first=True)
 
         patterns = _Patterns(opts.variant, self._db.word_order_results(opts.variant))
         build = practice_round.Build(opts=opts, report=report, cached_first=cached_first, background=background)

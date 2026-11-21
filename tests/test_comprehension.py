@@ -66,6 +66,30 @@ class ComprehensionTests(unittest.TestCase):
         self.assertEqual(len(self.provider.audited), 1)
         self.assertFalse(reopened.needs(self.opts))
 
+    def test_reduced_question_mix_reuses_unopened_passage_and_audio(self):
+        """Both modes reuse exactly the requested subset and keep the original approved text and questions."""
+
+        for direction in comp.Direction:
+            with self.subTest(direction=direction):
+                opts = self.opts.model_copy(update={'direction': direction, 'mc': 3, 'open': 2})
+                original = self.engine.start(opts, lambda _: None, background=True)
+                source = self.db.comprehension_session(original)['passage_id']
+                checked = len(self.provider.audited)
+                rendered = len(self.speech.calls)
+                resized = opts.model_copy(update={'mc': 1, 'open': 2})
+                with mock.patch.object(self.provider, "generate", side_effect=AssertionError("Unexpected regeneration")):
+                    ready = self.engine.start(resized, lambda _: None, background=True)
+                    session = self.engine.start(resized, lambda _: None, cached_first=False)
+                self.assertEqual(session, ready)
+                self.assertEqual(self.db.comprehension_session(session)['passage_id'], source)
+                self.assertEqual(self.db.comprehension_session(original)['status'], 'stopped')
+                rows = self.db.comprehension_history(session)
+                self.assertEqual([row['kind'] for row in rows], ['mc', 'open', 'open'])
+                self.assertEqual([row['ordinal'] for row in rows], [1, 2, 3])
+                self.assertEqual(len(self.db.comprehension_history(original)), 5)
+                self.assertEqual(len(self.provider.audited), checked)
+                self.assertEqual(len(self.speech.calls), rendered)
+
     def test_exact_question_counts_and_bounded_quality_repair(self):
         """Repair a leaked answer without regenerating the source or changing either question count."""
 

@@ -2394,14 +2394,21 @@ Shared word and grammar statistics continue to update as corrections arrive;
 the one-spare limit avoids a stale backlog of future rounds. Future-due skills
 wait unless early practice was explicitly enabled.
 
-Questions from stopped rounds or changed settings remain cached. Within adaptive
-eligibility and the current filters/model policy, approved never-shown questions
-take priority over new generation; urgent due reviews still retain priority.
+Questions from stopped rounds or changed settings remain cached. When a round
+size changes, eligible, never-shown approvals fill the new round first. Due
+dates, current filters and the model policy still apply. The adaptive selector
+ranks targets within the available stock and fills any shortfall from eligible
+targets.
 Background work uses cached approvals without requesting extra variants merely
 to fill a variant pool. Sentence stock is reusable across random mixed-context
 and companion-word plans. Changed source lookups and explicit context/target
 restrictions still apply. Reported or outdated-policy questions cannot be served
 from a standby plan.
+
+Reading and listening comprehension can reuse an unopened, checked passage if
+it has at least the requested number of multiple-choice and open questions and
+the other passage settings match. The new round uses exactly the requested mix
+of those questions and keeps any cached narration.
 
 The configured round size is the **actual number of questions** in all modes.
 For word, verb, translation and dictation rounds, preparation initially attempts only that many distinct targets, retains approved

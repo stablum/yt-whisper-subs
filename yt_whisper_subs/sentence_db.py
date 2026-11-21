@@ -25,19 +25,6 @@ LEFT JOIN sentence_feedback_views v ON v.presentation_id=p.id
 class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db.SentenceReviewDbMixin):
     """Own durable sentence lifecycle; e.g. resuming a pending answer needs no language-provider call."""
 
-    def sentence_cached(self, plan: dict, policy: dict) -> list[dict]:
-        """Reuse only the exact saved contexts and direction under the current generation policy; e.g. do not substitute a new word sense."""
-
-        params = {"anchor": plan["anchor_word_id"], "scene": plan["scene"], "focus_key": self._sentence_key(plan), **policy}
-        with self._connect() as conn:
-            rows = conn.execute("SELECT q.*,COUNT(p.shown_at) AS uses FROM sentence_questions q "
-                                "LEFT JOIN sentence_presentations p ON p.question_id=q.id "
-                                "WHERE q.anchor_word_id=:anchor AND q.scene=:scene AND q.focus_key=:focus_key "
-                                "AND q.direction=:direction AND q.model=:model AND q.reasoning=:reasoning "
-                                "AND q.prompt_version=:prompt_version AND q.flagged_at IS NULL "
-                                "GROUP BY q.id ORDER BY uses,q.id DESC", params)
-            return [dict(row) for row in rows]
-
     def sentence_pool(self, opts, policy: dict) -> list[dict]:
         """Consume unseen approved pairs across random companion/context plans; e.g. reopening cannot strand a paid unused sentence."""
 

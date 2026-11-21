@@ -18,14 +18,19 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
     """Keep linguistic work outside transactions; e.g. another mode remains usable during passage generation."""
 
     def comprehension_pool(self, opts, policy: dict) -> dict | None:
-        """Prefer audited unused passages, then unfinished audits; e.g. listening does not repeat a passage already read."""
+        """Find unseen approved passages with enough questions, or an unfinished draft of the exact shape."""
 
+        params = {**policy, 'exact': opts.content_key(), 'passage': opts.content_key(include_counts=False),
+                  'mc': opts.mc, 'open': opts.open, 'direction': opts.direction.value}
         with self._connect() as conn:
-            row = conn.execute("SELECT t.* FROM comprehension_passages t WHERE content_key=? AND model=? AND reasoning=? "
-                               "AND version=? AND flagged_at IS NULL AND error='' AND NOT EXISTS(SELECT 1 FROM comprehension_sessions s "
-                               "WHERE s.passage_id=t.id AND (s.shown_at IS NOT NULL OR s.status IN ('ready','active'))) "
-                               "ORDER BY validation_json IS NULL,id LIMIT 1",
-                               (opts.content_key(), policy['model'], policy['reasoning'], policy['version'])).fetchone()
+            row = conn.execute(
+                "SELECT t.* FROM comprehension_passages t WHERE model=:model AND reasoning=:reasoning AND version=:version "
+                "AND flagged_at IS NULL AND error='' AND (content_key=:exact OR "
+                "(validation_json IS NOT NULL AND json_remove(content_key,'$.mc','$.open')=json(:passage) "
+                "AND json_extract(content_key,'$.mc')>=:mc AND json_extract(content_key,'$.open')>=:open)) "
+                "AND NOT EXISTS(SELECT 1 FROM comprehension_sessions s WHERE s.passage_id=t.id "
+                "AND (s.shown_at IS NOT NULL OR s.status='active' OR (s.status='ready' AND s.direction<>:direction))) "
+                "ORDER BY validation_json IS NULL,content_key<>:exact,id LIMIT 1", params).fetchone()
             return dict(row) if row else None
 
     def comprehension_cache(self, passage: comp.Passage, opts, targets: list[dict], policy: dict,
@@ -112,9 +117,11 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
 
         with self._connect() as conn:
             row = conn.execute("SELECT s.* FROM comprehension_sessions s JOIN comprehension_passages t ON t.id=s.passage_id "
-                               "WHERE s.direction=? AND s.status='ready' AND t.content_key=? AND t.model=? AND t.reasoning=? "
+                               "WHERE s.direction=? AND s.status='ready' AND json_remove(t.content_key,'$.mc','$.open')=json(?) "
+                               "AND json_extract(s.options_json,'$.mc')=? AND json_extract(s.options_json,'$.open')=? AND t.model=? AND t.reasoning=? "
                                "AND t.version=? AND t.flagged_at IS NULL ORDER BY s.created_at LIMIT 1",
-                               (opts.direction.value, opts.content_key(), policy['model'], policy['reasoning'], policy['version'])).fetchone()
+                               (opts.direction.value, opts.content_key(include_counts=False), opts.mc, opts.open,
+                                policy['model'], policy['reasoning'], policy['version'])).fetchone()
             return dict(row) if row else None
 
     def comprehension_session(self, session_id: str) -> dict:
@@ -132,15 +139,24 @@ class ComprehensionDbMixin(comprehension_review_db.ComprehensionReviewDbMixin):
             row = conn.execute('SELECT validation_json,flagged_at FROM comprehension_passages WHERE id=?', (passage_id,)).fetchone()
             if row is None or row['validation_json'] is None or row['flagged_at'] is not None:
                 raise ValueError('Deze tekst is niet goedgekeurd.')
-            questions = conn.execute('SELECT id,ordinal FROM comprehension_questions WHERE passage_id=? ORDER BY ordinal', (passage_id,)).fetchall()
-            if len(questions) != opts.count:
+            questions = conn.execute('SELECT id,kind FROM comprehension_questions WHERE passage_id=? ORDER BY ordinal', (passage_id,))
+            remaining, selected = {'mc': opts.mc, 'open': opts.open}, []
+            for question in questions:
+                kind = question['kind']
+                if remaining[kind]:
+                    remaining[kind] -= 1
+                    selected.append(question['id'])
+            if any(remaining.values()):
                 raise ValueError('De ronde bevat niet het gevraagde aantal vragen.')
+            now = time.time()
             if not background:
-                conn.execute("UPDATE comprehension_sessions SET status='stopped',finished_at=? WHERE direction=? AND status='active'", (time.time(), opts.direction.value))
+                conn.execute("UPDATE comprehension_sessions SET status='stopped',finished_at=? WHERE direction=? AND status='active'", (now, opts.direction.value))
+            conn.execute("UPDATE comprehension_sessions SET status='stopped',finished_at=? "
+                         "WHERE direction=? AND passage_id=? AND status='ready'", (now, opts.direction.value, passage_id))
             conn.execute('INSERT INTO comprehension_sessions VALUES(?,?,?,?,?,?,NULL,NULL,?)',
-                         (session_id, passage_id, opts.direction.value, opts.model_dump_json(), scheduler, time.time(), 'ready' if background else 'active'))
+                         (session_id, passage_id, opts.direction.value, opts.model_dump_json(), scheduler, now, 'ready' if background else 'active'))
             conn.executemany('INSERT INTO comprehension_presentations(session_id,question_id,ordinal) VALUES(?,?,?)',
-                             [(session_id, q['id'], q['ordinal']) for q in questions])
+                             [(session_id, question_id, ordinal) for ordinal, question_id in enumerate(selected, 1)])
         return session_id
 
     def comprehension_use_ready(self, session_id: str, opts) -> str:

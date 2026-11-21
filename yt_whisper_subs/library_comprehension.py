@@ -139,6 +139,7 @@ class Panel(QtWidgets.QWidget):
         self._db.set_setting(self._view.options.key, opts.model_dump_json())
         self._run.phase = 'preparing'
         self._run.row = None
+        self._view.status.clear()
         self.speech_changed.emit(0, '')
         self._view.source.clear()
         self._view.card.idle(i18n.tr('Preparing text…'), i18n.tr('The text and all questions are independently checked.'))
@@ -208,6 +209,7 @@ class Panel(QtWidgets.QWidget):
         """Offer a deliberate retry without starting another request; e.g. an error page never loops through paid generation."""
 
         self._run.phase, self._run.row = 'error', None
+        self._view.status.clear()
         self.speech_changed.emit(0, '')
         self._view.card.idle(title, message)
         self._view.options.setEnabled(True)

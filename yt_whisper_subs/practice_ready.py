@@ -125,15 +125,30 @@ class ReadyDbMixin:
             row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active'{where} ORDER BY created_at DESC LIMIT 1", params).fetchone()
             if row is None:
                 return None
-            saved = ({"direction": row["direction"], "count": row["requested_count"], "include_early": bool(row["include_early"])}
-                     if kind == "practice" else json.loads(row["options_json"]))
-            if saved != opts.model_dump(mode="json"):
+            if self._practice_session_options(kind, row) != opts.model_dump(mode="json"):
                 return None
             rows = conn.execute(f"SELECT p.shown_at,q.model,q.reasoning,q.prompt_version,q.flagged_at FROM {kind}_presentations p "
                                 f"JOIN {kind}_questions q ON q.id=p.question_id WHERE p.session_id=?", (row["id"],)).fetchall()
             healthy = len(rows) == opts.count and all(item["shown_at"] is None and item["flagged_at"] is None
                                    and all(item[key] == value for key, value in policy.items()) for item in rows)
             return row["id"] if healthy else None
+
+    def practice_session_matches(self, kind: str, session_id: str, opts) -> bool:
+        """Check whether an active round covers the request, e.g. a saved ten-question round does not cover six."""
+
+        if kind not in practice_tracks.QUESTION_KINDS:
+            raise ValueError("Unknown practice mode")
+        with self._connect() as conn:
+            row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE id=? AND status='active'", (session_id,)).fetchone()
+        return row is not None and self._practice_session_options(kind, row) == opts.model_dump(mode="json")
+
+    @staticmethod
+    def _practice_session_options(kind: str, row) -> dict:
+        """Read the frozen options regardless of the relational shape of the session table."""
+
+        if kind == "practice":
+            return {"direction": row["direction"], "count": row["requested_count"], "include_early": bool(row["include_early"])}
+        return json.loads(row["options_json"])
 
     @staticmethod
     def _practice_check_rounds(conn) -> None:
@@ -146,14 +161,15 @@ class ReadyDbMixin:
                          f"AND NOT EXISTS(SELECT 1 FROM {kind}_presentations p WHERE p.session_id=s.id AND p.shown_at IS NOT NULL)",
                          (time.time(),))
 
-    def practice_unused(self, kind: str, policy: dict) -> set[int]:
+    def practice_unused(self, kind: str, policy: dict, *, reserved: set[int]) -> set[int]:
         """Locate approved questions never presented; e.g. stopping a round returns its unseen questions to useful stock."""
 
         key = {"practice": "lookup_id", "verb": "target_id"}[kind]
         where = " AND ".join(f"q.{name}=:{name}" for name in policy)
         with self._connect() as conn:
             rows = conn.execute(f"SELECT q.{key} FROM {kind}_questions q LEFT JOIN {kind}_presentations p ON p.question_id=q.id "
-                                f"WHERE q.flagged_at IS NULL AND {where} GROUP BY q.id HAVING COUNT(p.shown_at)=0", policy)
+                                f"WHERE q.flagged_at IS NULL AND {where} AND q.id NOT IN (SELECT value FROM json_each(:reserved)) "
+                                "GROUP BY q.id HAVING COUNT(p.shown_at)=0", {**policy, "reserved": json.dumps(sorted(reserved))})
             return {row[0] for row in rows}
 
 

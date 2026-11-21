@@ -59,10 +59,13 @@ class Options(pd.BaseModel):
 
         return self.mc + self.open
 
-    def content_key(self) -> str:
+    def content_key(self, *, include_counts: bool = True) -> str:
         """Reuse unused content across narration changes; e.g. changing a speaker spends no passage-generation tokens."""
 
-        data = self.model_dump(mode="json", exclude={"direction", "include_early"})
+        exclude = {"direction", "include_early"}
+        if not include_counts:
+            exclude.update(("mc", "open"))
+        data = self.model_dump(mode="json", exclude=exclude)
         return json.dumps(data, sort_keys=True)
 
 

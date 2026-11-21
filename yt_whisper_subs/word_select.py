@@ -16,9 +16,18 @@ def error_weight(attempts, failures):
     return 1 + 6 * (np.asarray(failures) + 1) / (np.asarray(attempts) + 3)
 
 
-def prefer_stock(pool: np.ndarray, due: np.ndarray, unused: np.ndarray) -> np.ndarray:
-    """Consume cached exploration without blocking urgent reviews; e.g. an uncached forgotten word beats unused new stock."""
+def review_pool(idx: int, available: np.ndarray, due: np.ndarray, new: np.ndarray, unused: np.ndarray,
+                *, cached_first: bool) -> np.ndarray:
+    """Keep due/new balance inside eligible stock first when a round can reuse checked content."""
 
+    candidates = available
+    if cached_first and np.any(ready := available & unused):
+        candidates = ready
+    pool = candidates & (due if idx % 5 != 4 and np.any(candidates & due) else new)
+    if not np.any(pool):
+        pool = candidates & due
+    if not np.any(pool):
+        pool = candidates
     stock = pool & unused
     return stock if not np.any(pool & due) and np.any(stock) else pool
 
@@ -54,16 +63,7 @@ class Selector:
         unused = np.array([row.get("unused", False) for row in rows])
         selected = []
         for idx in range(min(opts.count, len(rows))):
-            # A changed round size can reuse already approved questions under the same due-date rules.
-            candidates = available
-            if cached_first and np.any(ready := available & unused):
-                candidates = ready
-            pool = candidates & (due if idx % 5 != 4 and np.any(candidates & due) else new)
-            if not np.any(pool):
-                pool = candidates & due
-            if not np.any(pool):
-                pool = candidates
-            pool = prefer_stock(pool, due, unused)
+            pool = review_pool(idx, available, due, new, unused, cached_first=cached_first)
             probs = np.where(pool, weights, 0)
             pick = int(self._rng.choice(len(rows), p=probs / probs.sum()))
             selected.append(rows[pick])
