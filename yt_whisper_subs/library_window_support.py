@@ -40,7 +40,7 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         self._run_task(i18n.tr('Checking channels…'), task, self._check_finished)
 
     def _check_finished(self, new_count: object) -> None:
-        """Refresh and reschedule after downloads finish; discoveries notify earlier.
+        """Refresh and reschedule after discovery commits the pending downloads.
 
         Example: background completion invokes `_check_finished(result)`.
         """
@@ -48,7 +48,7 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         self.refresh()
         self._schedule_next()
         count = int(new_count or 0)
-        self.statusBar().showMessage(i18n.tr('Check complete · {count} auto-download attempt(s)', count=count), 8000)
+        self.statusBar().showMessage(i18n.tr('Check complete · {count} download(s) queued', count=count), 8000)
 
     def _scheduled_check(self) -> None:
         """Run an overdue check or defer briefly when another task is active.
@@ -291,6 +291,8 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         label: str,
         task: library_workers.BackgroundTask,
         finished: Callable[[object], None] | None = None,
+        *,
+        retry_pipeline: bool = False,
     ) -> None:
         """Serialize background work and centralize progress/error UX.
 
@@ -311,18 +313,22 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         task.signals.progress.connect(self._report_progress)
         task.signals.catalog_changed.connect(self.refresh, QtCore.Qt.ConnectionType.QueuedConnection)
 
-        def done(result: object) -> None:
-            """Restore idle state before invoking an operation-specific handler.
-
-            Example: the worker's finished signal invokes `done(result)`.
-            """
+        def release(*, succeeded: bool = False) -> None:
+            """Free the shared lane before refreshing, e.g. after a failed attempt."""
 
             self._busy = False
             self._active_task = None
             self._pipeline_status_active = False
-            self._release_video_slot(succeeded=True)
+            self._release_video_slot(succeeded=succeeded)
             self._active_progress = None
             self._paused_progress = None
+
+        def done(result: object) -> None:
+            """Run the completion handler after releasing the lane."""
+
+            release(succeeded=True)
+            if self._quitting:
+                return
             self.statusBar().showMessage(i18n.tr('Ready'), 3000)
             self._ui.trace.append_message(f"✓ {label}")
             if finished:
@@ -335,23 +341,21 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
             Example: the worker's failed signal invokes `failed(message, trace)`.
             """
 
-            self._busy = False
-            self._active_task = None
-            self._pipeline_status_active = False
-            self._release_video_slot()
-            self._active_progress = None
-            self._paused_progress = None
+            release()
+            if self._quitting:
+                return
             self.refresh()
             self._ui.trace.append_message(f"✗ {label} · {message}")
             self._ui.trace.append_message(trace)
-            box = QtWidgets.QMessageBox(
-                QtWidgets.QMessageBox.Icon.Critical,
-                i18n.tr('Library task failed'),
-                message,
-                parent=self,
-            )
-            box.setDetailedText(trace)
-            box.open()
+            if not retry_pipeline:
+                box = QtWidgets.QMessageBox(
+                    QtWidgets.QMessageBox.Icon.Critical,
+                    i18n.tr('Library task failed'),
+                    message,
+                    parent=self,
+                )
+                box.setDetailedText(trace)
+                box.open()
             self.statusBar().showMessage(i18n.tr('Error: {message}', message=message), 10000)
             self._continue_video_queue()
 
@@ -365,20 +369,18 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
             """
 
             update = self._active_progress
-            self._busy = False
-            self._active_task = None
-            self._pipeline_status_active = False
-            self._release_video_slot()
-            self.refresh()
-            if update:
+            video_id = self._active_video_id or (update.video_id if update else None)
+            release()
+            if self._quitting:
+                return
+            if video_id:
                 cancelled_update = progress.make(
-                    update.video_id,
+                    video_id,
                     progress.Stage.CANCELLED,
                     progress.overall_fraction(update),
                 )
                 self._ui.catalog.model.set_progress(cancelled_update)
-            self._active_progress = None
-            self._paused_progress = None
+            self.refresh()
             self.statusBar().showMessage(i18n.tr('Operation cancelled'), 8_000)
             self._ui.trace.append_message(i18n.tr('■ Cancelled · {label}', label=label))
             self._continue_video_queue()
@@ -429,28 +431,6 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
             self._ui.trace.append_message(i18n.tr('Ⅱ Pipeline paused'))
         self._update_actions()
 
-    def _restore_interrupted_pipelines(self) -> None:
-        """Expose unclean prior work as a one-click resumable table state.
-
-        Example: a system crash leaves an amber Resume row after restart.
-        """
-
-        jobs = self._service.recover_pipeline_jobs()
-        for job in jobs:
-            label = i18n.tr('Interrupted · {label} · click Resume', label=job.label)
-            interrupted = progress.make(
-                job.video_id,
-                progress.Stage.INTERRUPTED,
-                job.fraction,
-                label,
-            )
-            self._ui.catalog.model.set_progress(interrupted)
-        if jobs:
-            self._ui.trace.append_message(
-                i18n.tr('Recovery · {len} interrupted pipeline(s) ready to resume', len=len(jobs))
-            )
-            self._update_actions()
-
     def _cancel_active_task(self) -> None:
         """Request cancellation of the active heavy task and its child tools.
 
@@ -460,6 +440,8 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         task = self._active_task
         if not task or not task.cancel():
             return
+        if self._active_video_id:
+            self._service.db.cancel_waiting_pipeline(self._active_video_id)
         self.statusBar().showMessage(i18n.tr('Cancelling current operation…'))
         self._ui.trace.append_message(i18n.tr('■ Cancellation requested'))
         if update := self._active_progress:
@@ -567,16 +549,12 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         Example: yt-dlp progress updates invoke `_report_progress(message)`.
         """
 
+        if self._quitting:
+            return
         if watched := playback_progress.parse(message):
             self._show_watched_progress(watched, update_status=True)
             return
         if update := progress.parse(message):
-            previous = self._active_progress
-            if previous and previous.video_id != update.video_id and self._active_video_id is None:
-                # A channel-check worker can finish several videos before its finished signal.
-                self._finish_video_playback(
-                    previous.video_id, succeeded=previous.stage is progress.Stage.READY,
-                )
             first_pipeline_update = self._active_progress is None
             self._pipeline_status_active = True
             self._active_progress = update
@@ -630,16 +608,22 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         Example: Library → Quit invokes `_quit()`.
         """
 
+        self._prepare_to_quit()
+        QtWidgets.QApplication.quit()
+
+    def _prepare_to_quit(self) -> None:
+        """Stop owned workers once, including on a Qt-initiated session exit."""
+
         if self._quitting:
             return
         self._quitting = True
         self._notifications.stop()
         self._timer.stop()
         self._metadata_timer.stop()
+        self._pipeline_timer.stop()
         self._media_timer.stop()
         self._tray.hide()
         self._stop_workers()
-        QtWidgets.QApplication.quit()
 
     def _stop_workers(self) -> None:
         """Cancel owned work and close mpv so Qt pools cannot delay process exit.
@@ -651,7 +635,7 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
         tasks.extend(self._channel_tasks.values())
         for task in tasks:
             if task:
-                task.cancel()
+                task.cancel(preserve_work=True)
         self._pool.clear()
         self._playback_pool.clear()
         self._service.stop_playback()

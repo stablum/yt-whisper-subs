@@ -5,25 +5,13 @@ Example: `VideoQueueMixin._queue_video_task(...)` accepts work while busy.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-from typing import NamedTuple
+import time
+from datetime import datetime
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_types as types
 from yt_whisper_subs import library_workers
 from yt_whisper_subs import pipeline_progress as progress
-
-
-class VideoWork(NamedTuple):
-    """Retain one in-memory pipeline request until it reaches the worker.
-
-    Example: insertion order supplies deterministic FIFO execution.
-    """
-
-    video_id: str
-    label: str
-    fn: Callable[[Callable[[str], None]], Any]
-    finished: Callable[[object], None] | None
 
 
 class VideoQueueMixin:
@@ -35,29 +23,24 @@ class VideoQueueMixin:
     def _queue_video_task(
         self,
         video_id: str,
-        label: str,
-        fn: Callable[[Callable[[str], None]], Any],
-        finished: Callable[[object], None] | None = None,
+        kind: types.PipelineKind,
+        *,
+        force_live_check: bool = False,
     ) -> bool:
         """Append a unique video request and start it when the lane is free.
 
         Example: three selected videos retain their click order.
         """
 
-        if self._is_video_pending(video_id):
+        if self._quitting:
+            return False
+        if self._is_video_pending(video_id) or not self._service.db.queue_pipeline_jobs(
+            (video_id,), kind, force_live_check=force_live_check,
+        ):
             title = self._ui.catalog.model.title_for(video_id)
             self.statusBar().showMessage(i18n.tr('Already queued or processing · {title}', title=title), 4_000)
             return False
-        work = VideoWork(video_id, label, fn, finished)
-        self._video_queue[video_id] = work
-        self._update_video_queue()
-        if self._busy:
-            position = len(self._video_queue)
-            title = self._ui.catalog.model.title_for(video_id)
-            self._ui.trace.append_message(i18n.tr('○ Pipeline queued · #{position} · {title}', position=position, title=title))
-            self._update_actions()
-        else:
-            self._start_next_video()
+        self._continue_video_queue()
         return True
 
     def _is_video_pending(self, video_id: str) -> bool:
@@ -66,10 +49,7 @@ class VideoQueueMixin:
         Example: duplicate Download clicks for one ID are ignored.
         """
 
-        if video_id == self._active_video_id or video_id in self._video_queue:
-            return True
-        active = self._active_progress
-        return bool(active and active.video_id == video_id)
+        return video_id == self._active_video_id or video_id in self._video_queue
 
     def _is_video_active(self, video_id: str) -> bool:
         """Distinguish the current pipeline from entries waiting behind it.
@@ -77,10 +57,7 @@ class VideoQueueMixin:
         Example: the current row says Processing while later rows say Queued.
         """
 
-        if video_id == self._active_video_id:
-            return True
-        active = self._active_progress
-        return bool(active and active.video_id == video_id)
+        return video_id == self._active_video_id
 
     def _start_next_video(self) -> None:
         """Dispatch the oldest waiting request into the shared heavy lane.
@@ -88,13 +65,37 @@ class VideoQueueMixin:
         Example: completion of video A starts video B before video C.
         """
 
-        if self._busy or not self._video_queue:
+        if self._busy or self._quitting:
             return
-        video_id = next(iter(self._video_queue))
-        work = self._video_queue.pop(video_id)
-        self._active_video_id = video_id
-        self._update_video_queue()
-        self._run_task(work.label, library_workers.BackgroundTask(work.fn), work.finished)
+        db = self._service.db
+        jobs = db.pipeline_jobs()
+        if any(not job.state.waiting for job in jobs):
+            self._service.recover_pipeline_jobs()
+            jobs = db.pipeline_jobs()
+            if any(not job.state.waiting for job in jobs):
+                # A previous child may still hold the pipeline writer lock.
+                self._pipeline_timer.start(5_000)
+                return
+        self._update_video_queue(jobs)
+        if not self._video_queue:
+            retry_times = [job.retry_at for job in jobs if job.retry_at is not None]
+            if retry_times:
+                self._pipeline_timer.start(max(1, min(retry_times) - int(time.time())) * 1000)
+            else:
+                self._pipeline_timer.stop()
+            return
+        self._pipeline_timer.stop()
+        job = next(iter(self._video_queue.values()))
+        self._active_video_id = job.video_id
+        self._update_video_queue(jobs)
+        if job.state is types.PipelineJobState.INTERRUPTED:
+            label = i18n.tr('Resuming interrupted pipeline…')
+        elif job.kind is types.PipelineKind.CHAPTERS:
+            label = i18n.tr('Creating bilingual chapters…')
+        else:
+            label = i18n.tr('Starting download…')
+        task = library_workers.BackgroundTask(lambda report: self._service.run_pipeline_job(job, report))
+        self._run_task(label, task, lambda _: self.refresh(), retry_pipeline=True)
 
     def _continue_video_queue(self) -> None:
         """Advance after any foreground outcome or resume quiet maintenance.
@@ -102,12 +103,15 @@ class VideoQueueMixin:
         Example: failure of one video does not strand later requests.
         """
 
-        self._update_video_queue()
-        if self._video_queue:
-            self._start_next_video()
+        if self._quitting:
             return
+        if self._busy:
+            self._update_video_queue()
+        else:
+            self._start_next_video()
         self._update_actions()
-        self._schedule_metadata_backfill()
+        if not self._busy:
+            self._schedule_metadata_backfill()
 
     def _release_video_slot(self, *, succeeded: bool = False) -> None:
         """Release active work and consume its one-time playback request.
@@ -133,15 +137,32 @@ class VideoQueueMixin:
         if succeeded and not self._quitting:
             self._play_from(None, video_id=video_id)
 
-    def _update_video_queue(self) -> None:
+    def _update_video_queue(self, jobs: list[types.PipelineJob] | None = None) -> None:
         """Refresh waiting row labels and the compact status-bar summary.
 
         Example: after A completes, B becomes next and C becomes number two.
         """
 
-        for position, work in enumerate(self._video_queue.values(), start=1):
+        if jobs is None:
+            jobs = self._service.db.pipeline_jobs()
+        self._video_queue.clear()
+        deferred = 0
+        now = int(time.time())
+        for job in jobs:
+            if not job.state.waiting or self._is_video_active(job.video_id):
+                continue
+            if job.retry_at is not None and job.retry_at > now:
+                deferred += 1
+                when = i18n.date_text(datetime.fromtimestamp(job.retry_at).astimezone(), '%a %H:%M')
+                label = i18n.tr('Retry at {when}', when=when)
+                self._ui.catalog.model.set_progress(
+                    progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label),
+                )
+                continue
+            self._video_queue[job.video_id] = job
+        for position, job in enumerate(self._video_queue.values(), start=1):
             label = i18n.tr('Queued · next') if position == 1 else i18n.tr('Queued · #{position}', position=position)
-            update = progress.make(work.video_id, progress.Stage.QUEUED, 0.0, label)
+            update = progress.make(job.video_id, progress.Stage.QUEUED, 0.0, label)
             self._ui.catalog.model.set_progress(update)
         waiting = len(self._video_queue)
         active = self._active_video_id is not None or self._active_progress is not None
@@ -153,4 +174,21 @@ class VideoQueueMixin:
             text = i18n.tr('Pipeline queue: {waiting} waiting', waiting=waiting)
         else:
             text = ""
+        if deferred:
+            deferred_text = i18n.tr('Pipeline retries scheduled: {count}', count=deferred)
+            text = f"{text} · {deferred_text}" if text else deferred_text
         self._ui.queue_status.setText(text)
+
+    def _cancel_selected_pipeline(self) -> None:
+        """Remove waiting work for the selected row, e.g. stop its scheduled retry."""
+
+        record = self._selected_record()
+        if not record:
+            return
+        video_id = record.meta.identity.video_id
+        if self._is_video_active(video_id) or not self._service.db.cancel_waiting_pipeline(video_id):
+            return
+        self._finish_video_playback(video_id, succeeded=False)
+        self._ui.catalog.model.set_progress(progress.make(video_id, progress.Stage.CANCELLED))
+        self.refresh()
+        self._continue_video_queue()

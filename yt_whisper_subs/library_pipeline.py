@@ -10,10 +10,12 @@ import subprocess
 from collections import deque
 from collections.abc import Callable
 from contextlib import nullcontext
+from contextlib import suppress
 from pathlib import Path
 from types import TracebackType
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import chapters
 from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_types as types
@@ -75,7 +77,9 @@ class PipelineDownloader:
             cmd += ["--min-video-duration", f"{duration * 0.98:g}"]
         self._run(record, cmd, "Download", report)
 
-    def generate_chapters(self, record: types.VideoRecord, report: ReportFn) -> None:
+    def generate_chapters(
+        self, record: types.VideoRecord, report: ReportFn, *, job: types.PipelineJob,
+    ) -> None:
         """Regenerate chapters through the CLI while reusing local durable yields.
 
         Example: `generate_chapters(record, report)` avoids Whisper and yt-dlp.
@@ -83,17 +87,29 @@ class PipelineDownloader:
 
         if not record.local:
             raise RuntimeError("download this video before generating chapters")
+        video_id = record.meta.identity.video_id
+        source = ["--video-file", str(record.local.path)]
+        if record.local.path.stem != video_id:
+            # Use the URL pipeline's existing discovery and canonicalization for title-ID media.
+            source = ["--url", record.meta.identity.url]
         cmd = [
             str(self._python_exe),
             str(cfg.PROJECT_DIR / "yt_whisper_subs.py"),
-            "--video-file",
-            str(record.local.path),
+            *source,
             "--out-dir",
             str(self._out_dir),
             "--no-play",
             "--chapters",
-            "--force-chapters",
         ]
+        files = chapters.ChapterFiles.for_video(self._out_dir, video_id)
+        if files.ready():
+            if job.requested_ns is not None:
+                needs_refresh = files.archive.stat().st_mtime_ns < job.requested_ns
+            else:
+                # Older journals recorded completion of chaptering as a stage change.
+                needs_refresh = job.stage not in {progress.Stage.FINALIZING, progress.Stage.READY}
+            if needs_refresh:
+                cmd.append("--force-chapters")
         self._run(record, cmd, "Chapter generation", report)
 
     def _run(
@@ -135,20 +151,29 @@ class PipelineDownloader:
             if control
             else nullcontext()
         )
-        with context:
-            for message in proc.iter_output_records(process.stdout):
-                if update := progress.parse(message):
-                    current = update
-                    report(message)
-                    continue
-                if update := progress.derive_tool_update(message, current):
-                    current = update
-                    report(progress.encode(update))
-                output_tail.append(message)
-                report(message)
-            returncode = process.wait()
-            if control:
-                control.checkpoint()
+        with process:
+            try:
+                with context:
+                    for message in proc.iter_output_records(process.stdout):
+                        if update := progress.parse(message):
+                            current = update
+                            report(message)
+                            continue
+                        if update := progress.derive_tool_update(message, current):
+                            current = update
+                            report(progress.encode(update))
+                        output_tail.append(message)
+                        report(message)
+                    returncode = process.wait()
+            except BaseException:
+                # A failing reporter must release the child and its output lock too.
+                if process.poll() is None:
+                    with suppress(OSError, subprocess.TimeoutExpired):
+                        proc.request_process_tree_termination(process, wait=True)
+                        process.wait(timeout=5)
+                    if process.poll() is None:
+                        process.kill()
+                raise
         if returncode != 0:
             error_lines = [line for line in output_tail if line.casefold().startswith("error:")]
             detail = (
@@ -171,21 +196,19 @@ class PipelineDownloader:
 
 
 class PipelineJobTracker:
-    """Checkpoint one GUI pipeline while leaving clean exits non-recoverable.
+    """Checkpoint one GUI pipeline and persist its final disposition.
 
-    Example: `with PipelineJobTracker(db, id, kind, report) as tracked: ...`.
+    Example: `with PipelineJobTracker(db, job, report) as tracked: ...`.
     """
 
     def __init__(
         self,
         db: library_db.LibraryDb,
-        video_id: str,
-        kind: types.PipelineKind,
+        job: types.PipelineJob,
         report: ReportFn,
     ) -> None:
         self._db = db
-        self._video_id = video_id
-        self._kind = kind
+        self.job = job
         self._report = report
         self._checkpoint: tuple[progress.Stage, int] | None = None
 
@@ -195,7 +218,12 @@ class PipelineJobTracker:
         Example: the returned reporter persists meaningful phase movement.
         """
 
-        self._db.begin_pipeline_job(self._video_id, self._kind)
+        if control := task_cancel.current():
+            control.checkpoint()
+        claimed = self._db.claim_pipeline_job(self.job)
+        if claimed is None:
+            raise task_cancel.CancelledError("Pipeline request is no longer ready")
+        self.job = claimed
         return self.report
 
     def __exit__(
@@ -204,13 +232,27 @@ class PipelineJobTracker:
         _exc: BaseException | None,
         _traceback: TracebackType | None,
     ) -> bool:
-        """Clear handled outcomes while retaining markers after hard interruption.
+        """Retire success or explicit Cancel, and leave other work retryable.
 
-        Example: a normal error is not confused with a system-crash recovery.
+        Example: a network error arms backoff while orderly Quit resumes immediately.
         """
 
-        if exc_type is None or issubclass(exc_type, Exception):
-            self._db.finish_pipeline_job(self._video_id)
+        control = task_cancel.current()
+        video_id = self.job.video_id
+        if exc_type is None:
+            self._db.finish_pipeline_job(video_id)
+        elif issubclass(exc_type, Exception):
+            if control and control.cancelled:
+                if control.preserve_work:
+                    self._db.interrupt_pipeline_job(video_id)
+                else:
+                    self._db.finish_pipeline_job(video_id)
+                if not issubclass(exc_type, task_cancel.CancelledError):
+                    control.checkpoint()
+            elif issubclass(exc_type, task_cancel.CancelledError):
+                self._db.finish_pipeline_job(video_id)
+            else:
+                self._db.interrupt_pipeline_job(video_id, failed=True)
         return False
 
     def report(self, message: str) -> None:
@@ -220,7 +262,7 @@ class PipelineJobTracker:
         """
 
         update = progress.parse(message)
-        if update:
+        if update and update.stage not in {progress.Stage.QUEUED, progress.Stage.FAILED}:
             overall_percent = round(progress.overall_fraction(update) * 100)
             checkpoint = (update.stage, overall_percent)
             if checkpoint != self._checkpoint:

@@ -314,14 +314,14 @@ class LibraryService(
         channel_started: Callable[[int], None] | None = None,
         videos_discovered: Callable[[list[types.VideoMeta]], None] | None = None,
     ) -> int:
-        """Publish each saved channel before auto-downloading later discoveries.
+        """Publish each saved channel with its newly queued downloads.
 
         Example: `service.check_all(report)` is called by the four-hour timer.
         """
 
         sidecars = library_artifacts.MetadataSidecars(self.out_dir)
         self._scan_local(sidecars, report)
-        auto_ids: list[str] = []
+        queued = 0
         channels = self.db.channels()
         discoveries: list[types.VideoMeta] = []
         try:
@@ -330,7 +330,7 @@ class LibraryService(
                 if channel_started:
                     channel_started(channel.channel_id)
                 try:
-                    auto_ids.extend(self._check_channel(channel, report, sidecars, discoveries.extend))
+                    queued += len(self._check_channel(channel, report, sidecars, discoveries.extend))
                 except task_cancel.CancelledError:
                     raise
                 except Exception as exc:
@@ -339,28 +339,12 @@ class LibraryService(
                 if channel_checked:
                     channel_checked()
         finally:
-            # One batch precedes expensive downloads, even if a later feed was cancelled.
+            # Publish committed discoveries even if a later feed was cancelled.
             if discoveries and videos_discovered:
                 videos_discovered(discoveries)
 
-        eligible = []
-        for video_id in dict.fromkeys(auto_ids):
-            record = self.db.video(video_id)
-            if record and not record.downloaded and not self._is_live(record):
-                eligible.append(record)
-        for idx, record in enumerate(eligible, start=1):
-            video_id = record.meta.identity.video_id
-            self.db.set_auto_pending((video_id,), False)
-            report(f"Auto-download {idx}/{len(eligible)} · {record.meta.identity.title}")
-            try:
-                self.download(video_id, report)
-            except task_cancel.CancelledError:
-                raise
-            except Exception as exc:
-                report(f"Auto-download failed: {exc}")
-
         self.db.set_setting("last_check_at", int(time.time()))
-        return len(eligible)
+        return queued
 
     def download(
         self,
@@ -374,6 +358,20 @@ class LibraryService(
         Example: a live-row double-click uses `force_live_check=True`.
         """
 
+        if not self.db.video(video_id):
+            raise RuntimeError(f"unknown video: {video_id}")
+        self.db.queue_pipeline_jobs((video_id,), types.PipelineKind.DOWNLOAD, force_live_check=force_live_check)
+        self.db.retry_pipeline_now(video_id, force_live_check=force_live_check)
+        job = self.db.pipeline_job(video_id)
+        if job is None or job.kind is not types.PipelineKind.DOWNLOAD:
+            raise RuntimeError(f"Download is no longer queued for {video_id}")
+        self.run_pipeline_job(job, report)
+
+    def _download_record(self, job: types.PipelineJob, report: ReportFn) -> types.VideoRecord:
+        """Check prerequisites inside the retry boundary, e.g. wait for a live replay."""
+
+        video_id = job.video_id
+        force_live_check = job.force_live_check
         record = self.db.video(video_id)
         if not record:
             raise RuntimeError(f"unknown video: {video_id}")
@@ -395,26 +393,14 @@ class LibraryService(
                         types.LIVE_UNKNOWN: "Video availability is unconfirmed; try a fresh status check later",
                     }[status]
                     raise RuntimeError(reason)
-        self.db.set_download_error(video_id, None)
-        try:
-            tracker = library_pipeline.PipelineJobTracker(
-                self.db,
-                video_id,
-                types.PipelineKind.DOWNLOAD,
-                report,
-            )
-            with tracker as tracked_report:
-                self._downloader.download(record, tracked_report)
-                self.scan_local(tracked_report)
-                self.db.set_auto_pending((video_id,), False)
-        except task_cancel.CancelledError:
-            self.scan_local()
-            raise
-        except Exception as exc:
-            record = self.db.video(video_id)
-            signature = library_artifacts.yield_signature(self.out_dir, record) if record else None
+        return record
+
+    def _record_pipeline_error(self, video_id: str, exc: Exception) -> None:
+        """Keep diagnostics with the affected yields, e.g. show a missing API key."""
+
+        if record := self.db.video(video_id):
+            signature = library_artifacts.yield_signature(self.out_dir, record)
             self.db.set_download_error(video_id, str(exc), signature)
-            raise
 
     def _refresh_live_status(
         self,
@@ -467,28 +453,36 @@ class LibraryService(
         except output_lock.OutputBusyError:
             return []
 
-    def interrupted_pipeline_jobs(self) -> list[types.PipelineJob]:
-        """Expose only durable interrupted jobs during normal table refreshes.
-
-        Example: a later scan cannot leave a removed Resume marker onscreen.
-        """
-
-        return self.db.interrupted_pipeline_jobs()
-
-    def resume_pipeline_job(
+    def run_pipeline_job(
         self,
         job: types.PipelineJob,
         report: ReportFn = _ignore_report,
     ) -> None:
-        """Dispatch a recovered job through the same idempotent pipeline path.
+        """Dispatch a queued request through the shared idempotent pipeline.
 
         Example: completed media is reused while missing subtitle stages rerun.
         """
 
-        if job.kind is types.PipelineKind.CHAPTERS:
-            self.generate_chapters(job.video_id, report)
-            return
-        self.download(job.video_id, report)
+        video_id = job.video_id
+        tracker = library_pipeline.PipelineJobTracker(self.db, job, report)
+        try:
+            with tracker as tracked_report:
+                if job.kind is types.PipelineKind.CHAPTERS:
+                    self.db.set_download_error(video_id, None)
+                    self._generate_chapters(tracker.job, tracked_report)
+                else:
+                    record = self._download_record(tracker.job, tracked_report)
+                    self.db.set_download_error(video_id, None)
+                    self._downloader.download(record, tracked_report)
+                    self.scan_local(tracked_report)
+        except task_cancel.CancelledError:
+            control = task_cancel.current()
+            if control and control.cancelled and not control.preserve_work:
+                self.scan_local()
+            raise
+        except Exception as exc:
+            self._record_pipeline_error(video_id, exc)
+            raise
 
     def set_pipeline_paused(self, video_id: str, paused: bool) -> None:
         """Mirror live suspension state into the durable recovery record.
@@ -506,39 +500,18 @@ class LibraryService(
 
         return self._artifacts.chapter_set(video_id)
 
-    def generate_chapters(
-        self,
-        video_id: str,
-        report: ReportFn = _ignore_report,
-    ) -> chapters.ChapterSet:
+    def _generate_chapters(self, job: types.PipelineJob, report: ReportFn) -> None:
         """Regenerate chapters for an existing downloaded video.
 
-        Example: `service.generate_chapters(video_id, report)` backs the GUI action.
+        Example: validating the archive is part of committing a completed job.
         """
 
-        record = self.db.video(video_id)
+        record = self.db.video(job.video_id)
         if not record or not record.local or not record.local.path.exists():
             raise RuntimeError("download this video before generating chapters")
-        self.db.set_download_error(video_id, None)
-        tracker = library_pipeline.PipelineJobTracker(
-            self.db,
-            video_id,
-            types.PipelineKind.CHAPTERS,
-            report,
-        )
-        try:
-            with tracker as tracked_report:
-                self._downloader.generate_chapters(record, tracked_report)
-            chapter_set = self.chapter_set(video_id)
-            if not chapter_set:
-                raise RuntimeError("chapter pipeline completed without a readable chapter plan")
-        except task_cancel.CancelledError:
-            raise
-        except Exception as exc:
-            signature = library_artifacts.yield_signature(self.out_dir, record)
-            self.db.set_download_error(video_id, str(exc), signature)
-            raise
-        return chapter_set
+        self._downloader.generate_chapters(record, report, job=job)
+        if not self.chapter_set(job.video_id):
+            raise RuntimeError("chapter pipeline completed without a readable chapter plan")
 
     def apply_retention(self) -> int:
         """Prune untouched dated listings immediately after settings change.

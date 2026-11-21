@@ -28,7 +28,6 @@ from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_metadata_db  # noqa: E402
 from yt_whisper_subs import library_model  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
-from yt_whisper_subs import library_video_queue  # noqa: E402
 from yt_whisper_subs import library_window_support  # noqa: E402
 from yt_whisper_subs import library_widgets  # noqa: E402
 from yt_whisper_subs import library_workers  # noqa: E402
@@ -451,11 +450,8 @@ class DetailPanelTests(unittest.TestCase):
 
         library_gui.LibraryWindow._download_selected(window, force_live_check=True)
 
-        download = window._queue_video_task.call_args.args[2]
-        report = mock.Mock()
-        download(report)
-        window._service.download.assert_called_once_with(
-            "aaaaaaaaaaa", report, force_live_check=True
+        window._queue_video_task.assert_called_once_with(
+            "aaaaaaaaaaa", types.PipelineKind.DOWNLOAD, force_live_check=True
         )
 
     def test_cancel_action_requests_only_the_active_heavy_task(self) -> None:
@@ -837,92 +833,6 @@ class VideoQueueTests(unittest.TestCase):
     Example: three Download clicks remain ordered behind active Whisper.
     """
 
-    def test_busy_lane_accepts_unique_videos_and_labels_positions(self) -> None:
-        """Queue multiple IDs immediately and suppress an accidental duplicate.
-
-        Example: the first waiting row says next and the second says number two.
-        """
-
-        model = mock.Mock()
-        model.title_for.side_effect = lambda video_id: f"Title {video_id}"
-        window = SimpleNamespace(
-            _active_video_id="aaaaaaaaaaa",
-            _active_progress=None,
-            _busy=True,
-            _video_queue={},
-            _ui=SimpleNamespace(
-                catalog=SimpleNamespace(model=model),
-                queue_status=mock.Mock(),
-                trace=mock.Mock(),
-            ),
-            statusBar=mock.Mock(),
-            _update_actions=mock.Mock(),
-            _start_next_video=mock.Mock(),
-        )
-        window._is_video_pending = partial(
-            library_video_queue.VideoQueueMixin._is_video_pending,
-            window,
-        )
-        window._update_video_queue = partial(
-            library_video_queue.VideoQueueMixin._update_video_queue,
-            window,
-        )
-
-        first = library_video_queue.VideoQueueMixin._queue_video_task(
-            window,
-            "bbbbbbbbbbb",
-            "Download B",
-            mock.Mock(),
-        )
-        second = library_video_queue.VideoQueueMixin._queue_video_task(
-            window,
-            "ccccccccccc",
-            "Download C",
-            mock.Mock(),
-        )
-        duplicate = library_video_queue.VideoQueueMixin._queue_video_task(
-            window,
-            "bbbbbbbbbbb",
-            "Duplicate B",
-            mock.Mock(),
-        )
-
-        self.assertTrue(first)
-        self.assertTrue(second)
-        self.assertFalse(duplicate)
-        self.assertEqual(list(window._video_queue), ["bbbbbbbbbbb", "ccccccccccc"])
-        labels = [call.args[0].label for call in model.set_progress.call_args_list[-2:]]
-        self.assertEqual(labels, ["Queued · next", "Queued · #2"])
-        window._ui.queue_status.setText.assert_called_with(
-            "Pipeline queue: 1 active · 2 waiting"
-        )
-        window._start_next_video.assert_not_called()
-
-    def test_oldest_waiting_video_dispatches_first(self) -> None:
-        """Pop the insertion-ordered mapping without sorting or scanning rows.
-
-        Example: B starts while C remains the next queued video.
-        """
-
-        first = library_video_queue.VideoWork("bbbbbbbbbbb", "Download B", mock.Mock(), None)
-        second = library_video_queue.VideoWork("ccccccccccc", "Download C", mock.Mock(), None)
-        window = SimpleNamespace(
-            _busy=False,
-            _video_queue={first.video_id: first, second.video_id: second},
-            _active_video_id=None,
-            _update_video_queue=mock.Mock(),
-            _run_task=mock.Mock(),
-        )
-
-        library_video_queue.VideoQueueMixin._start_next_video(window)
-
-        self.assertEqual(window._active_video_id, "bbbbbbbbbbb")
-        self.assertEqual(list(window._video_queue), ["ccccccccccc"])
-        label, task, finished = window._run_task.call_args.args
-        self.assertEqual(label, "Download B")
-        self.assertIs(task._fn, first.fn)
-        self.assertIsNone(finished)
-
     def test_download_action_queues_while_another_pipeline_is_busy(self) -> None:
         """Route a second selected remote video through queue admission.
 
@@ -949,12 +859,9 @@ class VideoQueueTests(unittest.TestCase):
 
         library_gui.LibraryWindow._download_selected(window)
 
-        video_id, label, download, _finished = window._queue_video_task.call_args.args
-        self.assertEqual(video_id, "bbbbbbbbbbb")
-        self.assertEqual(label, "Starting download…")
-        report = mock.Mock()
-        download(report)
-        window._service.download.assert_called_once_with("bbbbbbbbbbb", report)
+        window._queue_video_task.assert_called_once_with(
+            "bbbbbbbbbbb", types.PipelineKind.DOWNLOAD, force_live_check=False,
+        )
         window._run_task.assert_not_called()
 
     def test_finished_worker_releases_and_advances_video_queue(self) -> None:
@@ -975,6 +882,7 @@ class VideoQueueTests(unittest.TestCase):
         finished = mock.Mock()
         window = SimpleNamespace(
             _busy=False,
+            _quitting=False,
             _metadata_timer=mock.Mock(),
             _active_progress=None,
             _paused_progress=None,
@@ -1170,11 +1078,13 @@ class TrayLifetimeTests(unittest.TestCase):
             _timer=mock.Mock(),
             _metadata_timer=mock.Mock(),
             _media_timer=mock.Mock(),
+            _pipeline_timer=mock.Mock(),
             _tray=mock.Mock(),
             _notifications=mock.Mock(),
             _stop_workers=mock.Mock(),
         )
 
+        window._prepare_to_quit = partial(library_window_support.WindowRuntimeMixin._prepare_to_quit, window)
         library_window_support.WindowRuntimeMixin._quit(window)
 
         self.assertTrue(window._quitting)
@@ -1203,7 +1113,7 @@ class TrayLifetimeTests(unittest.TestCase):
         library_window_support.WindowRuntimeMixin._stop_workers(window)
 
         for task in tasks:
-            task.cancel.assert_called_once_with()
+            task.cancel.assert_called_once_with(preserve_work=True)
         window._pool.clear.assert_called_once_with()
         window._playback_pool.clear.assert_called_once_with()
         window._service.stop_playback.assert_called_once_with()

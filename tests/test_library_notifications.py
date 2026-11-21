@@ -204,20 +204,11 @@ class TrayNotificationTests(unittest.TestCase):
         channel = self._channels[0]
         self._service.db.set_channel_auto_download(channel.channel_id, True)
         batches = []
-        before_download = []
-
-        def download(_video_id: str, _report: object) -> None:
-            """Require discovery publication at the first expensive operation.
-
-            Example: a later failed download cannot erase the notification batch.
-            """
-
-            before_download.append([len(batch) for batch in batches])
-
-        with mock.patch.object(self._service, "download", side_effect=download) as run:
+        with mock.patch.object(self._service, "run_pipeline_job") as run:
             self.assertEqual(self._service.check_all(videos_discovered=batches.append), 1)
-            run.assert_called_once()
-        self.assertEqual(before_download, [[3]])
+            run.assert_not_called()
+        self.assertEqual([len(batch) for batch in batches], [3])
+        self.assertEqual(len(self._service.db.pipeline_jobs()), 1)
 
     def test_baseline_rediscovery_and_archived_metadata_stay_quiet(self) -> None:
         """Exclude subscription imports, repeat scans, and known archived entries.

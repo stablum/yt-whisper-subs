@@ -28,6 +28,7 @@ class TaskControl:
         self._cancelled = threading.Event()
         self._paused = threading.Event()
         self._condition = threading.Condition()
+        self._preserve_work = False
         self._stops: set[Callable[[], None]] = set()
         self._pauses: set[Callable[[], None]] = set()
         self._resumes: set[Callable[[], None]] = set()
@@ -49,6 +50,12 @@ class TaskControl:
         """
 
         return self._paused.is_set()
+
+    @property
+    def preserve_work(self) -> bool:
+        """Keep durable work after shutdown, e.g. restart a stopped pipeline."""
+
+        return self.cancelled and self._preserve_work
 
     def pause(self) -> bool:
         """Suspend cooperative work and every registered child-process tree.
@@ -79,16 +86,17 @@ class TaskControl:
             self._condition.notify_all()
         return True
 
-    def cancel(self) -> bool:
+    def cancel(self, *, preserve_work: bool = False) -> bool:
         """Request cancellation once and invoke active stop hooks immediately.
 
         Example: cancelling a pipeline terminates its Python child process tree.
         """
 
-        if self._cancelled.is_set():
-            return False
-        self._cancelled.set()
         with self._condition:
+            if self.cancelled:
+                return False
+            self._preserve_work = preserve_work
+            self._cancelled.set()
             self._condition.notify_all()
             for stop in tuple(self._stops):
                 try:

@@ -74,6 +74,24 @@ class ChildProcessOptionsTests(unittest.TestCase):
         else:
             self.assertTrue(kwargs["start_new_session"])
 
+    @unittest.skipUnless(os.name == "nt", "Windows subprocess tree")
+    def test_terminate_windows_tree_closes_inherited_output(self) -> None:
+        """Stop a launcher and interpreter descendants that share a stdout pipe."""
+
+        child_args = [sys.executable, "-c", "import time; time.sleep(15)"]
+        launcher = f"import subprocess; p=subprocess.Popen({child_args!r}); print('ready', flush=True); p.wait()"
+        with subprocess.Popen(
+            [sys.executable, "-c", launcher],
+            **proc.isolated_process_kwargs(),
+            stdout=subprocess.PIPE,
+            text=True,
+        ) as process:
+            assert process.stdout is not None
+            self.assertEqual(process.stdout.readline().strip(), "ready")
+            proc.request_process_tree_termination(process, wait=True)
+            process.communicate(timeout=5)
+            self.assertIsNotNone(process.returncode)
+
     @mock.patch("yt_whisper_subs.proc._load_psutil")
     def test_process_tree_pause_and_resume_include_descendants(self, load: mock.Mock) -> None:
         """Suspend a pipeline parent and resume its child before the parent.

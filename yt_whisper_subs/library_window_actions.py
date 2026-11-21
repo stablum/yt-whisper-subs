@@ -5,8 +5,6 @@ Example: `LibraryWindow` mixes these slots into its native Qt shell.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
 from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
@@ -38,41 +36,16 @@ class WindowActionsMixin:
             return
         video_id = record.meta.identity.video_id
         job = self._service.db.pipeline_job(video_id)
-        if job and job.state is types.PipelineJobState.INTERRUPTED:
-
-            def resume(report: Callable[[str], None]) -> None:
-                """Bind the durable job to the shared idempotent pipeline.
-
-                Example: completed media is reused after a prior system crash.
-                """
-
-                self._service.resume_pipeline_job(job, report)
-
-            self._queue_video_task(
-                video_id,
-                i18n.tr('Resuming interrupted pipeline…'),
-                resume,
-                lambda _: self.refresh(),
-            )
+        if job and job.state.waiting:
+            self._service.db.retry_pipeline_now(video_id, force_live_check=True if force_live_check else None)
+            self._continue_video_queue()
             return
         issue = self._service.pipeline_issue(record)
         if record.downloaded and not issue and not record.download_error:
             self._play_selected()
             return
 
-        def download(report: Callable[[str], None]) -> None:
-            """Bind the selected video ID into a worker-safe call.
-
-            Example: `download(report)` runs off the GUI thread.
-            """
-
-            if force_live_check:
-                self._service.download(video_id, report, force_live_check=True)
-            else:
-                self._service.download(video_id, report)
-
-        label = i18n.tr('Repairing pipeline…') if record.downloaded else i18n.tr('Starting download…')
-        self._queue_video_task(video_id, label, download, lambda _: self.refresh())
+        self._queue_video_task(video_id, types.PipelineKind.DOWNLOAD, force_live_check=force_live_check)
 
     def _activate_video(self, index: QtCore.QModelIndex) -> None:
         """Play, process, or request playback after an already pending pipeline.
@@ -407,6 +380,8 @@ class WindowActionsMixin:
             channel = self._selected_channel()
             pin_action.setEnabled(channel is not None)
             pin_action.setText(i18n.tr('Unpin selected channel') if channel and channel.pinned else i18n.tr('Pin selected channel'))
+        if cancel_waiting := getattr(self, "_cancel_waiting_action", None):
+            cancel_waiting.setEnabled(bool(job and job.state.waiting and not active))
 
     def _toggle_channel_pin(self) -> None:
         """Move the selected subscription into or out of quick access.

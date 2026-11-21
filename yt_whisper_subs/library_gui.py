@@ -134,6 +134,9 @@ class LibraryWindow(
         self._metadata_timer = QtCore.QTimer(self)
         self._metadata_timer.setSingleShot(True)
         self._metadata_timer.timeout.connect(self._metadata_tick)
+        self._pipeline_timer = QtCore.QTimer(self)
+        self._pipeline_timer.setSingleShot(True)
+        self._pipeline_timer.timeout.connect(self._continue_video_queue)
         self._media_watcher = QtCore.QFileSystemWatcher(self)
         self._watch_local_paths()
         self._media_timer = QtCore.QTimer(self)
@@ -150,7 +153,7 @@ class LibraryWindow(
         self._channels_by_id: dict[int, types.Channel] = {}
         self._active_task: library_workers.BackgroundTask | None = None
         self._active_video_id: str | None = None
-        self._video_queue: dict[str, library_video_queue.VideoWork] = {}
+        self._video_queue: dict[str, types.PipelineJob] = {}
         self._play_after_pipeline: set[str] = set()
         self._paused_progress: progress.Update | None = None
         self._metadata_task: library_workers.BackgroundTask | None = None
@@ -178,11 +181,11 @@ class LibraryWindow(
         self._notifications.video_requested.connect(self._notification_video)
         self._notifications.settings_requested.connect(self._notification_settings)
         self._notifications.practice_requested.connect(lambda activity: self._show_practice(activity, sequence=not activity))
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self._notifications.stop)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self._prepare_to_quit)
         self._connect_actions()
         self._build_menus()
         self.refresh()
-        self._restore_interrupted_pipelines()
+        self._pipeline_timer.start(0)
         self._schedule_next(initial=True)
         self._schedule_metadata_backfill()
         self._media_timer.start(0)
@@ -562,10 +565,7 @@ class LibraryWindow(
             self._ui.catalog.model.set_records(
                 catalog.records, catalog.issues, watch_policy=self._service.db.watch_policy(),
             )
-            for job in self._service.interrupted_pipeline_jobs():
-                label = i18n.tr('Interrupted · {label} · click Resume', label=job.label)
-                interrupted = progress.make(job.video_id, progress.Stage.INTERRUPTED, job.fraction, label)
-                self._ui.catalog.model.set_progress(interrupted)
+            self._update_video_queue()
             state = self._service.metadata_queue_state()
             self._ui.metadata_status.setText(_metadata_status_text(state))
             self._refresh_smart_filters()

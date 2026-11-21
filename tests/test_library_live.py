@@ -65,6 +65,7 @@ class StreamPolicyTests(unittest.TestCase):
             self.assertIn("Double-click to check", cell.data(QtCore.Qt.ItemDataRole.ToolTipRole))
             feed.videos = [fixtures.with_live_status(live, "was_live")]
             self.assertEqual(service.check_all(), 1)
+            service.run_pipeline_job(service.db.pipeline_job(video_id))
             self.assertEqual(downloader.calls, [video_id])
 
     def test_refresh_repairs_false_upload_warning_without_downloading_baseline(self) -> None:
@@ -122,6 +123,7 @@ class StreamPolicyTests(unittest.TestCase):
             service.db.set_auto_pending((video_id,), True)
             feed.videos = [upload]
             self.assertEqual(service.check_all(), 1)
+            service.run_pipeline_job(service.db.pipeline_job(video_id))
             self.assertEqual(downloader.calls, [video_id])
             self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
             self.assertEqual(feed.video_info_calls, 0)

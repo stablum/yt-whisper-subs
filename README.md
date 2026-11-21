@@ -170,8 +170,8 @@ The companion library is optimized for a second workflow:
     video's files; use the Removed filter to find those entries again.
 13. Pause and resume the active pipeline process tree without discarding its
     in-memory model state.
-14. Recover a pipeline left by a system crash from durable stage checkpoints and
-    reuse every complete or partial yield when the user clicks Resume.
+14. Automatically resume queued and interrupted pipelines when the library
+    reopens, and retry failures while reusing complete yields and saved checkpoints.
 15. Detect missing, corrupt, or long repeated Whisper-loop subtitle yields, show
     the exact reason as an Issue, and offer one-click Repair instead of claiming
     that the pipeline is complete.
@@ -297,7 +297,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Library execution queue | visible FIFO for video pipelines; one heavy-work lane |
 | Library cancellation | visible Cancel button during active work; `Ctrl+Shift+X` |
 | Library pause/resume | process-tree suspension; `Ctrl+Shift+P` |
-| Library crash recovery | durable stage/overall-progress checkpoint; one-click Resume |
+| Library pipeline recovery | durable queue and progress checkpoints; automatic resume on launch and retry backoff from one minute to one hour |
 | Library yield removal | selected video or captured filter matches; confirmed exact manifests; individual non-recursive unlinks; durable Removed state |
 | Library personal history | download/removal dates and watch progress survive retention and channel removal |
 | Channel auto-download baseline | future discoveries only; never the initial backlog |
@@ -1168,8 +1168,8 @@ without opening dialogs or combining contradictory dropdowns:
 - **Available** shows videos without a local download, including removed entries.
 - **Removed** shows entries whose video and yields were deliberately removed.
 - **Pipeline** shows videos waiting in the FIFO or currently moving through an
-  active processing stage. Completed, failed, cancelled, paused, and
-  restart-interrupted rows are excluded because they are not presently running.
+  active processing stage. Retry cooldowns appear on their rows and in the
+  pipeline footer. When a retry comes due, the video rejoins the ready queue.
 - **Unwatched** shows current or previous downloads with no observed playback position.
 - **Continue** shows videos that were started but have not been marked watched.
 - **Watched** shows videos marked manually, past the configured percentage
@@ -1245,15 +1245,15 @@ counts. Duplicate requests for the same video are ignored. The FIFO advances
 after success, failure, or cancellation, while the single worker still prevents
 yt-dlp, Whisper, ffmpeg, and OpenAI stages from competing with one another.
 Select another row and click its process action, or simply double-click another
-remote video, to add it. The queue is intentionally session-scoped; the one
-pipeline that was actually active at an unclean exit retains the existing
-durable crash-recovery checkpoint.
+remote video, to add it. SQLite records each request before dispatch, including
+eligible automatic downloads discovered during a channel check. Ready jobs run
+in request order across restarts.
 
-Version `0.4.8` protects running, paused, and interrupted checkpoints from all
-catalog pruning paths, including date retention and stopping channel tracking.
-Recovery checks the recorded owner's PID and process creation time and offers
-only work whose owner has gone away. It also waits to offer recovery if an
-orphaned pipeline child still owns the output root.
+Catalog pruning protects pending, running, paused, and interrupted jobs, including
+when history is trimmed or a channel is untracked. Recovery checks the recorded
+owner's PID and process creation time. If a surviving pipeline child still holds
+the output lock, the library checks again every five seconds until it can safely
+recover the job.
 
 Only one native-library instance may open a given output root. A second launch
 reports that the library is already open before scanning or changing its
@@ -1261,8 +1261,7 @@ catalog. GUI children, direct CLI processing, and yield removal share a separate
 OS write lock for that root. Competing writers report that the root is in use;
 an OS lock is released automatically after process exit or a crash, without
 deleting lock files. CLI playback releases pipeline ownership before launching
-mpv so playing a completed video does not block another pipeline. These checks
-are event-driven and introduce no background polling.
+mpv so playing a completed video does not block another pipeline.
 
 The counted **Pipeline** smart-view chip filters the table to the active video
 and every waiting FIFO entry. Its count follows the current search and selected
@@ -1284,18 +1283,26 @@ to **Resume**. Playback remains independent and can still be started while the
 pipeline is paused. Cancel remains available from the paused state.
 
 Pipeline kind, stage, label, and overall fraction are checkpointed in SQLite at
-phase changes and whole percentage points. A normal completion, reported error,
-or explicit cancellation removes that recovery marker. If Windows, the machine,
-or the GUI process terminates without reaching a normal outcome, the next launch
-marks the row **Interrupted** and offers **Resume** without a confirmation dialog.
-The resumed operation uses the normal idempotent pipeline: yt-dlp continues its
-`.part` file, completed media/audio/subtitles are reused, transcription review
-resumes its completed batches, OpenAI translation can
-reuse its chunk checkpoint, and only unfinished work reruns. Whisper itself does
-not expose a serializable in-memory CUDA checkpoint, so a crash during that one
-stage restarts speech-to-text while preserving all earlier stages.
-Cancel affects only the active item. Every later video retains its FIFO position
-and the next entry starts automatically after cancellation completes.
+phase changes and whole percentage points. **Quit** stops the child and keeps
+the active and waiting requests. After Quit, a crash, or a restart, the library
+picks them up automatically. Closing to the tray lets the current job continue.
+On Windows, shutdown terminates the owned launcher and its descendants directly,
+including tools that still hold the pipeline's output pipe open.
+
+Failed attempts stay scheduled across restarts. The first retry waits one minute,
+then the delay doubles up to one hour. Later ready jobs can run during that wait.
+Select the row and choose **Resume** to try immediately. The activity trace and
+run logs retain failure details.
+
+On resume, yt-dlp continues its `.part` file. Completed media, audio, subtitles,
+review batches, and translation chunks are reused where available. An interruption
+inside Whisper restarts speech-to-text from the saved audio. A chapter refresh
+also reuses a valid plan already written for that request.
+
+**Cancel** drops the active request. **Video → Cancel selected queued pipeline**
+drops a waiting request or scheduled retry. Both keep the files already produced
+so the job can be requested again. Removing a video's yields clears its pending
+request.
 
 ### Watched Progress And Completion
 
@@ -3987,7 +3994,7 @@ High-level groups:
 | `yt_whisper_subs.library_schema` | Startup catalog tables, indexes, and schema changes. |
 | `yt_whisper_subs.library_backup` | Verified online catalog snapshots, ten-file rotation, partial cleanup, and an independent cancellable startup worker. |
 | `yt_whisper_subs.library_media_db` | Batched local-file reconciliation and durable sidecar metadata updates. |
-| `yt_whisper_subs.library_job_db` | Focused SQLite mixin for active, paused, and interrupted pipeline recovery records. |
+| `yt_whisper_subs.library_job_db` | SQLite queue, ownership, progress checkpoints, and retry deadlines for library pipelines. |
 | `yt_whisper_subs.yield_files` | Atomic staged yield replacement and durable dependency-marker paths. |
 | `yt_whisper_subs.output_lock` | Nonblocking OS locks for a single library instance and shared CLI/GUI pipeline writes. |
 | `yt_whisper_subs.library_artifacts` | On-demand metadata sidecars and file-stamped SRT-health/parsed-chapter caches for I/O-free Qt painting. |

@@ -125,7 +125,7 @@ class FilteredRemovalTests(RemovalFixture, unittest.TestCase):
     def test_pending_and_playing_videos_are_skipped_at_preview_and_execution(self) -> None:
         """Recheck protected work after confirmation; e.g. mpv opened during the preview."""
 
-        self.service.db.begin_pipeline_job(self.ids[0], types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.service.db, self.ids[0])
         player = mock.Mock()
         self.service._playback.activate(self.ids[1], player)
         plan = self.service.yield_selection(self.ids, lambda _: None, excluded=frozenset({self.ids[2]}))
@@ -140,7 +140,7 @@ class FilteredRemovalTests(RemovalFixture, unittest.TestCase):
         """Preserve newly pending work; e.g. another repair was queued after inspection."""
 
         plan = self.service.yield_selection(self.ids, lambda _: None)
-        self.service.db.begin_pipeline_job(self.ids[1], types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.service.db, self.ids[1])
         result = self.service.remove_yield_selection(
             plan, lambda _: None, excluded=frozenset({self.ids[0]}),
         )

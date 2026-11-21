@@ -122,9 +122,16 @@ class PipelineJobState(StrEnum):
     Example: startup converts a stale `RUNNING` job to `INTERRUPTED`.
     """
 
+    QUEUED = "queued"
     RUNNING = "running"
     PAUSED = "paused"
     INTERRUPTED = "interrupted"
+
+    @property
+    def waiting(self) -> bool:
+        """Identify unowned jobs, including ones waiting for their retry time."""
+
+        return self in {self.QUEUED, self.INTERRUPTED}
 
 
 class PipelineJob(NamedTuple):
@@ -141,6 +148,9 @@ class PipelineJob(NamedTuple):
     label: str
     started_at: int
     updated_at: int
+    requested_ns: int | None
+    force_live_check: bool
+    retry_at: int | None
 
 
 class VideoHistory(NamedTuple):

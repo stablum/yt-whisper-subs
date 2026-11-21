@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sqlite3
 import tempfile
 import time
@@ -18,6 +19,7 @@ from unittest import mock
 from PySide6 import QtCore
 
 from yt_whisper_subs import cfg
+from yt_whisper_subs import chapters
 from yt_whisper_subs import download_prefs
 from yt_whisper_subs import library_artifacts
 from yt_whisper_subs import library_db
@@ -52,6 +54,15 @@ def with_live_status(meta: types.VideoMeta, status: str | None) -> types.VideoMe
     """
 
     return meta._replace(details=meta.details._replace(live_status=status))
+
+
+def claim_download(db: library_db.LibraryDb, video_id: str) -> types.PipelineJob:
+    """Seed active ownership for tests, e.g. before simulating a dead process."""
+
+    db.queue_pipeline_jobs((video_id,), types.PipelineKind.DOWNLOAD)
+    job = db.claim_pipeline_job(db.pipeline_job(video_id))
+    assert job is not None
+    return job
 
 
 class FakeFeed:
@@ -171,6 +182,31 @@ class PipelineDownloaderTests(unittest.TestCase):
     Example: `PipelineDownloaderTests("test_download_reports_root_error")`.
     """
 
+    def test_chapter_retry_reuses_plan_written_for_the_request(self) -> None:
+        """Reuse a newly saved archive even when the process exited before reporting Ready."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = library_db.LibraryDb(root / "catalog.sqlite3")
+            db.initialize()
+            video_id = "aaaaaaaaaaa"
+            meta = make_meta(video_id, "Both chapters and subtitles")
+            db.upsert_video(meta)
+            db.queue_pipeline_jobs((video_id,), types.PipelineKind.CHAPTERS)
+            job = db.pipeline_job(video_id)
+            local = types.LocalMedia(root / "videos" / f"{video_id}.mkv", 0, 100)
+            record = types.VideoRecord(meta, None, 0, local, None, None)
+            files = chapters.ChapterFiles.for_video(root, video_id)
+            files.write(chapters.ChapterSet(video_id, "nl", "mock", 1, 90_000,
+                [chapters.Chapter(0, "Onderwerp", "Topic")]))
+            downloader = library_pipeline.PipelineDownloader(Path("python"), root)
+            with mock.patch.object(downloader, "_run") as run:
+                for offset, force in ((-1_000_000_000, True), (1_000_000_000, False)):
+                    stamp = job.requested_ns + offset
+                    os.utime(files.archive, ns=(stamp, stamp))
+                    downloader.generate_chapters(record, mock.Mock(), job=job)
+                    self.assertEqual("--force-chapters" in run.call_args.args[1], force)
+
     def test_post_live_download_requires_duration_check(self) -> None:
         """Verify a manual replay before the shared CLI can transcribe it.
 
@@ -250,7 +286,7 @@ class PipelineDownloaderTests(unittest.TestCase):
 
         process = popen.return_value
         process.stdout = io.StringIO()
-        process.poll.return_value = None
+        process.poll.return_value = 1
         process.wait.return_value = 1
         token = task_cancel.TaskControl()
 
@@ -650,6 +686,8 @@ class LibraryServiceTests(unittest.TestCase):
             feed.videos.insert(0, second)
             self.assertEqual(service.check_all(), 1)
 
+            self.assertEqual(downloader.calls, [])
+            service.run_pipeline_job(service.db.pipeline_job("bbbbbbbbbbb"))
             self.assertEqual(downloader.calls, ["bbbbbbbbbbb"])
             self.assertTrue(service.db.video("bbbbbbbbbbb").downloaded)
             self.assertFalse(service.db.video("aaaaaaaaaaa").downloaded)
@@ -908,6 +946,7 @@ class LibraryServiceTests(unittest.TestCase):
 
             feed.videos = [with_live_status(make_meta(video_id, "Stream"), "was_live")]
             self.assertEqual(service.check_all(), 1)
+            service.run_pipeline_job(service.db.pipeline_job(video_id))
             self.assertEqual(downloader.calls, [video_id])
             self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
             self.assertEqual(feed.video_info_calls, 0)
@@ -932,6 +971,7 @@ class LibraryServiceTests(unittest.TestCase):
             feed.videos = [with_live_status(ordinary, None)]
 
             self.assertEqual(service.check_all(), 1)
+            service.run_pipeline_job(service.db.pipeline_job(video_id))
             self.assertIsNone(service.db.video(video_id).meta.details.live_status)
             self.assertEqual(service.db.auto_pending_ids(channel.channel_id), set())
             self.assertEqual(feed.video_info_calls, 0)
@@ -1709,7 +1749,7 @@ class LibraryFeedTests(unittest.TestCase):
 
 
 class PipelineRecoveryTests(unittest.TestCase):
-    """Keep unclean work resumable while clearing all handled outcomes.
+    """Keep unfinished work resumable until completion or explicit cancellation.
 
     Example: a stale running job becomes an interrupted GUI row at restart.
     """
@@ -1726,14 +1766,14 @@ class PipelineRecoveryTests(unittest.TestCase):
             first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
             db.upsert_video(make_meta(first, "First"))
             db.upsert_video(make_meta(second, "Second"))
-            db.begin_pipeline_job(first, types.PipelineKind.DOWNLOAD)
+            claim_download(db, first)
             with mock.patch("yt_whisper_subs.library_job_db._owner_is_alive", return_value=False):
                 db.recover_pipeline_jobs()
 
-            db.begin_pipeline_job(second, types.PipelineKind.DOWNLOAD)
+            claim_download(db, second)
 
             self.assertEqual(db.pipeline_job(first).state, types.PipelineJobState.INTERRUPTED)
-            self.assertEqual([job.video_id for job in db.interrupted_pipeline_jobs()], [first])
+            self.assertEqual([job.video_id for job in db.pipeline_jobs()], [first, second])
 
     def test_video_metadata_requests_share_a_durable_global_pace(self) -> None:
         """Serialize full video lookups across the queue and manual live probes.
@@ -1783,7 +1823,7 @@ class PipelineRecoveryTests(unittest.TestCase):
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
             db.upsert_video(make_meta("aaaaaaaaaaa", "Example"))
-            db.begin_pipeline_job("aaaaaaaaaaa", types.PipelineKind.DOWNLOAD)
+            claim_download(db, "aaaaaaaaaaa")
             update = progress.make("aaaaaaaaaaa", progress.Stage.TRANSCRIBING, 0.5)
             db.update_pipeline_job(update)
 
@@ -1795,10 +1835,10 @@ class PipelineRecoveryTests(unittest.TestCase):
             self.assertEqual(jobs[0].stage, progress.Stage.TRANSCRIBING.value)
             self.assertAlmostEqual(jobs[0].fraction, progress.overall_fraction(update))
 
-    def test_tracker_clears_handled_failure_but_keeps_hard_interruption(self) -> None:
-        """Distinguish an ordinary pipeline error from abrupt process death.
+    def test_tracker_backs_off_after_failure_and_keeps_a_crash_checkpoint(self) -> None:
+        """Keep retryable intent through both an ordinary failure and process death.
 
-        Example: RuntimeError is final; BaseException remains recoverable.
+        Example: retries after an outage back off across a catalog restart.
         """
 
         class HardInterruption(BaseException):
@@ -1810,20 +1850,26 @@ class PipelineRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db = library_db.LibraryDb(Path(tmp) / "catalog.sqlite3")
             db.initialize()
-            db.upsert_video(make_meta("aaaaaaaaaaa", "Example"))
-            tracker = library_pipeline.PipelineJobTracker(
-                db,
-                "aaaaaaaaaaa",
-                types.PipelineKind.DOWNLOAD,
-                mock.Mock(),
-            )
-            with self.assertRaises(RuntimeError), tracker:
-                raise RuntimeError("handled")
-            self.assertIsNone(db.pipeline_job("aaaaaaaaaaa"))
+            video_id = "aaaaaaaaaaa"
+            db.upsert_video(make_meta(video_id, "Example"))
+            db.queue_pipeline_jobs((video_id,), types.PipelineKind.DOWNLOAD)
+            now = 1_000
+            for delay in (60, 120, 240, 480, 960, 1_920, 3_600, 3_600):
+                tracker = library_pipeline.PipelineJobTracker(db, db.pipeline_job(video_id), mock.Mock())
+                with mock.patch("yt_whisper_subs.library_job_db.time.time", return_value=now):
+                    with self.assertRaisesRegex(RuntimeError, "offline"), tracker:
+                        raise RuntimeError("offline")
+                    retry = db.pipeline_job(video_id)
+                    self.assertEqual(retry.retry_at, now + delay)
+                    self.assertIsNone(db.claim_pipeline_job(retry))
+                db = library_db.LibraryDb(db.path)
+                now += delay
 
-            with self.assertRaises(HardInterruption), tracker:
-                raise HardInterruption()
-            self.assertIsNotNone(db.pipeline_job("aaaaaaaaaaa"))
+            tracker = library_pipeline.PipelineJobTracker(db, db.pipeline_job(video_id), mock.Mock())
+            with mock.patch("yt_whisper_subs.library_job_db.time.time", return_value=now):
+                with self.assertRaises(HardInterruption), tracker:
+                    raise HardInterruption()
+            self.assertEqual(db.pipeline_job(video_id).state, types.PipelineJobState.RUNNING)
 
 
 if __name__ == "__main__":

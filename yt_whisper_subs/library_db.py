@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from collections.abc import Iterable
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -63,7 +62,7 @@ class SnapshotResult(NamedTuple):
 
     new_ids: list[str]
     pruned: int
-    statuses: dict[str, str | None]
+    queued: list[str]
 
 
 class LibraryDb(
@@ -193,7 +192,9 @@ class LibraryDb(
             )
             conn.execute("DELETE FROM channels WHERE id=?", (channel_id,))
 
-    def store_snapshot(self, channel_id: int, snapshot: types.ChannelSnapshot) -> SnapshotResult:
+    def store_snapshot(
+        self, channel_id: int, snapshot: types.ChannelSnapshot, *, archived: frozenset[str] = frozenset(),
+    ) -> SnapshotResult:
         """Persist a bounded snapshot and prune absent remote-only history.
 
         Example: `db.store_snapshot(channel_id, snapshot).new_ids` drives automation.
@@ -202,6 +203,8 @@ class LibraryDb(
         now = int(time.time())
         baseline_at = now if snapshot.complete else None
         with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            channel = conn.execute("SELECT baseline_at, auto_download FROM channels WHERE id=?", (channel_id,)).fetchone()
             known = {
                 str(row["video_id"]): row
                 for row in conn.execute("SELECT video_id, live_status, live_retry_at FROM videos")
@@ -227,7 +230,6 @@ class LibraryDb(
                     channel_id,
                 ),
             )
-            statuses = {}
             for meta in snapshot.videos:
                 video_id = meta.identity.video_id
                 prior = known.get(video_id)
@@ -239,7 +241,6 @@ class LibraryDb(
                     if not (unsupported and snapshot.complete):
                         status = types.LIVE_UNKNOWN if prev in types.LIVE_BLOCKED else prev
                     conn.execute("UPDATE videos SET live_status=? WHERE video_id=?", (status, video_id))
-                statuses[video_id] = status
                 metadata_checked_at = now if meta.origin.published_at is not None else None
                 self._upsert_video(
                     conn,
@@ -249,7 +250,11 @@ class LibraryDb(
                     metadata_checked_at=metadata_checked_at,
                 )
             pruned = self._prune_snapshot(conn, channel_id, snapshot) if snapshot.complete else 0
-        return SnapshotResult(new_ids, pruned, statuses)
+            queued = []
+            if channel and channel["baseline_at"] is not None and channel["auto_download"]:
+                video_ids = [meta.identity.video_id for meta in snapshot.videos]
+                queued = self._queue_snapshot_downloads(conn, channel_id, video_ids, set(new_ids) - archived)
+        return SnapshotResult(new_ids, pruned, queued)
 
     def channel_video_ids(self, channel_id: int) -> set[str]:
         """Return IDs used to stop adaptive history expansion at overlap.
@@ -330,31 +335,6 @@ class LibraryDb(
 
         with self._connect() as conn:
             conn.execute("UPDATE videos SET live_status=? WHERE video_id=?", (status, video_id))
-
-    def set_auto_pending(self, video_ids: Iterable[str], pending: bool) -> None:
-        """Remember eligible new streams until a later channel snapshot ends them.
-
-        Example: an initially live auto-download candidate waits for `was_live`.
-        """
-
-        with self._connect() as conn:
-            conn.executemany(
-                "UPDATE videos SET auto_pending=? WHERE video_id=?",
-                ((int(pending), video_id) for video_id in video_ids),
-            )
-
-    def auto_pending_ids(self, channel_id: int) -> set[str]:
-        """Read pending stream IDs without making another YouTube request.
-
-        Example: the next scheduled snapshot checks whether a stream ended.
-        """
-
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT video_id FROM videos WHERE subscription_id=? AND auto_pending=1",
-                (channel_id,),
-            ).fetchall()
-        return {str(row[0]) for row in rows}
 
     def failed_downloads(self) -> list[tuple[types.VideoRecord, str | None]]:
         """Check only errored local rows for externally repaired artifacts.

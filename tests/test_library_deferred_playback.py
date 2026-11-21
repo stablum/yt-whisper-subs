@@ -17,11 +17,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6 import QtCore  # noqa: E402
 from PySide6 import QtWidgets  # noqa: E402
 
+from tests import test_library as fixtures  # noqa: E402
 from yt_whisper_subs import library_gui  # noqa: E402
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
-from yt_whisper_subs import library_workers  # noqa: E402
+from yt_whisper_subs import output_lock  # noqa: E402
 from yt_whisper_subs import pipeline_progress as progress  # noqa: E402
+from yt_whisper_subs import task_cancel  # noqa: E402
 
 
 class DeferredPlaybackTests(unittest.TestCase):
@@ -53,12 +55,17 @@ class DeferredPlaybackTests(unittest.TestCase):
             origin = types.VideoOrigin("Channel", "UC-example", 100)
             details = types.VideoDetails(90, None, "", None, "not_live")
             self._service.db.upsert_video(types.VideoMeta(ident, origin, details))
+        self._tasks = []
+        self._players = []
+        self._open_window()
+
+    def _open_window(self) -> None:
+        """Capture workers before the Qt startup timer can dispatch real CLI work."""
+
         self._window = library_gui.LibraryWindow(self._service)
         self._window._media_timer.stop()
         self._window._timer.stop()
         self._window._metadata_timer.stop()
-        self._tasks = []
-        self._players = []
         patches = (
             mock.patch.object(self._window._pool, "start", side_effect=self._tasks.append),
             mock.patch.object(self._window._playback_pool, "start", side_effect=self._players.append),
@@ -74,15 +81,27 @@ class DeferredPlaybackTests(unittest.TestCase):
         Example: a nonmodal failure dialog is closed with its parent window.
         """
 
+        self._close_window()
+        self._tmp.cleanup()
+
+    def _close_window(self) -> None:
+        """Dispose of the current window so another can reopen the same catalog."""
+
         self._window._quitting = True
         self._window._timer.stop()
         self._window._metadata_timer.stop()
         self._window._media_timer.stop()
+        self._window._pipeline_timer.stop()
         self._window._tray.hide()
         self._window.close()
         self._window.deleteLater()
         self._app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
-        self._tmp.cleanup()
+
+    def _finish_task(self, video_id: str, task) -> None:
+        """Simulate successful publication and the worker's corresponding Qt signal."""
+
+        self._service.db.finish_pipeline_job(video_id)
+        task.signals.finished.emit(None)
 
     def _activate(self, video_id: str) -> None:
         """Emit the table's actual double-click signal for a stable video ID.
@@ -126,7 +145,7 @@ class DeferredPlaybackTests(unittest.TestCase):
         self._activate("bbbbbbbbbbb")
         self._window._ui.header.search.setText("Second")
         self._make_ready("aaaaaaaaaaa")
-        self._tasks[0].signals.finished.emit(None)
+        self._finish_task("aaaaaaaaaaa", self._tasks[0])
 
         self.assertEqual(self._window._active_video_id, "bbbbbbbbbbb")
         self.assertEqual(self._window._play_after_pipeline, set())
@@ -145,11 +164,11 @@ class DeferredPlaybackTests(unittest.TestCase):
         self._activate("bbbbbbbbbbb")
         self._activate("bbbbbbbbbbb")
         self._make_ready("aaaaaaaaaaa")
-        self._tasks[0].signals.finished.emit(None)
+        self._finish_task("aaaaaaaaaaa", self._tasks[0])
         self.assertEqual(self._window._play_after_pipeline, {"bbbbbbbbbbb"})
         self.assertEqual(self._players, [])
         self._make_ready("bbbbbbbbbbb")
-        self._tasks[1].signals.finished.emit(None)
+        self._finish_task("bbbbbbbbbbb", self._tasks[1])
 
         self.assertEqual(len(self._players), 1)
         self._players[0].run()
@@ -172,7 +191,7 @@ class DeferredPlaybackTests(unittest.TestCase):
         task.signals.progress.emit(progress.encode(progress.make("aaaaaaaaaaa", progress.Stage.READY)))
         self._activate("aaaaaaaaaaa")
         self.assertEqual(self._players, [])
-        task.signals.finished.emit(None)
+        self._finish_task("aaaaaaaaaaa", task)
 
         self.assertEqual(len(self._players), 1)
         self.assertEqual(self._window._play_after_pipeline, set())
@@ -191,13 +210,17 @@ class DeferredPlaybackTests(unittest.TestCase):
                 self._activate("bbbbbbbbbbb")
                 task = self._tasks[-1]
                 if outcome == "failed":
+                    self._service.db.interrupt_pipeline_job("aaaaaaaaaaa", failed=True)
                     task.signals.failed.emit("Pipeline failed", "Controlled failure")
                 else:
+                    self._service.db.finish_pipeline_job("aaaaaaaaaaa")
                     task.signals.cancelled.emit()
                 self.assertEqual(self._players, [])
                 self.assertEqual(self._window._play_after_pipeline, {"bbbbbbbbbbb"})
+                self._service.db.finish_pipeline_job("bbbbbbbbbbb")
                 self._tasks[-1].signals.cancelled.emit()
                 self.assertEqual(self._window._play_after_pipeline, set())
+                self._service.db.cancel_waiting_pipeline("aaaaaaaaaaa")
 
     def test_incomplete_success_does_not_process_a_different_selected_row(self) -> None:
         """Check the requested catalog record before any deferred playback launch.
@@ -208,7 +231,7 @@ class DeferredPlaybackTests(unittest.TestCase):
         self._activate("aaaaaaaaaaa")
         self._activate("aaaaaaaaaaa")
         self._window._ui.catalog.table.clearSelection()
-        self._tasks[0].signals.finished.emit(None)
+        self._finish_task("aaaaaaaaaaa", self._tasks[0])
 
         self.assertEqual(self._players, [])
         self.assertEqual(len(self._tasks), 1)
@@ -224,27 +247,99 @@ class DeferredPlaybackTests(unittest.TestCase):
         self._activate("aaaaaaaaaaa")
         self._make_ready("aaaaaaaaaaa")
         self._window._quitting = True
-        self._tasks[0].signals.finished.emit(None)
+        self._finish_task("aaaaaaaaaaa", self._tasks[0])
 
         self.assertEqual(self._players, [])
         self.assertEqual(self._window._play_after_pipeline, set())
 
-    def test_auto_download_transition_consumes_the_finished_target(self) -> None:
-        """Start a finished automatic target while a channel batch advances to its next video.
+    def test_quit_preserves_translation_and_waiting_jobs_for_automatic_restart(self) -> None:
+        """Reopen the catalog and drain work in FIFO order through real worker code."""
 
-        Example: A starts playing when automatic processing switches to B.
-        """
+        first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
+        update = progress.make(first, progress.Stage.TRANSLATING, 0.0, "Preparing translation")
+        self._activate(first)
+        self._activate(second)
+        self._activate(second)
+        self.assertEqual(len(self._tasks), 1)
+        model = self._window._ui.catalog.model
+        self.assertEqual(model.progress_at(model.row_for(second)).label, "Queued · next")
 
-        self._window._run_task("Checking channels…", library_workers.BackgroundTask(mock.Mock()))
-        self._window._report_progress(progress.encode(progress.make("aaaaaaaaaaa", progress.Stage.TRANSCRIBING)))
+        def close_during_translation(_record: types.VideoRecord, report) -> None:
+            """Stop at the same checkpoint as the reported restart interruption."""
+
+            report(progress.encode(update))
+            self._window._prepare_to_quit()
+            task_cancel.current().checkpoint()
+
+        with mock.patch.object(self._service._downloader, "download", side_effect=close_during_translation):
+            self._tasks[0].run()
+        job = self._service.db.pipeline_job(first)
+        self.assertEqual(job.state, types.PipelineJobState.INTERRUPTED)
+        self.assertEqual(job.stage, progress.Stage.TRANSLATING)
+        self.assertEqual(job.fraction, progress.overall_fraction(update))
+        self.assertEqual(self._service.db.pipeline_job(second).state, types.PipelineJobState.QUEUED)
+
+        self._close_window()
+        self._tasks.clear()
+        downloader = fixtures.FakeDownloader(self._root)
+        self._service = library_service.LibraryService(self._root, {"python": Path(sys.executable)}, downloader=downloader)
+        self._open_window()
+        self._app.processEvents()
+        self.assertEqual(self._window._active_video_id, first)
+        self._tasks[0].run()
+        self.assertEqual(self._window._active_video_id, second)
+        self._tasks[1].run()
+        self.assertEqual(downloader.calls, [first, second])
+        self.assertEqual(self._service.db.pipeline_jobs(), [])
+        self.assertEqual(self._players, [])
+
+    def test_startup_rechecks_orphaned_pipeline_after_the_writer_releases_its_lock(self) -> None:
+        """Keep a crashed job when another process may still be producing yields."""
+
+        video_id = "aaaaaaaaaaa"
+        fixtures.claim_download(self._service.db, video_id)
+        with self._service.db._connect() as conn:
+            conn.execute("UPDATE pipeline_jobs SET owner_started_at=0")
+        with output_lock.OutputLock(self._root, "pipeline"):
+            self._app.processEvents()
+            self.assertEqual(self._tasks, [])
+            self.assertTrue(self._window._pipeline_timer.isActive())
+            self.assertEqual(self._service.db.pipeline_job(video_id).state, types.PipelineJobState.RUNNING)
+        self._window._pipeline_timer.timeout.emit()
+        self.assertEqual(self._window._active_video_id, video_id)
+        self.assertEqual(len(self._tasks), 1)
+
+    def test_explicit_cancel_discards_waiting_dispatch_before_quit(self) -> None:
+        """Cancel an assigned worker even when its service call has yet to begin."""
+
         self._activate("aaaaaaaaaaa")
-        self._make_ready("aaaaaaaaaaa")
-        self._window._report_progress(progress.encode(progress.make("aaaaaaaaaaa", progress.Stage.READY)))
-        self.assertEqual(self._players, [])
-        self._window._report_progress(progress.encode(progress.make("bbbbbbbbbbb", progress.Stage.QUEUED)))
+        self._activate("bbbbbbbbbbb")
+        self._window._cancel_active_task()
+        self._window._prepare_to_quit()
+        self._tasks[0].run()
+        self.assertEqual([job.video_id for job in self._service.db.pipeline_jobs()], ["bbbbbbbbbbb"])
 
-        self.assertEqual(len(self._players), 1)
-        self.assertEqual(self._window._play_after_pipeline, set())
+    def test_due_retry_runs_after_later_ready_work(self) -> None:
+        """Dispatch a deferred job from the timer without blocking the ready FIFO."""
+
+        first, second = "aaaaaaaaaaa", "bbbbbbbbbbb"
+        self._activate(first)
+        self._activate(second)
+        downloader = fixtures.FakeDownloader(self._root)
+        with mock.patch.object(self._service._downloader, "download", side_effect=RuntimeError("offline")):
+            self._tasks[0].run()
+        retry_at = self._service.db.pipeline_job(first).retry_at
+        self.assertEqual(self._window._active_video_id, second)
+        with mock.patch.object(self._service._downloader, "download", side_effect=downloader.download):
+            self._tasks[1].run()
+            self.assertEqual(downloader.calls, [second])
+            self.assertTrue(self._window._pipeline_timer.isActive())
+            with mock.patch("yt_whisper_subs.library_video_queue.time.time", return_value=retry_at):
+                self._window._pipeline_timer.timeout.emit()
+                self.assertEqual(self._window._active_video_id, first)
+                self._tasks[2].run()
+        self.assertEqual(downloader.calls, [second, first])
+        self.assertEqual(self._service.db.pipeline_jobs(), [])
 
 
 if __name__ == "__main__":

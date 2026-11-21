@@ -86,7 +86,7 @@ class VideoHistoryTests(unittest.TestCase):
         self.service.db.record_playback(playback.make("aaaaaaaaaaa", 96, 100))
         watched_at = self.service.db.video("aaaaaaaaaaa").playback.completed_at
         self.service.db.set_auto_pending({"aaaaaaaaaaa"}, True)
-        self.service.db.begin_pipeline_job("aaaaaaaaaaa", types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.service.db, "aaaaaaaaaaa")
         self.service.db.set_setting("channel_published_after", "2026-01-01")
 
         removed = self.service.remove_yields(self.service.video_yields("aaaaaaaaaaa"))

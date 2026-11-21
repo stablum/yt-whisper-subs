@@ -47,6 +47,9 @@ class MenusMixin:
         self._pause_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+P"))
         self._cancel_action = video_menu.addAction(i18n.tr('Cancel current operation'), self._cancel_active_task)
         self._cancel_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+X"))
+        self._cancel_waiting_action = video_menu.addAction(
+            i18n.tr('Cancel selected queued pipeline'), self._cancel_selected_pipeline,
+        )
         self._remove_action = video_menu.addAction(i18n.tr('Remove download and yields…'), self._remove_selected)
         self._remove_action.setShortcut(QtGui.QKeySequence("Shift+Delete"))
         self._remove_action.setIconText(i18n.tr('Remove…'))

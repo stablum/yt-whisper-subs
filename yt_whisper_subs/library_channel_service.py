@@ -41,8 +41,11 @@ class ChannelServiceMixin:
         policy = self._channel_policy()
         snapshot = self._feed.channel(channel.url, policy, known_ids)
         snapshot = self._apply_sidecars(snapshot, sidecars, policy.published_after)
-        result = self.db.store_snapshot(channel.channel_id, snapshot)
-        new_ids = [video_id for video_id in result.new_ids if sidecars.get(video_id) is None]
+        archived = frozenset(
+            meta.identity.video_id for meta in snapshot.videos if sidecars.get(meta.identity.video_id) is not None
+        )
+        result = self.db.store_snapshot(channel.channel_id, snapshot, archived=archived)
+        new_ids = [video_id for video_id in result.new_ids if video_id not in archived]
         if not initial_check and discovered:
             new_set = set(new_ids)
             videos = [
@@ -61,21 +64,7 @@ class ChannelServiceMixin:
             f"{snapshot.title}: {len(snapshot.videos)} retained, "
             f"{len(new_ids)} new{pruned if result.pruned else ''}"
         )
-        if initial_check or not channel.auto_download:
-            return []
-        statuses = result.statuses
-        pending_new = {video_id for video_id in new_ids if statuses[video_id] in types.LIVE_BLOCKED}
-        if pending_new:
-            self.db.set_auto_pending(pending_new, True)
-        ready_new = [video_id for video_id in new_ids if video_id not in pending_new]
-        pending_ids = self.db.auto_pending_ids(channel.channel_id)
-        ready_pending = [
-            meta.identity.video_id
-            for meta in snapshot.videos
-            if meta.identity.video_id in pending_ids
-            and statuses[meta.identity.video_id] not in types.LIVE_BLOCKED
-        ]
-        return [*ready_new, *ready_pending]
+        return result.queued
 
     @staticmethod
     def _apply_sidecars(

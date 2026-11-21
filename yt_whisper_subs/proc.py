@@ -164,24 +164,42 @@ def request_process_tree_termination(process: subprocess.Popen[str], *, wait: bo
     if process.poll() is not None:
         return
     if os.name == "nt":
-        killer = subprocess.Popen(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            **child_process_kwargs(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
         if wait:
-            try:
-                killer.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                _terminate_process(killer)
+            _kill_windows_tree(process)
         else:
-            threading.Thread(target=killer.wait, daemon=True, name="yt-whisper-subs-process-stop").start()
+            threading.Thread(
+                target=_kill_windows_tree, args=(process,), daemon=True, name="yt-whisper-subs-process-stop",
+            ).start()
         return
     try:
         os.killpg(os.getpgid(process.pid), signal.SIGTERM)
     except ProcessLookupError:
         return
+
+
+def _kill_windows_tree(process: subprocess.Popen[str]) -> None:
+    """Stop owned descendants and their parent without relying on taskkill credentials."""
+
+    if process.poll() is not None:
+        return
+    try:
+        try:
+            psutil = _load_psutil()
+        except RuntimeError:
+            return  # The unmanaged bootstrap can only stop its direct child.
+        ignored = (psutil.NoSuchProcess, psutil.AccessDenied)
+        with contextlib.suppress(*ignored):
+            root = psutil.Process(process.pid)
+            # Freeze the launcher while identifying and stopping its child tools.
+            with contextlib.suppress(*ignored):
+                root.suspend()
+            for child in reversed(root.children(recursive=True)):
+                with contextlib.suppress(*ignored):
+                    child.kill()
+    finally:
+        # Popen keeps a handle to the original process, even if its PID is reused.
+        with contextlib.suppress(OSError):
+            process.kill()
 
 
 class ProcessTreeControl:

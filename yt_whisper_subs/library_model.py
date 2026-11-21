@@ -502,7 +502,10 @@ class VideoTableModel(QtCore.QAbstractTableModel):
                 if update.stage is progress.Stage.LIVE_UNKNOWN:
                     return i18n.tr('Current availability could not be confirmed. Double-click to check again.')
                 overall = progress.overall_fraction(update)
-                return i18n.tr('{label} · overall {overall:.0%}', label=i18n.tr(update.label), overall=overall)
+                text = i18n.tr('{label} · overall {overall:.0%}', label=i18n.tr(update.label), overall=overall)
+                if update.stage is progress.Stage.INTERRUPTED and record.download_error:
+                    text += f"\n{record.download_error}"
+                return text
             if column == WATCHED_COLUMN and (watched := self.watched_at(index.row())):
                 return watched.tooltip
             return record.download_error or record.meta.identity.title

@@ -80,13 +80,13 @@ class BackgroundTask(QtCore.QRunnable):
 
         return self._control.resume()
 
-    def cancel(self) -> bool:
+    def cancel(self, *, preserve_work: bool = False) -> bool:
         """Request a cooperative stop without terminating the Qt thread.
 
         Example: active child tools stop while the reusable worker pool survives.
         """
 
-        return self._control.cancel()
+        return self._control.cancel(preserve_work=preserve_work)
 
     @QtCore.Slot()
     def run(self) -> None:

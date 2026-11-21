@@ -10,6 +10,7 @@ from collections.abc import Callable
 from PySide6 import QtCore
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_types as types
 from yt_whisper_subs import openai_chapters
 
 
@@ -28,22 +29,7 @@ class ChapterActionsMixin:
         record = self._selected_record()
         if not record or not record.downloaded:
             return
-        video_id = record.meta.identity.video_id
-
-        def generate(report: Callable[[str], None]) -> object:
-            """Bind the selected ID into the worker-safe service call.
-
-            Example: `generate(report)` runs outside the GUI thread.
-            """
-
-            return self._service.generate_chapters(video_id, report)
-
-        self._queue_video_task(
-            video_id,
-            i18n.tr('Creating bilingual chapters…'),
-            generate,
-            lambda _: self.refresh(),
-        )
+        self._queue_video_task(record.meta.identity.video_id, types.PipelineKind.CHAPTERS)
 
     def _play_selected(self) -> None:
         """Open the selected download through chapter-aware shared playback.

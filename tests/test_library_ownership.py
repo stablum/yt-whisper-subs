@@ -60,7 +60,7 @@ class LibraryOwnershipTests(unittest.TestCase):
                     channel = db.add_channel("https://www.youtube.com/@example/videos", "Example", True)
                     db.upsert_video(fixtures.make_meta(self.video_id, "Working", 100), channel.channel_id)
                     db.upsert_video(fixtures.make_meta("bbbbbbbbbbb", "Untouched", 100), channel.channel_id)
-                    db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+                    fixtures.claim_download(db, self.video_id)
                     with db._connect() as conn:
                         conn.execute("UPDATE pipeline_jobs SET state=?", (state.value,))
                     if mode == "cutoff":
@@ -80,13 +80,26 @@ class LibraryOwnershipTests(unittest.TestCase):
         Example: paused work belongs to the same live owner as running work.
         """
 
-        self.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.db, self.video_id)
         second = library_db.LibraryDb(self.db.path)
         for paused in (False, True):
             self.db.set_pipeline_job_paused(self.video_id, paused)
             self.assertEqual(second.recover_pipeline_jobs(), [])
             expected = types.PipelineJobState.PAUSED if paused else types.PipelineJobState.RUNNING
             self.assertEqual(self.db.pipeline_job(self.video_id).state, expected)
+
+    def test_old_dispatch_cannot_claim_a_replacement_request(self) -> None:
+        """Keep a withdrawn worker from claiming the next request for the same video."""
+
+        with mock.patch.object(library_job_db.time, "time_ns", side_effect=(1, 2)):
+            self.db.queue_pipeline_jobs((self.video_id,), types.PipelineKind.DOWNLOAD)
+            cancelled = self.db.pipeline_job(self.video_id)
+            self.assertTrue(self.db.cancel_waiting_pipeline(self.video_id))
+            self.db.queue_pipeline_jobs((self.video_id,), types.PipelineKind.DOWNLOAD)
+        replacement = self.db.pipeline_job(self.video_id)
+        self.assertIsNone(self.db.claim_pipeline_job(cancelled))
+        self.assertIsNotNone(self.db.claim_pipeline_job(replacement))
+        self.assertIsNone(self.db.claim_pipeline_job(replacement))
 
     def test_dead_owner_recovers_with_progress_and_retention_protection(self) -> None:
         """Restore only genuinely abandoned execution while retaining its checkpoint.
@@ -95,7 +108,7 @@ class LibraryOwnershipTests(unittest.TestCase):
         """
 
         child = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True, text=True, check=True)
-        self.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.db, self.video_id)
         update = progress.make(self.video_id, progress.Stage.TRANSCRIBING, 0.5)
         self.db.update_pipeline_job(update)
         with self.db._connect() as conn:
@@ -113,7 +126,7 @@ class LibraryOwnershipTests(unittest.TestCase):
         Example: an unrelated newer process with the same PID cannot block recovery.
         """
 
-        self.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.db, self.video_id)
         with self.db._connect() as conn:
             conn.execute("UPDATE pipeline_jobs SET owner_started_at=owner_started_at-1")
         self.assertEqual(self.db.recover_pipeline_jobs()[0].state, types.PipelineJobState.INTERRUPTED)
@@ -124,7 +137,7 @@ class LibraryOwnershipTests(unittest.TestCase):
         Example: permission denial is not treated as a crashed process.
         """
 
-        self.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.db, self.video_id)
         with mock.patch.object(library_job_db.psutil, "Process", side_effect=library_job_db.psutil.AccessDenied(os.getpid())):
             self.assertEqual(self.db.recover_pipeline_jobs(), [])
 
@@ -134,7 +147,7 @@ class LibraryOwnershipTests(unittest.TestCase):
         Example: pre-change checkpoints remain present and acquire nullable owners.
         """
 
-        self.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(self.db, self.video_id)
         with self.db._connect() as conn:
             conn.execute("ALTER TABLE pipeline_jobs DROP COLUMN owner_pid")
             conn.execute("ALTER TABLE pipeline_jobs DROP COLUMN owner_started_at")
@@ -204,7 +217,7 @@ class LibraryOwnershipTests(unittest.TestCase):
 
         service = library_service.LibraryService(self.root, {"python": Path(sys.executable)},
             feed=fixtures.FakeFeed([]), downloader=fixtures.FakeDownloader(self.root))
-        service.db.begin_pipeline_job(self.video_id, types.PipelineKind.DOWNLOAD)
+        fixtures.claim_download(service.db, self.video_id)
         with service.db._connect() as conn:
             conn.execute("UPDATE pipeline_jobs SET owner_started_at=0")
         with output_lock.OutputLock(self.root, "pipeline"):
