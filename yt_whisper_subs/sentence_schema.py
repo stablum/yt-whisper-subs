@@ -120,39 +120,3 @@ CREATE TABLE IF NOT EXISTS sentence_question_states (
 );
 CREATE INDEX IF NOT EXISTS idx_sentence_due ON sentence_question_states(due_at);
 """
-
-
-def upgrade(conn) -> None:
-    """Widen the three skill constraints atomically, preserving IDs and references; e.g. existing queued translations survive the listening upgrade."""
-
-    tables = []
-    for name in ("sentence_questions", "sentence_sessions", "sentence_states"):
-        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
-        if row and "'listen_nl'" not in row[0]:
-            tables.append((name, row[0]))
-    if not tables:
-        return
-    conn.commit()
-    conn.execute("PRAGMA foreign_keys=OFF")
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        for name, sql in tables:
-            indices = [row[0] for row in conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (name,))]
-            widened = sql.replace("'nl_en','en_nl'", "'nl_en','en_nl','listen_nl'")
-            if widened == sql:
-                raise RuntimeError(f"Unknown sentence skill constraint in {name}")
-            # Create-copy-drop-rename keeps every child FK pointed at the original table name.
-            conn.execute(widened.replace(name, name + "_upgrade", 1))
-            conn.execute(f"INSERT INTO {name}_upgrade SELECT * FROM {name}")
-            conn.execute(f"DROP TABLE {name}")
-            conn.execute(f"ALTER TABLE {name}_upgrade RENAME TO {name}")
-            for index in indices:
-                conn.execute(index)
-        if conn.execute("PRAGMA foreign_key_check").fetchone():
-            raise RuntimeError("Sentence skill migration would break catalog references")
-        conn.commit()
-    except BaseException:
-        conn.rollback()
-        raise
-    finally:
-        conn.execute("PRAGMA foreign_keys=ON")

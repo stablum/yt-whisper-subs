@@ -323,8 +323,13 @@ class WordQuiz(QtWidgets.QWidget):
         self._bar.setRange(0, summary["planned"])
         self._bar.setValue(row["ordinal"] - 1)
         self._bar.show()
-        self._prompt.setText(row["content"]["prompt"])
-        self._context.present(row)
+        listening = self._direction == practice.Direction.SOUND
+        if listening:
+            self._prompt.setText(i18n.tr('Which word did you hear?'))
+            self._context.clear()
+        else:
+            self._prompt.setText(row["content"]["prompt"])
+            self._context.present(row)
         self._result.clear()
         self._result.setStyleSheet("")
         self._details.setChecked(False)
@@ -333,6 +338,7 @@ class WordQuiz(QtWidgets.QWidget):
         self._unsure.setChecked(False)
         self._unsure.show()
         self._answers.present(row["choices"], guard=guard)
+        self._answers.setEnabled(not listening)
         self._controls.setEnabled(True)
         self._controls.set_active(True)
         self._next.setText(i18n.tr('Choose an answer'))
@@ -344,8 +350,14 @@ class WordQuiz(QtWidgets.QWidget):
         self._flag.show()
         self._hint.setText(i18n.tr('1 / 2 / 3 to answer · Close anytime to pause'))
         self._started = time.monotonic()
-        text = row["content"]["surface"] if self._direction == practice.Direction.NL_EN else ''
+        text = row["content"]["surface"] if self._direction != practice.Direction.EN_NL else ''
         self.speech_changed.emit(row["id"], text)
+
+    def heard(self, ident: int) -> None:
+        """Enable choices only once the audible prompt for this presentation starts."""
+
+        if self._current and self._current["id"] == ident and self._current["outcome"] is None:
+            self._answers.setEnabled(True)
 
     def _answer(self, idx: int) -> None:
         """Save the first click and use later clicks to continue; e.g. feedback clicks cannot record another answer."""
@@ -370,7 +382,8 @@ class WordQuiz(QtWidgets.QWidget):
         self._unsure.hide()
         verdict = i18n.tr('Correct') if row["outcome"] == "correct" else i18n.tr('Not quite')
         answer = row["content"]["answer"]
-        self._result.setText(f"{verdict} · {answer}")
+        gloss = f" — {row['content']['meaning']}" if self._direction == practice.Direction.SOUND else ""
+        self._result.setText(f"{verdict} · {answer}{gloss}")
         self._result.setStyleSheet("color: #9ae7b4;" if row["outcome"] == "correct" else "color: #ffd166;")
         explanation = row["content"]["explanation"]
         if row["outcome"] == "wrong":

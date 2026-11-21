@@ -16,7 +16,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS practice_questions (
     id INTEGER PRIMARY KEY,
     lookup_id INTEGER NOT NULL REFERENCES vocab_lookups(id),
-    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl')),
+    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl','sound_nl')),
     body_json TEXT NOT NULL,
     validation_json TEXT NOT NULL,
     model TEXT NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS practice_questions (
 CREATE INDEX IF NOT EXISTS idx_practice_questions ON practice_questions(lookup_id,direction,flagged_at);
 CREATE TABLE IF NOT EXISTS practice_sessions (
     id TEXT PRIMARY KEY,
-    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl')),
+    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl','sound_nl')),
     requested_count INTEGER NOT NULL CHECK(requested_count BETWEEN 1 AND 50),
     include_early INTEGER NOT NULL CHECK(include_early IN (0,1)),
     created_at REAL NOT NULL,
@@ -63,7 +63,7 @@ CREATE INDEX IF NOT EXISTS idx_practice_answers ON practice_presentations(answer
     WHERE answered_at IS NOT NULL AND selected_idx IS NOT NULL;
 CREATE TABLE IF NOT EXISTS practice_states (
     word_id INTEGER NOT NULL REFERENCES vocab_words(id),
-    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl')),
+    direction TEXT NOT NULL CHECK(direction IN ('nl_en','en_nl','sound_nl')),
     card_json TEXT NOT NULL,
     due_at REAL NOT NULL,
     PRIMARY KEY(word_id,direction)
@@ -254,7 +254,7 @@ class PracticeDbMixin:
             state = conn.execute("SELECT card_json FROM practice_states WHERE word_id=? AND direction=?",
                                  (row["word_id"], row["direction"])).fetchone()
             correct = choice == row["correct_idx"]
-            card_id = row["word_id"] * 2 + (row["direction"] == "en_nl")
+            card_id = practice.ReviewPolicy.word_card_id(row["word_id"], row["direction"])
             card_json = state[0] if state else practice.ReviewPolicy.new_card(card_id, now)
             result = practice.ReviewPolicy(row["scheduler_json"]).answer(
                 card_json, correct=correct, unsure=bool(unsure), now=now, elapsed_ms=elapsed_ms)

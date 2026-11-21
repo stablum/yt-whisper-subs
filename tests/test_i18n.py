@@ -134,7 +134,7 @@ class WidgetTests(unittest.TestCase):
                 caption = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save).text().replace("&", "")
                 self.assertEqual(caption, save)
                 dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=engine)
-                self.assertEqual(dialog._tabs.tabText(6).splitlines()[0], comprehension_label)
+                self.assertEqual(dialog._tabs.tabText(library_practice.Page.READ_COMPREHENSION).splitlines()[0], comprehension_label)
                 self.assertEqual(comprehension.Direction.READ.value, "read")
                 self.assertEqual(practice_tracks.Track.READ_COMPREHENSION.settings_key, "comprehension:read_options")
                 genre = dialog._comprehension[comprehension.Direction.READ]._view.options._genre

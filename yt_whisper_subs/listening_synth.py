@@ -15,14 +15,19 @@ from piper import voice
 from yt_whisper_subs import listening_tts
 
 
+def phoneme_data() -> Path:
+    """Resolve the actual eSpeak data used by isolated Dutch speech and pronunciation checks."""
+
+    # Windows eSpeak's C stat() can see uv's file symlinks as zero bytes. Resolving
+    # the directory alone does not help: uv links each data file individually.
+    return (phonemize_espeak.ESPEAK_DATA_DIR / "phondata").resolve(strict=True).parent
+
+
 def main(manifest: str) -> None:
     """Consume a local manifest, publishing valid WAVs atomically; e.g. a failed native decode leaves earlier complete speech reusable."""
 
     document = json.loads(Path(manifest).read_text(encoding="utf-8"))
-    # Windows eSpeak's C stat() can see uv's file symlinks as zero bytes. Resolving
-    # the directory alone does not help: uv links each data file individually.
-    data_dir = (phonemize_espeak.ESPEAK_DATA_DIR / "phondata").resolve(strict=True).parent
-    speaker = voice.PiperVoice.load(document["model"], use_cuda=False, espeak_data_dir=data_dir)
+    speaker = voice.PiperVoice.load(document["model"], use_cuda=False, espeak_data_dir=phoneme_data())
     for idx, job in enumerate(document["jobs"], 1):
         print(f"Preparing Dutch speech {idx}/{len(document['jobs'])}", flush=True)
         for speed, value in job["paths"].items():

@@ -223,7 +223,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
-| Ready practice rounds | eight independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
+| Ready practice rounds | nine independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Practice voice | one saved preset for dictation, listening comprehension, and read-aloud; **Voice** and **Configure voices…** in the Practice header; local Piper 1.7.0 by default and optional ZONOS3-Mini |
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
@@ -2354,8 +2354,8 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-The library keeps ready content for **eight top-level practice destinations**:
-Word quiz · Dutch → English, Word quiz · English → Dutch, Verbs · Dutch
+The library keeps ready content for **nine top-level practice destinations**:
+Word quiz · Dutch → English, Word quiz · English → Dutch, Sound alike, Verbs · Dutch
 transformations, Sentences · English → Dutch, Sentences · Dutch → English,
 Listening · Dutch dictation, **Leesbegrip** and **Luisterbegrip**.
 Each has its own round options, preparation ownership and resumable session.
@@ -2574,14 +2574,16 @@ the order shown in Practice:
 
 1. Word quiz, Dutch → English
 2. Word quiz, English → Dutch
-3. Verb transformations
-4. Sentence translation, English → Dutch
+3. Sound alike (listen and choose)
+4. Verb transformations
 5. Sentence translation, Dutch → English
-6. Dutch dictation
-7. Reading comprehension
-8. Listening comprehension
+6. Sentence translation, English → Dutch
+7. Dutch dictation
+8. Reading comprehension
+9. Listening comprehension
 
-Each mode uses its own settings and resumes an open round or takes a prepared
+An existing full-practice run finishes in the order it started. Each new run
+uses the order above. Each mode uses its own settings and resumes an open round or takes a prepared
 round when available. Continue past the final feedback to move on. Modes with
 queued corrections give you time to review them before the handoff. If a mode
 has nothing due, is waiting on preparation or simply needs a break, **Skip mode**
@@ -2619,12 +2621,27 @@ available once the recording is ready. Turning autoplay off lets you practise
 with text while audio prepares in the background. The same preset also
 supplies dictation and listening comprehension.
 
+### Sound alike
+
+Under **Words → Sound alike**, listen to a word from your saved vocabulary and
+choose among three Dutch words. For example, you might hear *kaart* and choose
+from *kaars*, *vaart* and *kaart*. **Replay word** repeats it in your selected
+practice voice. Once you answer, the correct Dutch word and its saved English
+meaning appear together. The round uses the word quiz’s length and early-review
+controls, with its own saved settings. Its listening results have their own
+review dates and accuracy series. They count toward daily listening activity.
+
+The practice model proposes two real, similar-sounding words and independently
+reviews the three choices. A local Dutch pronunciation check rejects identical
+pronunciations and choices too far apart in sound. Background preparation
+caches approved choices and the selected voice’s target recordings.
+
 ### Adaptive Vocabulary Practice
 
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
-both Sentences directions, Listening, Leesbegrip and Luisterbegrip as **eight top-level Practice buttons**, with
+Sound alike, both Sentences directions, Listening, Leesbegrip and Luisterbegrip as **nine top-level Practice buttons**, with
 **Tracking** (Progress, Activity) separated by a labelled group and divider.
 Each page remains one click away; existing menu/tray shortcuts and native page
 navigation select the same grouped controls.

@@ -18,23 +18,28 @@ from yt_whisper_subs import practice
 from yt_whisper_subs import practice_generate
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import word_select
+from yt_whisper_subs import pronunciation
+from yt_whisper_subs import sound_pairs
 
 
 class PracticeService:
     """Select due vocabulary and assemble independently checked three-choice questions."""
 
-    def __init__(self, db, generator: practice_generate.Generator | None = None) -> None:
+    def __init__(self, db, generator: practice_generate.Generator | None = None, *, audio=None) -> None:
         """Allow a deterministic provider in tests; e.g. exercise the entire round without network."""
 
         self._db = db
         self._provider = generator or practice_generate.QuestionGenerator()
+        self.audio = audio or pronunciation.Audio(db)
 
-    @practice_ready.serialized("practice", practice_generate.PROMPT_VERSION)
+    @practice_ready.serialized("practice", practice_generate.PROMPT_VERSION, materialize="prepare_media")
     def start(self, opts: practice.RoundOptions, report: Callable[[str], None], *, cached_first: bool = False, background: bool = False) -> str:
         """Generate bounded batches before committing a round; e.g. cancel safely while preparing choices."""
 
         policy = practice.ReviewPolicy()
         candidates = self._db.word_candidates(opts.direction.value)
+        if opts.direction == practice.Direction.SOUND:
+            candidates = [row for row in candidates if sound_pairs.WORD.fullmatch(row["surface"])]
         if background:
             candidates = self._db.practice_spare_candidates("practice", opts, candidates)
         if not candidates:
@@ -59,10 +64,17 @@ class PracticeService:
             random.shuffle(choices)
             correct_idx = next(idx for idx, choice in enumerate(choices) if choice["kind"] == "correct")
             questions.append({"id": question["id"], "choices": choices, "correct_idx": correct_idx})
+        self.prepare_media(opts, checked, report)
         report(i18n.tr('Ready · {len} distinct terms', len=len(questions)))
         if background:
             return self._db.practice_stage("practice", opts, questions)
         return self._db.practice_create(opts.model_dump(mode="json"), questions, policy.document())
+
+    def prepare_media(self, opts, questions: list[dict], report) -> None:
+        """Publish listening rounds only after the selected voice has recorded each target."""
+
+        if opts.direction == practice.Direction.SOUND:
+            self.audio.prepare([json.loads(row["body_json"])["surface"] for row in questions], report)
 
     @staticmethod
     def _choices(question: dict) -> list[dict]:
@@ -149,6 +161,8 @@ class PracticeService:
         ctx = json.loads(row["context_json"])
         reverse = direction == practice.Direction.EN_NL
         prompt, answer = (row["meaning"], row["surface"]) if reverse else (row["surface"], row["meaning"])
+        if direction == practice.Direction.SOUND:
+            prompt, answer = "", row["surface"]
         draft.check(answer)
         sentence = ctx["sentence"]
         if reverse:

@@ -51,14 +51,15 @@ class Page(enum.IntEnum):
 
     WORD_NL_EN = 0
     WORD_EN_NL = 1
-    VERBS = 2
-    SENTENCE_EN_NL = 3
+    SOUND = 2
+    VERBS = 3
     SENTENCE_NL_EN = 4
-    LISTENING = 5
-    READ_COMPREHENSION = 6
-    LISTEN_COMPREHENSION = 7
-    PROGRESS = 8
-    ACTIVITY = 9
+    SENTENCE_EN_NL = 5
+    LISTENING = 6
+    READ_COMPREHENSION = 7
+    LISTEN_COMPREHENSION = 8
+    PROGRESS = 9
+    ACTIVITY = 10
 
     @classmethod
     def for_track(cls, track: practice_tracks.Track) -> Page:
@@ -83,11 +84,13 @@ class PracticeDialog(QtWidgets.QDialog):
         self.resize(1160, 900)
         self._db = service.db
         self._quizzes = {direction: library_word_quiz.WordQuiz(self._db, direction, engine=engine) for direction in practice.Direction}
-        self._sentences = {direction: library_sentences.SentencePanel(self._db, direction=direction) for direction in practice.Direction}
+        self._sentences = {direction: library_sentences.SentencePanel(self._db, direction=direction)
+                           for direction in (practice.Direction.NL_EN, practice.Direction.EN_NL)}
         self._verbs = library_verbs.VerbPanel(self._db)
         self._listening = library_sentences.SentencePanel(self._db, direction=sentence_practice.Direction.LISTEN)
         self._comprehension = {direction: library_comprehension.Panel(self._db, direction) for direction in comprehension.Direction}
         self._panels = {Page.WORD_NL_EN: self._quizzes[practice.Direction.NL_EN],
+                        Page.SOUND: self._quizzes[practice.Direction.SOUND],
                         Page.WORD_EN_NL: self._quizzes[practice.Direction.EN_NL], Page.VERBS: self._verbs,
                         Page.SENTENCE_EN_NL: self._sentences[practice.Direction.EN_NL],
                         Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN], Page.LISTENING: self._listening,
@@ -95,6 +98,7 @@ class PracticeDialog(QtWidgets.QDialog):
                         Page.LISTEN_COMPREHENSION: self._comprehension[comprehension.Direction.LISTEN]}
         self._tabs = QtWidgets.QTabWidget()
         self._pronunciation = library_pronunciation.Controls(self._db)
+        self._pronunciation.playback_started.connect(self._heard)
         self._pronunciation.round_opened.connect(self.audio_preparation_requested)
         self._voice_bar = library_practice_voices.VoiceBar(self._db)
         self._listeners = (self._listening._view.card,
@@ -116,9 +120,13 @@ class PracticeDialog(QtWidgets.QDialog):
                 panel.speech_changed.connect(partial(self._offer_pronunciation, page))
             self._tabs.addTab(panel, track.label)
         self._arrange_tracking()
+        short_labels = {Page.for_track(track): track.button_label for track in practice_tracks.Track}
         self._nav = library_practice_nav.PracticeNav(self._tabs, (
-            (i18n.tr('Practice'), tuple(self._panels)), (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
-        ))
+            (i18n.tr('Words'), (Page.WORD_NL_EN, Page.WORD_EN_NL, Page.SOUND)),
+            (i18n.tr('Sentences'), (Page.VERBS, Page.SENTENCE_NL_EN, Page.SENTENCE_EN_NL, Page.LISTENING)),
+            (i18n.tr('Passages'), (Page.READ_COMPREHENSION, Page.LISTEN_COMPREHENSION)),
+            (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
+        ), short_labels)
         self._tabs.currentChanged.connect(self._tab_changed)
         title = QtWidgets.QLabel(i18n.tr('Practice'))
         title.setObjectName("practiceTitle")
@@ -165,6 +173,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Activate only the selected destination; e.g. opening a reverse quiz cannot expose its sibling's next question."""
 
         self._pronunciation.stop()
+        self._pronunciation.listening_question(idx == Page.SOUND)
         self._voice_bar.setVisible(idx in self._panels)
         self._pronunciation.setVisible(idx in self._spoken)
         ident, text = self._spoken.get(idx, (0, ''))
@@ -198,6 +207,13 @@ class PracticeDialog(QtWidgets.QDialog):
         self._spoken[page] = ident, text
         if self._tabs.currentIndex() == page:
             self._pronunciation.prompt((page, ident), text)
+
+    def _heard(self, cue: tuple) -> None:
+        """Unlock only the audible question whose recording started, including after a replay."""
+
+        page, ident = cue
+        if page == Page.SOUND and self._tabs.currentIndex() == page:
+            self._panels[page].heard(ident)
 
     def _stop_audio(self) -> None:
         """Silence every player before opening a voice preview or minimizing Practice."""

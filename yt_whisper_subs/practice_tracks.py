@@ -16,9 +16,10 @@ class Track(str, enum.Enum):
 
     WORD_NL_EN = "practice:nl_en"
     WORD_EN_NL = "practice:en_nl"
+    SOUND = "practice:sound_nl"
     VERBS = "verb"
-    SENTENCE_EN_NL = "sentence:en_nl"
     SENTENCE_NL_EN = "sentence:nl_en"
+    SENTENCE_EN_NL = "sentence:en_nl"
     LISTENING = "sentence:listen_nl"
     READ_COMPREHENSION = "comprehension:read"
     LISTEN_COMPREHENSION = "comprehension:listen"
@@ -41,12 +42,24 @@ class Track(str, enum.Enum):
     def label(self) -> str:
         """Use compact two-line top-level labels; e.g. both sentence directions remain one click away."""
 
+        if self == self.SOUND:
+            return i18n.tr('Sound alike\nListen and choose')
         if self == self.LISTENING:
             return i18n.tr('Listening\nDutch dictation')
         if self.kind == 'comprehension':
             return self.direction.label + '\n' + i18n.tr('Text and questions')
         title = {"practice": i18n.tr('Word quiz'), "sentence": i18n.tr('Sentences'), "verb": i18n.tr('Verbs')}[self.kind]
         return f"{title}\n{self.direction.label}" if self.direction else i18n.tr('Verbs\nDutch transformations')
+
+    @property
+    def button_label(self) -> str:
+        """Use the group heading for context, e.g. a Passages button needs only 'Reading'."""
+
+        if self == self.VERBS:
+            return i18n.tr('Verb transformations')
+        if self.kind == 'comprehension':
+            return i18n.tr('Reading') if self == self.READ_COMPREHENSION else i18n.tr('Listening')
+        return self.direction.label
 
     @property
     def settings_key(self) -> str:

@@ -101,7 +101,7 @@ class WordReviewDbMixin:
         historical = last is not None and datetime.fromisoformat(last).timestamp() > row["answered_at"]
         if not historical and (not correct or state is None or state["due_at"] <= row["answered_at"] or early):
             policy = practice.ReviewPolicy(row["scheduler_json"])
-            card = state["card_json"] if state else policy.new_card(word_id * 2 + (direction == "en_nl"), row["answered_at"])
+            card = state["card_json"] if state else policy.new_card(policy.word_card_id(word_id, direction), row["answered_at"])
             result = policy.answer(card, correct=correct, unsure=False, now=row["answered_at"], elapsed_ms=row["elapsed_ms"])
             self._practice_state(conn, {"word_id": word_id, "direction": direction}, result)
         keys = ("rating", "recall", "due_at", "before_json", "after_json", "log_json")
@@ -150,7 +150,7 @@ class WordReviewDbMixin:
             if row["origin"] != "practice" and row["correct"] and card and due > row["answered_at"] and not row["include_early"]:
                 continue
             policy = practice.ReviewPolicy(row["scheduler_json"])
-            card = card or policy.new_card(word_id * 2 + (direction == "en_nl"), row["answered_at"])
+            card = card or policy.new_card(policy.word_card_id(word_id, direction), row["answered_at"])
             result = policy.answer(card, correct=bool(row["correct"]), unsure=bool(row["unsure"]),
                                    now=row["answered_at"], elapsed_ms=row["elapsed_ms"])
             card, due = result["after_json"], result["due_at"]

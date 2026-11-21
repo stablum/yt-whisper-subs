@@ -12,7 +12,7 @@ from PySide6 import QtWidgets
 class PracticeNav(QtWidgets.QWidget):
     """Expose two clear groups while the native tab widget owns page state; e.g. Ctrl+Tab and direct buttons stay synchronized."""
 
-    def __init__(self, tabs: QtWidgets.QTabWidget, groups: tuple) -> None:
+    def __init__(self, tabs: QtWidgets.QTabWidget, groups: tuple, short_labels: dict) -> None:
         """Build one exclusive set of page buttons; e.g. selecting Tracking cannot leave a Practice button selected too."""
 
         super().__init__()
@@ -23,12 +23,12 @@ class PracticeNav(QtWidgets.QWidget):
         tabs.tabBar().hide()
         row = QtWidgets.QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 4)
-        row.setSpacing(12)
+        row.setSpacing(8)
         for group_idx, (title, indices) in enumerate(groups):
             if group_idx:
                 divider = QtWidgets.QFrame()
                 divider.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-                divider.setStyleSheet("color:#465368;margin:0 10px;")
+                divider.setStyleSheet("color:#465368;margin:0 5px;")
                 row.addWidget(divider)
             group = QtWidgets.QVBoxLayout()
             group.setSpacing(5)
@@ -36,25 +36,25 @@ class PracticeNav(QtWidgets.QWidget):
             label = QtWidgets.QLabel(title.upper())
             label.setStyleSheet("color:#9cacc1;font-size:9pt;font-weight:600;padding-left:3px;")
             group.addWidget(label)
-            buttons = QtWidgets.QGridLayout()
-            buttons.setSpacing(5)
-            columns = 4 if len(indices) > 6 else 3
-            for pos, idx in enumerate(indices):
+            buttons = QtWidgets.QVBoxLayout()
+            buttons.setSpacing(4)
+            for idx in indices:
                 title_text = tabs.tabText(idx)
-                lines = [textwrap.fill(line, width=22, break_long_words=False) for line in title_text.splitlines()]
+                caption = short_labels.get(idx, title_text)
+                lines = [textwrap.fill(line, width=22, break_long_words=False) for line in caption.splitlines()]
                 button = QtWidgets.QPushButton("\n".join(lines))
                 button.setObjectName("practicePageButton")
                 button.setAccessibleName(f"{tabs.tabText(idx)} · {title}")
                 button.setCheckable(True)
                 button.setAutoDefault(False)
-                button.setMinimumHeight(64)
+                button.setMinimumHeight(30)
                 button.setToolTip(title_text)
                 self._buttons.addButton(button, int(idx))
-                buttons.addWidget(button, pos // columns, pos % columns)
+                buttons.addWidget(button)
             group.addLayout(buttons)
             row.addLayout(group)
         row.addStretch()
-        self.setStyleSheet("QPushButton#practicePageButton {padding:6px 15px;border-radius:6px;} "
+        self.setStyleSheet("QPushButton#practicePageButton {padding:3px 8px;border-radius:6px;} "
                           "QPushButton#practicePageButton:checked {background:#284b70;border-color:#649bd0;color:#ffffff;}")
         self._selected(tabs.currentIndex())
 

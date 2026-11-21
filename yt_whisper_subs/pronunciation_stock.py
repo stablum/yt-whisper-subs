@@ -12,6 +12,7 @@ from yt_whisper_subs import pronunciation
 _FIELDS = {
     tracks.Track.WORD_NL_EN: ('surface',),
     tracks.Track.WORD_EN_NL: ('answer',),
+    tracks.Track.SOUND: ('surface',),
     tracks.Track.VERBS: ('source', 'answer'),
     tracks.Track.SENTENCE_EN_NL: ('dutch',),
     tracks.Track.SENTENCE_NL_EN: ('dutch',),

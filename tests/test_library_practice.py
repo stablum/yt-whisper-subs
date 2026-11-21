@@ -31,6 +31,7 @@ from yt_whisper_subs import library_practice_controls
 from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
 from yt_whisper_subs import practice_tracks
@@ -133,13 +134,13 @@ class PracticeDialogTests(unittest.TestCase):
     def test_grouped_navigation_separates_practice_from_tracking_without_extra_steps(self) -> None:
         """Use actual grouped page buttons and native page state; e.g. visiting Progress records no exposure, then one Word quiz click opens a question."""
 
-        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(10)],
-                         ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Verbs\nDutch transformations",
-                          "Sentences\nEnglish → Dutch", "Sentences\nDutch → English", "Listening\nDutch dictation",
+        self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(self.dialog._tabs.count())],
+                         ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Sound alike\nListen and choose",
+                          "Verbs\nDutch transformations", "Sentences\nDutch → English", "Sentences\nEnglish → Dutch", "Listening\nDutch dictation",
                           'Reading comprehension\nText and questions', 'Listening comprehension\nText and questions', "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
-        self.assertEqual(labels, {"PRACTICE", "TRACKING"})
+        self.assertEqual(labels, {"WORDS", "SENTENCES", "PASSAGES", "TRACKING"})
         buttons = self.dialog._nav._buttons
         buttons.button(library_practice.Page.PROGRESS).click()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
@@ -310,6 +311,46 @@ class PracticeDialogTests(unittest.TestCase):
             self.assertEqual(controls._status.text(), '')
             self.assertEqual(len(speech.calls), 1)
 
+    def test_sound_quiz_plays_prepared_target_and_only_grades_listening(self) -> None:
+        """Consume a warmed round, replay it and reveal the gloss without advancing either meaning card."""
+
+        opts = practice.RoundOptions(direction=practice.Direction.SOUND, count=1)
+        speech = listening_fixtures.Speech()
+        controls = self.dialog._pronunciation
+        self.engine.audio = controls._audio = pronunciation.Audio(self.db, speech=speech)
+        self.engine.start(opts, lambda _: None, background=True)
+        self.assertEqual(len(speech.calls), 1)
+        speech.available = self.engine._provider.available = False
+        self.quiz = self.dialog._quizzes[practice.Direction.SOUND]
+        self.quiz._controls.count.setValue(1)
+        with mock.patch.object(controls._player, 'play') as play:
+            self.dialog._nav._buttons.button(library_practice.Page.SOUND).click()
+            self._wait_ready()
+            deadline = time.monotonic() + 5
+            while not play.called and time.monotonic() < deadline:
+                QtTest.QTest.qWait(10)
+            row = self.quiz._current
+            self.assertEqual(speech.calls[0][0], row["content"]["surface"])
+            self.assertTrue(play.called)
+            self.assertFalse(controls._auto.isVisible())
+            self.assertEqual(controls._listen.toolTip(), '')
+            self.assertEqual(self.quiz._context.text(), '')
+            self.assertEqual(self.quiz._result.text(), '')
+            self.assertEqual(self.quiz._prompt.text(), 'Which word did you hear?')
+            self.assertEqual(len({c["text"] for c in row["choices"]}), 3)
+            controls._listen.click()
+            self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(5000))
+            self.app.processEvents()
+            self.assertEqual(play.call_count, 2)
+            self.quiz._answers._buttons[(row["correct_idx"] + 1) % 3].click()
+            self.assertIn(row["content"]["meaning"], self.quiz._result.text())
+        self.assertEqual(practice_activity.read(self.db).week[-1].listening, 1)
+        skill = self.db.word_candidates(opts.direction.value)
+        self.assertEqual(sum(r["failures"] for r in skill), 1)
+        for direction in (practice.Direction.NL_EN, practice.Direction.EN_NL):
+            self.assertTrue(all(r["card_json"] is None for r in self.db.word_candidates(direction.value)))
+        self.assertEqual(len(speech.calls), 1)
+
     def test_full_practice_moves_on_after_feedback_and_resumes_after_close(self) -> None:
         """Use real single-question rounds to exercise the first two modes and a close at the handoff."""
 
@@ -330,15 +371,16 @@ class PracticeDialogTests(unittest.TestCase):
 
         self.dialog = self._dialog()
         self.assertEqual(self.dialog._sequence._start.text(), 'Resume full practice')
-        with mock.patch.object(self.dialog._verbs, 'activate'), mock.patch.object(self.dialog._verbs, 'enter_sequence'):
+        sound = self.dialog._quizzes[practice.Direction.SOUND]
+        with mock.patch.object(sound, 'activate'), mock.patch.object(sound, 'enter_sequence'):
             self.dialog.show_page(sequence=True)
             self.app.processEvents()
-        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.VERBS)
-        self.assertIn('3/8', self.dialog._sequence._status.text())
+        self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.SOUND)
+        self.assertIn('3/9', self.dialog._sequence._status.text())
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 2)
 
     def test_full_practice_survives_navigation_and_visits_every_mode_in_order(self) -> None:
-        """Drive all eight handoffs, including skipping an unavailable mode and pausing to see Activity."""
+        """Drive all nine handoffs, including skipping an unavailable mode and pausing to see Activity."""
 
         tracks = list(practice_tracks.Track)
         bar = self.dialog._sequence
@@ -361,7 +403,7 @@ class PracticeDialogTests(unittest.TestCase):
                     self.dialog._panels[library_practice.Page.for_track(track)].round_reviewed.emit()
             self.app.processEvents()
         self.assertIsNone(bar.current)
-        self.assertIn('7 completed · 1 skipped', bar._status.text())
+        self.assertIn('8 completed · 1 skipped', bar._status.text())
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 0)
 
     def test_closing_during_generation_cancels_without_a_partial_round(self) -> None:
@@ -401,7 +443,7 @@ class PracticeDialogTests(unittest.TestCase):
 
         origin = time.time() - 6 * 86400
         for day in range(6):
-            for direction in practice.Direction:
+            for direction in (practice.Direction.NL_EN, practice.Direction.EN_NL):
                 with mock.patch("yt_whisper_subs.practice_db.time.time", return_value=origin + day * 86400):
                     opts = practice.RoundOptions(direction=direction, count=4, include_early=True)
                     session = self.engine.start(opts, lambda _: None)

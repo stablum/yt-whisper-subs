@@ -95,7 +95,7 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
             "verbs": row["direction"] == "verbs",
             "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en"},
-            "listening": row["direction"] == "sentence_listen_nl",
+            "listening": row["direction"] in {"sentence_listen_nl", "sound_nl"},
             'comprehension_read': row['direction'] == 'comprehension_read',
             'comprehension_listen': row['direction'] == 'comprehension_listen',
             "sentence_nl_en": row["direction"] == "sentence_nl_en", "sentence_en_nl": row["direction"] == "sentence_en_nl",

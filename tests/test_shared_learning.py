@@ -208,7 +208,8 @@ class SharedLearningTests(unittest.TestCase):
         question = self.db.practice_cache({"lookup_id":word["lookup_id"],"direction":"en_nl","body_json":json.dumps(body),
                                           "validation_json":json.dumps({"valid":True}),"model":"test","reasoning":"low","prompt_version":1})
         choices = [{"text":word["surface"],"explanation":"Correct","kind":"correct"},
-                   {"text":"another concept","explanation":"Wrong","kind":"other"}]
+                   {"text":"another concept","explanation":"Wrong","kind":"other"},
+                   {"text":"third concept","explanation":"Wrong","kind":"other"}]
         opts = practice.RoundOptions(direction=practice.Direction.EN_NL,count=1,include_early=True)
         with mock.patch("yt_whisper_subs.practice_db.time.time",return_value=at):
             session = self.db.practice_create(opts.model_dump(mode="json"),[{"id":question["id"],"choices":choices,"correct_idx":0}],policy.document())

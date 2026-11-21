@@ -15,6 +15,7 @@ from unittest import mock
 
 from tests import practice_fixtures
 from yt_whisper_subs import library_db
+from yt_whisper_subs import library_schema
 from yt_whisper_subs import practice
 from yt_whisper_subs import word_select
 from yt_whisper_subs import practice_generate
@@ -42,6 +43,45 @@ class PracticeTests(unittest.TestCase):
 
         opts = practice.RoundOptions(direction=direction, count=count, include_early=True)
         return self.service.start(opts, lambda _: None)
+
+    def test_existing_word_answers_and_guided_position_survive_sound_upgrade(self) -> None:
+        """Upgrade a populated two-direction catalog while a full practice run is paused on verbs."""
+
+        old = library_db.LibraryDb(self.db.path.with_name("old.sqlite3"))
+        schema = library_schema._SCHEMA.replace("'nl_en','en_nl','sound_nl'", "'nl_en','en_nl'")
+        with mock.patch.object(library_schema, "_SCHEMA", schema):
+            old.initialize()
+        practice_fixtures.seed(old)
+        opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=1)
+        session = practice_service.PracticeService(old, self.generator).start(opts, lambda _: None)
+        row = old.practice_current(session)
+        old.practice_answer(row["id"], row["correct_idx"], False, 1200)
+        old.set_setting("practice_sequence", json.dumps({"completed": 2, "round_id": "paused-verbs"}))
+        old.initialize()
+        old.initialize()
+        self.assertEqual(old.practice_summary(session)["correct"], 1)
+        cursor = json.loads(old.setting("practice_sequence", ""))
+        self.assertEqual(cursor["order"][cursor["completed"]], "verb")
+        with old._connect() as conn:
+            self.assertFalse(conn.execute("PRAGMA foreign_key_check").fetchall())
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM practice_states").fetchone()[0], 1)
+
+    @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
+    def test_sound_choices_check_real_dutch_pronunciations(self, request) -> None:
+        """A model approval cannot admit raad/raat or an unrelated sound while kaart/kaars/kaas survives."""
+
+        examples = [("kaart", "kaars", "kaas"), ("raad", "raat", "raam"), ("kaart", "kaars", "winkel")]
+        rows, drafts, verdicts = [], [], []
+        for key, (target, first, second) in enumerate(examples, 1):
+            rows.append(dict(lookup_id=key, surface=target, meaning="fixture", context_json="{}", note=""))
+            drafts.append(dict(lookup_id=key, explanation="Listen for the final consonant.",
+                               distractors=[dict(text=w, kind="other", explanation="Compare the sounds.") for w in (first, second)]))
+            verdicts.append(dict(lookup_id=key, valid=True, reason="Approved by fixture"))
+        request.side_effect = [{"output_text": json.dumps({"questions": drafts})},
+                               {"output_text": json.dumps({"verdicts": verdicts[:1]})}]
+        result = practice_generate.QuestionGenerator().generate(rows, practice.Direction.SOUND)
+        self.assertEqual([r["verdict"]["valid"] for r in result], [True, False, False])
+        self.assertEqual(request.call_count, 2)
 
     def test_only_displayed_questions_count_and_resume_is_idempotent(self) -> None:
         """Planning is not exposure; e.g. a crash before opening a question cannot increase its shown count."""

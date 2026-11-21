@@ -20,11 +20,14 @@ class Direction(enum.StrEnum):
 
     NL_EN = "nl_en"
     EN_NL = "en_nl"
+    SOUND = "sound_nl"
 
     @property
     def label(self) -> str:
         """Name the round without exposing storage codes; e.g. Dutch → English."""
 
+        if self == self.SOUND:
+            return i18n.tr('Sound alike')
         return i18n.tr('Dutch → English') if self == self.NL_EN else i18n.tr('English → Dutch')
 
 
@@ -118,6 +121,12 @@ class ReviewPolicy:
         """Serialize model parameters and learning steps; e.g. keep a round auditable."""
 
         return self._scheduler.to_json()
+
+    @staticmethod
+    def word_card_id(word_id: int, direction: str) -> int:
+        """Give sound recognition its own word card while preserving existing translation IDs."""
+
+        return -word_id if direction == Direction.SOUND else word_id * 2 + (direction == Direction.EN_NL)
 
     @staticmethod
     def new_card(card_id: int, now: float) -> str:

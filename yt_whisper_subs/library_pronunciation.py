@@ -95,6 +95,7 @@ class Controls(QtWidgets.QWidget):
     """Share one player across the visible modes, e.g. leaving a tab cancels its optional speech."""
 
     round_opened = QtCore.Signal()
+    playback_started = QtCore.Signal(object)
 
     def __init__(self, db, *, audio=None, player=None) -> None:
         """Restore the saved autoplay preference and leave manual replay available."""
@@ -107,6 +108,8 @@ class Controls(QtWidgets.QWidget):
         self._player.finished.connect(self._next)
         self._prompt = None
         self._reading = None
+        self._required = False
+        self._repair_on_replay = False
         self._task = None
         self._clips = deque()
         self._wake = QtCore.QTimer(self)
@@ -143,11 +146,25 @@ class Controls(QtWidgets.QWidget):
         if self._prompt == cue:
             return
         self.stop()
+        self._repair_on_replay = False
         self._prompt = cue
         self._listen.setEnabled(cue is not None)
-        self._listen.setToolTip(text)
-        if cue and self.isVisible() and self._auto.isChecked():
+        self._listen.setToolTip('' if self._required else text)
+        if cue and self.isVisible() and self._autoplay:
             self._wake.start(0)
+
+    def listening_question(self, required: bool) -> None:
+        """Conceal the spoken target and enable replay when listening is the question."""
+
+        self._required = required
+        self._auto.setVisible(not required)
+        self._listen.setText(i18n.tr('Replay word') if required else i18n.tr('Read aloud'))
+
+    @property
+    def _autoplay(self) -> bool:
+        """Always play an auditory prompt while respecting optional speech elsewhere."""
+
+        return self._required or self._auto.isChecked()
 
     def _toggle(self, enabled: bool) -> None:
         """Apply one durable preference across all pronunciation-enabled modes."""
@@ -172,7 +189,7 @@ class Controls(QtWidgets.QWidget):
         """With autoplay on, require both prompt and answer audio before a question appears."""
 
         self.bind_round(track, session)
-        return not self._auto.isChecked() or self._round.ensure(resume)
+        return not self._autoplay or self._round.ensure(resume)
 
     def _round_finished(self, message: str) -> None:
         """Play a queued request from cache once the selected round has prepared."""
@@ -189,6 +206,10 @@ class Controls(QtWidgets.QWidget):
         """Replay the current visible prompt or correction without changing practice progress."""
 
         if self._prompt:
+            if self._required and self._repair_on_replay:
+                self._repair_on_replay = False
+                self._round.invalidate()
+                self._round.ensure()
             self.read([self._prompt[1]])
 
     def voice_changed(self) -> None:
@@ -197,11 +218,11 @@ class Controls(QtWidgets.QWidget):
         reading = self._reading
         self.stop()
         self._round.invalidate()
-        if reading or (self.isVisible() and self._auto.isChecked()):
+        if reading or (self.isVisible() and self._autoplay):
             self._round.ensure()
         if reading:
             self.read(reading)
-        elif self._auto.isChecked() and self.isVisible():
+        elif self._autoplay and self.isVisible():
             self._repeat()
 
     def read(self, paragraphs: list[str]) -> None:
@@ -245,6 +266,7 @@ class Controls(QtWidgets.QWidget):
 
         if shiboken6.isValid(self) and self._task is task:
             self.stop()
+            self._repair_on_replay = self._required
             self._status.setText(i18n.tr('Speech unavailable'))
             self._status.setToolTip(message)
 
@@ -254,6 +276,8 @@ class Controls(QtWidgets.QWidget):
         if self._clips and self.isVisible() and not self.window().isMinimized():
             try:
                 self._player.play(*self._clips.popleft())
+                if self._required and self._prompt:
+                    self.playback_started.emit(self._prompt[0])
                 return
             except (OSError, RuntimeError):
                 self.stop()
@@ -286,5 +310,5 @@ class Controls(QtWidgets.QWidget):
         """Start a visible prompt after reopening the window, e.g. when Practice was opened from the tray."""
 
         super().showEvent(event)
-        if self._prompt and self._auto.isChecked():
+        if self._prompt and self._autoplay:
             self._wake.start(0)

@@ -5,6 +5,8 @@ Example: `LibraryDb` composes `SchemaDbMixin` during startup.
 
 from __future__ import annotations
 
+import json
+
 from yt_whisper_subs import library_job_db
 from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import practice_db
@@ -110,6 +112,51 @@ CREATE INDEX IF NOT EXISTS idx_videos_published ON videos(published_at DESC);
 """
 
 
+def _upgrade_skills(conn) -> None:
+    """Widen skill constraints atomically, preserving IDs and references; e.g. existing queued translations survive the listening upgrade."""
+
+    tables = []
+    for family, skill in (("sentence", "listen_nl"), ("practice", "sound_nl")):
+        for suffix in ("questions", "sessions", "states"):
+            name = f"{family}_{suffix}"
+            row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+            if row and f"'{skill}'" not in row[0]:
+                tables.append((name, row[0], skill))
+    if not tables:
+        return
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        for name, sql, skill in tables:
+            indices = [row[0] for row in conn.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL", (name,))]
+            widened = sql.replace("'nl_en','en_nl'", f"'nl_en','en_nl','{skill}'")
+            if widened == sql:
+                raise RuntimeError(f"Unknown practice skill constraint in {name}")
+            # Create-copy-drop-rename keeps every child FK pointed at the original table name.
+            conn.execute(widened.replace(name, name + "_upgrade", 1))
+            conn.execute(f"INSERT INTO {name}_upgrade SELECT * FROM {name}")
+            conn.execute(f"DROP TABLE {name}")
+            conn.execute(f"ALTER TABLE {name}_upgrade RENAME TO {name}")
+            for index in indices:
+                conn.execute(index)
+        if any(name == "practice_sessions" for name, _, _ in tables):
+            # A saved full-practice position refers to the order in which that run began.
+            order = ["practice:nl_en", "practice:en_nl", "verb", "sentence:en_nl", "sentence:nl_en",
+                     "sentence:listen_nl", "comprehension:read", "comprehension:listen"]
+            conn.execute("UPDATE settings SET value=json_set(value,'$.order',json(?)) WHERE key='practice_sequence' "
+                         "AND json_valid(value) AND json_type(value)='object' AND json_type(value,'$.order') IS NULL",
+                         (json.dumps(order),))
+        if conn.execute("PRAGMA foreign_key_check").fetchone():
+            raise RuntimeError("Practice skill migration would break catalog references")
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 class SchemaDbMixin:
     """Own startup schema changes without growing the catalog query module.
 
@@ -125,7 +172,7 @@ class SchemaDbMixin:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.execute("PRAGMA journal_mode = WAL")
-            sentence_schema.upgrade(conn)
+            _upgrade_skills(conn)
             conn.executescript(_SCHEMA)
             audit_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vocab_audits)")}
             if "repair_json" not in audit_columns:

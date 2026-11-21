@@ -130,7 +130,7 @@ msgstr " · errori linguistici corretti"
 msgid " · {deferred:,} deferred"
 msgstr " · {deferred:,} rinviati"
 
-#: yt_whisper_subs/library_word_quiz.py:458
+#: yt_whisper_subs/library_word_quiz.py:471
 #, python-brace-format
 msgid " · {invalid} reported"
 msgstr " · {invalid} segnalate"
@@ -144,7 +144,7 @@ msgstr " · {value:.0%} totale"
 msgid "0 videos"
 msgstr "0 video"
 
-#: yt_whisper_subs/library_word_quiz.py:345
+#: yt_whisper_subs/library_word_quiz.py:351
 msgid "1 / 2 / 3 to answer · Close anytime to pause"
 msgstr "1 / 2 / 3 per rispondere · Chiudi quando vuoi per mettere in pausa"
 
@@ -176,7 +176,7 @@ msgstr "Precisione %"
 msgid "Actions for all videos matching the current filters"
 msgstr "Azioni per tutti i video corrispondenti ai filtri"
 
-#: yt_whisper_subs/library_practice.py:162
+#: yt_whisper_subs/library_practice.py:170
 msgid "Activity"
 msgstr "Attività"
 
@@ -215,7 +215,7 @@ msgstr "Aggiunto come componente non valutato; nessun errore indipendente regist
 msgid "Adding {title}…"
 msgstr "Aggiunta di {title}…"
 
-#: yt_whisper_subs/sentence_practice.py:25
+#: yt_whisper_subs/sentence_practice.py:26
 msgid "Adjective endings"
 msgstr "Desinenze degli aggettivi"
 
@@ -269,7 +269,7 @@ msgstr "Già in coda o in elaborazione · {title}"
 msgid "Another library task is already running"
 msgstr "È già in corso un’altra attività della raccolta"
 
-#: yt_whisper_subs/library_word_quiz.py:459
+#: yt_whisper_subs/library_word_quiz.py:472
 msgid "Another round"
 msgstr "Un’altra sessione"
 
@@ -306,7 +306,7 @@ msgstr "Risposte"
 msgid "Answers · last 7 days"
 msgstr "Risposte · ultimi 7 giorni"
 
-#: yt_whisper_subs/sentence_practice.py:20
+#: yt_whisper_subs/sentence_practice.py:21
 msgid "Appointments and services"
 msgstr "Appuntamenti e servizi"
 
@@ -323,7 +323,7 @@ msgstr "Articolo"
 msgid "Assessed"
 msgstr "Valutato"
 
-#: yt_whisper_subs/library_pronunciation.py:115
+#: yt_whisper_subs/library_pronunciation.py:118
 msgid "Auto-read Dutch"
 msgstr "Leggi automaticamente l’olandese"
 
@@ -363,7 +363,7 @@ msgstr "Disponibile solo su Windows"
 msgid "Background"
 msgstr "In background"
 
-#: yt_whisper_subs/sentence_practice.py:22
+#: yt_whisper_subs/sentence_practice.py:23
 msgid "Base form"
 msgstr "Forma base"
 
@@ -411,7 +411,7 @@ msgstr "Annulla preparazione"
 msgid "Cancelled"
 msgstr "Annullato"
 
-#: yt_whisper_subs/library_word_quiz.py:445 yt_whisper_subs/library_written.py:384
+#: yt_whisper_subs/library_word_quiz.py:458 yt_whisper_subs/library_written.py:384
 msgid "Cancelling after the current request…"
 msgstr "Annullamento dopo la richiesta corrente…"
 
@@ -424,7 +424,7 @@ msgstr "Annullamento dell’operazione corrente…"
 msgid "Cancelling · {value}"
 msgstr "Annullamento · {value}"
 
-#: yt_whisper_subs/practice_service.py:41
+#: yt_whisper_subs/practice_service.py:46
 msgid "Capture Dutch words in mpv and let their translations finish first."
 msgstr "Salva parole olandesi in mpv e attendi che le traduzioni siano pronte."
 
@@ -528,7 +528,7 @@ msgstr "Scegli un paragrafo senza mostrare la trascrizione."
 msgid "Choose a smaller round"
 msgstr "Scegli una sessione più breve"
 
-#: yt_whisper_subs/library_word_quiz.py:338
+#: yt_whisper_subs/library_word_quiz.py:344
 msgid "Choose an answer"
 msgstr "Scegli una risposta"
 
@@ -557,11 +557,11 @@ msgstr "Cancella filtri"
 msgid "Click position"
 msgstr "Posizione del clic"
 
-#: yt_whisper_subs/library_word_quiz.py:391
+#: yt_whisper_subs/library_word_quiz.py:404
 msgid "Click the card"
 msgstr "Fai clic sulla scheda"
 
-#: yt_whisper_subs/library_word_quiz.py:391
+#: yt_whisper_subs/library_word_quiz.py:404
 msgid "Click the card or an answer again"
 msgstr "Fai di nuovo clic sulla scheda o su una risposta"
 
@@ -595,7 +595,7 @@ msgstr ""
 "Raggruppa i controlli completati per questo intervallo, poi mostra un elenco. Ogni controllo "
 "raggruppa tutti i canali; 0 mostra subito l’elenco."
 
-#: yt_whisper_subs/sentence_practice.py:24
+#: yt_whisper_subs/sentence_practice.py:25
 msgid "Comparatives"
 msgstr "Comparativi"
 
@@ -648,7 +648,7 @@ msgstr "Condizionale passato · zouden + infinito composto"
 msgid "Conditional · zouden + infinitive"
 msgstr "Condizionale · zouden + infinito"
 
-#: yt_whisper_subs/sentence_practice.py:23
+#: yt_whisper_subs/sentence_practice.py:24
 msgid "Conditionals"
 msgstr "Condizionali"
 
@@ -678,7 +678,7 @@ msgstr "Continua"
 msgid "Continue round"
 msgstr "Continua sessione"
 
-#: yt_whisper_subs/library_word_quiz.py:393 yt_whisper_subs/library_written.py:313
+#: yt_whisper_subs/library_word_quiz.py:406 yt_whisper_subs/library_written.py:313
 #: yt_whisper_subs/library_written.py:371
 msgid "Continue →"
 msgstr "Continua →"
@@ -688,7 +688,7 @@ msgctxt "voice style"
 msgid "Conversational"
 msgstr "Conversazionale"
 
-#: yt_whisper_subs/sentence_practice.py:21
+#: yt_whisper_subs/sentence_practice.py:22
 msgid "Conversations and plans"
 msgstr "Conversazioni e progetti"
 
@@ -705,7 +705,7 @@ msgstr "Copia tutto"
 #: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
 #: yt_whisper_subs/library_sentence_progress.py:42 yt_whisper_subs/library_verb_progress.py:34
 #: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_verb_progress.py:38
-#: yt_whisper_subs/library_word_quiz.py:371 yt_whisper_subs/library_written_controls.py:235
+#: yt_whisper_subs/library_word_quiz.py:383 yt_whisper_subs/library_written_controls.py:235
 msgid "Correct"
 msgstr "Corretto"
 
@@ -806,7 +806,7 @@ msgstr "Preparazione audio non riuscita. Fai clic su Riascolta per riprovare. "
 msgid "Could not prepare this round"
 msgstr "Impossibile preparare questa sessione"
 
-#: yt_whisper_subs/library_word_quiz.py:363
+#: yt_whisper_subs/library_word_quiz.py:375
 #, python-brace-format
 msgid "Could not save your answer: {exc}"
 msgstr "Impossibile salvare la risposta: {exc}"
@@ -883,7 +883,7 @@ msgstr "Forma di dizionario: {value} · {value2}"
 msgid "Dimension"
 msgstr "Dimensione"
 
-#: yt_whisper_subs/sentence_practice.py:26
+#: yt_whisper_subs/sentence_practice.py:27
 msgid "Diminutives"
 msgstr "Diminutivi"
 
@@ -959,7 +959,7 @@ msgstr "Durata"
 msgid "Dutch"
 msgstr "olandese"
 
-#: yt_whisper_subs/sentence_practice.py:44
+#: yt_whisper_subs/sentence_practice.py:45
 msgid "Dutch dictation"
 msgstr "Dettato in olandese"
 
@@ -972,7 +972,7 @@ msgstr "Dettato in olandese  ·  {value}"
 msgid "Dutch text"
 msgstr "Testo olandese"
 
-#: yt_whisper_subs/practice.py:28
+#: yt_whisper_subs/practice.py:31
 msgid "Dutch → English"
 msgstr "Olandese → Inglese"
 
@@ -1010,7 +1010,7 @@ msgstr "Il significato in inglese appare con la correzione."
 msgid "English subtitle: {value}"
 msgstr "Sottotitolo inglese: {value}"
 
-#: yt_whisper_subs/practice.py:28
+#: yt_whisper_subs/practice.py:31
 msgid "English → Dutch"
 msgstr "Inglese → Olandese"
 
@@ -1129,7 +1129,7 @@ msgstr "Obiettivo"
 msgid "Focus search"
 msgstr "Vai alla ricerca"
 
-#: yt_whisper_subs/sentence_practice.py:20
+#: yt_whisper_subs/sentence_practice.py:21
 msgid "Food and cafés"
 msgstr "Cibo e bar"
 
@@ -1173,16 +1173,16 @@ msgstr "Forme"
 msgid "From the beginning"
 msgstr "Dall’inizio"
 
-#: yt_whisper_subs/library_practice_sequence.py:143
+#: yt_whisper_subs/library_practice_sequence.py:144
 msgid "Full practice"
 msgstr "Allenamento completo"
 
-#: yt_whisper_subs/library_practice_sequence.py:152
+#: yt_whisper_subs/library_practice_sequence.py:153
 #, python-brace-format
 msgid "Full practice finished · {completed} completed · {skipped} skipped"
 msgstr "Allenamento completo concluso · {completed} completati · {skipped} saltati"
 
-#: yt_whisper_subs/library_practice_sequence.py:150
+#: yt_whisper_subs/library_practice_sequence.py:151
 #, python-brace-format
 msgid "Full practice {number}/{total} · {mode}"
 msgstr "Allenamento completo {number}/{total} · {mode}"
@@ -1199,7 +1199,7 @@ msgstr "Del tutto corretto"
 msgid "Furthest observed position; 100% requires mpv to reach end-of-file"
 msgstr "Posizione più avanzata; il 100% richiede che mpv raggiunga la fine"
 
-#: yt_whisper_subs/sentence_practice.py:23
+#: yt_whisper_subs/sentence_practice.py:24
 msgid "Future"
 msgstr "Futuro"
 
@@ -1256,11 +1256,11 @@ msgstr ""
 msgid "Higher values follow the speaker reference more closely; 1 is the neutral model default."
 msgstr "Valori più alti seguono maggiormente la voce di riferimento; 1 è il valore neutro predefinito."
 
-#: yt_whisper_subs/sentence_practice.py:21
+#: yt_whisper_subs/sentence_practice.py:22
 msgid "Hobbies and free time"
 msgstr "Hobby e tempo libero"
 
-#: yt_whisper_subs/sentence_practice.py:19
+#: yt_whisper_subs/sentence_practice.py:20
 msgid "Home and family"
 msgstr "Casa e famiglia"
 
@@ -1276,7 +1276,7 @@ msgstr "Non sono sicuro / sto indovinando"
 msgid "Idiom"
 msgstr "Espressione idiomatica"
 
-#: yt_whisper_subs/sentence_practice.py:24
+#: yt_whisper_subs/sentence_practice.py:25
 msgid "Imperative"
 msgstr "Imperativo"
 
@@ -1463,12 +1463,12 @@ msgstr "Ascolta il testo"
 msgid "Listen to the text and answer the questions."
 msgstr "Ascolta il testo e rispondi alle domande."
 
-#: yt_whisper_subs/library_practice.py:152 yt_whisper_subs/library_practice_activity.py:50
-#: yt_whisper_subs/library_sentences.py:171
+#: yt_whisper_subs/library_practice.py:160 yt_whisper_subs/library_practice_activity.py:50
+#: yt_whisper_subs/library_sentences.py:171 yt_whisper_subs/practice_tracks.py:61
 msgid "Listening"
 msgstr "Ascolto"
 
-#: yt_whisper_subs/practice_tracks.py:45
+#: yt_whisper_subs/practice_tracks.py:48
 msgid ""
 "Listening\n"
 "Dutch dictation"
@@ -1476,7 +1476,7 @@ msgstr ""
 "Ascolto\n"
 "Dettato in olandese"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:154
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:162
 msgid "Listening comprehension"
 msgstr "Comprensione orale"
 
@@ -1703,7 +1703,7 @@ msgstr "Nuova sessione di verbi"
 msgid "New videos from pinned channels"
 msgstr "Nuovi video dai canali fissati"
 
-#: yt_whisper_subs/sentence_practice.py:21
+#: yt_whisper_subs/sentence_practice.py:22
 msgid "News and public life"
 msgstr "Notizie e vita pubblica"
 
@@ -1733,6 +1733,10 @@ msgstr "No"
 #: yt_whisper_subs/library_practice_activity.py:259
 msgid "No answers on this day."
 msgstr "Nessuna risposta in questo giorno."
+
+#: yt_whisper_subs/library_pronunciation.py:256
+msgid "No cached recording is ready for this text."
+msgstr "La registrazione di questo testo non è ancora pronta."
 
 #: yt_whisper_subs/library_window_support.py:83
 msgid "No channel check has completed yet."
@@ -1764,7 +1768,7 @@ msgstr "Nessun download o file generato rimovibile corrisponde ai filtri acquisi
 msgid "No round available yet"
 msgstr "Nessuna sessione disponibile"
 
-#: yt_whisper_subs/practice_service.py:50
+#: yt_whisper_subs/practice_service.py:55
 msgid "No terms are due yet. Try the other direction, capture more words, or enable early review."
 msgstr ""
 "Nessuna parola da ripassare. Prova l’altra direzione, salva altre parole o attiva il ripasso "
@@ -1778,11 +1782,11 @@ msgstr "Nessuna parola pronta"
 msgid "Not answered"
 msgstr "Senza risposta"
 
-#: yt_whisper_subs/library_practice_progress.py:185
+#: yt_whisper_subs/library_practice_progress.py:186
 msgid "Not graded"
 msgstr "Non valutato"
 
-#: yt_whisper_subs/library_word_quiz.py:371
+#: yt_whisper_subs/library_word_quiz.py:383
 msgid "Not quite"
 msgstr "Non proprio"
 
@@ -1929,6 +1933,10 @@ msgstr "Participio"
 msgid "Partly understood"
 msgstr "Parzialmente compreso"
 
+#: yt_whisper_subs/library_practice.py:127
+msgid "Passages"
+msgstr "Brani"
+
 #: yt_whisper_subs/verb_practice.py:61
 msgid "Passive voice"
 msgstr "Forma passiva"
@@ -1941,7 +1949,7 @@ msgstr "Trapassato prossimo · voltooid verleden tijd"
 msgid "Past subjunctive · ware"
 msgstr "Congiuntivo passato · ware"
 
-#: yt_whisper_subs/sentence_practice.py:22
+#: yt_whisper_subs/sentence_practice.py:23
 msgid "Past tense"
 msgstr "Passato"
 
@@ -1949,7 +1957,7 @@ msgstr "Passato"
 msgid "Pause current pipeline"
 msgstr "Metti in pausa l’elaborazione corrente"
 
-#: yt_whisper_subs/library_practice_sequence.py:66
+#: yt_whisper_subs/library_practice_sequence.py:67
 msgid "Pause full practice"
 msgstr "Metti in pausa l’allenamento"
 
@@ -1962,7 +1970,7 @@ msgstr "In pausa"
 msgid "Paused · {value}"
 msgstr "In pausa · {value}"
 
-#: yt_whisper_subs/sentence_practice.py:23
+#: yt_whisper_subs/sentence_practice.py:24
 msgid "Perfect tenses"
 msgstr "Tempi composti"
 
@@ -2055,15 +2063,15 @@ msgstr "Riproduzione di {title}"
 msgid "Playing…"
 msgstr "Riproduzione…"
 
-#: yt_whisper_subs/sentence_practice.py:24
+#: yt_whisper_subs/sentence_practice.py:25
 msgid "Plural"
 msgstr "Plurale"
 
-#: yt_whisper_subs/sentence_practice.py:25
+#: yt_whisper_subs/sentence_practice.py:26
 msgid "Possessives"
 msgstr "Possessivi"
 
-#: yt_whisper_subs/library_practice.py:120 yt_whisper_subs/library_practice.py:123
+#: yt_whisper_subs/library_practice.py:131
 msgid "Practice"
 msgstr "Esercizi"
 
@@ -2095,7 +2103,7 @@ msgstr "Esercizi in pausa"
 msgid "Practice voices"
 msgstr "Voci per gli esercizi"
 
-#: yt_whisper_subs/library_practice.py:81
+#: yt_whisper_subs/library_practice.py:82
 msgid "Practice · vocabulary, verbs, sentences and comprehension"
 msgstr "Esercizi · vocabolario, verbi, frasi e comprensione"
 
@@ -2136,7 +2144,7 @@ msgstr "Preparazione"
 msgid "Preparing Dutch listening audio…"
 msgstr "Preparazione dell’audio olandese…"
 
-#: yt_whisper_subs/library_pronunciation.py:74 yt_whisper_subs/library_pronunciation.py:216
+#: yt_whisper_subs/library_pronunciation.py:74 yt_whisper_subs/library_pronunciation.py:237
 msgid "Preparing Dutch speech…"
 msgstr "Preparazione della voce olandese…"
 
@@ -2148,7 +2156,7 @@ msgstr "Preparazione di un testo olandese con esattamente le domande richieste�
 msgid "Preparing and checking speech clips…"
 msgstr "Preparazione e verifica dei brani audio…"
 
-#: yt_whisper_subs/practice_service.py:103
+#: yt_whisper_subs/practice_service.py:115
 #, python-brace-format
 msgid "Preparing and checking {len} choices…"
 msgstr "Preparazione e verifica di {len} opzioni…"
@@ -2223,7 +2231,7 @@ msgstr "Passato prossimo · voltooid tegenwoordige tijd"
 msgid "Present subjunctive · aanvoegende wijs"
 msgstr "Congiuntivo presente · aanvoegende wijs"
 
-#: yt_whisper_subs/sentence_practice.py:22
+#: yt_whisper_subs/sentence_practice.py:23
 msgid "Present tense"
 msgstr "Presente"
 
@@ -2247,7 +2255,7 @@ msgstr "Vocabolario precedente"
 msgid "Previously removed"
 msgstr "Rimosso in precedenza"
 
-#: yt_whisper_subs/library_practice.py:161
+#: yt_whisper_subs/library_practice.py:169
 msgid "Progress"
 msgstr "Progressi"
 
@@ -2268,7 +2276,7 @@ msgstr "Pubblicato il {published}"
 msgid "Question"
 msgstr "Domanda"
 
-#: yt_whisper_subs/library_word_quiz.py:427
+#: yt_whisper_subs/library_word_quiz.py:440
 msgid "Question reported · excluded from grading"
 msgstr "Domanda segnalata · esclusa dalla valutazione"
 
@@ -2306,7 +2314,7 @@ msgstr "In coda · prossimo"
 msgid "Quit"
 msgstr "Esci"
 
-#: yt_whisper_subs/library_pronunciation.py:118
+#: yt_whisper_subs/library_pronunciation.py:121 yt_whisper_subs/library_pronunciation.py:161
 msgid "Read aloud"
 msgstr "Leggi ad alta voce"
 
@@ -2318,7 +2326,11 @@ msgstr "Leggi o ascolta un testo olandese e rispondi alle domande."
 msgid "Read passage aloud"
 msgstr "Leggi il brano ad alta voce"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:153
+#: yt_whisper_subs/practice_tracks.py:61
+msgid "Reading"
+msgstr "Lettura"
+
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:161
 msgid "Reading comprehension"
 msgstr "Comprensione scritta"
 
@@ -2340,7 +2352,7 @@ msgstr "Pronto per un allenamento completo?"
 msgid "Ready to play"
 msgstr "Pronto da riprodurre"
 
-#: yt_whisper_subs/practice_service.py:62
+#: yt_whisper_subs/practice_service.py:68
 #, python-brace-format
 msgid "Ready · {len} distinct terms"
 msgstr "Pronto · {len} termini distinti"
@@ -2477,6 +2489,10 @@ msgstr "Sostituisci l’espressione con questo punto di partenza; la voce resta 
 msgid "Replay processing"
 msgstr "Replica in elaborazione"
 
+#: yt_whisper_subs/library_pronunciation.py:161
+msgid "Replay word"
+msgstr "Riascolta la parola"
+
 #: yt_whisper_subs/library_written_controls.py:299
 msgid "Report exercise / correction"
 msgstr "Segnala esercizio / correzione"
@@ -2528,7 +2544,7 @@ msgstr ""
 msgid "Resume current pipeline"
 msgstr "Riprendi elaborazione corrente"
 
-#: yt_whisper_subs/library_practice_sequence.py:143
+#: yt_whisper_subs/library_practice_sequence.py:144
 msgid "Resume full practice"
 msgstr "Riprendi l’allenamento completo"
 
@@ -2602,7 +2618,7 @@ msgstr "Leggi la spiegazione"
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr "Riscrivi una frase olandese per un nuovo soggetto, tempo o situazione."
 
-#: yt_whisper_subs/library_comprehension.py:404 yt_whisper_subs/library_word_quiz.py:459
+#: yt_whisper_subs/library_comprehension.py:404 yt_whisper_subs/library_word_quiz.py:472
 msgid "Round complete"
 msgstr "Sessione completata"
 
@@ -2619,7 +2635,7 @@ msgstr "Opzioni della sessione"
 msgid "Round reviewed"
 msgstr "Sessione rivista"
 
-#: yt_whisper_subs/library_sentence_session.py:298 yt_whisper_subs/library_word_quiz.py:459
+#: yt_whisper_subs/library_sentence_session.py:298 yt_whisper_subs/library_word_quiz.py:472
 msgid "Round saved"
 msgstr "Sessione salvata"
 
@@ -2745,9 +2761,9 @@ msgstr "Opzioni della sessione di frasi"
 msgid "Sentence translations"
 msgstr "Traduzione di frasi"
 
-#: yt_whisper_subs/library_practice.py:151 yt_whisper_subs/library_practice_activity.py:50
-#: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentences.py:53
-#: yt_whisper_subs/practice_tracks.py:48
+#: yt_whisper_subs/library_practice.py:126 yt_whisper_subs/library_practice.py:159
+#: yt_whisper_subs/library_practice_activity.py:50 yt_whisper_subs/library_sentence_progress.py:36
+#: yt_whisper_subs/library_sentences.py:53 yt_whisper_subs/practice_tracks.py:51
 msgid "Sentences"
 msgstr "Frasi"
 
@@ -2767,7 +2783,7 @@ msgstr "Impostazioni modificate. Riproduci di nuovo l’anteprima per sentire la
 msgid "Settings…"
 msgstr "Impostazioni…"
 
-#: yt_whisper_subs/sentence_practice.py:19
+#: yt_whisper_subs/sentence_practice.py:20
 msgid "Shopping"
 msgstr "Acquisti"
 
@@ -2797,7 +2813,7 @@ msgstr "Mostrato"
 msgid "Simple past · onvoltooid verleden tijd"
 msgstr "Passato semplice · onvoltooid verleden tijd"
 
-#: yt_whisper_subs/sentence_practice.py:24
+#: yt_whisper_subs/sentence_practice.py:25
 msgid "Singular"
 msgstr "Singolare"
 
@@ -2818,7 +2834,7 @@ msgstr "Competenza"
 msgid "Skills"
 msgstr "Competenze"
 
-#: yt_whisper_subs/library_practice_sequence.py:65
+#: yt_whisper_subs/library_practice_sequence.py:66
 msgid "Skip mode"
 msgstr "Salta modalità"
 
@@ -2849,6 +2865,18 @@ msgstr "Rinvia di {snooze_hours} ore"
 msgid "Some corrections need a retry"
 msgstr "Alcune correzioni vanno riprovate"
 
+#: yt_whisper_subs/practice.py:30
+msgid "Sound alike"
+msgstr "Parole dal suono simile"
+
+#: yt_whisper_subs/practice_tracks.py:46
+msgid ""
+"Sound alike\n"
+"Listen and choose"
+msgstr ""
+"Parole dal suono simile\n"
+"Ascolta e scegli"
+
 #: yt_whisper_subs/library_verb_progress.py:35 yt_whisper_subs/library_vocabulary.py:53
 msgid "Source"
 msgstr "Fonte"
@@ -2870,8 +2898,8 @@ msgstr "Motore vocale"
 msgid "Speech preparation paused."
 msgstr "Preparazione audio in pausa."
 
-#: yt_whisper_subs/library_pronunciation.py:183 yt_whisper_subs/library_pronunciation.py:255
-#: yt_whisper_subs/library_pronunciation.py:267
+#: yt_whisper_subs/library_pronunciation.py:200 yt_whisper_subs/library_pronunciation.py:270
+#: yt_whisper_subs/library_pronunciation.py:284
 msgid "Speech unavailable"
 msgstr "Audio non disponibile"
 
@@ -2932,7 +2960,7 @@ msgid "Status"
 msgstr "Stato"
 
 #: yt_whisper_subs/library_comprehension_audio.py:44 yt_whisper_subs/library_listening.py:71
-#: yt_whisper_subs/library_pronunciation.py:121 yt_whisper_subs/library_voice_config.py:57
+#: yt_whisper_subs/library_pronunciation.py:124 yt_whisper_subs/library_voice_config.py:57
 msgid "Stop"
 msgstr "Ferma"
 
@@ -2977,11 +3005,11 @@ msgstr ""
 msgid "Subject"
 msgstr "Soggetto"
 
-#: yt_whisper_subs/sentence_practice.py:22
+#: yt_whisper_subs/sentence_practice.py:23
 msgid "Subject and person"
 msgstr "Soggetto e persona"
 
-#: yt_whisper_subs/sentence_practice.py:23
+#: yt_whisper_subs/sentence_practice.py:24
 msgid "Subjunctive"
 msgstr "Congiuntivo"
 
@@ -3018,7 +3046,7 @@ msgstr "Inviato"
 msgid "Subordinate clause · begin with ‘omdat’"
 msgstr "Subordinata · inizia con «omdat»"
 
-#: yt_whisper_subs/sentence_practice.py:25
+#: yt_whisper_subs/sentence_practice.py:26
 msgid "Superlatives"
 msgstr "Superlativi"
 
@@ -3030,7 +3058,7 @@ msgstr "Parola obiettivo usata"
 msgid "Tense"
 msgstr "Tempo"
 
-#: yt_whisper_subs/practice_tracks.py:47
+#: yt_whisper_subs/practice_tracks.py:50
 msgid "Text and questions"
 msgstr "Testo e domande"
 
@@ -3134,7 +3162,7 @@ msgstr "Segui canale"
 msgid "Track channel…"
 msgstr "Segui canale…"
 
-#: yt_whisper_subs/library_practice.py:120
+#: yt_whisper_subs/library_practice.py:128
 msgid "Tracking"
 msgstr "Monitoraggio"
 
@@ -3180,7 +3208,7 @@ msgstr "Errore di traduzione: {error}"
 msgid "Translation pending"
 msgstr "Traduzione in attesa"
 
-#: yt_whisper_subs/sentence_practice.py:20
+#: yt_whisper_subs/sentence_practice.py:21
 msgid "Travel and directions"
 msgstr "Viaggi e indicazioni"
 
@@ -3255,7 +3283,7 @@ msgstr "Usa queste impostazioni per una nuova sessione. Le risposte precedenti r
 msgid "Use your saved vocabulary to understand and write natural sentences in everyday situations."
 msgstr "Usa il vocabolario salvato per capire e scrivere frasi naturali in situazioni quotidiane."
 
-#: yt_whisper_subs/practice_service.py:113
+#: yt_whisper_subs/practice_service.py:125
 msgid "Using previously checked choices while generation is unavailable."
 msgstr "Uso delle opzioni già verificate mentre la generazione non è disponibile."
 
@@ -3292,17 +3320,17 @@ msgstr "Ortografia del verbo"
 msgid "Verb transformation accuracy"
 msgstr "Precisione delle trasformazioni verbali"
 
-#: yt_whisper_subs/library_verbs.py:23
+#: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:59
 msgid "Verb transformations"
 msgstr "Trasformazioni verbali"
 
-#: yt_whisper_subs/library_practice.py:151 yt_whisper_subs/library_practice_activity.py:49
+#: yt_whisper_subs/library_practice.py:159 yt_whisper_subs/library_practice_activity.py:49
 #: yt_whisper_subs/library_verb_controls.py:54 yt_whisper_subs/library_verb_progress.py:35
-#: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:48
+#: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:51
 msgid "Verbs"
 msgstr "Verbi"
 
-#: yt_whisper_subs/practice_tracks.py:49
+#: yt_whisper_subs/practice_tracks.py:52
 msgid ""
 "Verbs\n"
 "Dutch transformations"
@@ -3359,7 +3387,7 @@ msgstr "Mostra trascrizione"
 msgid "Views"
 msgstr "Visualizzazioni"
 
-#: yt_whisper_subs/library_practice.py:151
+#: yt_whisper_subs/library_practice.py:159
 msgid "Vocabulary"
 msgstr "Vocabolario"
 
@@ -3445,6 +3473,10 @@ msgstr "Ben compreso"
 msgid "What is wrong?"
 msgstr "Qual è il problema?"
 
+#: yt_whisper_subs/library_word_quiz.py:328
+msgid "Which word did you hear?"
+msgstr "Quale parola hai sentito?"
+
 #: yt_whisper_subs/library_voice_controls.py:157
 msgctxt "voice style"
 msgid "Whisper"
@@ -3489,7 +3521,7 @@ msgstr "Parola corretta"
 msgid "Word order"
 msgstr "Ordine delle parole"
 
-#: yt_whisper_subs/practice_tracks.py:48
+#: yt_whisper_subs/practice_tracks.py:51
 msgid "Word quiz"
 msgstr "Quiz di parole"
 
@@ -3506,12 +3538,12 @@ msgstr ""
 "almeno 21 giorni. Le domande segnalate non influiscono su precisione o pianificazione. Le date "
 "usano l’ora locale."
 
-#: yt_whisper_subs/library_comprehension_progress.py:41
+#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_practice.py:125
 #: yt_whisper_subs/library_practice_progress.py:129 yt_whisper_subs/library_sentence_progress.py:37
 msgid "Words"
 msgstr "Parole"
 
-#: yt_whisper_subs/library_practice_progress.py:173
+#: yt_whisper_subs/library_practice_progress.py:174
 msgid "Words explored"
 msgstr "Parole esplorate"
 
@@ -3519,7 +3551,7 @@ msgstr "Parole esplorate"
 msgid "Words from your vocabulary"
 msgstr "Parole del tuo vocabolario"
 
-#: yt_whisper_subs/sentence_practice.py:19
+#: yt_whisper_subs/sentence_practice.py:20
 msgid "Work and study"
 msgstr "Lavoro e studio"
 
@@ -3737,7 +3769,7 @@ msgstr "{answers} valutazioni · comprensione {score:.0%}"
 msgid "{attempts} checked answers"
 msgstr "{attempts} risposte verificate"
 
-#: yt_whisper_subs/library_word_quiz.py:456
+#: yt_whisper_subs/library_word_quiz.py:469
 #, python-brace-format
 msgid "{correct} correct · {wrong} to revisit"
 msgstr "{correct} corrette · {wrong} da ripassare"
@@ -3752,7 +3784,7 @@ msgstr "{correct} corrette · {wrong} da ripassare · {submitted} risposte"
 msgid "{correct} correct · {wrong} to revisit · {submitted} submitted"
 msgstr "{correct} corrette · {wrong} da ripassare · {submitted} inviate"
 
-#: yt_whisper_subs/library_practice_progress.py:168 yt_whisper_subs/library_sentence_progress.py:133
+#: yt_whisper_subs/library_practice_progress.py:169 yt_whisper_subs/library_sentence_progress.py:133
 #: yt_whisper_subs/library_verb_progress.py:78
 #, python-brace-format
 msgid "{correct}/{attempts} correct"
@@ -3826,7 +3858,7 @@ msgstr ""
 "{detail}\n"
 "Gli orari sono nel fuso orario locale."
 
-#: yt_whisper_subs/library_word_quiz.py:379
+#: yt_whisper_subs/library_word_quiz.py:392
 #, python-brace-format
 msgid ""
 "{explanation}\n"
@@ -3937,7 +3969,7 @@ msgstr ""
 msgid "{submitted}/{planned} submitted · {value} pending · {unseen} unseen corrections"
 msgstr "{submitted}/{planned} inviate · {value} in attesa · {unseen} correzioni non viste"
 
-#: yt_whisper_subs/library_word_quiz.py:392
+#: yt_whisper_subs/library_word_quiz.py:405
 #, python-brace-format
 msgid "{target} · Space / Enter to continue"
 msgstr "{target} · Spazio / Invio per continuare"
@@ -4005,7 +4037,7 @@ msgid_plural "{visible:,} of {count:,} videos"
 msgstr[0] "{visible:,} di {count:,} video"
 msgstr[1] "{visible:,} di {count:,} video"
 
-#: yt_whisper_subs/library_practice_progress.py:172
+#: yt_whisper_subs/library_practice_progress.py:173
 #, python-brace-format
 msgid "{words} distinct words"
 msgstr "{words} parole distinte"

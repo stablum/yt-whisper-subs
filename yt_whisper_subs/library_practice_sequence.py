@@ -21,13 +21,14 @@ class Cursor(pd.BaseModel):
     completed: int = pd.Field(default=0, ge=0)
     skipped: int = pd.Field(default=0, ge=0)
     round_id: str | None = None
+    order: tuple[practice_tracks.Track, ...] = _TRACKS
 
     @property
     def track(self) -> practice_tracks.Track | None:
         """Follow the same order as the practice buttons, from vocabulary to comprehension."""
 
         idx = self.completed + self.skipped
-        return _TRACKS[idx] if idx < len(_TRACKS) else None
+        return self.order[idx] if idx < len(self.order) else None
 
     def round_reviewed(self, db) -> bool:
         """Recover a completed round if the window closed before the handoff to the next mode."""
@@ -147,7 +148,7 @@ class SequenceBar(QtWidgets.QWidget):
         if track:
             number = self._cursor.completed + self._cursor.skipped + 1
             mode = track.label.replace('\n', ' · ')
-            self._status.setText(i18n.tr('Full practice {number}/{total} · {mode}', number=number, total=len(_TRACKS), mode=mode))
+            self._status.setText(i18n.tr('Full practice {number}/{total} · {mode}', number=number, total=len(self._cursor.order), mode=mode))
         elif self._cursor:
             self._status.setText(i18n.tr('Full practice finished · {completed} completed · {skipped} skipped',
                                          completed=self._cursor.completed, skipped=self._cursor.skipped))

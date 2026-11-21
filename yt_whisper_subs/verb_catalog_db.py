@@ -38,7 +38,7 @@ class VerbCatalogDbMixin:
             result = [dict(row) for row in rows]
             history = conn.execute(f"SELECT l.lemma_norm,COUNT(*) AS attempts,SUM(h.outcome='wrong') AS failures "
                                    f"FROM ({word_reviews.REVIEWS}) h JOIN vocab_lookups l ON l.id=h.lookup_id "
-                                   "WHERE h.outcome IN ('correct','wrong') GROUP BY l.lemma_norm").fetchall()
+                                   "WHERE h.outcome IN ('correct','wrong') AND h.direction<>'sound_nl' GROUP BY l.lemma_norm").fetchall()
             lexical = {row["lemma_norm"]: row for row in history}
         starters = {lemma for lemma, _, _ in verb_syllabus.CATALOG}
         return [{**row, "starter": row["lemma"] in starters,

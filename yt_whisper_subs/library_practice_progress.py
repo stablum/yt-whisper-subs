@@ -164,7 +164,8 @@ class ProgressPanel(QtWidgets.QWidget):
             streak=data['streak'],
         ))
         series = []
-        for direction, tint in ((practice.Direction.NL_EN, "#66d9ef"), (practice.Direction.EN_NL, "#ffd166")):
+        for direction, tint in ((practice.Direction.NL_EN, "#66d9ef"), (practice.Direction.EN_NL, "#ffd166"),
+                                (practice.Direction.SOUND, "#ac9dff")):
             points = [(row["day"], row["accuracy"] * 100, i18n.tr('{correct}/{attempts} correct', correct=row['correct'], attempts=row['attempts']))
                       for row in data["daily"] if row["direction"] == direction.value and row["accuracy"] is not None]
             series.append({"label": direction.label, "color": tint, "points": points})

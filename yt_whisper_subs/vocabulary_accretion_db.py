@@ -47,7 +47,7 @@ class AccretionDbMixin:
     def _accretion_mistake(self, conn, kind: str, row: dict) -> None:
         """Queue only real failed answers using their fixed feedback; e.g. correct or reported questions never spend tokens."""
 
-        if row["outcome"] != "wrong":
+        if row["outcome"] != "wrong" or row["direction"] == "sound_nl":
             return
         if kind == "quiz":
             content = json.loads(row["body_json"])
@@ -75,7 +75,7 @@ class AccretionDbMixin:
             conn.execute("BEGIN IMMEDIATE")
             for row in conn.execute(f"SELECT DISTINCT lookup_id FROM ({schema.LIVE_LOOKUPS})").fetchall():
                 self._accretion_compound(conn, row[0])
-            rows = conn.execute(practice_db.PRESENTATION + " WHERE p.outcome='wrong' AND NOT EXISTS("
+            rows = conn.execute(practice_db.PRESENTATION + " WHERE p.outcome='wrong' AND s.direction<>'sound_nl' AND NOT EXISTS("
                                 "SELECT 1 FROM vocab_audit_sources a WHERE a.practice_id=p.id)").fetchall()
             for row in rows:
                 self._accretion_mistake(conn, "quiz", dict(row))

@@ -148,7 +148,7 @@ class AccretionTests(unittest.TestCase):
     def test_selected_quiz_confusion_is_imported_once_per_answer_in_both_directions(self) -> None:
         """Keep original quiz failures single and import only the selected distractor; e.g. kantoor is never selected."""
 
-        for direction in practice.Direction:
+        for direction in (practice.Direction.NL_EN, practice.Direction.EN_NL):
             with self.subTest(direction=direction):
                 self.setUp()
                 first = self._quiz(direction)
