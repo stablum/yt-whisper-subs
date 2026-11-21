@@ -21,6 +21,7 @@ from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
+from yt_whisper_subs import transcription_audio
 from yt_whisper_subs import transcription_review
 from yt_whisper_subs import whisper_local
 from yt_whisper_subs import youtube
@@ -228,7 +229,8 @@ class PipelineRunner:
             print()
             print("Subtitle file already exists. Use --force to regenerate.")
 
-        review = transcription_review.TranscriptionReview(run_yields.primary, self._args)
+        audio_probe = transcription_audio.Probe(run_yields.video, self._paths, self._args)
+        review = transcription_review.TranscriptionReview(run_yields.primary, self._args, audio_probe)
         if review_requested and not need_primary_generation:
             review.begin()
         if transcription_review.pending_path(run_yields.primary.archive).exists():

@@ -58,7 +58,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--force-transcription-review", action="store_true",
-        help="Review existing primary subtitles without redownloading or rerunning Whisper; regenerate dependent yields.",
+        help="Review existing primary subtitles without redownloading or repeating the full transcription; "
+             "regenerate dependent yields.",
     )
     parser.add_argument(
         "--english-model",

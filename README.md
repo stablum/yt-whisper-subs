@@ -1794,6 +1794,17 @@ with local validation of the permitted edits:
   `warewet` or `ware wet` → `Warenwet`. For a named title, the verifier must
   find clear evidence in nearby cues that the correction refers to the same
   entity. A case-only change stays in the formatting pass.
+- For a suspected two-to-one word error, Luna can request a short local audio
+  check. The configured cached Whisper model decodes the cue without seeing the
+  proposed text. A correction needs one confident match of the replacement
+  between unchanged neighboring words inside the cue, followed by an independent
+  Luna approval. This can correct a spurious article as part of a near-match,
+  such as `een hamper` → `amper` when the audio supports it. Bare article deletions
+  and edits to negation, pronouns or quantities are excluded. The pass checks
+  at most six clips per video, each from a cue up to 12 seconds long with
+  surrounding padding. It uses local audio and skips unsupported proposals when
+  the audio or cached model is unavailable. The audit records each checked cue
+  and any matching phrase. The GUI shows “Checking transcription” during the retry.
 - Punctuation and capitalization are checked separately. These edits must
   preserve every word and number, word order, apostrophe, hyphen and whitespace
   boundary. Numeric punctuation cannot change. Each cue permits four punctuation
@@ -1832,13 +1843,14 @@ differences, checks edit density after verification, and scales the punctuation
 allowance for longer cues.
 Version `0.6.39` allows a tightly bounded spelling correction to include the
 conventional initial capital of a clearly identified title.
+Version `0.6.40` adds local audio confirmation for suspected two-to-one word errors.
 Unfinished reviews from an older policy restart their audit using the stored
 original text. Completed older reviews remain cached until explicitly requested
 again. Logs give specific reasons for locally rejected word edits and record
 the separate verifier's decisions.
 
 Existing completed subtitles remain cached on ordinary runs. To review an
-existing video without downloading it or running Whisper again:
+existing video without downloading it or repeating the full transcription:
 
 ```powershell
 python .\yt_whisper_subs.py --force-transcription-review --no-play --chapters "https://www.youtube.com/watch?v=VIDEO_ID"
@@ -3656,7 +3668,7 @@ Exactly one source must be provided.
 | --- | --- | --- |
 | `--model MODEL` | `turbo` | Primary Whisper model. |
 | `--transcription-review` / `--no-transcription-review` | on | Conservative sound-alike word, punctuation and capitalization check on newly transcribed primary subtitles. |
-| `--force-transcription-review` | off | Check existing primary subtitles without rerunning Whisper; invalidate dependent English/chapters. Requires `transcribe` and enabled review. |
+| `--force-transcription-review` | off | Check existing primary subtitles without repeating the full transcription and invalidate dependent English subtitles and chapters. Requires `transcribe` and enabled review. |
 | `--device cuda|cpu` | `cuda` | Whisper/PyTorch device. |
 | `--torch-index-url URL` | CUDA 12.8 PyTorch index | Torch install index when using CUDA. |
 | `--python-version VERSION` | `3.14` | Python version for the uv-managed `.venv`. |
@@ -3796,6 +3808,8 @@ The split is intentionally responsibility-oriented:
   and insertion without replacing existing speech.
 - `transcription_review.py` owns conservative primary word/punctuation/case
   proposals, local edit limits, independent verification and resumable auditing.
+- `transcription_audio.py` checks specific subtitle hypotheses against short
+  local Whisper decodes with surrounding words as anchors.
 - `srt.py` owns the subtitle cue model, SRT parsing/rendering, compaction, and
   gap extension.
 - `openai_client.py` owns dotenv loading, Responses API calls, retry behavior,
@@ -3962,6 +3976,7 @@ High-level groups:
 | `yt_whisper_subs.openai_client` | `.env` loading, Responses API requests, retries, response text extraction, JSON cleanup, and shared usage reporting. |
 | `yt_whisper_subs.openai_translate` | `OpenAISrtTranslator`, chunk objects, checkpoint persistence, prompts, repair requests, validation, and English SRT rendering. |
 | `yt_whisper_subs.transcription_review` | Sparse primary word/punctuation/case correction, exact-span edits, verification, original-source audit and batch checkpoints. |
+| `yt_whisper_subs.transcription_audio` | Short local audio retries and confident matching of proposed words in their cue. |
 | `yt_whisper_subs.whisper_gaps` | Bounded internal audio-gap retries with the same Whisper policy, confidence filtering and preservation of existing cues. |
 | `yt_whisper_subs.openai_chapters` | Transcript windowing, stateless bilingual chapter prompting, structured validation/repair, and trusted timestamp mapping. |
 | `yt_whisper_subs.chapters` | Versioned chapter JSON, validation, atomic persistence, and derived mpv FFmetadata rendering. |

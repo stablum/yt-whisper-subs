@@ -17,6 +17,7 @@ from yt_whisper_subs import openai_client
 from yt_whisper_subs import pipeline_progress as progress
 from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
+from yt_whisper_subs import transcription_audio
 from yt_whisper_subs import yield_files
 
 
@@ -28,6 +29,8 @@ _TEXT = re.compile(
     r"(?=\n[ \t]*\n|\Z)", re.MULTILINE | re.DOTALL,
 )
 _PUNCT = str.maketrans("", "", '.,;:!?…"“”„«»()[]')
+_AUDIO_REQUIRED = "needs_audio"
+_INDEFINITE_ARTICLES = frozenset({"een", "a", "an"})
 # Protect small changes that can reverse a claim or alter its participants/quantity.
 _PROTECTED = frozenset("""
     niet geen nooit niets niks niemand nergens nee zonder wel ik mij me jij jou je u
@@ -51,8 +54,8 @@ For word edits, replace ONE word with ONE very similar-sounding word when the or
 is clearly a recognition error in its immediate spoken context and the replacement unambiguously
 fits. Do not excuse a malformed lexical item just because the surrounding speech is disfluent:
 fix the word while preserving all surrounding disfluency and grammar. Plausible alternative
-wording is not enough. You have NO AUDIO: if either word
-could reasonably have been spoken, abstain. Keep unusual but plausible speech, dialect,
+wording is not enough for a text-only edit. Abstain from text-only edits if the original
+could reasonably have been spoken. Keep unusual but plausible speech, dialect,
 grammar mistakes, repetitions, fragments and spelling style.
 Never guess or substitute a person's or place's name. Never change which entity the speaker
 refers to. If nearby cues unambiguously identify an established title, such as a named law,
@@ -60,7 +63,7 @@ repair its malformed near-homophone and use its conventional initial capital in 
 word edit. A case-only change belongs in formatting. Never correct numbers, dates, quantities,
 negation, pronouns or modal verbs.
 Do not repair a speaker's factual mistakes. Do not add content, delete content or move text
-between cues. The ONLY word-boundary exception is ONE misrecognized compound: join two
+between cues. The text-only word-boundary exception is ONE misrecognized compound: join two
 adjacent words into one or split one into two, with nearly identical letters and sound.
 Copy the complete original span and use the word index of its FIRST word. No general phrase
 replacement is allowed. One example is 'koffie apparaat' -> 'koffieapparaat'; a sound-alike
@@ -71,12 +74,20 @@ several letter differences, as in 'ex-fro' -> 'ex-vrouw'.
 Before proposing an edit, read the resulting cue. If the error is a misrecognized compound,
 repair the WHOLE compound span in that one edit, including its incorrectly separated neighbor.
 Do not propose a partial word fix that leaves the recognized compound split incorrectly.
+If two adjacent words instead look like one misheard word and there is a close-sounding
+replacement that fits the context, propose the exact two words and the single replacement
+with confidence "needs_audio". This only requests an audio check. In every cue, explicitly
+look for an indefinite article followed by a malformed or contextually unlikely noun where
+a similar-sounding adverb makes sense. For example, in a discussion about having very little
+time to play, flag 'een hamper' -> 'amper' in 'we hebben eigenlijk een hamper kunnen spelen'.
+Flag plausible hypotheses even when the exact wording needs confirmation. Never suggest a
+broad rewrite, a bare article deletion, or removal of a real quantity or negation.
 For example, 'leiden onder de pijn' can become 'lijden onder de pijn', while ordinary
 grammatical roughness and a plausible choice such as 'thee' instead of 'koffie' stay unchanged.
 Neighboring cues are context only. Never try to use an edit quota.
 Use the supplied one-based cue index and word index, copying the original span exactly.
-Explain both why the original is impossible in context and why the replacement sounds
-nearly identical. If uncertain, do nothing. Only very_high confidence is eligible.
+Explain both why the original does not fit its context and why the replacement sounds
+nearly identical. Apart from a "needs_audio" flag, abstain if uncertain.
 Separately, formatting may fix CLEAR punctuation and capitalization errors, such as a
 missing sentence-ending period or a lowercase sentence start. Do not treat every cue
 boundary as a sentence boundary: sentences often continue across cues. Keep ambiguous
@@ -127,7 +138,7 @@ def _format(*, verification: bool = False) -> dict:
             field: {"type": "integer" if field in {"cue", "word"} else "string"}
             for field in Edit._fields
         }
-        fields["confidence"]["enum"] = ["very_high", "uncertain"]
+        fields["confidence"]["enum"] = ["very_high", "uncertain", _AUDIO_REQUIRED]
     schema = {"type": "object", "additionalProperties": False, "required": [name],
               "properties": {name: {"type": "array", "items": {
                   "type": "object", "additionalProperties": False,
@@ -161,7 +172,9 @@ def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> 
     if edit.cue not in targets or not 1 <= edit.cue <= len(cues):
         return "cue is outside the editable range"
     old, new = edit.original, edit.replacement
-    if edit.confidence != "very_high" or not edit.context_reason.strip() or not edit.sound_reason.strip():
+    audio = edit.confidence == _AUDIO_REQUIRED
+    has_reasons = bool(edit.context_reason.strip() and edit.sound_reason.strip())
+    if edit.confidence not in {"very_high", _AUDIO_REQUIRED} or not has_reasons:
         return "missing high confidence or supporting reasons"
     if old == new.lower():
         return "no lexical change"
@@ -173,11 +186,17 @@ def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> 
     old_words, new_words = old.split(" "), new.split(" ")
     if (len(old_words), len(new_words)) not in {(1, 1), (1, 2), (2, 1)}:
         return "phrase replacements are outside the review scope"
-    old_parts = old.replace("-", " ").split(" ")
+    if audio and (len(old_words) != 2 or not new.islower() or not all(w.isalpha() for w in [*old_words, new])):
+        return "audio checks require two lowercase words and one lowercase replacement"
+    # Only an audio-supported lexical repair can absorb a spurious indefinite article.
+    word_core = old_words[1:] if audio and old_words[0] in _INDEFINITE_ARTICLES else old_words
+    if word_core != old_words and word_core[0] == new:
+        return "audio checks cannot simply delete an article"
+    old_parts = " ".join(word_core).replace("-", " ").split(" ")
     new_parts = new.lower().replace("-", " ").split(" ")
     if (max(len(old_parts), len(new_parts)) > 2
             or any(not part.isalpha() or len(part) < 2 for part in [*old_parts, *new_parts])
-            or any(len(word.replace("-", "")) < 3 for word in [*old_words, *new_words])):
+            or any(len(word.replace("-", "")) < 3 for word in [*word_core, *new_words])):
         return "expected whole words or a compound with one internal separator"
     if any(part in _PROTECTED for part in [*old_parts, *new_parts]):
         return "contains a protected word"
@@ -214,6 +233,18 @@ def _span(text: str, edit: Edit, *, match_case: bool = True) -> tuple[int, int] 
     if not matches:
         return None
     return start, end
+
+
+def _audio_match(cue: srt.SubtitleCue, edit: Edit) -> transcription_audio.Match | None:
+    """Anchor a two-to-one repair on unchanged words on both sides of the span."""
+
+    words = _WORD.findall(cue.text.casefold())
+    start = edit.word - 1
+    end = start + 2
+    if not 0 < start < end < len(words) or not 0 < cue.end_ms - cue.start_ms <= transcription_audio.MAX_CUE_MS:
+        return None
+    phrase = (*words[max(0, start - 2):start], edit.replacement, *words[end:end + 2])
+    return transcription_audio.Match(cue, phrase)
 
 
 def _parse(output: str, key: str) -> list[dict]:
@@ -313,18 +344,21 @@ def _edit_limit(cues: list[srt.SubtitleCue]) -> int:
 class TranscriptionReview:
     """Own sparse review, checkpoints and publication; e.g. resume without running Whisper again."""
 
-    def __init__(self, pair: subtitle_files.SubtitlePair, args: argparse.Namespace) -> None:
+    def __init__(self, pair: subtitle_files.SubtitlePair, args: argparse.Namespace,
+                 audio: transcription_audio.Probe | None = None) -> None:
         """Bind one primary yield and existing API settings; e.g. CLI and library share Luna."""
 
         self._pair = pair
         self._args = args
         self._path = pending_path(pair.archive)
+        self._audio = audio
 
     def begin(self) -> None:
         """Snapshot the unedited source before making API calls; e.g. --force-transcription-review."""
 
         source = self._pair.sidecar.read_text(encoding="utf-8-sig")
-        state = {"source": source, "next_cue": 1, "edits": [], "formatting": [], "policy": self._policy()}
+        state = {"source": source, "next_cue": 1, "edits": [], "formatting": [],
+                 "audio_checks": {}, "policy": self._policy()}
         archive_source = self._pair.archive.read_text(encoding="utf-8-sig")
         if archive_source != source:
             state["previous_archive"] = archive_source  # Explicit fresh review chooses the playback copy.
@@ -334,10 +368,11 @@ class TranscriptionReview:
     def _policy(self) -> dict:
         """Fingerprint settings that affect cached decisions; e.g. switching models restarts the audit."""
 
-        return {"version": 4, "batch_cues": BATCH_CUES,
+        return {"version": 5, "batch_cues": BATCH_CUES,
                 "model": getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
                 "reasoning": getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
-                "language": self._args.language}
+                "language": self._args.language,
+                "whisper_model": getattr(self._args, "model", None)}
 
     def _save(self, state: dict) -> None:
         """Persist only whole successful batches; e.g. an interrupted request leaves its batch pending."""
@@ -354,6 +389,9 @@ class TranscriptionReview:
                 "Default to reject. For word edits, approve ONLY if BOTH near-identical pronunciation and an "
                 "unequivocal contextual error are established. For a named title, require clear evidence from "
                 "the cues that the proposed spelling refers to the exact same entity. "
+                "For a needs_audio edit, require audio_match to confirm the requested single word between its "
+                "unchanged neighbors. Approve only if it fits the context and the original span as a whole "
+                "is a plausible misrecognition of that word. "
                 "For formatting, approve ONLY clear punctuation "
                 "or capitalization fixes that preserve wording and sentence boundaries in context. "
                 "Return one decision per candidate index, never a rewrite."
@@ -369,11 +407,15 @@ class TranscriptionReview:
         openai_client.print_usage(result, label=label)
         return openai_client.response_output_text(result)
 
-    def _verify(self, edits: list[Edit | FormatEdit], document: dict) -> list[Edit | FormatEdit]:
+    def _verify(self, edits: list[Edit | FormatEdit], document: dict,
+                audio_checks: dict[str, str | None]) -> list[Edit | FormatEdit]:
         """Check only eligible candidates in a separate call; e.g. clean batches need one request."""
 
         candidates = [{"index": i, "kind": "word" if isinstance(edit, Edit) else "formatting", **edit._asdict()}
                       for i, edit in enumerate(edits, 1)]
+        for candidate in candidates:
+            if candidate.get("confidence") == _AUDIO_REQUIRED:
+                candidate["audio_match"] = audio_checks[str(candidate["cue"])]
         output = self._request({**document, "candidates": candidates}, verification=True)
         decisions = _parse(output, "decisions")
         approved, seen = set(), set()
@@ -399,9 +441,10 @@ class TranscriptionReview:
 
         state, cues, edits, formatting = self._load()
         source = state["source"]
+        audio_checks = state["audio_checks"]
         for start in range(state["next_cue"], len(cues) + 1, BATCH_CUES):
             targets = range(start, min(start + BATCH_CUES, len(cues) + 1))
-            batch, fmt_batch = self._batch(cues, targets)
+            batch, fmt_batch = self._batch(cues, targets, audio_checks)
             if len(edits) + len(batch) > _edit_limit(cues):
                 print("Rejected verified word corrections: transcript edit limit exceeded.", flush=True)
                 batch = []
@@ -436,7 +479,7 @@ class TranscriptionReview:
             raise RuntimeError("Primary subtitles changed during review; preserved external edits. Use --force-transcription-review.")
         if state["policy"] != self._policy():
             state["previous_result"] = sidecar  # Retain a partial publication while the new policy is pending.
-            state.update(next_cue=1, edits=[], formatting=[], policy=self._policy())
+            state.update(next_cue=1, edits=[], formatting=[], audio_checks={}, policy=self._policy())
             edits, formatting = [], []
             self._save(state)
         return state, cues, edits, formatting
@@ -468,8 +511,20 @@ class TranscriptionReview:
         if (len({fmt.cue for fmt in formatting}) != len(formatting)
                 or any(not _format_safe(fmt, cues, range(1, next_cue)) for fmt in formatting)):
             raise RuntimeError("Unsafe transcription checkpoint formatting")
+        checks = state.get("audio_checks", {})
+        if (not isinstance(checks, dict) or len(checks) > transcription_audio.MAX_CHECKS
+                or any(not re.fullmatch(r"[1-9][0-9]{0,8}", cue) or int(cue) >= next_cue
+                       or (value is not None and not isinstance(value, str)) for cue, value in checks.items())):
+            raise RuntimeError("Invalid transcription checkpoint audio checks")
+        for edit in edits:
+            if edit.confidence == _AUDIO_REQUIRED:
+                match = _audio_match(cues[edit.cue - 1], edit)
+                if match is None or checks.get(str(edit.cue)) != " ".join(match.words):
+                    raise RuntimeError("Missing audio evidence for a transcription checkpoint edit")
+        state.setdefault("audio_checks", checks)
 
-    def _batch(self, cues: list[srt.SubtitleCue], targets: range) -> tuple[list[Edit], list[FormatEdit]]:
+    def _batch(self, cues: list[srt.SubtitleCue], targets: range,
+               audio_checks: dict[str, str | None]) -> tuple[list[Edit], list[FormatEdit]]:
         """Review chronological cues with read-only neighbors; e.g. errors across sentence fragments."""
 
         context = range(max(1, targets.start - CONTEXT_CUES), min(len(cues) + 1, targets.stop + CONTEXT_CUES))
@@ -499,12 +554,41 @@ class TranscriptionReview:
             if count > 1:
                 print(f"Rejected transcription cue {cue}: multiple eligible word edits.", flush=True)
         eligible = [edit for edit in eligible if counts[edit.cue] == 1]
+        eligible = self._check_audio(cues, eligible, audio_checks)
         fmt_counts = Counter(fmt.cue for fmt in formatting)
         eligible_fmt = [fmt for fmt in formatting if fmt_counts[fmt.cue] == 1 and _format_safe(fmt, cues, targets)]
         candidates = [*eligible, *eligible_fmt]
-        verified = self._verify(candidates, document) if candidates else []
+        verified = self._verify(candidates, document, audio_checks) if candidates else []
         words = [edit for edit in verified if isinstance(edit, Edit)]
         if len(words) > _edit_limit(cues[targets.start - 1:targets.stop - 1]):
             print("Rejected verified word corrections: batch edit limit exceeded.", flush=True)
             words = []
         return words, [fmt for fmt in verified if isinstance(fmt, FormatEdit)]
+
+    def _check_audio(self, cues: list[srt.SubtitleCue], edits: list[Edit],
+                     audio_checks: dict[str, str | None]) -> list[Edit]:
+        """Spend the remaining local probe budget and forward only audio-supported edits."""
+
+        matches = {}
+        for edit in edits:
+            if edit.confidence != _AUDIO_REQUIRED:
+                continue
+            if self._audio is None or len(audio_checks) + len(matches) >= transcription_audio.MAX_CHECKS:
+                print(f"Skipped audio check for cue {edit.cue}: unavailable or budget exhausted.", flush=True)
+                continue
+            match = _audio_match(cues[edit.cue - 1], edit)
+            if match is None:
+                print(f"Skipped audio check for cue {edit.cue}: unsuitable timing or missing anchors.", flush=True)
+                continue
+            matches[edit.cue] = match
+        if matches:
+            print(f"Checking local audio for {len(matches)} subtitle cue(s).", flush=True)
+            confirmed = self._audio.confirm(matches)
+            for idx, match in matches.items():
+                phrase = " ".join(match.words)
+                supported = confirmed.get(idx) == phrase
+                audio_checks[str(idx)] = phrase if supported else None
+                status = "confirmed" if supported else "did not confirm the anchored replacement"
+                print(f"Local audio cue {idx}: {status}.", flush=True)
+        return [edit for edit in edits
+                if edit.confidence != _AUDIO_REQUIRED or audio_checks.get(str(edit.cue))]

@@ -22,6 +22,7 @@ from yt_whisper_subs import library_types as types
 from yt_whisper_subs import openai_client
 from yt_whisper_subs import srt
 from yt_whisper_subs import subtitle_files
+from yt_whisper_subs import transcription_audio
 from yt_whisper_subs import transcription_review as review
 from yt_whisper_subs import yield_files
 from tests import test_library as fixtures
@@ -295,6 +296,79 @@ class TranscriptionReviewTests(unittest.TestCase):
         self._run({"edits": [edit()]}, verdict(False))
         self.assertEqual(self._pair.sidecar.read_text(), self._source)
 
+    def test_two_to_one_requires_both_audio_and_independent_verification(self) -> None:
+        """Never publish an audio hypothesis on either check alone, e.g. een hamper → amper."""
+
+        source = "1\n00:02:54,380 --> 00:02:58,180\nWe hebben eigenlijk een hamper kunnen spelen.\n\n"
+        expected_audio = "hebben eigenlijk amper kunnen spelen"
+        candidate = edit(word=4, original="een hamper", replacement="amper", confidence="needs_audio")
+        for audio, approve in (({}, False), ({1: expected_audio}, False), ({1: expected_audio}, True)):
+            with self.subTest(audio=audio, approve=approve):
+                self._pair.sidecar.write_text(source, encoding="utf-8")
+                self._pair.sync_archive()
+                probe = mock.Mock(spec=transcription_audio.Probe)
+                probe.confirm.return_value = audio
+                self._review = review.TranscriptionReview(self._pair, self._args, probe)
+                self._review.begin()
+                responses = ({"edits": [candidate]}, verdict(approve)) if audio else ({"edits": [candidate]},)
+                api = self._run(*responses)
+                requested = probe.confirm.call_args.args[0][1]
+                self.assertEqual(" ".join(requested.words), expected_audio)
+                self.assertEqual(requested.cue.start_ms, 174380)
+                if audio:
+                    payload = json.loads(api.call_args.args[1]["input"])
+                    self.assertEqual(payload["candidates"][0]["audio_match"], expected_audio)
+                expected = source.replace("een hamper", "amper") if approve else source
+                self.assertEqual(self._pair.sidecar.read_text(), expected)
+                self.assertEqual(self._pair.archive.read_text(), expected)
+                audit = json.loads(self._pair.archive.with_name("archive.srt.transcription-review.json").read_text())
+                self.assertEqual(audit["audio_checks"], {"1": audio.get(1)})
+
+    def test_audio_check_cannot_drop_protected_words_or_make_bare_deletions(self) -> None:
+        """Keep negation, pronouns and actual numbers protected, even for audio proposals."""
+
+        candidates = (
+            ("geen hamper", "amper", "needs_audio"),
+            ("haar hamper", "amper", "needs_audio"),
+            ("twee hamper", "amper", "needs_audio"),
+            ("een hamer", "hamer", "needs_audio"),
+            ("een hamper", "amper", "very_high"),
+            ("een hamper kunnen", "amper", "needs_audio"),
+            ("hamper", "amper", "needs_audio"),
+        )
+        for original, replacement, confidence in candidates:
+            with self.subTest(original=original, confidence=confidence):
+                cues = [srt.SubtitleCue(0, 1000, f"We hebben {original} gespeeld.")]
+                candidate = review.Edit(**edit(word=3, original=original, replacement=replacement, confidence=confidence))
+                self.assertIsNotNone(review._word_rejection(candidate, cues, range(1, 2)))
+
+    def test_resume_preserves_audio_evidence_and_budget(self) -> None:
+        """Resume after a verified batch without decoding its audio twice."""
+
+        source = ("1\n00:00:01,000 --> 00:00:03,000\nWe hebben eigenlijk een hamper kunnen spelen.\n\n"
+                  "2\n00:00:03,000 --> 00:00:04,000\nWe hebben een hapart geleerd.\n\n")
+        self._pair.sidecar.write_text(source, encoding="utf-8")
+        self._pair.sync_archive()
+        probe = mock.Mock(spec=transcription_audio.Probe)
+        probe.confirm.return_value = {1: "hebben eigenlijk amper kunnen spelen"}
+        self._review = review.TranscriptionReview(self._pair, self._args, probe)
+        first = edit(word=4, original="een hamper", replacement="amper", confidence="needs_audio")
+        second = edit(cue=2, word=3, original="een hapart", replacement="apart", confidence="needs_audio")
+        with mock.patch.object(review, "BATCH_CUES", 1), mock.patch.object(transcription_audio, "MAX_CHECKS", 1):
+            self._review.begin()
+            with self.assertRaisesRegex(RuntimeError, "offline"):
+                self._run({"edits": [first]}, verdict(), RuntimeError("offline"))
+            state_path = review.pending_path(self._pair.archive)
+            state = json.loads(state_path.read_text())
+            self.assertEqual(state["audio_checks"], {"1": "hebben eigenlijk amper kunnen spelen"})
+            yield_files.atomic_write(state_path, json.dumps({**state, "audio_checks": {}}))
+            with self.assertRaisesRegex(RuntimeError, "Missing audio evidence"):
+                self._review.run()
+            yield_files.atomic_write(state_path, json.dumps(state))
+            self._run({"edits": [second]})
+        probe.confirm.assert_called_once()
+        self.assertEqual(self._pair.sidecar.read_text(), source.replace("een hamper", "amper"))
+
     def test_invalid_or_failed_reviews_leave_pending_original(self) -> None:
         """Refuse malformed coverage or truncated requests; e.g. a verifier cannot silently omit candidates."""
 
@@ -528,14 +602,15 @@ class PipelineReviewTests(recovery.YieldRecoveryFixture, unittest.TestCase):
         self.assertEqual(cache.issue(record), "transcription review needs completion")
 
     def test_corrected_primary_feeds_translation_and_chapters(self) -> None:
-        """Publish reviewed text before either dependent stage; e.g. both consume lijden and the added period."""
+        """Publish audio-supported text and formatting before translation and chapters."""
 
-        source = "ze bleef erg leiden onder de pijn"
-        expected = "Ze bleef erg lijden onder de pijn."
+        source = "we hebben eigenlijk een hamper kunnen spelen"
+        expected = "We hebben eigenlijk amper kunnen spelen."
         self.whisper.side_effect = lambda _audio, target, *_args: target.write_text(recovery.cue(source), encoding="utf-8")
         fmt = {"cue": 1, "original": source, "replacement": source.capitalize() + ".", "reason": "Sentence casing/end."}
         decisions = {"decisions": [{"index": i, "approve": True, "reason": "Clear correction."} for i in (1, 2)]}
-        proposals = {"edits": [edit()], "formatting": [fmt], "reviewed_cues": [1]}
+        candidate = edit(word=4, original="een hamper", replacement="amper", confidence="needs_audio")
+        proposals = {"edits": [candidate], "formatting": [fmt], "reviewed_cues": [1]}
         replies = [{"output_text": json.dumps(out)} for out in (proposals, decisions)]
 
         def translate(primary, target, args) -> None:
@@ -552,7 +627,10 @@ class PipelineReviewTests(recovery.YieldRecoveryFixture, unittest.TestCase):
             return self._chapter(source, files, args)
 
         with mock.patch.object(openai_client, "responses_api_request", side_effect=replies), \
+                mock.patch.object(transcription_audio.Probe, "confirm", autospec=True,
+                                  return_value={1: "hebben eigenlijk amper kunnen spelen"}) as probe, \
                 mock.patch("yt_whisper_subs.openai_translate.translate_srt_with_openai", side_effect=translate), \
                 mock.patch("yt_whisper_subs.openai_chapters.generate_chapters", side_effect=chapter):
             self.assertEqual(self.runner.run(), 0)
+        self.assertEqual(probe.call_args.args[0]._media, self.video)
         self.assertTrue(self.yields.all_ready())
