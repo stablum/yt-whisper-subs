@@ -21,19 +21,20 @@ class VerbOptions(QtWidgets.QWidget):
     finish_requested = QtCore.Signal()
     editing = QtCore.Signal(bool)
 
-    def __init__(self, saved: str) -> None:
+    def __init__(self, saved: str, options_type: type[verbs.Options] = verbs.Options) -> None:
         """Restore optional filters defensively; e.g. invalid combinations produce an actionable empty state."""
 
         super().__init__()
+        self._options_type = options_type
         self._focus = QtWidgets.QComboBox()
-        for value, label in {**verbs.FOCUSES, **verbs.TENSE_LABELS}.items():
+        for value, label in options_type.focuses.items():
             self._focus.addItem(i18n.tr(label), value)
         self._subject = QtWidgets.QComboBox()
         self._structure = QtWidgets.QComboBox()
         self._source = QtWidgets.QComboBox()
         for value, label in verbs.SOURCES.items():
             self._source.addItem(i18n.tr(label), value)
-        for combo, choices in ((self._subject, verbs.SUBJECTS), (self._structure, verbs.STRUCTURES)):
+        for combo, choices in ((self._subject, options_type.subjects), (self._structure, options_type.structures)):
             combo.addItem(i18n.tr('All · adaptive'), "all")
             for value, label in choices.items():
                 combo.addItem(i18n.tr(label), value)
@@ -41,9 +42,9 @@ class VerbOptions(QtWidgets.QWidget):
         self._count.setRange(1, 50)
         self._early = QtWidgets.QCheckBox(i18n.tr('Include forms not due yet'))
         try:
-            opts = verbs.Options.model_validate_json(saved) if saved else verbs.Options()
+            opts = options_type.model_validate_json(saved) if saved else options_type()
         except ValueError:
-            opts = verbs.Options()
+            opts = options_type()
         self._count.setValue(opts.count)
         self._early.setChecked(opts.include_early)
         for combo, value in ((self._focus, opts.focus), (self._subject, opts.subject),
@@ -51,13 +52,18 @@ class VerbOptions(QtWidgets.QWidget):
             combo.setCurrentIndex(combo.findData(value))
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
-        for label, widget in ((i18n.tr('Verbs'), self._source), (i18n.tr('Focus'), self._focus), (i18n.tr('Subject'), self._subject), (i18n.tr('Situation'), self._structure),
-                              (i18n.tr('Exercises'), self._count)):
+        for label, widget in ((i18n.tr('Verbs'), self._source), (i18n.tr('Focus'), self._focus), (i18n.tr('Subject'), self._subject)):
             form.addRow(label, widget)
+        if options_type.structures:
+            form.addRow(i18n.tr('Situation'), self._structure)
+        else:
+            self._structure.hide()
+        form.addRow(i18n.tr('Exercises'), self._count)
         form.addRow(self._early)
-        note = QtWidgets.QLabel(i18n.tr('Subjunctives use established formal expressions.\nOnly grammatically valid combinations are offered.'))
-        note.setObjectName("settingsNote")
-        form.addRow(note)
+        if options_type.structures:
+            note = QtWidgets.QLabel(i18n.tr('Subjunctives use established formal expressions.\nOnly grammatically valid combinations are offered.'))
+            note.setObjectName("settingsNote")
+            form.addRow(note)
         restart = QtWidgets.QPushButton(i18n.tr('New verb round'))
         restart.setAutoDefault(False)
         restart.setObjectName("primaryButton")
@@ -89,9 +95,9 @@ class VerbOptions(QtWidgets.QWidget):
     def options(self) -> verbs.Options:
         """Read the domain contract from controls; e.g. early review is an explicit preference."""
 
-        return verbs.Options(count=self._count.value(), focus=self._focus.currentData(), subject=self._subject.currentData(),
-                             structure=self._structure.currentData(), source=self._source.currentData(),
-                             include_early=self._early.isChecked())
+        return self._options_type(count=self._count.value(), focus=self._focus.currentData(), subject=self._subject.currentData(),
+                                  structure=self._structure.currentData(), source=self._source.currentData(),
+                                  include_early=self._early.isChecked())
 
     def set_active(self, active: bool) -> None:
         """Offer ending only for a live round; e.g. statistics alone does not create a round."""

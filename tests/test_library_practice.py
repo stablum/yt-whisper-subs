@@ -139,13 +139,13 @@ class PracticeViewTests(unittest.TestCase):
 
         self.assertEqual([self.dialog._tabs.tabText(idx) for idx in range(self.dialog._tabs.count())],
                          ["Word quiz\nDutch → English", "Word quiz\nEnglish → Dutch", "Sound alike\nListen and choose",
-                          "Verbs\nDutch transformations", "Sentences\nDutch → English", "Sentences\nEnglish → Dutch", "Word order",
+                          "Verbs\nDutch transformations", "Verb forms", "Sentences\nDutch → English", "Sentences\nEnglish → Dutch", "Word order",
                           "Phrase and clause order",
                           "Listening\nDutch dictation",
                           'Reading comprehension\nText and questions', 'Listening comprehension\nText and questions', "Progress", "Activity"])
         self.assertFalse(self.dialog._tabs.tabBar().isVisible())
         labels = {label.text() for label in self.dialog._nav.findChildren(QtWidgets.QLabel)}
-        self.assertEqual(labels, {"WORDS", "SENTENCES", "PASSAGES", "TRACKING", "Today"})
+        self.assertEqual(labels, {"WORDS", "VERBS", "SENTENCES", "PASSAGES", "TRACKING", "Today"})
         buttons = self.dialog._nav._buttons
         buttons.button(library_practice.Page.PROGRESS).click()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
@@ -408,13 +408,13 @@ class PracticeViewTests(unittest.TestCase):
         nav = self.dialog._nav._buttons
         self.assertEqual(nav.button(library_practice.Page.WORD_EN_NL).accessibleDescription(), 'Completed today')
         self.assertIn('Full practice resumes here', nav.button(library_practice.Page.SOUND).accessibleDescription())
-        self.assertIn('3/11', self.dialog._sequence._status.text())
+        self.assertIn('3/12', self.dialog._sequence._status.text())
         sound = self.dialog._quizzes[practice.Direction.SOUND]
         with mock.patch.object(sound, 'activate'), mock.patch.object(sound, 'enter_sequence'):
             self.dialog.show_page(sequence=True)
             self.app.processEvents()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.SOUND)
-        self.assertIn('3/11', self.dialog._sequence._status.text())
+        self.assertIn('3/12', self.dialog._sequence._status.text())
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 2)
 
     def test_full_practice_survives_navigation_and_visits_every_mode_in_order(self) -> None:
@@ -447,7 +447,7 @@ class PracticeViewTests(unittest.TestCase):
                     self.dialog._panels[library_practice.Page.for_track(track)].round_reviewed.emit()
             self.app.processEvents()
         self.assertIsNone(bar.current)
-        self.assertIn('10 completed · 1 skipped', bar._status.text())
+        self.assertIn(f'{len(tracks) - 1} completed · 1 skipped', bar._status.text())
         self.assertFalse(any('Full practice resumes here' in button.accessibleDescription()
                              for button in self.dialog._nav._buttons.buttons()))
         self.assertEqual(practice_stats.snapshot(self.db)['totals']['attempts'], 0)

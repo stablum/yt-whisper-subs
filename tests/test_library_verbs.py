@@ -9,6 +9,7 @@ import tempfile
 import threading
 import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -31,8 +32,13 @@ from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import listening_tts
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_service
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import pronunciation
+from yt_whisper_subs import verb_forms
+from yt_whisper_subs import verb_generate
+from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_service
 from yt_whisper_subs import verb_stats
 
@@ -106,6 +112,54 @@ class VerbFlowTests(unittest.TestCase):
             answer = answer.replace("werkt", "werk").replace("maakt", "maak")
         self.panel._view.card.editor.setPlainText(answer)
         QtTest.QTest.keyClick(self.panel._view.card.editor, QtCore.Qt.Key.Key_Return)
+
+    def test_form_round_consumes_checked_stock_and_grades_only_the_verb_words(self) -> None:
+        """Keep both active rounds independent and accept an audited short-form alternative offline."""
+
+        options = verb_forms.Options(count=1, source="starter", subject="u", focus="present")
+        track = practice_tracks.Track.VERB_FORMS
+        self.db.set_setting(track.settings_key, options.model_dump_json())
+        sentence_id = self.engine.start(verb_fixtures.options(), lambda _: None)
+        self._open(activity=True)
+        panel = self.dialog._panels[library_practice.Page.VERB_FORMS]
+        provider = verb_generate.VerbGenerator()
+        panel._engine = verb_service.VerbService(self.db, provider)
+        catalog = [row for row in type(self.db).verb_catalog(self.db) if row['lemma'] == 'hebben']
+
+        def request(schema, _prompt, document):
+            """Supply both standard u forms through the real generation and audit path."""
+
+            target, = document["targets"]
+            self.assertEqual((target['lemma'], target['subject'], target['tense']), ('hebben', 'u', 'present'))
+            target_id = target['target_id']
+            if schema is verb_forms.Drafts:
+                return schema(questions=[verb_forms.Draft(target_id=target_id, answer='hebt', alternatives=['heeft'],
+                                                         explanation='Both hebt and heeft are standard with polite u.')])
+            self.assertIs(schema, verbs.Verdicts)
+            return schema(verdicts=[verbs.Verdict(target_id=target_id, valid=True, reason='Both forms checked')])
+
+        with (mock.patch.object(provider, '_request', side_effect=request) as api,
+              mock.patch.object(self.db, 'verb_catalog', return_value=catalog)):
+            panel._engine.start(options, lambda _: None, background=True)
+        policy = practice_ready.question_policy(panel._engine)
+        self.assertEqual(len(self.db.practice_stock(track, options, policy)), 1)
+        self.assertEqual(api.call_count, 2)
+        with mock.patch.object(provider, '_request', side_effect=AssertionError('Unexpected API request')):
+            self.dialog._nav._buttons.button(library_practice.Page.VERB_FORMS).click()
+            self._wait(lambda: panel._run.row is not None)
+            self.assertEqual(self.db.verb_active(), sentence_id)
+            self.assertEqual(panel._view.card._source.text(), 'hebben')
+            self.assertEqual(panel._view.action.text(), 'Check verb form')
+            self.assertFalse(panel._view.card._correction.isVisible())
+            panel._view.card.editor.setPlainText(' Heeft! ')
+            QtTest.QTest.keyClick(panel._view.card.editor, QtCore.Qt.Key.Key_Return)
+            self._wait(lambda: panel._run.row['outcome'] == 'correct')
+        self.assertEqual(panel._view.card._correction.text(), 'heeft')
+        self.assertFalse(verb_forms.Grade.assess('u heeft', panel._run.row['content']).correct)
+        self.assertFalse(self.db.practice_stock(track, options, policy))
+        self.assertEqual(practice_activity.day_states(self.db, datetime.now()), {track: practice_activity.DayStatus.COMPLETED})
+        day = practice_activity.read(self.db).week[-1]
+        self.assertEqual((day.verb_forms, day.verbs, day.verb_lemmas), (1, 0, 1))
 
     def test_verb_answer_speech_is_ready_before_the_question_appears(self) -> None:
         """Reveal a correction from cache even when grading displays the learner's variant."""

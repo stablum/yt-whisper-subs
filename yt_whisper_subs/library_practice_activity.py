@@ -18,12 +18,13 @@ from yt_whisper_subs import practice_activity
 from yt_whisper_subs import word_order
 
 
-def _order_counts(row: practice_activity.Day) -> str:
-    """Identify the two ordering modes in the calendar and reminder details."""
+def _mode_counts(row: practice_activity.Day) -> str:
+    """Itemize verb forms and the ordering modes in the calendar and reminder details."""
 
-    return ''.join('\n' + i18n.tr('{mode}: {count}', mode=variant.label, count=count)
-                   for variant, count in ((word_order.Variant.WORDS, row.word_order),
-                                          (word_order.Variant.PHRASES, row.phrase_order)) if count)
+    return ''.join('\n' + i18n.tr('{mode}: {count}', mode=mode, count=count)
+                   for mode, count in ((i18n.tr('Verb forms'), row.verb_forms),
+                                       (word_order.Variant.WORDS.label, row.word_order),
+                                       (word_order.Variant.PHRASES.label, row.phrase_order)) if count)
 
 
 class ActivityChart(QtWidgets.QWidget):
@@ -78,7 +79,7 @@ class ActivityChart(QtWidgets.QWidget):
             center = plot.left() + step * (idx + 0.5)
             baseline = plot.bottom()
             for count, color in ((row.nl_en, "#66d9ef"), (row.en_nl, "#ffd166"),
-                                 (row.verbs, "#c4a1ff"), (row.sentences, "#ffac78"), (row.listening, "#83e5af"),
+                                 (row.verbs + row.verb_forms, "#c4a1ff"), (row.sentences, "#ffac78"), (row.listening, "#83e5af"),
                                  (row.comprehension_read + row.comprehension_listen, '#f38cbb')):
                 height = plot.height() * count / maximum
                 painter.fillRect(QtCore.QRectF(center - width / 2, baseline - height, width, height), QtGui.QColor(color))
@@ -100,14 +101,14 @@ class ActivityChart(QtWidgets.QWidget):
                 verb_lemmas=row.verb_lemmas,
                 nl_en=row.nl_en,
                 en_nl=row.en_nl,
-                verbs=row.verbs,
+                verbs=row.verbs + row.verb_forms,
                 sentence_en_nl=row.sentence_en_nl,
                 sentence_nl_en=row.sentence_nl_en,
                 listening=row.listening,
                 comprehension_read=row.comprehension_read,
                 comprehension_listen=row.comprehension_listen,
             ))
-            hint += _order_counts(row) + '\n' + labels.graded_accuracy(row.correct, row.graded)
+            hint += _mode_counts(row) + '\n' + labels.graded_accuracy(row.correct, row.graded)
             self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
 
     def mouseMoveEvent(self, event) -> None:
@@ -289,7 +290,7 @@ class ActivityPanel(QtWidgets.QWidget):
             accuracy=labels.graded_accuracy(row.correct, row.graded),
             value=row.answers - row.graded,
         )
-        self._details.setText(details + _order_counts(row))
+        self._details.setText(details + _mode_counts(row))
 
     def _show_month(self, *_args) -> None:
         """Summarize the displayed month independently of date selection; e.g. navigate to last month."""

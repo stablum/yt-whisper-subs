@@ -11,12 +11,13 @@ import uuid
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from yt_whisper_subs import verb_forms
     from yt_whisper_subs import verb_practice as verbs
 
 
 PRESENTATION = """
 SELECT p.*,q.body_json,q.target_id,q.flagged_at,t.verb_id,t.tense,t.subject,t.structure,
-       v.lemma,v.family,v.transitive,s.status,s.scheduler_json,s.options_json
+       v.lemma,v.family,v.transitive,s.status,s.scheduler_json,s.options_json,s.variant
 FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id
 JOIN verb_targets t ON t.id=q.target_id JOIN verb_lemmas v ON v.id=t.verb_id
 JOIN verb_sessions s ON s.id=p.session_id
@@ -89,7 +90,7 @@ class VerbDbMixin:
             conn.execute("INSERT OR IGNORE INTO verb_source_translations VALUES(?,?,?,?,?,?)",
                          (question_id, policy["model"], policy["reasoning"], policy["prompt_version"], english, time.time()))
 
-    def verb_cache(self, draft: verbs.Draft, verdict: verbs.Verdict, policy: dict) -> dict:
+    def verb_cache(self, draft: verbs.Draft | verb_forms.Draft, verdict: verbs.Verdict, policy: dict) -> dict:
         """Store independently approved content and provenance; e.g. rejected questions never become playable."""
 
         if not verdict.valid or draft.target_id != verdict.target_id:
@@ -109,19 +110,20 @@ class VerbDbMixin:
         session_id, now = uuid.uuid4().hex, time.time()
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute("UPDATE verb_sessions SET status='stopped',finished_at=? WHERE status='active'", (now,))
-            self._practice_consume_stock(conn, "verb")
-            conn.execute("INSERT INTO verb_sessions VALUES(?,?,?,?,?,?)",
-                         (session_id, opts.model_dump_json(), scheduler_json, now, None, "active"))
+            conn.execute("UPDATE verb_sessions SET status='stopped',finished_at=? WHERE status='active' AND variant=?",
+                         (now, opts.variant))
+            self._practice_consume_stock(conn, "verb", opts.variant)
+            conn.execute("INSERT INTO verb_sessions(id,options_json,scheduler_json,created_at,status,variant) VALUES(?,?,?,?,?,?)",
+                         (session_id, opts.model_dump_json(), scheduler_json, now, "active", opts.variant))
             conn.executemany("INSERT INTO verb_presentations(session_id,question_id,ordinal) VALUES(?,?,?)",
                              [(session_id, row["id"], idx) for idx, row in enumerate(questions, 1)])
         return session_id
 
-    def verb_active(self) -> str | None:
+    def verb_active(self, variant: str = "") -> str | None:
         """Find a resumable typed round without exposing a question; e.g. browsing statistics is read-only."""
 
         with self._connect() as conn:
-            row = conn.execute("SELECT id FROM verb_sessions WHERE status='active' ORDER BY created_at DESC LIMIT 1").fetchone()
+            row = conn.execute("SELECT id FROM verb_sessions WHERE status='active' AND variant=?", (variant,)).fetchone()
         return row[0] if row else None
 
     @staticmethod
@@ -160,7 +162,7 @@ class VerbDbMixin:
         """Save the first attempt before HTTP and make repeat submission idempotent; e.g. a timeout loses no typed text."""
 
         if not isinstance(answer, str) or not answer.strip() or len(answer) > 2000:
-            raise ValueError("Type a sentence of at most 2,000 characters")
+            raise ValueError("Type an answer of at most 2,000 characters")
         if type(elapsed_ms) is not int or elapsed_ms < 0:
             raise ValueError("Invalid answer duration")
         with self._connect() as conn:
@@ -192,11 +194,10 @@ class VerbDbMixin:
                      "AND NOT EXISTS(SELECT 1 FROM verb_presentations p WHERE p.session_id=verb_sessions.id "
                      "AND p.outcome IS NULL)", (time.time(),))
 
-    def verb_grade(self, presentation_id: int, grade: verbs.Grade, provenance: dict) -> dict:
+    def verb_grade(self, presentation_id: int, grade: verbs.Grade | verb_forms.Grade, provenance: dict) -> dict:
         """Commit one verified correction, its error evidence and FSRS update together; e.g. double callbacks cannot add reviews."""
 
         from yt_whisper_subs import practice
-        from yt_whisper_subs import vocabulary_learning
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -221,15 +222,23 @@ class VerbDbMixin:
                           provenance["reasoning"], provenance["grade_version"], time.time(), result["rating"],
                           result["recall"], result["due_at"], result["before_json"], result["after_json"], result["log_json"],
                           presentation_id))
-            conn.executemany("INSERT INTO verb_assessments VALUES(?,?,?)",
-                             [(presentation_id, item.axis, int(item.correct)) for item in grade.axes])
-            conn.executemany("INSERT INTO verb_errors(presentation_id,ordinal,kind,axis,evidence,correction,explanation) "
-                             "VALUES(?,?,?,?,?,?,?)", [(presentation_id, idx, item.kind, item.axis, item.evidence,
-                                                        item.correction, item.explanation) for idx, item in enumerate(grade.errors)])
-            completed = {**dict(row), "grade": grade.model_dump()}
-            self._learning_save(conn, "verb", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
+            if not row["variant"]:
+                self._verb_diagnostics(conn, row, grade, provenance)
             self._verb_complete(conn)
             return self._verb_row(conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
+
+    def _verb_diagnostics(self, conn, row, grade: verbs.Grade, provenance: dict) -> None:
+        """Persist sentence-level evidence when the diagnostic grader has assessed all four dimensions."""
+
+        from yt_whisper_subs import vocabulary_learning
+
+        conn.executemany("INSERT INTO verb_assessments VALUES(?,?,?)",
+                         [(row["id"], item.axis, int(item.correct)) for item in grade.axes])
+        conn.executemany("INSERT INTO verb_errors(presentation_id,ordinal,kind,axis,evidence,correction,explanation) "
+                         "VALUES(?,?,?,?,?,?,?)", [(row["id"], idx, item.kind, item.axis, item.evidence,
+                                                    item.correction, item.explanation) for idx, item in enumerate(grade.errors)])
+        completed = {**dict(row), "grade": grade.model_dump()}
+        self._learning_save(conn, "verb", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
 
     def verb_flag(self, presentation_id: int) -> None:
         """Quarantine all uses and replay valid reviews; e.g. a faulty AI correction cannot keep punishing a tense."""

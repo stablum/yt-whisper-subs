@@ -9,6 +9,7 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
 from yt_whisper_subs import sentence_practice
 from yt_whisper_subs import comprehension
+from yt_whisper_subs import verb_forms
 from yt_whisper_subs import word_order
 
 
@@ -19,6 +20,7 @@ class Track(str, enum.Enum):
     WORD_EN_NL = "practice:en_nl"
     SOUND = "practice:sound_nl"
     VERBS = "verb"
+    VERB_FORMS = "verb:forms"
     SENTENCE_NL_EN = "sentence:nl_en"
     SENTENCE_EN_NL = "sentence:en_nl"
     WORD_ORDER = "word_order"
@@ -38,7 +40,7 @@ class Track(str, enum.Enum):
         """Bind translation direction once; e.g. verb transformations operate only in Dutch."""
 
         value = self.value.partition(":")[2]
-        if self.kind == "word_order":
+        if self.kind in {"verb", "word_order"}:
             return None
         direction = {'sentence': sentence_practice.Direction, 'comprehension': comprehension.Direction}.get(self.kind, practice.Direction)
         return direction(value) if value else None
@@ -55,6 +57,8 @@ class Track(str, enum.Enum):
     def session_filter(self) -> tuple[str, str] | None:
         """Choose the scoped column and value for sessions and cached questions."""
 
+        if self.kind == "verb":
+            return "variant", self.stock_key
         if self.variant:
             return "variant", self.variant.value
         if direction := self.direction:
@@ -77,6 +81,8 @@ class Track(str, enum.Enum):
             return self.variant.label
         if self == self.LISTENING:
             return i18n.tr('Listening\nDutch dictation')
+        if self == self.VERB_FORMS:
+            return i18n.tr('Verb forms')
         if self.kind == 'comprehension':
             return self.direction.label + '\n' + i18n.tr('Text and questions')
         title = {"practice": i18n.tr('Word quiz'), "sentence": i18n.tr('Sentences'), "verb": i18n.tr('Verbs')}[self.kind]
@@ -90,6 +96,8 @@ class Track(str, enum.Enum):
             return self.label
         if self == self.VERBS:
             return i18n.tr('Verb transformations')
+        if self == self.VERB_FORMS:
+            return self.label
         if self.kind == 'comprehension':
             return i18n.tr('Reading') if self == self.READ_COMPREHENSION else i18n.tr('Listening')
         return self.direction.label
@@ -107,6 +115,8 @@ class Track(str, enum.Enum):
         direction = getattr(opts, "direction", None)
         if kind == "word_order":
             return cls.PHRASE_ORDER if opts.variant == word_order.Variant.PHRASES else cls.WORD_ORDER
+        if kind == "verb":
+            return cls.VERB_FORMS if opts.variant == verb_forms.VARIANT else cls.VERBS
         return cls(f"{kind}:{direction.value}" if direction else kind)
 
 

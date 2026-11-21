@@ -85,7 +85,11 @@ class StockDbMixin:
             row = conn.execute(f"SELECT options_json FROM {kind}_stock WHERE direction=?", (direction,)).fetchone()
             if row is None or json.loads(row[0]) != opts.model_dump(mode="json"):
                 return []
-            rows = conn.execute(f"SELECT q.*,p.display_json FROM {kind}_stock_questions p JOIN {kind}_questions q ON q.id=p.question_id "
+            # Verb mode is part of the grammar target key, while session and stock lookups are scoped by variant.
+            fields = ",CASE t.structure WHEN 'forms' THEN 'forms' ELSE '' END AS variant" if kind == "verb" else ""
+            join = "JOIN verb_targets t ON t.id=q.target_id " if kind == "verb" else ""
+            rows = conn.execute(f"SELECT q.*,p.display_json{fields} FROM {kind}_stock_questions p "
+                                f"JOIN {kind}_questions q ON q.id=p.question_id {join}"
                                 "WHERE p.direction=? ORDER BY p.ordinal", (direction,)).fetchall()
             valid = len(rows) == opts.count and all(row["flagged_at"] is None and (not scope or row[scope[0]] == scope[1])
                                                    and all(row[key] == value for key, value in policy.items()) for row in rows)

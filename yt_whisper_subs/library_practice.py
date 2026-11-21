@@ -23,6 +23,7 @@ from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_sentence_progress
 from yt_whisper_subs import library_sentences
 from yt_whisper_subs import library_verb_progress
+from yt_whisper_subs import library_verb_forms
 from yt_whisper_subs import library_verbs
 from yt_whisper_subs import library_word_quiz
 from yt_whisper_subs import library_word_order
@@ -58,15 +59,16 @@ class Page(enum.IntEnum):
     WORD_EN_NL = 1
     SOUND = 2
     VERBS = 3
-    SENTENCE_NL_EN = 4
-    SENTENCE_EN_NL = 5
-    WORD_ORDER = 6
-    PHRASE_ORDER = 7
-    LISTENING = 8
-    READ_COMPREHENSION = 9
-    LISTEN_COMPREHENSION = 10
-    PROGRESS = 11
-    ACTIVITY = 12
+    VERB_FORMS = 4
+    SENTENCE_NL_EN = 5
+    SENTENCE_EN_NL = 6
+    WORD_ORDER = 7
+    PHRASE_ORDER = 8
+    LISTENING = 9
+    READ_COMPREHENSION = 10
+    LISTEN_COMPREHENSION = 11
+    PROGRESS = 12
+    ACTIVITY = 13
 
     @classmethod
     def for_track(cls, track: practice_tracks.Track) -> Page:
@@ -97,6 +99,7 @@ class PracticeView(QtWidgets.QWidget):
         self._panels = {Page.WORD_NL_EN: self._quizzes[practice.Direction.NL_EN],
                         Page.SOUND: self._quizzes[practice.Direction.SOUND],
                         Page.WORD_EN_NL: self._quizzes[practice.Direction.EN_NL], Page.VERBS: self._verbs,
+                        Page.VERB_FORMS: library_verb_forms.FormPanel(self._db),
                         Page.SENTENCE_EN_NL: self._sentences[practice.Direction.EN_NL],
                         Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN],
                         Page.WORD_ORDER: self._orders[word_order.Variant.WORDS],
@@ -132,7 +135,8 @@ class PracticeView(QtWidgets.QWidget):
         short_labels = {Page.for_track(track): track.button_label for track in practice_tracks.Track}
         self._nav = library_practice_nav.PracticeNav(self._tabs, (
             (i18n.tr('Words'), (Page.WORD_NL_EN, Page.WORD_EN_NL, Page.SOUND)),
-            (i18n.tr('Sentences'), (Page.VERBS, Page.SENTENCE_NL_EN, Page.SENTENCE_EN_NL,
+            (i18n.tr('Verbs'), (Page.VERBS, Page.VERB_FORMS)),
+            (i18n.tr('Sentences'), (Page.SENTENCE_NL_EN, Page.SENTENCE_EN_NL,
                                     Page.WORD_ORDER, Page.PHRASE_ORDER, Page.LISTENING)),
             (i18n.tr('Passages'), (Page.READ_COMPREHENSION, Page.LISTEN_COMPREHENSION)),
             (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),

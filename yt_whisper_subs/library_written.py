@@ -51,6 +51,7 @@ class Mode(pd.BaseModel):
     intro: str
     view: object
     ops: SessionOps
+    check_label: str = pd.Field(default_factory=lambda: i18n.tr('Check sentence'))
 
 
 class _Run(pd.BaseModel):
@@ -167,7 +168,8 @@ class WrittenPanel(QtWidgets.QWidget):
         self._run.pending = False
         self._run.empty = ""
         self._run.at_end = False
-        self._idle(i18n.tr('Preparing {value}…', value=self._mode.label.lower()), i18n.tr('Getting natural sentences ready and checking them.'), i18n.tr('Preparing…'))
+        self._idle(i18n.tr('Preparing {value}…', value=self._mode.label.lower()),
+                   i18n.tr('Preparing and checking your exercises.'), i18n.tr('Preparing…'))
 
         def prepare(report):
             """Return healthy empty states as data; e.g. incompatible filters are different from a network failure."""
@@ -257,7 +259,7 @@ class WrittenPanel(QtWidgets.QWidget):
         self._view.cancel.hide()
         self._view.flag.setEnabled(True)
         self._view.flag.show()
-        self._view.action.setText(i18n.tr('Retry checking') if row["answer_text"] is not None else i18n.tr('Check sentence'))
+        self._view.action.setText(i18n.tr('Retry checking') if row["answer_text"] is not None else self._mode.check_label)
         self._view.action.setDefault(False)
         self._view.action.show()
         self._input_changed()
@@ -340,7 +342,7 @@ class WrittenPanel(QtWidgets.QWidget):
             return
         self._task = None
         if self._run.operation == "grade" and self._run.row:
-            self._view.card.message(i18n.tr('Could not check your sentence: {message}\nYour first attempt is saved; no failure was recorded.', message=message))
+            self._view.card.message(i18n.tr('Could not check your answer. Your first attempt is saved.\n{message}', message=message))
             self._view.action.setText(i18n.tr('Retry checking'))
             self._view.action.setEnabled(True)
             self._view.action.setDefault(False)

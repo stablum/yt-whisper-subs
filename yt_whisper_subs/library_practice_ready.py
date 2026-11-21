@@ -17,6 +17,7 @@ from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import pronunciation_stock
 from yt_whisper_subs import task_cancel
+from yt_whisper_subs import verb_forms
 
 
 class PracticeReady(QtCore.QObject):
@@ -75,7 +76,12 @@ class PracticeReady(QtCore.QObject):
             defaults, engine = self._modes[track.kind]
             if self._custom and track.direction and track.direction != defaults.direction:
                 continue
-            saved = self._db.setting(track.settings_key, self._db.setting(track.kind + "_options", ""))
+            if track.kind == "verb" and self._custom and defaults.variant != track.stock_key:
+                continue
+            if track == practice_tracks.Track.VERB_FORMS:
+                defaults = defaults if isinstance(defaults, verb_forms.Options) else verb_forms.Options()
+            fallback = "" if track == practice_tracks.Track.VERB_FORMS else self._db.setting(track.kind + "_options", "")
+            saved = self._db.setting(track.settings_key, fallback)
             try:
                 opts = type(defaults).model_validate_json(saved) if saved else defaults
             except ValueError:
@@ -185,7 +191,7 @@ class PracticeReady(QtCore.QObject):
             """Honor the saved source filter while preparing new lexical evidence."""
 
             for track, opts, engine in self._requests():
-                if track == practice_tracks.Track.VERBS and opts.source != "starter":
+                if track.kind == "verb" and opts.source != "starter":
                     return engine.warm_vocabulary(report)
             return False
 

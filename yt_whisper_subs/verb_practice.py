@@ -8,7 +8,7 @@ from __future__ import annotations
 import enum
 import re
 import unicodedata
-from typing import Literal
+from typing import ClassVar, Literal
 
 import pydantic as pd
 
@@ -77,6 +77,10 @@ class Options(pd.BaseModel):
     """Configure a bounded adaptive round; e.g. isolate jij inversion or practise all conditionals."""
 
     model_config = pd.ConfigDict(extra="forbid")
+    variant: ClassVar[str] = ""
+    focuses: ClassVar[dict[str, str]] = {**FOCUSES, **TENSE_LABELS}
+    subjects: ClassVar[dict[str, str]] = SUBJECTS
+    structures: ClassVar[dict[str, str]] = STRUCTURES
     count: int = pd.Field(default=10, ge=1, le=50)
     focus: str = "all"
     subject: str = "all"
@@ -88,9 +92,9 @@ class Options(pd.BaseModel):
     def check(self) -> Options:
         """Reject unknown filters before any API work; e.g. malformed saved options cannot change the syllabus."""
 
-        if self.focus not in {*FOCUSES, *TENSE_LABELS} or self.subject not in {"all", *SUBJECTS}:
+        if self.focus not in self.focuses or self.subject not in {"all", *self.subjects}:
             raise ValueError("Unknown verb focus or subject")
-        if self.structure not in {"all", *STRUCTURES}:
+        if self.structure not in {"all", *self.structures}:
             raise ValueError("Unknown sentence structure")
         if self.source not in SOURCES:
             raise ValueError("Unknown verb source")

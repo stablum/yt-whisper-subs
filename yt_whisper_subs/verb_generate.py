@@ -9,6 +9,7 @@ from typing import Protocol
 
 import pydantic as pd
 
+from yt_whisper_subs import verb_forms
 from yt_whisper_subs import vocabulary_learning as learning
 from yt_whisper_subs import verb_practice as verbs
 
@@ -76,7 +77,8 @@ class VerbGenerator(learning.LearningGenerator):
     def generate(self, targets: list[dict]) -> list[dict]:
         """Build checked transformations for locally selected targets; e.g. the model cannot choose easier tenses."""
 
-        document = {"targets": targets}
+        if targets and targets[0]["structure"] == verb_forms.VARIANT:
+            return self._checked_forms(targets)
         batch = self._request(verbs.Drafts, _RULES + (
             "Produce exactly one exercise per target_id. The LOCAL target fields are authoritative. "
             "source must be a natural Dutch sentence with the target lemma already conjugated, but in a DIFFERENT "
@@ -89,24 +91,43 @@ class VerbGenerator(learning.LearningGenerator):
             "alternatives lists other UNAMBIGUOUSLY valid answers for these exact requirements. "
             "explanation teaches the verb changes in English. Do not put the answer in instruction."
             " If previous_rejection is supplied, use that critique to replace the defective exercise for the same target."
-        ), document)
-        expected = {row["target_id"] for row in targets}
-        ids = [row.target_id for row in batch.questions]
-        if len(ids) != len(set(ids)) or set(ids) != expected:
-            raise ValueError("Missing, duplicate or unknown verb targets")
-        document["questions"] = batch.model_dump()["questions"]
-        reviewed = self._request(verbs.Verdicts, _RULES + (
+        ), {"targets": targets})
+        return self._audit(targets, batch.questions, _RULES + (
             "Independently audit EVERY target_id. Set valid only if source, instruction, answer, ALL alternatives "
             "and explanation are correct, natural for the specified register, and match EVERY local requirement. "
             "Check both English translations against their own Dutch sentence, especially tense, subject and modality. "
             "Reject ambiguous referents, unchanged answers, wrong tense/person/voice, invented subjunctives, "
             "tense-incompatible time expressions, or instructions that reveal the answer. "
             "Do not repair a defective question silently. Explain rejection in reason."
-        ), document)
+        ))
+
+    def _checked_forms(self, targets: list[dict]) -> list[dict]:
+        """Prepare all accepted short answers before play so grading needs no learner text sent to the provider."""
+
+        batch = self._request(verb_forms.Drafts, verb_forms.RULES + (
+            "Produce exactly one form exercise per target_id. Put one conventional answer in answer and all "
+            "other valid forms in alternatives without duplicates. Use previous_rejection if present."
+        ), {"targets": targets})
+        return self._audit(targets, batch.questions, verb_forms.RULES + (
+            "Independently verify each target's canonical answer, every alternative, and explanation. Reject "
+            "a missing standard alternative, an added subject or unrelated word, and any incorrect auxiliary, "
+            "conjugation, spelling or order. Reject a target if its verb sequence cannot be checked fairly "
+            "without sentence context. Explain rejections in reason."
+        ))
+
+    def _audit(self, targets: list[dict], drafts: list[verbs.Draft] | list[verb_forms.Draft], prompt: str) -> list[dict]:
+        """Apply the same exact coverage rules to both modes, e.g. an omitted verdict never approves a draft."""
+
+        expected = {row["target_id"] for row in targets}
+        ids = [row.target_id for row in drafts]
+        if len(ids) != len(set(ids)) or set(ids) != expected:
+            raise ValueError("Missing, duplicate or unknown verb targets")
+        document = {"targets": targets, "questions": [row.model_dump() for row in drafts]}
+        reviewed = self._request(verbs.Verdicts, prompt, document)
         checks = {row.target_id: row for row in reviewed.verdicts}
         if len(checks) != len(reviewed.verdicts) or set(checks) != expected:
             raise ValueError("Incomplete verb quality checks")
-        return [{"draft": row.model_dump(), "verdict": checks[row.target_id].model_dump()} for row in batch.questions]
+        return [{"draft": row, "verdict": checks[row["target_id"]].model_dump()} for row in document["questions"]]
 
     def grade(self, document: dict) -> verbs.Grade:
         """Accept valid alternatives and identify actual error axes; e.g. d/t spelling is not an automatic tense failure."""

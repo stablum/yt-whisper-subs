@@ -12,6 +12,8 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import verb_forms
 from yt_whisper_subs import verb_generate
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_stats
@@ -37,7 +39,8 @@ class VerbService:
             return False
         if not self._vocabulary.sync(report, batches=2):
             return False
-        self._db.practice_prepare_reconsider("verb")
+        for track in (practice_tracks.Track.VERBS, practice_tracks.Track.VERB_FORMS):
+            self._db.practice_prepare_reconsider(track.value)
         return True
 
     @practice_ready.serialized("verb", verb_generate.PROMPT_VERSION)
@@ -50,7 +53,8 @@ class VerbService:
         generation = practice_ready.question_policy(self)
         reserved = self._db.practice_reserved("verb", opts) if background else set()
         unused = self._db.practice_unused("verb", generation, reserved=reserved)
-        selector, metrics = verb_syllabus.Selector(policy), verb_stats.metrics(self._db)
+        selector = verb_syllabus.Selector(policy)
+        metrics = [] if opts.variant else verb_stats.metrics(self._db)
 
         def select(rows, count):
             """Keep eligible approved forms ahead of fresh generation on initial and replacement picks."""
@@ -112,7 +116,8 @@ class VerbService:
             cached = [item for item in self._db.verb_cached(row["target_id"], policy) if item["id"] not in reserved]
             if cached:
                 ready[row["target_id"]] = cached[0]
-            if not cached or (not build.cached_first and len(cached) < 3 and cached[0]["uses"]):
+            rotate = row["structure"] != verb_forms.VARIANT and not build.cached_first
+            if not cached or (rotate and len(cached) < 3 and cached[0]["uses"]):
                 pending.append(row)
         for offset in range(0, len(pending), 4):
             batch = build.take(pending[offset:offset + 4])
@@ -139,17 +144,20 @@ class VerbService:
         """Validate exact IDs and preserve rejections for one bounded repair; e.g. an audit cannot silently omit a target."""
 
         generated = self._provider.generate(targets)
-        expected = {row["target_id"] for row in targets}
+        expected = {row["target_id"]: row["structure"] for row in targets}
         approved, rejected, checked = {}, {}, set()
         validated = []
         for item in generated:
-            draft = verbs.Draft.model_validate(item["draft"])
             verdict = verbs.Verdict.model_validate(item["verdict"])
-            if draft.target_id not in expected or draft.target_id in checked or verdict.target_id != draft.target_id:
+            if verdict.target_id not in expected or verdict.target_id in checked:
+                raise ValueError("Invalid verb generation IDs")
+            draft_type = verb_forms.Draft if expected[verdict.target_id] == verb_forms.VARIANT else verbs.Draft
+            draft = draft_type.model_validate(item["draft"])
+            if verdict.target_id != draft.target_id:
                 raise ValueError("Invalid verb generation IDs")
             checked.add(draft.target_id)
             validated.append((draft, verdict))
-        if checked != expected:
+        if checked != expected.keys():
             raise ValueError("The provider omitted verb exercises")
         for draft, verdict in validated:
             if verdict.valid:
@@ -163,9 +171,14 @@ class VerbService:
 
         row = self._db.verb_get(presentation_id)
         if row["answer_text"] is None:
-            raise ValueError("Submit your sentence before checking it")
+            raise ValueError("Submit your answer before checking it")
         if row["outcome"] is not None:
             return row
+        if row["variant"] == verb_forms.VARIANT:
+            grade = verb_forms.Grade.assess(row["answer_text"], row["content"])
+            report(i18n.tr('Saving correction…'))
+            provenance = {"model": "approved_form_match", "reasoning": "none", "grade_version": verb_forms.GRADE_VERSION}
+            return self._db.verb_grade(presentation_id, grade, provenance)
         content = row["content"]
         accepted = [content["answer"], *content["alternatives"]]
         exact = verbs.normalized(row["answer_text"]) in {verbs.normalized(text) for text in accepted}

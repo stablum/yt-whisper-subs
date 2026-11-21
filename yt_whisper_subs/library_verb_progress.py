@@ -15,6 +15,7 @@ from yt_whisper_subs import library_practice_progress as charts
 from yt_whisper_subs import verb_practice as verbs
 from yt_whisper_subs import verb_stats
 from yt_whisper_subs import library_practice_tables
+from yt_whisper_subs import verb_forms
 
 
 class VerbProgress(QtWidgets.QWidget):
@@ -28,7 +29,7 @@ class VerbProgress(QtWidgets.QWidget):
         self._totals = QtWidgets.QLabel()
         self._totals.setWordWrap(True)
         self._totals.setObjectName("practiceStats")
-        self._accuracy = charts.TrendChart(i18n.tr('Verb transformation accuracy'), True)
+        self._accuracy = charts.TrendChart(i18n.tr('Verb accuracy'), True)
         self._activity = charts.TrendChart(i18n.tr('Verb answers checked per day'), False)
         columns = {
             i18n.mark('Forms'): [i18n.tr('Dimension'), i18n.tr('Form'), i18n.tr('Assessed'), i18n.tr('Correct'), i18n.tr('Mistakes'), i18n.tr('Accuracy %')],
@@ -74,12 +75,7 @@ class VerbProgress(QtWidgets.QWidget):
             due=data['due'],
             pending=data['pending'],
         ))
-        points = [(row["day"], row["correct"] / row["attempts"] * 100,
-                   i18n.tr('{correct}/{attempts} correct', correct=row['correct'], attempts=row['attempts'])) for row in data["daily"]]
-        self._accuracy.set_series([{"label": i18n.tr('Full sentence'), "color": "#c4a1ff", "points": points}])
-        points = [(row["day"], row["attempts"], labels.graded_accuracy(row["correct"], row["attempts"]))
-                  for row in data["daily"]]
-        self._activity.set_series([{"label": i18n.tr('Checked answers'), "color": "#66d9ef", "points": points}])
+        self._plot(data["daily"])
         catalog = {row["lemma"]: row for row in self._db.verb_catalog()}
         names = {str(row["id"]): row["lemma"] for row in catalog.values()}
         axes = {"tense": verbs.TENSE_LABELS, "subject": verbs.SUBJECTS, "structure": verbs.STRUCTURES, "verb": names}
@@ -107,3 +103,18 @@ class VerbProgress(QtWidgets.QWidget):
                                 for row in data["errors"]])
         self._tabs.fill("Rounds", [[(i18n.date_text(datetime.fromtimestamp(row['created_at']), '%d %b %Y %H:%M'), row["created_at"]), labels.term(row["status"]),
                                row["planned"], row["submitted"], row["correct"], row["wrong"]] for row in data["rounds"]])
+
+    def _plot(self, daily: list[dict]) -> None:
+        """Keep sentence accuracy and short-form accuracy distinct when comparing the same day."""
+
+        accuracy, activity = [], []
+        for variant, label, color in (("", i18n.tr('Full sentence'), "#c4a1ff"),
+                                      (verb_forms.VARIANT, i18n.tr('Verb forms'), "#66d9ef")):
+            rows = [row for row in daily if row["variant"] == variant]
+            counts = [(row["day"], row["attempts"], labels.graded_accuracy(row["correct"], row["attempts"])) for row in rows]
+            rates = [(row["day"], row["correct"] / row["attempts"] * 100,
+                      i18n.tr('{correct}/{attempts} correct', correct=row['correct'], attempts=row['attempts'])) for row in rows]
+            activity.append({"label": label, "color": color, "points": counts})
+            accuracy.append({"label": label, "color": color, "points": rates})
+        self._activity.set_series(activity)
+        self._accuracy.set_series(accuracy)

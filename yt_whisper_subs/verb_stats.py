@@ -64,8 +64,8 @@ def snapshot(db) -> dict:
     if graded:
         frame = pl.DataFrame([{"day": datetime.fromtimestamp(row["answered_at"]).date().isoformat(),
                                "correct": row["outcome"] == "correct", "lemma": row["lemma"],
-                               "elapsed_ms": row["elapsed_ms"]} for row in graded])
-        daily = frame.group_by("day").agg(pl.len().alias("attempts"), pl.col("correct").sum()).sort("day").to_dicts()
+                               "variant": row["variant"], "elapsed_ms": row["elapsed_ms"]} for row in graded])
+        daily = frame.group_by("day", "variant").agg(pl.len().alias("attempts"), pl.col("correct").sum()).sort("day", "variant").to_dicts()
     if rows:
         frame = pl.DataFrame([{"lemma": row["lemma"], "submitted": row["answer_text"] is not None,
                                "graded": row["outcome"] in {"correct", "wrong"}, "correct": row["outcome"] == "correct",

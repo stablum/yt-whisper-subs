@@ -79,7 +79,7 @@ JOIN vocab_lookups l ON l.id=q.lookup_id JOIN practice_sessions s ON s.id=p.sess
 # The track keys match practice_tracks.Track; each answer column is the durable submission evidence.
 _DAY_SOURCES = (
     ('practice', "'practice:' || s.direction", 'selected_idx'),
-    ('verb', "'verb'", 'answer_text'),
+    ('verb', "CASE s.variant WHEN 'forms' THEN 'verb:forms' ELSE 'verb' END", 'answer_text'),
     ('sentence', "'sentence:' || s.direction", 'answer_text'),
     ('word_order', "CASE s.variant WHEN 'phrases' THEN 'word_order:phrases' ELSE 'word_order' END", 'answer_json'),
     ('comprehension', "'comprehension:' || s.direction", 'answer_text'),
@@ -121,8 +121,10 @@ class PracticeDbMixin:
                                 "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
                                 "WHERE p.answered_at IS NOT NULL AND p.selected_idx IS NOT NULL "
                                 "AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
-                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'verbs',t.verb_id,NULL "
+                                "SELECT p.answered_at,NULL,p.answer_text,p.outcome,"
+                                "CASE s.variant WHEN 'forms' THEN 'verb_forms' ELSE 'verbs' END,t.verb_id,NULL "
                                 "FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id "
+                                "JOIN verb_sessions s ON s.id=p.session_id "
                                 "JOIN verb_targets t ON t.id=q.target_id WHERE p.answer_text IS NOT NULL "
                                 "AND p.answered_at>=? AND p.answered_at<=? UNION ALL "
                                 "SELECT p.answered_at,NULL,p.answer_text,p.outcome,'sentence_'||q.direction,q.anchor_word_id,"

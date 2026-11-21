@@ -46,12 +46,12 @@ def candidates(catalog: list[dict], states: list[dict], opts: verbs.Options) -> 
         if not verb["starter"] and not verb["lookups"]:
             continue
         for tense in verbs.Tense:
-            if not _in_focus(tense, opts.focus):
+            if tense not in opts.focuses or not _in_focus(tense, opts.focus):
                 continue
-            for subject in verbs.SUBJECTS:
+            for subject in opts.subjects:
                 if opts.subject != "all" and subject != opts.subject:
                     continue
-                structures = _structures(verb, tense, subject)
+                structures = [opts.variant] if opts.variant else _structures(verb, tense, subject)
                 for structure in structures:
                     if opts.structure != "all" and structure != opts.structure:
                         continue

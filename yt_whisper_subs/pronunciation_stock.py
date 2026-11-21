@@ -14,11 +14,22 @@ _FIELDS = {
     tracks.Track.WORD_EN_NL: ('answer',),
     tracks.Track.SOUND: ('surface',),
     tracks.Track.VERBS: ('source', 'answer'),
+    tracks.Track.VERB_FORMS: ('answer',),
     tracks.Track.SENTENCE_EN_NL: ('dutch',),
     tracks.Track.SENTENCE_NL_EN: ('dutch',),
     tracks.Track.WORD_ORDER: ('dutch',),
     tracks.Track.PHRASE_ORDER: ('dutch',),
 }
+
+
+def _speech_texts(track: tracks.Track, body_json: str) -> list[str]:
+    """Warm visible prompt and feedback texts, including any accepted short form the card may show."""
+
+    body = json.loads(body_json)
+    texts = [body[key] for key in _FIELDS[track]]
+    if track == tracks.Track.VERB_FORMS:
+        texts.extend(body['alternatives'])
+    return texts
 
 
 class Stock:
@@ -66,8 +77,7 @@ class Stock:
         texts = self._session_texts(track, (active_id, review_id))
         policy = practice_ready.question_policy(engine)
         for row in self._db.practice_stock(track, opts, policy):
-            body = json.loads(row['body_json'])
-            texts.extend(body[key] for key in _FIELDS[track])
+            texts.extend(_speech_texts(track, row['body_json']))
         return texts
 
     def _session_texts(self, track, sessions: tuple) -> list[str]:
@@ -81,11 +91,7 @@ class Stock:
                 "WHERE p.session_id IN (?,?) AND q.flagged_at IS NULL AND p.outcome IS NOT 'invalid' "
                 "ORDER BY p.session_id IS NOT ?,p.outcome IS NOT NULL,p.ordinal", (*sessions, sessions[0])
             ).fetchall()
-        texts = []
-        for row in active:
-            body = json.loads(row['body_json'])
-            texts.extend(body[key] for key in _FIELDS[track])
-        return texts
+        return [text for row in active for text in _speech_texts(track, row['body_json'])]
 
     def _reading(self, opts, engine) -> tuple[list[str], list[str]]:
         """Prepare visible prompts and passage text, e.g. the article is ready before Read passage aloud."""

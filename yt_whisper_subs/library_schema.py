@@ -176,6 +176,7 @@ class SchemaDbMixin:
             conn.execute("PRAGMA journal_mode = WAL")
             _upgrade_skills(conn)
             conn.executescript(_SCHEMA)
+            verb_schema.upgrade(conn)
             word_order_db.upgrade(conn)
             audit_columns = {row["name"] for row in conn.execute("PRAGMA table_info(vocab_audits)")}
             if "repair_json" not in audit_columns:

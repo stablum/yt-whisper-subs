@@ -42,6 +42,7 @@ class Day(pd.BaseModel):
     nl_en: int = 0
     en_nl: int = 0
     verbs: int = 0
+    verb_forms: int = 0
     verb_lemmas: int = 0
     sentences: int = 0
     sentence_nl_en: int = 0
@@ -107,7 +108,8 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
         if not submitted or stamp is None or stamp > now.timestamp():
             continue
         word_ids = json.loads(row["word_ids_json"]) if row.get("word_ids_json") else [row["word_id"]]
-        if row["direction"] == "verbs":
+        verb = row["direction"] in {"verbs", "verb_forms"}
+        if verb:
             word_ids = []
         answers.append({
             "day": datetime.fromtimestamp(stamp, now.tzinfo).date(), "word_id": row["word_id"],
@@ -115,6 +117,8 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
             "correct": row["outcome"] == "correct", "graded": row["outcome"] in {"correct", "wrong"},
             "nl_en": row["direction"] == "nl_en", "en_nl": row["direction"] == "en_nl",
             "verbs": row["direction"] == "verbs",
+            "verb_forms": row["direction"] == "verb_forms",
+            "verb": verb,
             "sentences": row["direction"] in {"sentence_en_nl", "sentence_nl_en", "word_order", "phrase_order"},
             "word_order": row["direction"] == "word_order",
             "phrase_order": row["direction"] == "phrase_order",
@@ -129,8 +133,8 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
     days = frame.group_by("day").agg(
         pl.len().alias("answers"), pl.col("correct").sum(), pl.col("graded").sum(),
         pl.col("word_ids").explode(empty_as_null=True).drop_nulls().n_unique().alias("words"),
-        pl.col("word_id").filter(pl.col("verbs")).n_unique().alias("verb_lemmas"),
-        pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(),
+        pl.col("word_id").filter(pl.col("verb")).n_unique().alias("verb_lemmas"),
+        pl.col("nl_en").sum(), pl.col("en_nl").sum(), pl.col("verbs").sum(), pl.col("verb_forms").sum(),
         pl.col("sentences").sum(), pl.col("sentence_nl_en").sum(), pl.col("sentence_en_nl").sum(),
         pl.col("word_order").sum(), pl.col("phrase_order").sum(),
         pl.col("listening").sum(),
@@ -138,7 +142,7 @@ def from_rows(rows: list[dict], *, now: datetime | None = None) -> Activity:
     ).sort("day")
     return Activity(today=now.date(), last_day=frame["day"].max(),
                     distinct_words=frame["word_ids"].explode(empty_as_null=True).drop_nulls().n_unique(),
-                    distinct_verbs=frame.filter(pl.col("verbs"))["word_id"].n_unique(),
+                    distinct_verbs=frame.filter(pl.col("verb"))["word_id"].n_unique(),
                     days=[Day(**row) for row in days.to_dicts()])
 
 

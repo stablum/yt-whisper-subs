@@ -56,9 +56,9 @@ CREATE TABLE IF NOT EXISTS verb_sessions (
     scheduler_json TEXT NOT NULL,
     created_at REAL NOT NULL,
     finished_at REAL,
-    status TEXT NOT NULL CHECK(status IN ('active','completed','stopped'))
+    status TEXT NOT NULL CHECK(status IN ('active','completed','stopped')),
+    variant TEXT NOT NULL DEFAULT '' CHECK(variant IN ('','forms'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_verb_active ON verb_sessions(status) WHERE status='active';
 CREATE TABLE IF NOT EXISTS verb_presentations (
     id INTEGER PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES verb_sessions(id),
@@ -113,3 +113,14 @@ CREATE TABLE IF NOT EXISTS verb_states (
     due_at REAL NOT NULL
 );
 """
+
+
+def upgrade(conn) -> None:
+    """Keep existing sentence rounds and allow one active round per verb mode."""
+
+    with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if "variant" not in {row["name"] for row in conn.execute("PRAGMA table_info(verb_sessions)")}:
+            conn.execute("ALTER TABLE verb_sessions ADD COLUMN variant TEXT NOT NULL DEFAULT '' CHECK(variant IN ('','forms'))")
+            conn.execute("DROP INDEX IF EXISTS idx_verb_active")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_verb_active ON verb_sessions(variant) WHERE status='active'")

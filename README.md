@@ -186,7 +186,8 @@ The companion library is optimized for a second workflow:
 20. Rewrite Dutch sentences using captured vocabulary verbs plus a starter set,
     for different subjects, tenses, moods and situations;
     learn from precise corrections and adaptive verb-form review, including
-    conditionals and the Dutch subjunctive.
+    conditionals and the Dutch subjunctive. Practise isolated conjugations in
+    **Verb forms** with the same verb pool and its own review schedule.
 21. Translate complete sentences between English and Dutch using saved vocabulary
     in varied everyday situations, with natural supporting words, diagnostic
     corrections and independent review of vocabulary and sentence writing.
@@ -219,12 +220,13 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Subtitle semantic review | same model/effort; batches of up to `40` cues, at most `2` correction rounds |
 | Practice question generation and quality review | `gpt-6-luna`, reasoning `medium` |
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
+| Verb forms | infinitive, subject and indicative tense; 10 exercises, configurable 1–50; checked forms graded locally |
 | Verb sources | saved Dutch vocabulary plus 36 starter verbs; captured verbs receive extra priority |
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | Both directions, English → Dutch by default. Round size 1–50 (default 10). Maximum 1–3 saved targets per sentence (default 2). |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | Word order and Phrase and clause order | 10 questions each, configurable 1–30, with 2 extra blocks per question, configurable 0–4 |
-| Ready practice rounds | eleven independent destinations, with two background workers and one bounded standby per mode |
+| Ready practice rounds | twelve independent destinations, with two background workers and one bounded standby per mode |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Practice voice | one saved preset for dictation, listening comprehension, and read-aloud; **Voice** and **Configure voices…** in the Practice header; local Piper 1.7.0 by default and optional ZONOS3-Mini |
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
@@ -2390,9 +2392,9 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-The library keeps ready content for **eleven top-level practice destinations**:
+The library keeps ready content for **twelve top-level practice destinations**:
 Word quiz · Dutch → English, Word quiz · English → Dutch, Sound alike, Verbs · Dutch
-transformations, Sentences · English → Dutch, Sentences · Dutch → English,
+transformations, Verb forms, Sentences · Dutch → English, Sentences · English → Dutch,
 Word order, Phrase and clause order, Listening · Dutch dictation, **Leesbegrip** and **Luisterbegrip**.
 Each has its own round options, preparation ownership and resumable session.
 Switching direction does not end the other direction's round, replace its
@@ -2619,13 +2621,14 @@ the order shown in Practice:
 2. Word quiz, English → Dutch
 3. Sound alike (listen and choose)
 4. Verb transformations
-5. Sentence translation, Dutch → English
-6. Sentence translation, English → Dutch
-7. Word order
-8. Phrase and clause order
-9. Dutch dictation
-10. Reading comprehension
-11. Listening comprehension
+5. Verb forms
+6. Sentence translation, Dutch → English
+7. Sentence translation, English → Dutch
+8. Word order
+9. Phrase and clause order
+10. Dutch dictation
+11. Reading comprehension
+12. Listening comprehension
 
 An existing full-practice run finishes in the order it started. Each new run
 uses the order above. Each mode uses its own settings and resumes an open round or takes a prepared
@@ -2646,11 +2649,12 @@ go through their usual grading, vocabulary review, activity and reminder rules.
 
 Choose **Read aloud** beside the practice menu to hear the current Dutch text.
 Turn on **Auto-read Dutch** once to hear it as you work through an exercise.
-The preference is shared across word quizzes, verb transformations, sentence
+The preference is shared across word quizzes, verb exercises, sentence
 translation, and reading comprehension. For Dutch-to-English exercises it
 reads the Dutch prompt. For English-to-Dutch exercises it waits until the Dutch
 answer is shown in the feedback. Verb transformations read both the original
-sentence and the checked model answer. English-to-Dutch sentence translation
+sentence and the checked model answer. Verb forms reads the displayed answer
+after submission. English-to-Dutch sentence translation
 also reads the checked model answer. The green feedback sentence shows the
 exact wording used for audio. When your individualized correction differs,
 it appears underneath with its own label.
@@ -2687,9 +2691,9 @@ caches approved choices and the selected voice’s target recordings.
 
 Choose the **Practice** tab (`Ctrl+Shift+R`), then choose **Word quiz** for the
 three-choice vocabulary exercise.
-The navigation exposes both Word quiz directions, Dutch verb transformations,
+The navigation exposes both Word quiz directions, Dutch verb transformations, Verb forms,
 Sound alike, both Sentences directions, Word order, Phrase and clause order,
-Dutch dictation, Leesbegrip and Luisterbegrip as **eleven buttons in the Practice
+Dutch dictation, Leesbegrip and Luisterbegrip as **twelve buttons in the Practice
 sidebar**, alongside the separate **Tracking** group for Progress and Activity.
 The **Today** column shows a grey ring before the first submission, a half-filled
 amber ring once you submit an answer, and a green check once you complete a round.
@@ -2885,9 +2889,28 @@ analytics. Generation uses the existing Responses client and follows
 Cache-policy tests also verify that model/reasoning changes generate fresh
 questions without losing prior answers or silently falling back to another policy.
 
+### Verb Forms
+
+Open **Practice → Verbs → Verb forms**. Each exercise shows a Dutch infinitive,
+a subject, and a tense. Use the verb form from a statement that starts with
+that subject, then type just the verb words. For **opbellen**, **jij**, and
+**present**, enter **belt op**.
+For **zich vergissen**, **ik**, and **present perfect**, enter **heb me vergist**.
+Include any auxiliary, separable particle, or reflexive pronoun. Press **Enter**
+or **Check verb form** to see the correction and explanation, then **Continue**.
+
+**Verb round options** sets the length, subject, tense focus, verb source, and
+whether to include forms that are not due yet. The eight indicative tenses include
+the simple and perfect conditionals. Forms use the same saved vocabulary and
+starter verbs as Verb transformations, with their own questions, active round,
+and spaced reviews. The practice model generates the accepted forms and
+explanations, then independently audits them before play. Submission is graded
+locally against the checked forms and alternatives. Case, surrounding or repeated
+spaces, and final periods, exclamation marks and question marks are ignored.
+
 ### Verb Transformation Practice
 
-Open **Practice → Sentences → Verbs**. The first sentence appears automatically
+Open **Practice → Verbs → Verb transformations**. The first sentence appears automatically
 after checked content is ready. Read the original Dutch sentence and the
 requested subject, tense/mood and situation, type the **whole transformed Dutch
 sentence**, then press **Enter** or **Check sentence**. Capitalization, ordinary
@@ -3020,8 +3043,9 @@ These are learning estimates, not a fluency score or a fitted personal model.
 The main **Progress** page contains **Vocabulary**, **Verbs** and **Sentences** statistics.
 Opening Progress selects the most recently used practice mode automatically; each view
 can also be opened without starting exercises or spending API requests.
-**Progress → Verbs** shows daily full-sentence accuracy and checked-answer
-counts, independently assessed tense/mood, subject, structure and verb accuracy,
+**Progress → Verbs** shows separate daily accuracy and checked-answer series for
+full sentences and verb forms, independently assessed tense/mood, subject,
+structure and verb accuracy for sentence transformations,
 per-verb exposure/submission/success totals, vocabulary/starter origin, saved-click
 and video counts, error-type frequencies, exact mistake
 history and round results. Tables sort numerically and retain full hover text.
