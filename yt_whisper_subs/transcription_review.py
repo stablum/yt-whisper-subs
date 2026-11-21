@@ -54,7 +54,11 @@ fix the word while preserving all surrounding disfluency and grammar. Plausible 
 wording is not enough. You have NO AUDIO: if either word
 could reasonably have been spoken, abstain. Keep unusual but plausible speech, dialect,
 grammar mistakes, repetitions, fragments and spelling style.
-Never correct names, numbers, dates, quantities, negation, pronouns or modal verbs.
+Never guess or substitute a person's or place's name. Never change which entity the speaker
+refers to. If nearby cues unambiguously identify an established title, such as a named law,
+repair its malformed near-homophone and use its conventional initial capital in that same
+word edit. A case-only change belongs in formatting. Never correct numbers, dates, quantities,
+negation, pronouns or modal verbs.
 Do not repair a speaker's factual mistakes. Do not add content, delete content or move text
 between cues. The ONLY word-boundary exception is ONE misrecognized compound: join two
 adjacent words into one or split one into two, with nearly identical letters and sound.
@@ -159,15 +163,18 @@ def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> 
     old, new = edit.original, edit.replacement
     if edit.confidence != "very_high" or not edit.context_reason.strip() or not edit.sound_reason.strip():
         return "missing high confidence or supporting reasons"
-    if old == new:
-        return "no text change"
-    if not old.islower() or not new.islower():
-        return "capitalized words may be names"
+    if old == new.lower():
+        return "no lexical change"
+    if not old.islower():
+        return "capitalized source words may be names"
+    initial_cap = not new.islower()
+    if initial_cap and new != new.capitalize():
+        return "replacement must be lowercase or have a single initial capital"
     old_words, new_words = old.split(" "), new.split(" ")
     if (len(old_words), len(new_words)) not in {(1, 1), (1, 2), (2, 1)}:
         return "phrase replacements are outside the review scope"
     old_parts = old.replace("-", " ").split(" ")
-    new_parts = new.replace("-", " ").split(" ")
+    new_parts = new.lower().replace("-", " ").split(" ")
     if (max(len(old_parts), len(new_parts)) > 2
             or any(not part.isalpha() or len(part) < 2 for part in [*old_parts, *new_parts])
             or any(len(word.replace("-", "")) < 3 for word in [*old_words, *new_words])):
@@ -189,6 +196,8 @@ def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> 
     # Leave pronunciation to the independent verifier while bounding orthographic drift.
     if distance > 3 or 7 * distance > 3 * length:
         return f"spelling differs by {distance} edits across {length} letters"
+    if initial_cap and (len(new_words) != 1 or distance > 1):
+        return "capitalized repairs require one word and at most one letter change"
     return None
 
 
@@ -325,7 +334,7 @@ class TranscriptionReview:
     def _policy(self) -> dict:
         """Fingerprint settings that affect cached decisions; e.g. switching models restarts the audit."""
 
-        return {"version": 3, "batch_cues": BATCH_CUES,
+        return {"version": 4, "batch_cues": BATCH_CUES,
                 "model": getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
                 "reasoning": getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
                 "language": self._args.language}
@@ -343,7 +352,9 @@ class TranscriptionReview:
             instructions += (
                 "\nIndependently verify each candidate under the policy above. Candidate reasons may be wrong. "
                 "Default to reject. For word edits, approve ONLY if BOTH near-identical pronunciation and an "
-                "unequivocal contextual error are established. For formatting, approve ONLY clear punctuation "
+                "unequivocal contextual error are established. For a named title, require clear evidence from "
+                "the cues that the proposed spelling refers to the exact same entity. "
+                "For formatting, approve ONLY clear punctuation "
                 "or capitalization fixes that preserve wording and sentence boundaries in context. "
                 "Return one decision per candidate index, never a rewrite."
             )

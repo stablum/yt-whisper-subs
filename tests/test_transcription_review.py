@@ -172,6 +172,40 @@ class TranscriptionReviewTests(unittest.TestCase):
                 self.assertEqual(self._pair.sidecar.read_text(), expected)
                 self.assertEqual(self._pair.archive.read_text(), expected)
 
+    def test_capitalized_title_repairs_reach_verifier(self) -> None:
+        """Cover both recognitions of the reported law title, including a compound split across lines."""
+
+        for typo in ("warewet", "ware\nwet"):
+            with self.subTest(typo=typo):
+                source = f"1\n00:16:33,900 --> 00:16:40,680\ndie onder de {typo} vallen.\n\n"
+                self._pair.sidecar.write_text(source, encoding="utf-8")
+                self._pair.sync_archive()
+                proposal = edit(word=4, original=typo.replace("\n", " "), replacement="Warenwet",
+                                context_reason="The regulator is referring to the named law governing product sales.",
+                                sound_reason="Whisper omitted the weak linking n.")
+                for approve in (False, True):
+                    self._review.begin()
+                    self._run({"edits": [proposal]}, verdict(approve))
+                    expected = source.replace(typo, "Warenwet") if approve else source
+                    self.assertEqual(self._pair.sidecar.read_text(), expected)
+                    self.assertEqual(self._pair.archive.read_text(), expected)
+
+    def test_title_allowance_still_rejects_broader_edits(self) -> None:
+        """Keep the capitalization exception narrow; e.g. no new acronym or substitution of another law."""
+
+        for original, replacement in (
+            ("warenwet", "Warenwet"),  # Pure casing goes through formatting.
+            ("warewet", "WARENWET"),
+            ("warewet", "WarenWet"),
+            ("warewet", "Waren wet"),
+            ("warewet", "Opiumwet"),
+            ("Warewet", "Warenwet"),
+        ):
+            with self.subTest(original=original, replacement=replacement):
+                proposal = review.Edit(**edit(word=1, original=original, replacement=replacement))
+                cues = [srt.SubtitleCue(0, 1000, original)]
+                self.assertIsNotNone(review._word_rejection(proposal, cues, range(1, 2)))
+
     def test_bounded_word_and_hyphen_changes(self) -> None:
         """Admit close compound repairs while retaining structural guards; e.g. do not alter names or numbers."""
 

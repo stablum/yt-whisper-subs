@@ -1785,10 +1785,15 @@ with local validation of the permitted edits:
   spans containing other punctuation are rejected.
   At most one eligible word edit per cue goes to verification. The batch and
   transcript limits count only approved edits and allow one span per started
-  group of 100 words. Suspiciously dense batches are rejected. Names, numbers,
-  quantities, pronouns, negation and modal verbs are excluded by the prompt;
-  local guards additionally protect capitalized words and common Dutch/English
-  negation, pronouns, number words and modals.
+  group of 100 words. Suspiciously dense batches are rejected. The prompt
+  excludes guesses about personal or place names, substitutions that change the
+  named entity, and edits to numbers, quantities, pronouns, negation and modal
+  verbs. Local guards protect capitalized source words and common Dutch/English negation,
+  pronouns, number words and modals. A lowercase misrecognition can become one
+  initially capitalized word with at most one letter change, as in
+  `warewet` or `ware wet` → `Warenwet`. For a named title, the verifier must
+  find clear evidence in nearby cues that the correction refers to the same
+  entity. A case-only change stays in the formatting pass.
 - Punctuation and capitalization are checked separately. These edits must
   preserve every word and number, word order, apostrophe, hyphen and whitespace
   boundary. Numeric punctuation cannot change. Each cue permits four punctuation
@@ -1825,6 +1830,8 @@ Version `0.5.24` adds compound repairs, smaller batches and explicit cue coverag
 Version `0.6.28` admits hyphenated compounds and slightly wider spelling
 differences, checks edit density after verification, and scales the punctuation
 allowance for longer cues.
+Version `0.6.39` allows a tightly bounded spelling correction to include the
+conventional initial capital of a clearly identified title.
 Unfinished reviews from an older policy restart their audit using the stored
 original text. Completed older reviews remain cached until explicitly requested
 again. Logs give specific reasons for locally rejected word edits and record
