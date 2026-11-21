@@ -35,7 +35,7 @@ class Options(QtWidgets.QWidget):
             self._genre.addItem(i18n.tr(label), key)
         self._genre.setCurrentIndex(self._genre.findData(opts.genre))
         self._level = QtWidgets.QComboBox()
-        self._level.addItems(['B1', 'B2', 'C1'])
+        self._level.addItems(list(comp.Level))
         self._level.setCurrentText(opts.level)
         self._numbers = {}
         panel = QtWidgets.QWidget()

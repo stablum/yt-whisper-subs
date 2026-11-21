@@ -110,7 +110,7 @@ class ComprehensionTests(unittest.TestCase):
         """A missing reviewer result cannot trigger a paid rewrite or silently approve a question."""
 
         audit = self.provider.audit
-        with mock.patch.object(self.provider, 'audit', side_effect=lambda passage: audit(passage).model_copy(update={'questions': []})):
+        with mock.patch.object(self.provider, 'audit', side_effect=lambda passage, level: audit(passage, level).model_copy(update={'questions': []})):
             with self.assertRaisesRegex(ValueError, 'niet volledig'):
                 self._start()
         self.assertEqual(self.db.comprehension_passage(1)['error'], '')
@@ -123,10 +123,10 @@ class ComprehensionTests(unittest.TestCase):
 
         audit = self.provider.audit
 
-        def reject(passage):
+        def reject(passage, level):
             """Flag an answer leak on every independently checked draft."""
 
-            verdict = audit(passage)
+            verdict = audit(passage, level)
             verdict.questions[0].valid = False
             return verdict
 
@@ -136,6 +136,41 @@ class ComprehensionTests(unittest.TestCase):
         self.assertEqual(len(self.provider.repaired), 1)
         self.assertEqual(len(self.provider.audited), 3)
         self.assertIsNone(self.db.comprehension_active('read'))
+
+    def test_a1_audit_replaces_off_level_passage_and_accepts_short_paragraphs(self):
+        """Keep shorter paragraphs after the audit rejects a passage for exceeding A1 difficulty."""
+
+        opts = fixtures.options(level='A1')
+        paragraphs = [
+            'De slimste buurman ziet de fietsen. De kinderen lopen naar school. Het besluit is nog niet definitief.',
+            'Noor gaat naar de winkel. Er staan veel fietsen voor de deur.',
+            'Noor loopt naar huis. Haar buurman zit buiten. Hij drinkt koffie met Noor.',
+        ]
+        generate, audit = self.provider.generate, self.provider.audit
+
+        def generate_short_retry(document):
+            """Use short paragraphs after the first audit explains the level problem."""
+
+            passage = generate(document)
+            return passage.model_copy(update={'paragraphs': paragraphs}) if document['previous_rejection'] else passage
+
+        def check_level(passage, level):
+            """Reject the original fixture wording when A1 was requested."""
+
+            self.assertEqual(level, comp.Level.A1)
+            verdict = audit(passage, level)
+            verdict.level_issue = '' if passage.paragraphs == paragraphs else 'De zinnen zijn te moeilijk voor A1.'
+            return verdict
+
+        with (
+            mock.patch.object(self.provider, 'generate', side_effect=generate_short_retry),
+            mock.patch.object(self.provider, 'audit', side_effect=check_level),
+        ):
+            session = self._start(opts)
+
+        self.assertEqual(self.provider.generated[1]['previous_rejection'], 'De zinnen zijn te moeilijk voor A1.')
+        pid = self.db.comprehension_session(session)['passage_id']
+        self.assertEqual(self.db.comprehension_passage(pid)['content']['paragraphs'], paragraphs)
 
     def test_omitted_questions_never_publish_and_are_bounded_to_two_drafts(self):
         """Keep paid rejected drafts for diagnosis without accepting missing content; e.g. a smaller output cannot silently become the requested round."""
@@ -342,11 +377,11 @@ class ComprehensionTests(unittest.TestCase):
         self.provider.audit_available = True
         audit = self.provider.audit
 
-        def delayed(passage):
+        def delayed(passage, level):
             """Leave an observable race window at the independent audit; e.g. another modality may inspect the shared pool concurrently."""
 
             time.sleep(.03)
-            return audit(passage)
+            return audit(passage, level)
 
         self.provider.audit = delayed
         opts = [self.opts, self.opts.model_copy(update=dict(direction=comp.Direction.LISTEN))]

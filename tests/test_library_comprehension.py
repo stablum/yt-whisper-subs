@@ -117,6 +117,25 @@ class ComprehensionFlowTests(unittest.TestCase):
             panel._view.action.click()
         return row['id']
 
+    def test_beginner_difficulty_can_be_changed_and_saved_in_each_mode(self):
+        """Prepare A1 and A2 rounds using the dropdown while saving reading and listening independently."""
+
+        for direction, level in ((comp.Direction.READ, comp.Level.A1), (comp.Direction.LISTEN, comp.Level.A2)):
+            with self.subTest(direction=direction):
+                panel = self._panel(direction=direction)
+                control = panel._view.options
+                self.assertEqual([control._level.itemText(i) for i in range(control._level.count())], list(comp.Level))
+                self.assertEqual(control.options().level, comp.Level.B2)
+                control._level.setCurrentText(level)
+                old_session = panel._run.session
+                control.restart_requested.emit()
+                self._wait(lambda: panel._run.row is not None and panel._run.session != old_session)
+                self.assertEqual(self.provider.generated[-1]['options']['level'], level)
+                saved = comp.Options.model_validate_json(self.db.setting(control.key, '{}'))
+                self.assertEqual(saved.level, level)
+                reopened = type(control)(self.db, direction)
+                self.assertEqual(reopened.options().level, level)
+
     def test_reading_opens_immediately_and_review_walks_in_order(self):
         """Retain explicit feedback transitions and a fixed footer; e.g. a long correction cannot hide the primary action."""
 

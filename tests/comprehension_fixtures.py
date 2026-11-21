@@ -63,19 +63,19 @@ class Provider:
         return comp.Passage(title=f'Een proef in de wijk {len(self.generated)}', genre='article' if opts['genre'] == 'mixed' else opts['genre'],
                             paragraphs=paragraphs, targets=targets, questions=questions)
 
-    def audit(self, passage):
+    def audit(self, passage, level):
         """Return controlled independent judgements; e.g. the first ambiguity can trigger exactly one repaired draft."""
 
         self.audited.append(passage)
         if not self.audit_available:
             raise OSError('Auditor unavailable')
         flag = self.reject_first and len(self.audited) == 1
-        return comp.Audit(natural_dutch=True, coherent=True, questions=[
+        return comp.Audit(natural_dutch=True, coherent=True, level_issue='', questions=[
             comp.AuditQuestion(key=q.key, valid=not (flag and q.key == 1), answer_idx=q.correct_idx,
                                explanation='Vraag 2 verraadt het antwoord.' if flag and q.key == 1 else 'Eenduidig onderbouwd.')
             for q in passage.questions])
 
-    def repair_questions(self, passage, rejected):
+    def repair_questions(self, passage, rejected, level):
         """Mark the replacement while leaving the text and other questions unchanged."""
 
         self.repaired.append(rejected)

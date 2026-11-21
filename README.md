@@ -194,7 +194,7 @@ The companion library is optimized for a second workflow:
     then review the transcript and English meaning, with local speech, slow replay,
     adaptive word review and separate listening progress. Compare the same sentence
     through Piper and multiple independently configured ZONOS3-Mini voice presets.
-23. Practise **Leesbegrip** and **Luisterbegrip** with longer Dutch stories,
+23. Practise **Leesbegrip** and **Luisterbegrip** with Dutch stories,
     fictional news or reflective texts, independently checked nuanced choices,
     and open answers with partial comprehension credit and Dutch corrections.
 
@@ -228,7 +228,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Practice voice | one saved preset for dictation, listening comprehension, and read-aloud; **Voice** and **Configure voices…** in the Practice header; local Piper 1.7.0 by default and optional ZONOS3-Mini |
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
-| Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); B2; 5 paragraphs, 5 four-choice and 3 open questions; learning content and feedback in Dutch; counts, genre, level and vocabulary load configurable |
+| Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); A1, A2, B1, B2 (default), or C1; 5 paragraphs, 5 four-choice and 3 open questions by default; learning content and feedback in Dutch |
 | Comprehension narration | local Piper/Zonos presets; normal and slow clips prepared in the background for the selected voice, live switching on the same passage; transcript and feedback concealed until all listening answers are submitted |
 | Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
@@ -3342,7 +3342,7 @@ standby round and Full Practice.
 ### Dutch Reading And Listening Comprehension
 
 Choose **Practice → Passages → Reading comprehension** or **Listening comprehension**
-(**Leesbegrip** or **Luisterbegrip** in Dutch). These longer texts come with Dutch
+(**Leesbegrip** or **Luisterbegrip** in Dutch). These passages come with Dutch
 questions, answers, explanations and writing corrections. The controls follow
 the library language. Both modes use the configured practice model
 (`gpt-6-luna`, reasoning `medium`).
@@ -3350,12 +3350,18 @@ the library language. Both modes use the configured practice model
 **Round options** (**Ronde-opties** in Dutch) configures each mode independently:
 
 - Text type: varied, story, explicitly fictional news article, or reflective essay.
-- CEFR level: B1, B2 (default), or C1.
-- Paragraphs: 2–10 (default 5, normally around 225–425 words).
+- Language level: A1, A2, B1, B2 (default), or C1.
+- Paragraphs: 2–10, with 5 by default. A1 aims for 15–30 words per paragraph,
+  A2 for 25–45, and B1 through C1 for 45–85.
 - Multiple-choice questions: 0–20 (default 5), each with four substantial buttons.
 - Open questions: 0–15 (default 3), answered in Dutch; together 1–30 questions.
 - Saved vocabulary targets: 1–20 (default 8), subject to eligible available words.
 - Optional early review. Luisterbegrip's **Stem** selector and **Stemmen instellen…** sit beside its playback controls and apply to the current passage.
+
+A1 uses short sentences about everyday situations and questions about explicit
+details. A2 adds simple sequencing and reasons. Independent review checks whether
+the passage and questions suit the selected beginner level. Select **Prepare new
+text** in **Round options** to start a passage at the new level.
 
 The requested question counts are exact. Independent review solves every choice
 question without the proposed answer key, checking that exactly one option is

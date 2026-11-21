@@ -28,6 +28,22 @@ class Direction(str, enum.Enum):
         return i18n.tr('Reading comprehension') if self == self.READ else i18n.tr('Listening comprehension')
 
 
+class Level(enum.StrEnum):
+    """Share the available CEFR levels across saved options and the UI; e.g. A1 is the first choice."""
+
+    A1 = 'A1'
+    A2 = 'A2'
+    B1 = 'B1'
+    B2 = 'B2'
+    C1 = 'C1'
+
+    @property
+    def min_paragraph_words(self) -> int:
+        """Allow very short A1 paragraphs; e.g. two short sentences can form a paragraph."""
+
+        return 10 if self == self.A1 else 20
+
+
 GENRES = {"mixed": i18n.mark('Mixed'), "story": i18n.mark('Story'), "article": i18n.mark('Fictional news article'), "essay": i18n.mark('Reflective essay')}
 SKILLS = {"detail": i18n.mark('Details'), "inference": i18n.mark('Inferences'), "cause": i18n.mark('Cause and effect'),
           "argument": i18n.mark('Arguments'), "tone": i18n.mark('Tone and intent'), "reference": i18n.mark('Connections and references')}
@@ -38,7 +54,7 @@ class Options(pd.BaseModel):
 
     direction: Direction = Direction.READ
     genre: Literal["mixed", "story", "article", "essay"] = "mixed"
-    level: Literal["B1", "B2", "C1"] = "B2"
+    level: Level = Level.B2
     paragraphs: int = pd.Field(default=5, ge=2, le=10)
     mc: int = pd.Field(default=5, ge=0, le=20)
     open: int = pd.Field(default=3, ge=0, le=15)
@@ -124,7 +140,7 @@ class Passage(practice.Content):
     def check(self, opts: Options, target_ids: set[int]) -> None:
         """Reject omissions and unsupported evidence locally; e.g. requested counts cannot become a smaller round after audit."""
 
-        if len(self.paragraphs) != opts.paragraphs or any(len(p.split()) < 20 for p in self.paragraphs):
+        if len(self.paragraphs) != opts.paragraphs or any(len(p.split()) < opts.level.min_paragraph_words for p in self.paragraphs):
             raise ValueError("Het aantal alinea's of de tekstlengte klopt niet.")
         if sum(q.kind == "mc" for q in self.questions) != opts.mc or sum(q.kind == "open" for q in self.questions) != opts.open:
             raise ValueError("Het aantal meerkeuzevragen en open vragen klopt niet.")
@@ -179,6 +195,7 @@ class Audit(practice.Content):
 
     natural_dutch: bool
     coherent: bool
+    level_issue: str
     questions: list[AuditQuestion]
 
     def check(self, passage: Passage) -> None:
@@ -189,6 +206,8 @@ class Audit(practice.Content):
             raise ValueError("De onafhankelijke tekstcontrole is niet volledig geslaagd.")
         if not self.natural_dutch or not self.coherent:
             raise DraftRejected("De tekst is taalkundig of inhoudelijk niet goedgekeurd.")
+        if self.level_issue.strip():
+            raise DraftRejected(self.level_issue)
         rejected = tuple(q for q in self.questions if not q.valid or q.answer_idx != expected[q.key])
         if rejected:
             reason = "\n".join(f"Vraag {q.key} is niet eenduidig goedgekeurd: {q.explanation}" for q in rejected)

@@ -105,7 +105,7 @@ class ComprehensionService:
                         repaired = True
                         progress(i18n.tr('Revising questions flagged by the independent review…'))
                         try:
-                            fixed = self._provider.repair_questions(passage, exc.questions)
+                            fixed = self._provider.repair_questions(passage, exc.questions, opts.level)
                         except ValueError as repair_error:
                             reason += f"\n{repair_error}"
                         else:
@@ -128,7 +128,7 @@ class ComprehensionService:
         except ValueError as exc:
             raise comp.DraftRejected(str(exc)) from exc
         report(i18n.tr('The text and all questions are independently checked.'))
-        verdict = self._provider.audit(passage)
+        verdict = self._provider.audit(passage, opts.level)
         self._db.comprehension_approve(passage_id, verdict)
 
     def _generate(self, opts, report, *, rejected=None, reason='') -> dict:
