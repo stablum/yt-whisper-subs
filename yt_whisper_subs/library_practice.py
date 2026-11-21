@@ -23,6 +23,8 @@ from yt_whisper_subs import library_sentences
 from yt_whisper_subs import library_verb_progress
 from yt_whisper_subs import library_verbs
 from yt_whisper_subs import library_word_quiz
+from yt_whisper_subs import library_word_order
+from yt_whisper_subs import library_order_progress
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice
@@ -55,11 +57,12 @@ class Page(enum.IntEnum):
     VERBS = 3
     SENTENCE_NL_EN = 4
     SENTENCE_EN_NL = 5
-    LISTENING = 6
-    READ_COMPREHENSION = 7
-    LISTEN_COMPREHENSION = 8
-    PROGRESS = 9
-    ACTIVITY = 10
+    WORD_ORDER = 6
+    LISTENING = 7
+    READ_COMPREHENSION = 8
+    LISTEN_COMPREHENSION = 9
+    PROGRESS = 10
+    ACTIVITY = 11
 
     @classmethod
     def for_track(cls, track: practice_tracks.Track) -> Page:
@@ -87,13 +90,15 @@ class PracticeDialog(QtWidgets.QDialog):
         self._sentences = {direction: library_sentences.SentencePanel(self._db, direction=direction)
                            for direction in (practice.Direction.NL_EN, practice.Direction.EN_NL)}
         self._verbs = library_verbs.VerbPanel(self._db)
+        self._word_order = library_word_order.Panel(self._db)
         self._listening = library_sentences.SentencePanel(self._db, direction=sentence_practice.Direction.LISTEN)
         self._comprehension = {direction: library_comprehension.Panel(self._db, direction) for direction in comprehension.Direction}
         self._panels = {Page.WORD_NL_EN: self._quizzes[practice.Direction.NL_EN],
                         Page.SOUND: self._quizzes[practice.Direction.SOUND],
                         Page.WORD_EN_NL: self._quizzes[practice.Direction.EN_NL], Page.VERBS: self._verbs,
                         Page.SENTENCE_EN_NL: self._sentences[practice.Direction.EN_NL],
-                        Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN], Page.LISTENING: self._listening,
+                        Page.SENTENCE_NL_EN: self._sentences[practice.Direction.NL_EN], Page.WORD_ORDER: self._word_order,
+                        Page.LISTENING: self._listening,
                         Page.READ_COMPREHENSION: self._comprehension[comprehension.Direction.READ],
                         Page.LISTEN_COMPREHENSION: self._comprehension[comprehension.Direction.LISTEN]}
         self._tabs = QtWidgets.QTabWidget()
@@ -123,7 +128,7 @@ class PracticeDialog(QtWidgets.QDialog):
         short_labels = {Page.for_track(track): track.button_label for track in practice_tracks.Track}
         self._nav = library_practice_nav.PracticeNav(self._tabs, (
             (i18n.tr('Words'), (Page.WORD_NL_EN, Page.WORD_EN_NL, Page.SOUND)),
-            (i18n.tr('Sentences'), (Page.VERBS, Page.SENTENCE_NL_EN, Page.SENTENCE_EN_NL, Page.LISTENING)),
+            (i18n.tr('Sentences'), (Page.VERBS, Page.SENTENCE_NL_EN, Page.SENTENCE_EN_NL, Page.WORD_ORDER, Page.LISTENING)),
             (i18n.tr('Passages'), (Page.READ_COMPREHENSION, Page.LISTEN_COMPREHENSION)),
             (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
         ), short_labels)
@@ -154,12 +159,14 @@ class PracticeDialog(QtWidgets.QDialog):
         self._verb_progress = library_verb_progress.VerbProgress(self._db)
         self._sentence_progress = library_sentence_progress.SentenceProgress(self._db)
         self._listening_progress = library_sentence_progress.SentenceProgress(self._db, listening=True)
+        self._word_order_progress = library_order_progress.Progress(self._db)
         self._comprehension_progress = {direction: library_comprehension_progress.Progress(self._db, direction) for direction in comprehension.Direction}
         self._progress_tabs = QtWidgets.QTabWidget()
         for panel, label in ((self._progress, i18n.tr('Vocabulary')), (self._verb_progress, i18n.tr('Verbs')), (self._sentence_progress, i18n.tr('Sentences')),
                              (self._listening_progress, i18n.tr('Listening')),
                              (self._comprehension_progress[comprehension.Direction.READ], i18n.tr('Reading comprehension')),
-                             (self._comprehension_progress[comprehension.Direction.LISTEN], i18n.tr('Listening comprehension'))):
+                             (self._comprehension_progress[comprehension.Direction.LISTEN], i18n.tr('Listening comprehension')),
+                             (self._word_order_progress, i18n.tr('Sentence builder'))):
             self._progress_tabs.addTab(panel, label)
         self._progress_tabs.currentChanged.connect(self._refresh_progress)
         self._activity = library_practice_activity.ActivityPanel(self._db)
@@ -189,7 +196,7 @@ class PracticeDialog(QtWidgets.QDialog):
             self._panels[idx].activate()
         elif idx == Page.PROGRESS:
             track = self._last_track()
-            mode = {"practice": 0, "verb": 1, "sentence": 2, 'comprehension': 4}[track.kind]
+            mode = {"practice": 0, "verb": 1, "sentence": 2, 'comprehension': 4, "word_order": 6}[track.kind]
             if track == practice_tracks.Track.LISTENING:
                 mode = 3
             elif track == practice_tracks.Track.LISTEN_COMPREHENSION:
@@ -281,7 +288,7 @@ class PracticeDialog(QtWidgets.QDialog):
         """Refresh only visible analytics; e.g. sentence writing history remains independent of word-choice state."""
 
         panels = (self._progress, self._verb_progress, self._sentence_progress, self._listening_progress,
-                  *self._comprehension_progress.values())
+                  *self._comprehension_progress.values(), self._word_order_progress)
         panels[self._progress_tabs.currentIndex()].refresh()
 
     def reject(self) -> None:

@@ -20,6 +20,7 @@ class Track(str, enum.Enum):
     VERBS = "verb"
     SENTENCE_NL_EN = "sentence:nl_en"
     SENTENCE_EN_NL = "sentence:en_nl"
+    WORD_ORDER = "word_order"
     LISTENING = "sentence:listen_nl"
     READ_COMPREHENSION = "comprehension:read"
     LISTEN_COMPREHENSION = "comprehension:listen"
@@ -44,6 +45,8 @@ class Track(str, enum.Enum):
 
         if self == self.SOUND:
             return i18n.tr('Sound alike\nListen and choose')
+        if self == self.WORD_ORDER:
+            return i18n.tr('Sentence builder')
         if self == self.LISTENING:
             return i18n.tr('Listening\nDutch dictation')
         if self.kind == 'comprehension':
@@ -55,6 +58,8 @@ class Track(str, enum.Enum):
     def button_label(self) -> str:
         """Use the group heading for context, e.g. a Passages button needs only 'Reading'."""
 
+        if self == self.WORD_ORDER:
+            return self.label
         if self == self.VERBS:
             return i18n.tr('Verb transformations')
         if self.kind == 'comprehension':
@@ -71,8 +76,9 @@ class Track(str, enum.Enum):
     def for_options(cls, kind: str, opts) -> Track:
         """Derive preparation ownership from the actual request; e.g. opposite directions cannot share a generation lease."""
 
-        return cls(f"{kind}:{opts.direction.value}" if kind != "verb" else kind)
+        direction = getattr(opts, "direction", None)
+        return cls(f"{kind}:{direction.value}" if direction else kind)
 
 
 # Domain kinds are shared by relational stock and generation ownership.
-QUESTION_KINDS = ('practice', 'verb', 'sentence')
+QUESTION_KINDS = ('practice', 'verb', 'sentence', 'word_order')

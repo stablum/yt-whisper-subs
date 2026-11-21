@@ -223,7 +223,8 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
 | Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
-| Ready practice rounds | nine independent destinations, including reading/listening comprehension; two background workers; one bounded standby after practice starts; unused approvals consumed first |
+| Sentence builder | 10 questions, configurable 1–30, with 2 extra blocks per question, configurable 0–4 |
+| Ready practice rounds | ten independent destinations, including Sentence builder and both comprehension modes, with two background workers and one bounded standby per mode |
 | Listening | Dutch dictation; 10 questions, configurable 1–50; the Dutch transcript and English meaning stay hidden until feedback |
 | Practice voice | one saved preset for dictation, listening comprehension, and read-aloud; **Voice** and **Configure voices…** in the Practice header; local Piper 1.7.0 by default and optional ZONOS3-Mini |
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
@@ -2354,10 +2355,10 @@ onset is not inferred from sentence-level SRT timing.
 
 ### Ready Rounds and Background Preparation
 
-The library keeps ready content for **nine top-level practice destinations**:
+The library keeps ready content for **ten top-level practice destinations**:
 Word quiz · Dutch → English, Word quiz · English → Dutch, Sound alike, Verbs · Dutch
 transformations, Sentences · English → Dutch, Sentences · Dutch → English,
-Listening · Dutch dictation, **Leesbegrip** and **Luisterbegrip**.
+Sentence builder, Listening · Dutch dictation, **Leesbegrip** and **Luisterbegrip**.
 Each has its own round options, preparation ownership and resumable session.
 Switching direction does not end the other direction's round, replace its
 choices, or lose a typed draft. Progress and Activity remain in the separate
@@ -2578,9 +2579,10 @@ the order shown in Practice:
 4. Verb transformations
 5. Sentence translation, Dutch → English
 6. Sentence translation, English → Dutch
-7. Dutch dictation
-8. Reading comprehension
-9. Listening comprehension
+7. Sentence builder
+8. Dutch dictation
+9. Reading comprehension
+10. Listening comprehension
 
 An existing full-practice run finishes in the order it started. Each new run
 uses the order above. Each mode uses its own settings and resumes an open round or takes a prepared
@@ -2641,7 +2643,8 @@ caches approved choices and the selected voice’s target recordings.
 Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
-Sound alike, both Sentences directions, Listening, Leesbegrip and Luisterbegrip as **nine top-level Practice buttons**, with
+Sound alike, both Sentences directions, Sentence builder, Dutch dictation,
+Leesbegrip and Luisterbegrip as **ten top-level Practice buttons**, with
 **Tracking** (Progress, Activity) separated by a labelled group and divider.
 Each page remains one click away; existing menu/tray shortcuts and native page
 navigation select the same grouped controls.
@@ -3243,6 +3246,38 @@ that completion retains those counts and separates the gloss from its explanatio
 Windows named-pipe access must be available
 to both test processes. The transport uses overlapped reads/writes so replies
 and seeks remain responsive even while a paused player emits no events.
+
+### Sentence Builder
+
+Open **Practice → Sentences → Sentence builder**. Read the English sentence, then
+click the Dutch blocks in order. Bright text on a dark fill keeps the labels
+legible, while each outline matches its arrow in the correction. Drag a block to move it before or after
+another block, or click it to return it to the bank. With the keyboard, focus a
+block and press Space to move it between the lists. Use Ctrl+Left or Ctrl+Right
+to reorder a selected block in your sentence.
+
+The exercises focus on multi-clause word order, including subordinate and
+relative clauses, inversion, verb clusters and separable verbs. **Round options**
+controls the question count, extra blocks and whether to include vocabulary
+that is still waiting for review. Extra blocks have the same visual treatment
+as the other blocks. The current arrangement is saved as you work.
+
+An independent solver evaluates each shuffled bank before the question is
+cached. It rejects ambiguous extra blocks and records valid alternate orders
+that use the same set of blocks. **Check answer** grades locally. For a wrong
+answer, colored arrows show how the selected blocks move into an approved
+order. Dashed arrows mark blocks to add or take out. **Replay moves** repeats
+the animation. Feedback explains the Dutch construction and why each selected
+extra block is unsuitable. The shared read-aloud controls can play the displayed
+Dutch model sentence after checking.
+
+New questions use the Word quiz's English-to-Dutch vocabulary selector, including
+its review dates and error weights. Results track word order separately and make
+difficult constructions more likely in later rounds. **Tracking → Progress →
+Sentence builder** shows exact accuracy, partial credit based on the longest
+correctly ordered block sequence, and results by construction. Each submission
+counts toward Activity and the practice reminder. The same preparer serves a
+standby round and Full Practice.
 
 ### Dutch Reading And Listening Comprehension
 

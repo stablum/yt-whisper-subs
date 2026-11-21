@@ -97,6 +97,8 @@ class ActivityChart(QtWidgets.QWidget):
                 comprehension_read=row.comprehension_read,
                 comprehension_listen=row.comprehension_listen,
             ))
+            if row.word_order:
+                hint += '\n' + i18n.tr('Sentence builder: {count}', count=row.word_order)
             self._hits.append((QtCore.QRectF(center - step / 2, plot.top(), step, plot.height() + 45), hint))
 
     def mouseMoveEvent(self, event) -> None:
@@ -264,7 +266,7 @@ class ActivityPanel(QtWidgets.QWidget):
             correct=row.correct,
             graded=row.graded,
         ) if row.graded else i18n.tr('No graded answers')
-        self._details.setText(i18n.tr(
+        details = i18n.tr(
             '{answers} answers · {words} words · {verb_lemmas} verbs\n\nWords Dutch → English: {nl_en}\n'
             'Words English → Dutch: {en_nl}\nVerb transformations: {verbs}\nSentences English → Dutch: '
             '{sentence_en_nl}\nSentences Dutch → English: {sentence_nl_en}\nListening: {listening}\n'
@@ -283,7 +285,10 @@ class ActivityPanel(QtWidgets.QWidget):
             comprehension_listen=row.comprehension_listen,
             accuracy=accuracy,
             value=row.answers - row.graded,
-        ))
+        )
+        if row.word_order:
+            details += '\n' + i18n.tr('Sentence builder: {count}', count=row.word_order)
+        self._details.setText(details)
 
     def _show_month(self, *_args) -> None:
         """Summarize the displayed month independently of date selection; e.g. navigate to last month."""

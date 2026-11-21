@@ -16,6 +16,7 @@ _FIELDS = {
     tracks.Track.VERBS: ('source', 'answer'),
     tracks.Track.SENTENCE_EN_NL: ('dutch',),
     tracks.Track.SENTENCE_NL_EN: ('dutch',),
+    tracks.Track.WORD_ORDER: ('dutch',),
 }
 
 

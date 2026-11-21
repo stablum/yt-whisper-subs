@@ -482,7 +482,7 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertIsNotNone(dialog)
         self.assertFalse(balloon.isVisible())
         self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.WORD_EN_NL)
-        self.assertIn('2/9', dialog._sequence._status.text())
+        self.assertIn('2/10', dialog._sequence._status.text())
         self.assertIsNone(db.practice_last_answer(time.time()))
 
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:

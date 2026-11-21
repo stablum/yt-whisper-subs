@@ -87,12 +87,13 @@ class CleanupDbMixin:
                               json.dumps(archived, ensure_ascii=False), now))
                 self._retire_word_questions(conn, key, lemma)
                 removed.append(lemma)
-            for kind in ("practice", "sentence", "verb"):
+            for kind in ("practice", "sentence", "verb", "word_order"):
                 conn.execute(f"UPDATE {kind}_presentations SET outcome='invalid' WHERE outcome IS NULL AND question_id IN ("
                              f"SELECT id FROM {kind}_questions WHERE flagged_at IS NOT NULL)")
             self._practice_complete(conn)
             self._sentence_complete(conn)
             self._verb_complete(conn)
+            self._word_order_close(conn, "completed")
         return removed
 
     @staticmethod
@@ -100,8 +101,9 @@ class CleanupDbMixin:
         """Retire cached teaching material while retaining answered snapshots; e.g. an excluded target cannot remain in standby stock."""
 
         now = time.time()
-        conn.execute("UPDATE practice_questions SET flagged_at=COALESCE(flagged_at,?) "
-                     "WHERE lookup_id IN (SELECT value FROM json_each(?))", (now, key))
+        for kind in ("practice", "word_order"):
+            conn.execute(f"UPDATE {kind}_questions SET flagged_at=COALESCE(flagged_at,?) "
+                         "WHERE lookup_id IN (SELECT value FROM json_each(?))", (now, key))
         conn.execute("UPDATE sentence_questions SET flagged_at=COALESCE(flagged_at,?) WHERE id IN ("
                      "SELECT question_id FROM sentence_question_words WHERE lookup_id IN (SELECT value FROM json_each(?)))", (now, key))
         conn.execute("UPDATE verb_questions SET flagged_at=COALESCE(flagged_at,?) WHERE target_id IN ("

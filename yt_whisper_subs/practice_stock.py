@@ -43,8 +43,8 @@ class StockDbMixin:
         """Prefer different targets for the next round when enough are eligible; e.g. preparing while typing cannot immediately repeat the current ten anchors."""
 
         track = practice_tracks.Track.for_options(kind, opts)
-        value = {"practice": "l.word_id", "sentence": "q.anchor_word_id", "verb": "q.target_id"}[kind]
-        extra = " JOIN vocab_lookups l ON l.id=q.lookup_id" if kind == "practice" else ""
+        value = {"practice": "l.word_id", "word_order": "l.word_id", "sentence": "q.anchor_word_id", "verb": "q.target_id"}[kind]
+        extra = " JOIN vocab_lookups l ON l.id=q.lookup_id" if kind in {"practice", "word_order"} else ""
         where = " AND s.direction=?" if track.direction else ""
         params = (track.direction.value,) if track.direction else ()
         with self._connect() as conn:
@@ -84,7 +84,7 @@ class StockDbMixin:
                 return []
             rows = conn.execute(f"SELECT q.*,p.display_json FROM {kind}_stock_questions p JOIN {kind}_questions q ON q.id=p.question_id "
                                 "WHERE p.direction=? ORDER BY p.ordinal", (direction,)).fetchall()
-            valid = len(rows) == opts.count and all(row["flagged_at"] is None and (kind == "verb" or row["direction"] == direction)
+            valid = len(rows) == opts.count and all(row["flagged_at"] is None and (not track.direction or row["direction"] == direction)
                                                    and all(row[key] == value for key, value in policy.items()) for row in rows)
             return [{**dict(row), **json.loads(row["display_json"])} for row in rows] if valid else []
 

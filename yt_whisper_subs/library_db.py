@@ -30,6 +30,7 @@ from yt_whisper_subs import comprehension_db
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_stock
 from yt_whisper_subs import word_reviews
+from yt_whisper_subs import word_order_db
 from yt_whisper_subs import vocabulary_accretion_db
 
 
@@ -66,6 +67,7 @@ class SnapshotResult(NamedTuple):
 
 
 class LibraryDb(
+    word_order_db.WordOrderDbMixin,
     comprehension_db.ComprehensionDbMixin,
     vocabulary_accretion_db.AccretionDbMixin,
     word_reviews.WordReviewDbMixin,

@@ -60,10 +60,13 @@ class PracticeReady(QtCore.QObject):
             from yt_whisper_subs import sentence_service
             from yt_whisper_subs import comprehension
             from yt_whisper_subs import comprehension_service
+            from yt_whisper_subs import word_order
+            from yt_whisper_subs import word_order_service
 
             self._modes = {"practice": (practice.RoundOptions(direction=practice.Direction.NL_EN, count=10), practice_service.PracticeService(self._db)),
                            "verb": (verb_practice.Options(), verb_service.VerbService(self._db)),
                            "sentence": (sentence_practice.Options(), sentence_service.SentenceService(self._db)),
+                           "word_order": (word_order.Options(), word_order_service.Service(self._db)),
                            'comprehension': (comprehension.Options(), comprehension_service.ComprehensionService(self._db))}
         requests = []
         for track in practice_tracks.Track:
@@ -108,7 +111,7 @@ class PracticeReady(QtCore.QObject):
         if session:
             summary = getattr(self._db, track.kind + "_summary")(session)
             answered = summary.get("submitted", summary["correct"] + summary["wrong"])
-            if not answered:
+            if not answered and (track != practice_tracks.Track.WORD_ORDER or self._db.word_order_options(session) == opts):
                 return False
         return True
 

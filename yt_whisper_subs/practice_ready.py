@@ -119,8 +119,9 @@ class ReadyDbMixin:
         if kind not in practice_tracks.QUESTION_KINDS:
             raise ValueError("Unknown practice mode")
         with self._connect() as conn:
-            direction = " AND direction=?" if kind != "verb" else ""
-            params = (opts.direction.value,) if kind != "verb" else ()
+            track_direction = practice_tracks.Track.for_options(kind, opts).direction
+            direction = " AND direction=?" if track_direction else ""
+            params = (track_direction.value,) if track_direction else ()
             row = conn.execute(f"SELECT * FROM {kind}_sessions WHERE status='active'{direction} ORDER BY created_at DESC LIMIT 1", params).fetchone()
             if row is None:
                 return None
