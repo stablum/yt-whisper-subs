@@ -19,6 +19,7 @@ from yt_whisper_subs import verb_practice
 
 
 MAX_DRAFTS = 3
+MAX_WORD_CANDIDATES = 50
 
 
 class ComprehensionService:
@@ -157,12 +158,13 @@ class ComprehensionService:
                 return
 
     def _word_candidates(self, opts: comp.Options) -> list[dict]:
-        """Offer up to the configured limit of due/new words, e.g. an empty library still permits passages."""
+        """Offer alternatives beyond the inclusion limit, e.g. five targets get up to 25 candidates."""
 
         if not opts.words:
             return []
         rows = self._db.word_candidates(practice.Direction.NL_EN.value)
-        selection = practice.RoundOptions(direction=practice.Direction.NL_EN, count=opts.words, include_early=opts.include_early)
+        count = min(opts.words * word_select.CANDIDATES_PER_SLOT, MAX_WORD_CANDIDATES)
+        selection = practice.RoundOptions(direction=practice.Direction.NL_EN, count=count, include_early=opts.include_early)
         chosen = word_select.Selector(practice.ReviewPolicy()).select(rows, selection, time.time())
         fields = ('word_id', 'lookup_id', 'lemma', 'surface', 'lemma_meaning', 'meaning', 'part_of_speech')
         return [{field: row[field] for field in fields} for row in chosen]

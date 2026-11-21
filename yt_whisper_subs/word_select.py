@@ -10,6 +10,10 @@ import numpy as np
 from yt_whisper_subs import practice
 
 
+# Writers can choose among several due or new vocabulary entries for each optional target.
+CANDIDATES_PER_SLOT = 5
+
+
 def error_weight(attempts, failures):
     """Share Beta-smoothed difficulty w=1+6(f+1)/(n+3); e.g. word and verb selection react consistently to lexical failures."""
 

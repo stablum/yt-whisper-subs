@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from tests import listening_fixtures
 from tests import sentence_fixtures
 from tests import verb_fixtures
 from yt_whisper_subs import library_db
@@ -164,3 +165,34 @@ class SentenceVarietyTests(unittest.TestCase):
         companion = next(word["word_id"] for word in row["content"]["words"] if word["word_id"] != row["anchor_word_id"])
         examples = self.db.sentence_examples([companion], "en_nl")
         self.assertEqual(examples[companion], [{key: row["content"][key] for key in ("dutch", "english")}])
+
+    def test_translation_and_dictation_offer_choices_and_save_only_used_targets(self):
+        """Allow the last companion or the anchor alone, e.g. dictation can skip all five companions."""
+
+        engine = sentence_service.SentenceService(self.db, self.provider, speech=listening_fixtures.Speech())
+        generate = self.provider.generate
+
+        def choose(plans, direction, focus):
+            """Use a suitable companion from anywhere in the pool or the anchor alone."""
+
+            plan, = plans
+            anchor, *companions = plan["words"]
+            self.assertEqual(anchor["word_id"], plan["anchor_word_id"])
+            self.assertEqual((len(companions), plan["max_words"]), (5, 2))
+            self.assertTrue(all("context" not in word for word in companions))
+            selected = [anchor] if direction == sentences.Direction.LISTEN else [anchor, companions[-1]]
+            return generate([dict(plan, words=selected)], direction, focus)
+
+        for direction in sentences.Direction:
+            with self.subTest(direction=direction):
+                opts = self.opts.model_copy(update={"direction": direction, "count": 1, "words": 2})
+                with mock.patch.object(self.provider, "generate", side_effect=choose):
+                    session = engine.start(opts, lambda _: None)
+                row = self.db.sentence_current(session)
+                selected = generate.call_args.args[0][0]["words"]
+                expected = [word["word_id"] for word in selected]
+                self.assertEqual([word["word_id"] for word in row["content"]["words"]], expected)
+                with self.db._connect() as conn:
+                    links = conn.execute("SELECT l.word_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
+                                         "WHERE w.question_id=? ORDER BY w.ordinal", (row["question_id"],))
+                    self.assertEqual([link[0] for link in links], expected)

@@ -64,7 +64,7 @@ class FakeSentenceProvider:
                  "lopen": (["zou", "lopen"], ["would", "walk"], ["conditional", "person"])}
         for plan in plans:
             uses = []
-            for word in plan["words"]:
+            for word in plan["words"][:plan["max_words"]]:
                 dutch, english, features = forms[word["lemma"]]
                 uses.append(sentences.WordUse(word_id=word["word_id"], dutch_forms=dutch, english_forms=english,
                                                features=features, explanation="A valid new form of the saved dictionary word."))
@@ -129,12 +129,13 @@ class SimpleSentenceProvider:
 
         results = []
         for plan in plans:
+            selected = plan["words"][:plan["max_words"]]
             words = [sentences.WordUse(word_id=row["word_id"], dutch_forms=[row["surface"]],
                                         english_forms=[row["meaning"]], features=["base"], explanation="Controlled evidence.")
-                     for row in plan["words"]]
+                     for row in selected]
             draft = sentences.Draft(anchor_word_id=plan["anchor_word_id"], scene=plan["scene"], words=words,
-                                     dutch="Ik leer " + " en ".join(row["surface"] for row in plan["words"]) + ".",
-                                     english="I learn " + " and ".join(row["meaning"] for row in plan["words"]) + ".",
+                                     dutch="Ik leer " + " en ".join(row["surface"] for row in selected) + ".",
+                                     english="I learn " + " and ".join(row["meaning"] for row in selected) + ".",
                                      alternatives=[], explanation="Controlled bilingual fixture.")
             verdict = sentences.Verdict(anchor_word_id=plan["anchor_word_id"], valid=True, reason="Controlled independent approval.")
             results.append({"draft": draft.model_dump(), "verdict": verdict.model_dump()})

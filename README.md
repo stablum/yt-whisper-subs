@@ -221,7 +221,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Verb transformations and diagnostic correction | same dedicated practice model; 10 exercises, configurable 1–50 |
 | Verb sources | saved Dutch vocabulary plus 36 starter verbs; captured verbs receive extra priority |
 | Verb sentence meanings | Show English / Alt+E reveals the source; feedback includes corrected-sentence English |
-| Sentence translations | English → Dutch by default; both directions available; 10 sentences, configurable 1–50, with 2 saved targets per sentence (1–3) |
+| Sentence translations | Both directions, English → Dutch by default. Round size 1–50 (default 10). Maximum 1–3 saved targets per sentence (default 2). |
 | Sentence generation, audit and correction | same dedicated `gpt-6-luna` / `medium` practice model; varied life contexts and word forms |
 | Word order and Phrase and clause order | 10 questions each, configurable 1–30, with 2 extra blocks per question, configurable 0–4 |
 | Ready practice rounds | eleven independent destinations, with two background workers and one bounded standby per mode |
@@ -3062,8 +3062,8 @@ Dutch** or **Sentences · Dutch → English** button. The first question appears
 Translate the complete English sentence into Dutch, then press **Enter** or
 **Submit & next**. Your first attempt is saved immediately and the next question
 opens while correction runs in the background. Direction comes from the selected
-top-level page; **Sentence round options** selects 1–50 sentences (default 10), 1–3 saved target
-words per sentence (default 2), a life context and optional early review.
+top-level page; **Sentence round options** selects 1–50 sentences (default 10), a
+maximum of 1–3 saved words per sentence (default 2), a life context and optional early review.
 Preferences apply to the next round; **New sentence round** prepares and checks
 replacement content before ending an unfinished round. Switching back to the
 library or pressing **Escape** keeps the current round and draft available.
@@ -3108,8 +3108,10 @@ plurals, adjective endings, comparatives, superlatives and other suitable forms.
 Morphology follows the word's actual restrictions; requests never justify an
 invented form. Mixed contexts balance variety with areas where mistakes recur.
 Specific context selection is also available. Each question has a distinct saved
-anchor word; a small eligible vocabulary requires a smaller configured round or
-early review rather than silently producing fewer questions.
+anchor word. For each extra word allowed by the limit, the writer gets up to five
+eligible companions to choose from and uses only those that fit naturally.
+Only the words selected for the sentence are assessed. With a small eligible
+vocabulary, reduce the round size or enable early review to fill the round.
 
 Generation and a separate quality audit use **`gpt-6-luna` / `medium`** with the
 existing practice credentials, strict structured responses and `store: false`.
@@ -3357,8 +3359,8 @@ the library language. Both modes use the configured practice model
   A2 for 25–45, and B1 through C1 for 45–85.
 - Multiple-choice questions: 0–20 (default 5), each with four substantial buttons.
 - Open questions: 0–15 (default 3), answered in Dutch; together 1–30 questions.
-- Maximum words from your vocabulary: 0–20 (default 8). The writer can use fewer
-  when eligible words are scarce or too difficult for the selected level.
+- Maximum words from your vocabulary: 0–20 (default 8). With a maximum of 5,
+  the writer receives up to 25 eligible candidates and can use any 0–5 that fit.
 - Optional early review. Luisterbegrip's **Stem** selector and **Stemmen instellen…** sit beside its playback controls and apply to the current passage.
 
 A1 uses short sentences about everyday situations and questions about explicit
@@ -3387,10 +3389,10 @@ This is a quality safeguard, not a guarantee that an LLM can never make a mistak
 **Tekst of vraag melden** excludes a problematic passage from scores and shared
 review while preserving actual submitted activity.
 
-The shared FSRS/error-weighted word selector proposes eligible vocabulary. The
-writer uses only candidates that fit the selected level and records the forms
-actually used. New passages use
-other contexts and recent approved titles to encourage variety. Reading and
+The shared FSRS/error-weighted word selector proposes up to five eligible
+candidates per allowed target, capped at 50 candidates per passage. The writer
+chooses those that fit the requested level and records the forms actually used.
+The writer uses recent approved titles to vary the context. Reading and
 listening do not deliberately reuse a passage already exposed in either mode.
 Only words a question genuinely tests receive lexical assessment; an inference
 mistake never automatically fails every word in the passage. Real lexical mistakes
@@ -3473,8 +3475,9 @@ corrections scroll, including in the other typed practice modes.
 **Stop**, changing question, leaving the page or closing practice stops playback.
 Feedback highlights transcription mismatches with hover corrections, shows the
 spoken Dutch sentence in green, and provides its English translation below.
-Round options control the actual sentence count (1–50, default 10), saved targets
-per sentence (1–3, default 2), life context and early practice.
+Round options control the actual sentence count (1–50, default 10), maximum saved
+targets per sentence (1–3, default 2), life context and early practice. As with
+translation, the anchor is required and the writer chooses suitable companions.
 
 Sentence construction and independent quality review use the same configured
 practice model as translation exercises (default `gpt-6-luna`, medium reasoning).

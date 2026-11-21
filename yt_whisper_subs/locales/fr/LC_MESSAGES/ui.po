@@ -516,11 +516,11 @@ msgstr "Recherche de nouvelles vidéos sur la chaîne…"
 msgid "Checking channels…"
 msgstr "Vérification des chaînes…"
 
-#: yt_whisper_subs/sentence_service.py:190
+#: yt_whisper_subs/sentence_service.py:193
 msgid "Checking your Dutch transcription…"
 msgstr "Vérification de votre transcription néerlandaise…"
 
-#: yt_whisper_subs/comprehension_service.py:205
+#: yt_whisper_subs/comprehension_service.py:207
 msgid "Checking your answer and the meanings of words used…"
 msgstr "Vérification de votre réponse et du sens des mots employés…"
 
@@ -528,7 +528,7 @@ msgstr "Vérification de votre réponse et du sens des mots employés…"
 msgid "Checking your sentence…"
 msgstr "Vérification de votre phrase…"
 
-#: yt_whisper_subs/sentence_service.py:198
+#: yt_whisper_subs/sentence_service.py:201
 msgid "Checking your translation…"
 msgstr "Vérification de votre traduction…"
 
@@ -1376,7 +1376,7 @@ msgstr "Inclure les mots qui ne sont pas encore à réviser"
 msgid "Incomplete · {resolved}"
 msgstr "Incomplet · {resolved}"
 
-#: yt_whisper_subs/comprehension_service.py:223
+#: yt_whisper_subs/comprehension_service.py:225
 msgid "Independently checking new word meanings…"
 msgstr "Vérification indépendante du sens des nouveaux mots…"
 
@@ -1633,6 +1633,10 @@ msgstr "Marquée comme vue le {format_timestamp}"
 #, python-brace-format
 msgid "Marked watched · {title}"
 msgstr "Marquée comme vue · {title}"
+
+#: yt_whisper_subs/library_sentences.py:53
+msgid "Maximum saved words per sentence"
+msgstr "Nombre maximal de mots enregistrés par phrase"
 
 #: yt_whisper_subs/library_comprehension_controls.py:46
 msgid "Maximum words from your vocabulary"
@@ -2270,11 +2274,11 @@ msgstr "Préparation des exercices de construction en néerlandais…"
 msgid "Preparing Dutch speech…"
 msgstr "Préparation de la voix néerlandaise…"
 
-#: yt_whisper_subs/comprehension_service.py:179
+#: yt_whisper_subs/comprehension_service.py:181
 msgid "Preparing a Dutch text with exactly the requested questions…"
 msgstr "Préparation d’un texte néerlandais avec exactement les questions demandées…"
 
-#: yt_whisper_subs/comprehension_service.py:191
+#: yt_whisper_subs/comprehension_service.py:193
 msgid "Preparing and checking speech clips…"
 msgstr "Préparation et vérification des extraits audio…"
 
@@ -2283,7 +2287,7 @@ msgstr "Préparation et vérification des extraits audio…"
 msgid "Preparing and checking {len} choices…"
 msgstr "Préparation et vérification de {len} choix…"
 
-#: yt_whisper_subs/sentence_service.py:133
+#: yt_whisper_subs/sentence_service.py:132
 #, python-brace-format
 msgid "Preparing and checking {len} sentence pairs…"
 msgstr "Préparation et vérification de {len} paires de phrases…"
@@ -2758,7 +2762,7 @@ msgstr "Consulter les corrections en attente"
 msgid "Review the explanation"
 msgstr "Consulter l’explication"
 
-#: yt_whisper_subs/comprehension_service.py:131
+#: yt_whisper_subs/comprehension_service.py:132
 msgid "Revising questions flagged by the independent review…"
 msgstr "Révision des questions signalées lors de la vérification indépendante…"
 
@@ -2798,7 +2802,7 @@ msgstr "Séries"
 msgid "SHOW"
 msgstr "AFFICHER"
 
-#: yt_whisper_subs/sentence_service.py:44
+#: yt_whisper_subs/sentence_service.py:43
 msgid "Save and translate some Dutch vocabulary words before sentence practice."
 msgstr "Enregistrez et traduisez des mots néerlandais avant de travailler les phrases."
 
@@ -2822,10 +2826,6 @@ msgstr ""
 "Les mots enregistrés apparaissent sous de nouvelles formes et situations.\n"
 "D’autres mots s’y ajoutent naturellement."
 
-#: yt_whisper_subs/library_sentences.py:53
-msgid "Saved words per sentence"
-msgstr "Mots enregistrés par phrase"
-
 #: yt_whisper_subs/verb_vocabulary.py:109
 msgid "Saving checked vocabulary verbs…"
 msgstr "Enregistrement des verbes vérifiés…"
@@ -2834,7 +2834,7 @@ msgstr "Enregistrement des verbes vérifiés…"
 msgid "Saving correction…"
 msgstr "Enregistrement de la correction…"
 
-#: yt_whisper_subs/sentence_service.py:214
+#: yt_whisper_subs/sentence_service.py:217
 msgid "Saving sentence and vocabulary feedback…"
 msgstr "Enregistrement des commentaires sur la phrase et le vocabulaire…"
 
@@ -3258,7 +3258,7 @@ msgstr "Le même numéro de variation et les mêmes réglages reproduisent la m�
 msgid "The sentence you heard"
 msgstr "La phrase entendue"
 
-#: yt_whisper_subs/comprehension_service.py:148 yt_whisper_subs/library_comprehension.py:147
+#: yt_whisper_subs/comprehension_service.py:149 yt_whisper_subs/library_comprehension.py:147
 msgid "The text and all questions are independently checked."
 msgstr "Le texte et toutes les questions font l’objet d’une vérification indépendante."
 
@@ -3830,7 +3830,7 @@ msgstr "Vos mots enregistrés sont prêts pour votre premier entraînement."
 msgid "Your sentence"
 msgstr "Votre phrase"
 
-#: yt_whisper_subs/sentence_service.py:62
+#: yt_whisper_subs/sentence_service.py:61
 msgid "Your sentence targets and writing reviews are not due yet. Try early practice if you wish."
 msgstr "Vos phrases et révisions écrites ne sont pas encore à revoir. Vous pouvez réviser en avance."
 
@@ -4085,7 +4085,7 @@ msgstr ""
 "{len:,} mots · {sum:,} clics · {sum3:,} confusions lexicales · enrichissement : {pending} en "
 "attente, {failed} échecs"
 
-#: yt_whisper_subs/sentence_service.py:94
+#: yt_whisper_subs/sentence_service.py:93
 #, python-brace-format
 msgid "{len} checked sentences ready"
 msgstr "{len} phrases vérifiées prêtes"

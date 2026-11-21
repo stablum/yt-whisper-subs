@@ -43,18 +43,12 @@ class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db
         with self._connect() as conn:
             return [dict(row) for row in conn.execute(sql, params)]
 
-    @staticmethod
-    def _sentence_key(plan: dict) -> str:
-        """Give a target context set one deterministic cache key; e.g. changed lookup meanings require a fresh bilingual pair."""
-
-        return ":".join(str(value) for value in sorted(row["lookup_id"] for row in plan["words"]))
-
     def sentence_cache(self, draft, verdict, plan: dict, policy: dict) -> dict:
-        """Persist an approved pair with normalized source references; e.g. generated IDs cannot attach it to unrelated clicks."""
+        """Persist only selected vocabulary, e.g. an unused companion cannot become a review target."""
 
-        expected = {row["word_id"]: row["lookup_id"] for row in plan["words"]}
-        draft.check(set(expected), "mixed" if plan["allow_context_change"] else plan["scene"])
-        if not verdict.valid or verdict.anchor_word_id != draft.anchor_word_id or draft.anchor_word_id != plan["anchor_word_id"]:
+        target_ids = draft.check(plan)
+        expected = {row["word_id"]: row["lookup_id"] for row in plan["words"] if row["word_id"] in target_ids}
+        if not verdict.valid or verdict.anchor_word_id != draft.anchor_word_id:
             raise ValueError("Only approved sentence targets may be cached")
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -63,9 +57,10 @@ class SentenceDbMixin(sentence_queue_db.SentenceQueueDbMixin, sentence_review_db
                 (json.dumps(list(expected.values())),))}
             if actual != expected:
                 raise ValueError("Sentence source lookups changed or were substituted")
+            focus_key = ":".join(str(value) for value in sorted(expected.values()))
             cursor = conn.execute("INSERT INTO sentence_questions "
                                   "(direction,anchor_word_id,focus_key,scene,body_json,validation_json,model,reasoning,prompt_version,created_at) "
-                                  "VALUES(?,?,?,?,?,?,?,?,?,?)", (policy["direction"], draft.anchor_word_id, self._sentence_key(plan),
+                                  "VALUES(?,?,?,?,?,?,?,?,?,?)", (policy["direction"], draft.anchor_word_id, focus_key,
                                                                  draft.scene, draft.model_dump_json(), verdict.model_dump_json(),
                                                                  policy["model"], policy["reasoning"], policy["prompt_version"], time.time()))
             question_id = cursor.lastrowid

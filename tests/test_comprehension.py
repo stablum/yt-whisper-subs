@@ -261,6 +261,24 @@ class ComprehensionTests(unittest.TestCase):
         self.assertEqual(self.provider.generated[0]['words'], [])
         self.assertEqual(len(self.db.comprehension_history(session)), self.opts.count)
 
+    def test_passage_writer_gets_more_candidates_than_it_can_use(self):
+        """A five-word limit offers 25 choices while local validation still rejects six targets."""
+
+        opts = fixtures.options(words=5)
+        template = self.db.word_candidates('nl_en')[0]
+        rows = [dict(template, word_id=i, lookup_id=i, lemma=f'woord{i}') for i in range(100, 130)]
+        with mock.patch.object(self.db, 'word_candidates', return_value=rows):
+            session = self._start(opts)
+        request = self.provider.generated[0]
+        ids = [word['word_id'] for word in request['words']]
+        self.assertEqual(len(set(ids)), 25)
+        self.assertEqual(request['options']['words'], 5)
+        pid = self.db.comprehension_session(session)['passage_id']
+        passage = comp.Passage.model_validate(self.db.comprehension_passage(pid)['content'])
+        passage.targets = [comp.Target(word_id=wid, forms=['gemeente']) for wid in ids[:6]]
+        with self.assertRaisesRegex(comp.DraftRejected, 'meer dan 5'):
+            passage.check(opts, set(ids))
+
     def test_audit_outage_reuses_its_saved_draft(self):
         """Checkpoint between generation and review; e.g. retrying an unavailable auditor does not generate another article."""
 

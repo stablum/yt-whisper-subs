@@ -282,7 +282,8 @@ class SentenceTests(unittest.TestCase):
         opts = sentences.Options(count=3, words=2)
         plans = selector.plans(rows, rows, opts, {}, time.time())
         self.assertGreater(len({row["scene"] for row in plans}), 1)
-        self.assertTrue(all(len({word["word_id"] for word in row["words"]}) == 2 for row in plans))
+        self.assertTrue(all(row["max_words"] == 2 for row in plans))
+        self.assertTrue(all(len({word["word_id"] for word in row["words"]}) == 3 for row in plans))
 
     @mock.patch("yt_whisper_subs.openai_client.responses_api_request")
     def test_generation_audit_and_grading_share_luna_strict_contracts(self, request) -> None:
@@ -343,7 +344,7 @@ class SentenceTests(unittest.TestCase):
     def test_sentence_audit_requires_evidence_for_the_menu_detail(self, request) -> None:
         """Reject missing or invented support despite an approval; e.g. removing a dish must retain 'from the menu'."""
 
-        plan = {"anchor_word_id": 1, "scene": "food", "allow_context_change": False, "words": [{"word_id": 1}]}
+        plan = {"anchor_word_id": 1, "scene": "food", "allow_context_change": False, "max_words": 1, "words": [{"word_id": 1}]}
         english = "I would keep the recipe and oppose removing this dish from the menu."
         dutch = "Ik zou het recept bewaren en me verzetten tegen het schrappen van dit gerecht"
         draft = {"anchor_word_id": 1, "scene": "food", "english": english, "alternatives": [],

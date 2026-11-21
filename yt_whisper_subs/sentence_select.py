@@ -40,14 +40,15 @@ class Selector(word_select.Selector):
         return chosen, selected
 
     def plans(self, anchors: list[dict], rows: list[dict], opts: sentences.Options, metrics: dict, now: float) -> list[dict]:
-        """Add a small number of target companions and varied form preferences; e.g. other words in the sentence remain unrestricted."""
+        """Offer optional companions around a fixed anchor, e.g. five choices for one extra saved word."""
 
         eligible = [row for row in rows if not row["card_json"] or row["due_at"] <= now or opts.include_early]
+        companions = (opts.words - 1) * word_select.CANDIDATES_PER_SLOT
         counts, scenes, result = {}, {}, []
         weights = self.weights(eligible, now)
         for anchor in anchors:
             selected = [anchor]
-            for _ in range(min(opts.words, len(eligible)) - 1):
+            for _ in range(min(companions, len(eligible))):
                 used = {row["word_id"] for row in selected}
                 probs = np.array([0 if row["word_id"] in used else w / (1 + counts.get(row["word_id"], 0)) ** 2
                                   for row, w in zip(eligible, weights)])
@@ -60,7 +61,7 @@ class Selector(word_select.Selector):
             scenes[scene] = scenes.get(scene, 0) + 1
             words = [{**row, "request_form": self._form(row, metrics.get("forms", []))} for row in selected]
             result.append({"anchor_word_id": anchor["word_id"], "scene": scene,
-                           "allow_context_change": opts.scene == "mixed", "words": words})
+                           "allow_context_change": opts.scene == "mixed", "max_words": opts.words, "words": words})
         return result
 
     def _scene(self, requested: str, used: dict, metrics: list[dict]) -> str:

@@ -50,7 +50,7 @@ class SentenceOptions(QtWidgets.QWidget):
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
         for label, widget in ((i18n.tr('Life context'), self._scene),
-                              (i18n.tr('Sentences'), self._count), (i18n.tr('Saved words per sentence'), self._words)):
+                              (i18n.tr('Sentences'), self._count), (i18n.tr('Maximum saved words per sentence'), self._words)):
             form.addRow(label, widget)
         form.addRow(self._early)
         note = QtWidgets.QLabel(i18n.tr('Saved words appear in new forms and situations.\nOther words are included naturally.'))

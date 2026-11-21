@@ -153,7 +153,9 @@ class Passage(practice.Content):
         if opts.genre != "mixed" and self.genre != opts.genre:
             raise DraftRejected("De tekstsoort klopt niet.")
         target_ids = {t.word_id for t in self.targets}
-        if target_ids - candidate_ids or len(self.targets) != len(target_ids) or len(target_ids) > opts.words:
+        if len(target_ids) > opts.words:
+            raise DraftRejected(f"De tekst gebruikt meer dan {opts.words} gekozen woorden.")
+        if target_ids - candidate_ids or len(self.targets) != len(target_ids):
             raise DraftRejected("De tekst verwijst naar onbekende of dubbele woordenschat.")
         text = "\n\n".join(self.paragraphs)
         for target in self.targets:

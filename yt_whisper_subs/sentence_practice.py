@@ -52,7 +52,7 @@ class Direction(str, enum.Enum):
 
 
 class Options(pd.BaseModel):
-    """Configure whole-sentence recall; e.g. ten English-to-Dutch questions with two saved target words each."""
+    """Configure whole-sentence recall; e.g. ten questions with up to two saved words each."""
 
     model_config = pd.ConfigDict(extra="forbid")
     direction: Direction = Direction.EN_NL
@@ -92,13 +92,17 @@ class Draft(practice.Content):
     alternatives: list[str] = pd.Field(max_length=6)
     explanation: str = pd.Field(min_length=3, max_length=1200)
 
-    def check(self, expected: set[int], scene: str) -> None:
-        """Validate IDs and exact evidence before linguistic review; e.g. a separated particle must really occur."""
+    def check(self, plan: dict) -> set[int]:
+        """Validate the anchor, selected companions and exact evidence; e.g. a particle must really occur."""
 
-        ids = [row.word_id for row in self.words]
-        if len(ids) != len(set(ids)) or set(ids) != expected or self.anchor_word_id not in expected:
+        ids = {row.word_id for row in self.words}
+        candidates = {row["word_id"] for row in plan["words"]}
+        if len(ids) > plan["max_words"]:
+            raise ValueError("The sentence exceeds its saved vocabulary limit")
+        if (self.anchor_word_id != plan["anchor_word_id"] or self.anchor_word_id not in ids
+                or ids - candidates or len(ids) != len(self.words)):
             raise ValueError("Sentence targets were missing, duplicated or substituted")
-        if self.scene not in SCENES or (scene != "mixed" and self.scene != scene):
+        if self.scene not in SCENES or (not plan["allow_context_change"] and self.scene != plan["scene"]):
             raise ValueError("The sentence changed its requested life context")
         for row in self.words:
             for language, text, forms in (("Dutch", self.dutch, row.dutch_forms), ("English", self.english, row.english_forms)):
@@ -109,6 +113,7 @@ class Draft(practice.Content):
                 raise ValueError("Duplicate word-form targets")
         if any(not text.strip() or len(text) > 1000 for text in self.alternatives):
             raise ValueError("Invalid accepted sentence alternative")
+        return ids
 
 
 class Drafts(practice.Content):

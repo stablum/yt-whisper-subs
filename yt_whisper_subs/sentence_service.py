@@ -37,9 +37,8 @@ class SentenceService:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
         policy, now = practice.ReviewPolicy(), time.time()
-        rows = self._db.word_candidates(sentences.Direction(opts.direction).word_direction.value)
-        if background:
-            rows = self._db.practice_spare_candidates("sentence", opts, rows)
+        vocab = self._db.word_candidates(sentences.Direction(opts.direction).word_direction.value)
+        rows = self._db.practice_spare_candidates("sentence", opts, vocab) if background else vocab
         if not rows:
             raise practice_round.NothingToPractice("no_words", i18n.tr('Save and translate some Dutch vocabulary words before sentence practice.'))
         generation = {"direction": opts.direction.value, "model": self._provider.model,
@@ -69,7 +68,7 @@ class SentenceService:
             pending = [row for row in anchors if row["word_id"] not in ready]
             if not pending:
                 return ready
-            plans = selector.plans(pending, rows, opts, metrics, now)
+            plans = selector.plans(pending, vocab, opts, metrics, now)
             by_id = {row["word_id"]: row for row in pending}
             examples = self._db.sentence_examples(list(by_id), opts.direction.value)
             for item in plans:
@@ -144,14 +143,18 @@ class SentenceService:
 
     @staticmethod
     def _document(plan: dict) -> dict:
-        """Send linguistic evidence only; e.g. generated examples never need video URLs or private paths."""
+        """Send subtitle context only for the required anchor; e.g. optional companions use dictionary evidence."""
 
-        words = [{"word_id": row["word_id"], "surface": row["surface"], "lemma": row["lemma"],
-                  "meaning": row["meaning"], "lemma_meaning": row["lemma_meaning"],
-                  "part_of_speech": row["part_of_speech"], "request_form": row["request_form"],
-                  "context": json.loads(row["context_json"]), "note": row["note"] or ""} for row in plan["words"]]
-        return {"anchor_word_id": plan["anchor_word_id"], "scene": plan["scene"],
-                "allow_context_change": plan["allow_context_change"], "words": words,
+        anchor = plan["anchor_word_id"]
+        fields = ("word_id", "surface", "lemma", "meaning", "lemma_meaning", "part_of_speech", "request_form", "note")
+        words = []
+        for row in plan["words"]:
+            word = {key: row[key] for key in fields}
+            if row["word_id"] == anchor:
+                word["context"] = json.loads(row["context_json"])
+            words.append(word)
+        return {"anchor_word_id": anchor, "scene": plan["scene"],
+                "allow_context_change": plan["allow_context_change"], "max_words": plan["max_words"], "words": words,
                 "previous_rejection": plan.get("previous_rejection", ""),
                 "recent_sentences": plan.get("recent_sentences", [])}
 
@@ -166,7 +169,7 @@ class SentenceService:
                 raise ValueError("Invalid sentence generation IDs")
             plan = plans[draft.anchor_word_id]
             if verdict.valid:
-                draft.check({word["word_id"] for word in plan["words"]}, "mixed" if plan["allow_context_change"] else plan["scene"])
+                draft.check(plan)
             checked[draft.anchor_word_id] = draft, verdict
         if set(checked) != set(plans):
             raise ValueError("The provider omitted sentence exercises")

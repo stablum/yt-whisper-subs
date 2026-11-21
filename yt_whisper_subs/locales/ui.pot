@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-21 21:18+0100\n"
+"POT-Creation-Date: 2026-11-21 21:28+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -497,11 +497,11 @@ msgstr ""
 msgid "Checking channels…"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:190
+#: yt_whisper_subs/sentence_service.py:193
 msgid "Checking your Dutch transcription…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:205
+#: yt_whisper_subs/comprehension_service.py:207
 msgid "Checking your answer and the meanings of words used…"
 msgstr ""
 
@@ -509,7 +509,7 @@ msgstr ""
 msgid "Checking your sentence…"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:198
+#: yt_whisper_subs/sentence_service.py:201
 msgid "Checking your translation…"
 msgstr ""
 
@@ -1331,7 +1331,7 @@ msgstr ""
 msgid "Incomplete · {resolved}"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:223
+#: yt_whisper_subs/comprehension_service.py:225
 msgid "Independently checking new word meanings…"
 msgstr ""
 
@@ -1575,6 +1575,10 @@ msgstr ""
 #: yt_whisper_subs/library_window_actions.py:206
 #, python-brace-format
 msgid "Marked watched · {title}"
+msgstr ""
+
+#: yt_whisper_subs/library_sentences.py:53
+msgid "Maximum saved words per sentence"
 msgstr ""
 
 #: yt_whisper_subs/library_comprehension_controls.py:46
@@ -2204,11 +2208,11 @@ msgstr ""
 msgid "Preparing Dutch speech…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:179
+#: yt_whisper_subs/comprehension_service.py:181
 msgid "Preparing a Dutch text with exactly the requested questions…"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:191
+#: yt_whisper_subs/comprehension_service.py:193
 msgid "Preparing and checking speech clips…"
 msgstr ""
 
@@ -2217,7 +2221,7 @@ msgstr ""
 msgid "Preparing and checking {len} choices…"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:133
+#: yt_whisper_subs/sentence_service.py:132
 #, python-brace-format
 msgid "Preparing and checking {len} sentence pairs…"
 msgstr ""
@@ -2682,7 +2686,7 @@ msgstr ""
 msgid "Review the explanation"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:131
+#: yt_whisper_subs/comprehension_service.py:132
 msgid "Revising questions flagged by the independent review…"
 msgstr ""
 
@@ -2722,7 +2726,7 @@ msgstr ""
 msgid "SHOW"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:44
+#: yt_whisper_subs/sentence_service.py:43
 msgid "Save and translate some Dutch vocabulary words before sentence practice."
 msgstr ""
 
@@ -2744,10 +2748,6 @@ msgid ""
 "Other words are included naturally."
 msgstr ""
 
-#: yt_whisper_subs/library_sentences.py:53
-msgid "Saved words per sentence"
-msgstr ""
-
 #: yt_whisper_subs/verb_vocabulary.py:109
 msgid "Saving checked vocabulary verbs…"
 msgstr ""
@@ -2756,7 +2756,7 @@ msgstr ""
 msgid "Saving correction…"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:214
+#: yt_whisper_subs/sentence_service.py:217
 msgid "Saving sentence and vocabulary feedback…"
 msgstr ""
 
@@ -3162,7 +3162,7 @@ msgstr ""
 msgid "The sentence you heard"
 msgstr ""
 
-#: yt_whisper_subs/comprehension_service.py:148 yt_whisper_subs/library_comprehension.py:147
+#: yt_whisper_subs/comprehension_service.py:149 yt_whisper_subs/library_comprehension.py:147
 msgid "The text and all questions are independently checked."
 msgstr ""
 
@@ -3716,7 +3716,7 @@ msgstr ""
 msgid "Your sentence"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:62
+#: yt_whisper_subs/sentence_service.py:61
 msgid "Your sentence targets and writing reviews are not due yet. Try early practice if you wish."
 msgstr ""
 
@@ -3942,7 +3942,7 @@ msgid ""
 "{failed} failed"
 msgstr ""
 
-#: yt_whisper_subs/sentence_service.py:94
+#: yt_whisper_subs/sentence_service.py:93
 #, python-brace-format
 msgid "{len} checked sentences ready"
 msgstr ""
