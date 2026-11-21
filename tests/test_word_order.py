@@ -42,6 +42,8 @@ class Provider:
                 tiles = ["na het lange overleg", "bleven mijn nieuwe buren", "in de warme keuken",
                          f"omdat ze graag wilden {target['lemma']}"]
                 distractors = ["vlak voor de deur", "terwijl de buurt sliep"]
+            tiles[0] = tiles[0].capitalize()
+            distractors[0] = distractors[0].capitalize()
             drafts.append(word_order.Draft(word_id=target["word_id"], english="I stay home because my neighbour likes to walk when it rains.",
                                            dutch=" ".join(tiles).capitalize() + ".", tiles=tiles,
                                            extras=[word_order.Extra(text=x, why="This changes the meaning.") for x in distractors[:opts.extras]],
@@ -254,6 +256,37 @@ class OrderTests(unittest.TestCase):
         self.assertFalse(panel._moves.grab().isNull())
         panel._next.click()
         self.assertTrue(panel._finished)
+
+    def test_saved_blocks_hide_capitals_until_feedback_in_both_modes(self):
+        """Show neutral labels in the tray, tooltips and draft, e.g. 'Na het lange overleg' gives no start clue."""
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        app.setQuitOnLastWindowClosed(False)
+        for variant in word_order.Variant:
+            with self.subTest(variant=variant):
+                opts = word_order.Options(count=1, variant=variant)
+                session = self.engine.start(opts, lambda _: None)
+                row = self.db.word_order_current(session)
+                draft = word_order.Draft.model_validate_json(row["body_json"])
+                self.assertTrue(draft.tiles[0][0].isupper())
+                panel = library_word_order.Panel(self.db, variant=variant, engine=self.engine)
+                self.addCleanup(panel.close)
+                panel.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
+                panel.show()
+                panel.activate()
+                app.processEvents()
+
+                board = panel._board
+                for idx in range(board._bank.count()):
+                    item = board._bank.item(idx)
+                    label = draft.bank[item.data(library_order_blocks._ROLE)].lower()
+                    self.assertEqual((item.text(), item.toolTip()), (label, label))
+                board._move(0, True, -1)
+                self.assertEqual(board._answer.item(0).text(), draft.tiles[0].lower())
+
+                panel._check.click()
+                self.assertEqual(panel._answer.text(), draft.dutch)
+                self.assertEqual(panel._moves._canvas._bank[0], draft.tiles[0])
 
     def test_phrase_replay_reflows_without_covering_controls(self):
         """Wrap full clauses after resizing, while leaving the scrubber clear below the canvas."""

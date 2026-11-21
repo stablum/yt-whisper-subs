@@ -743,7 +743,7 @@ msgid "Correct"
 msgstr "Corretto"
 
 #: yt_whisper_subs/library_order_blocks.py:343 yt_whisper_subs/library_order_replay.py:164
-#: yt_whisper_subs/library_word_order.py:272
+#: yt_whisper_subs/library_word_order.py:273
 msgid "Correct order"
 msgstr "Ordine corretto"
 
@@ -1470,7 +1470,7 @@ msgstr "Ultima occorrenza"
 msgid "Leave out"
 msgstr "Da omettere"
 
-#: yt_whisper_subs/library_word_order.py:286
+#: yt_whisper_subs/library_word_order.py:287
 #, python-brace-format
 msgid "Leave out “{block}”. {reason}"
 msgstr "Ometti «{block}». {reason}"
@@ -1683,7 +1683,7 @@ msgstr "Metadati: {ready:,} in coda{deferred} · ≤1/min"
 msgid "Missing"
 msgstr "Mancante"
 
-#: yt_whisper_subs/library_word_order.py:284
+#: yt_whisper_subs/library_word_order.py:285
 #, python-brace-format
 msgid "Missing blocks: {blocks}"
 msgstr "Blocchi mancanti: {blocks}"
@@ -1797,7 +1797,7 @@ msgstr "Avanti"
 msgid "Next correction →"
 msgstr "Correzione successiva →"
 
-#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:289
+#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:290
 msgid "Next question"
 msgstr "Domanda successiva"
 
@@ -1854,7 +1854,7 @@ msgstr "Nessun download o file generato rimovibile corrisponde ai filtri acquisi
 msgid "No round available yet"
 msgstr "Nessuna sessione disponibile"
 
-#: yt_whisper_subs/practice_service.py:56
+#: yt_whisper_subs/practice_service.py:63
 msgid "No terms are due yet. Try the other direction, capture more words, or enable early review."
 msgstr ""
 "Nessuna parola da ripassare. Prova l’altra direzione, salva altre parole o attiva il ripasso "
@@ -1957,7 +1957,7 @@ msgstr "Operazione annullata"
 msgid "Optional local voice recording"
 msgstr "Registrazione vocale locale facoltativa"
 
-#: yt_whisper_subs/library_word_order.py:272
+#: yt_whisper_subs/library_word_order.py:273
 #, python-brace-format
 msgid "Order score: {score:.0%}"
 msgstr "Punteggio per l’ordine delle parole: {score:.0%}"
@@ -2268,7 +2268,7 @@ msgstr "Preparazione di un testo olandese con esattamente le domande richieste�
 msgid "Preparing and checking speech clips…"
 msgstr "Preparazione e verifica dei brani audio…"
 
-#: yt_whisper_subs/practice_service.py:120
+#: yt_whisper_subs/practice_service.py:121
 #, python-brace-format
 msgid "Preparing and checking {len} choices…"
 msgstr "Preparazione e verifica di {len} opzioni…"
@@ -2468,7 +2468,7 @@ msgstr "Pronto per un allenamento completo?"
 msgid "Ready to play"
 msgstr "Pronto da riprodurre"
 
-#: yt_whisper_subs/practice_service.py:74
+#: yt_whisper_subs/practice_service.py:75
 #, python-brace-format
 msgid "Ready · {len} distinct terms"
 msgstr "Pronto · {len} termini distinti"
@@ -3229,7 +3229,7 @@ msgstr ""
 "La lingua indicata appartiene alla registrazione di riferimento. Non cambia la lingua "
 "dell’esercizio."
 
-#: yt_whisper_subs/library_word_order.py:282
+#: yt_whisper_subs/library_word_order.py:283
 msgid "The replay uses the valid order closest to your submission."
 msgstr "L’animazione mostra l’ordine valido più vicino alla tua risposta."
 
@@ -3277,7 +3277,7 @@ msgstr "Non è ancora il momento di ripassare queste parole. Attiva il ripasso a
 msgid "This library is already open. Use its window or system tray icon."
 msgstr "Questa raccolta è già aperta. Usa la sua finestra o l’icona nell’area di notifica."
 
-#: yt_whisper_subs/library_word_order.py:281
+#: yt_whisper_subs/library_word_order.py:282
 msgid "This order also works."
 msgstr "Anche questo ordine è corretto."
 
@@ -3450,7 +3450,7 @@ msgstr "Usa queste impostazioni per una nuova sessione. Le risposte precedenti r
 msgid "Use your saved vocabulary to understand and write natural sentences in everyday situations."
 msgstr "Usa il vocabolario salvato per capire e scrivere frasi naturali in situazioni quotidiane."
 
-#: yt_whisper_subs/practice_service.py:130
+#: yt_whisper_subs/practice_service.py:131
 msgid "Using previously checked choices while generation is unavailable."
 msgstr "Uso delle opzioni già verificate mentre la generazione non è disponibile."
 

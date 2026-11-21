@@ -78,6 +78,12 @@ class Draft(practice.Content):
 
         return self.tiles + [extra.text for extra in self.extras]
 
+    @property
+    def prompt_blocks(self) -> list[str]:
+        """Hide case clues before grading while preserving block IDs and original feedback text."""
+
+        return [block.lower() for block in self.bank]
+
     def check(self, word_id: int, opts: Options) -> None:
         """Reject malformed builds before audit, e.g. two visually indistinguishable tiles."""
 

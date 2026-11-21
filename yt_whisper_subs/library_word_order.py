@@ -233,7 +233,8 @@ class Panel(QtWidgets.QWidget):
         self._idle(draft.english, i18n.tr('Click blocks to build the Dutch sentence. Drag to rearrange or click to return a block.'))
         self._again.hide()
         self._report.show()
-        self._board.open(draft.bank, json.loads(self._row["tray_json"]), selected)
+        labels = draft.bank if self._row["outcome"] else draft.prompt_blocks
+        self._board.open(labels, json.loads(self._row["tray_json"]), selected)
         self._board.show()
         if self._row["outcome"]:
             self._feedback(draft, selected)

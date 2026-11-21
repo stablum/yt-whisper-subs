@@ -3267,9 +3267,10 @@ fronted clauses, embedded clauses and coordination.
 Read the English prompt, then click the Dutch blocks in order. Drag a block
 before or after another, or click to return it to the bank. With the keyboard,
 press Space on a block to move it between lists and Ctrl+Left or Ctrl+Right to
-reorder a selected block. Each mode has its own **Round options**, drafts, standby
-and progress. Options include round length, extra blocks and early vocabulary
-review.
+reorder a selected block. Blocks stay lowercase while you solve, and the
+correction shows the original capitalization. Each mode has its own **Round
+options**, drafts, standby and progress. Options include round length, extra
+blocks and early vocabulary review.
 
 An independent solver evaluates each shuffled bank before the question is
 cached. It rejects ambiguous extra blocks and records valid alternate orders

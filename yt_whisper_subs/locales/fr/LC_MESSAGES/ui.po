@@ -744,7 +744,7 @@ msgid "Correct"
 msgstr "Correct"
 
 #: yt_whisper_subs/library_order_blocks.py:343 yt_whisper_subs/library_order_replay.py:164
-#: yt_whisper_subs/library_word_order.py:272
+#: yt_whisper_subs/library_word_order.py:273
 msgid "Correct order"
 msgstr "Ordre correct"
 
@@ -1472,7 +1472,7 @@ msgstr "Dernière occurrence"
 msgid "Leave out"
 msgstr "À retirer"
 
-#: yt_whisper_subs/library_word_order.py:286
+#: yt_whisper_subs/library_word_order.py:287
 #, python-brace-format
 msgid "Leave out “{block}”. {reason}"
 msgstr "Retirez « {block} ». {reason}"
@@ -1685,7 +1685,7 @@ msgstr "Métadonnées : {ready:,} en attente{deferred} · ≤1/min"
 msgid "Missing"
 msgstr "Manquant"
 
-#: yt_whisper_subs/library_word_order.py:284
+#: yt_whisper_subs/library_word_order.py:285
 #, python-brace-format
 msgid "Missing blocks: {blocks}"
 msgstr "Blocs manquants : {blocks}"
@@ -1799,7 +1799,7 @@ msgstr "Suivant"
 msgid "Next correction →"
 msgstr "Correction suivante →"
 
-#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:289
+#: yt_whisper_subs/library_word_order.py:52 yt_whisper_subs/library_word_order.py:290
 msgid "Next question"
 msgstr "Question suivante"
 
@@ -1856,7 +1856,7 @@ msgstr "Aucun téléchargement ou fichier généré supprimable ne correspond au
 msgid "No round available yet"
 msgstr "Aucune série disponible"
 
-#: yt_whisper_subs/practice_service.py:56
+#: yt_whisper_subs/practice_service.py:63
 msgid "No terms are due yet. Try the other direction, capture more words, or enable early review."
 msgstr ""
 "Aucun terme à réviser. Essayez l’autre sens, enregistrez davantage de mots ou activez la révision"
@@ -1959,7 +1959,7 @@ msgstr "Opération annulée"
 msgid "Optional local voice recording"
 msgstr "Enregistrement vocal local facultatif"
 
-#: yt_whisper_subs/library_word_order.py:272
+#: yt_whisper_subs/library_word_order.py:273
 #, python-brace-format
 msgid "Order score: {score:.0%}"
 msgstr "Score d’ordre des mots : {score:.0%}"
@@ -2270,7 +2270,7 @@ msgstr "Préparation d’un texte néerlandais avec exactement les questions dem
 msgid "Preparing and checking speech clips…"
 msgstr "Préparation et vérification des extraits audio…"
 
-#: yt_whisper_subs/practice_service.py:120
+#: yt_whisper_subs/practice_service.py:121
 #, python-brace-format
 msgid "Preparing and checking {len} choices…"
 msgstr "Préparation et vérification de {len} choix…"
@@ -2470,7 +2470,7 @@ msgstr "Prêt pour un entraînement complet ?"
 msgid "Ready to play"
 msgstr "Prête à lire"
 
-#: yt_whisper_subs/practice_service.py:74
+#: yt_whisper_subs/practice_service.py:75
 #, python-brace-format
 msgid "Ready · {len} distinct terms"
 msgstr "Prêt · {len} termes distincts"
@@ -3234,7 +3234,7 @@ msgstr ""
 "La langue indiquée est celle de l’enregistrement de référence. Elle ne change pas la langue de "
 "l’exercice."
 
-#: yt_whisper_subs/library_word_order.py:282
+#: yt_whisper_subs/library_word_order.py:283
 msgid "The replay uses the valid order closest to your submission."
 msgstr "L’animation montre l’ordre valide le plus proche de votre réponse."
 
@@ -3280,7 +3280,7 @@ msgstr "Ces mots ne sont pas encore à réviser. Activez la révision anticipée
 msgid "This library is already open. Use its window or system tray icon."
 msgstr "Cette bibliothèque est déjà ouverte. Utilisez sa fenêtre ou son icône de notification."
 
-#: yt_whisper_subs/library_word_order.py:281
+#: yt_whisper_subs/library_word_order.py:282
 msgid "This order also works."
 msgstr "Cet ordre convient aussi."
 
@@ -3455,7 +3455,7 @@ msgstr ""
 "Utilisez votre vocabulaire enregistré pour comprendre et écrire des phrases naturelles dans des "
 "situations quotidiennes."
 
-#: yt_whisper_subs/practice_service.py:130
+#: yt_whisper_subs/practice_service.py:131
 msgid "Using previously checked choices while generation is unavailable."
 msgstr "Utilisation des choix déjà vérifiés pendant l’indisponibilité de la génération."
 
