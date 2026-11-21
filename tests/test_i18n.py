@@ -133,7 +133,8 @@ class WidgetTests(unittest.TestCase):
                 buttons = settings.findChild(QtWidgets.QDialogButtonBox)
                 caption = buttons.button(QtWidgets.QDialogButtonBox.StandardButton.Save).text().replace("&", "")
                 self.assertEqual(caption, save)
-                dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=engine)
+                dialog = library_practice.PracticeView(SimpleNamespace(db=self.db), engine=engine)
+                dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
                 self.assertEqual(dialog._tabs.tabText(library_practice.Page.READ_COMPREHENSION).splitlines()[0], comprehension_label)
                 self.assertEqual(comprehension.Direction.READ.value, "read")
                 self.assertEqual(practice_tracks.Track.READ_COMPREHENSION.settings_key, "comprehension:read_options")
@@ -141,7 +142,7 @@ class WidgetTests(unittest.TestCase):
                 self.assertEqual(genre.currentData(), "mixed")
                 for progress in dialog._comprehension_progress.values():
                     progress.refresh()  # Stable English table identities must still find their localized views.
-                dialog.reject()
+                dialog.close()
                 settings.deleteLater()
                 self.app.sendPostedEvents(None, QtCore.QEvent.Type.DeferredDelete)
 

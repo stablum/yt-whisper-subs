@@ -30,6 +30,7 @@ from yt_whisper_subs import library_notifications as notifications  # noqa: E402
 from yt_whisper_subs import library_practice_reminders as reminders  # noqa: E402
 from yt_whisper_subs import library_practice
 from yt_whisper_subs import practice_service  # noqa: E402
+from yt_whisper_subs import practice_stats
 from yt_whisper_subs import library_service  # noqa: E402
 from yt_whisper_subs import library_types as types  # noqa: E402
 from yt_whisper_subs import library_views as views  # noqa: E402
@@ -434,35 +435,60 @@ class TrayNotificationTests(unittest.TestCase):
         self.assertEqual(loaded.delay_seconds, 30)
         self.assertEqual(loaded.duration_seconds, 600)
 
-    def test_practice_activity_actions_reuse_the_existing_practice_window(self) -> None:
-        """Navigate from menu and tray without duplicate analytics windows; e.g. Practice now returns to the round tab."""
+    def test_workspace_tabs_keep_catalog_and_practice_state_in_one_window(self) -> None:
+        """Open Activity from the tray, then switch tabs without recounting the open quiz question."""
 
+        window = self._window
+        search = window._ui.header.search
+        search.setText('Beta')
+        self.assertIsNone(window._practice)
         practice_fixtures.seed(self._service.db)
         self._notifier.check_practice()
         self.assertTrue(self._notifier._balloon.isVisible())
-        menu = self._window.menuBar().actions()[0].menu()
-        activity = next(action for action in menu.actions() if action.text() == "Practice activity…")
+        activity = next(action for action in window._tray_menu.actions() if action.text() == "Practice activity…")
         activity.trigger()
         self.assertFalse(self._notifier._balloon.isVisible())
         self.assertGreater(float(self._service.db.setting("practice_snooze_until", "0")), time.time() + 3 * 3600)
-        dialog = self._window._practice_dialog
+        view = window._practice
+        self.assertIs(view.window(), window)
+        self.assertIs(window._workspaces.currentWidget(), view)
         engine = practice_service.PracticeService(self._service.db, practice_fixtures.FakeGenerator())
-        for quiz in dialog._quizzes.values():
-            quiz._engine = engine
-        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
-        dialog.resize(800, 600)
+        page = library_practice.Page.WORD_NL_EN
+        quiz = view._panels[page]
+        quiz._engine = engine
+        quiz._controls.count.setValue(3)
+        self.assertEqual(view._tabs.currentIndex(), library_practice.Page.ACTIVITY)
+        self.assertIsNone(self._service.db.practice_active())
+        self.assertTrue(window.isVisible())
+        view._nav._buttons.button(page).click()
+        self._wait_for(lambda: quiz._current is not None)
+        question = quiz._current['id']
+        modifiers = QtCore.Qt.KeyboardModifier.ControlModifier | QtCore.Qt.KeyboardModifier.ShiftModifier
+        QtTest.QTest.keyClick(view, QtCore.Qt.Key.Key_F, modifiers)
+        QtTest.QTest.keyClick(view, QtCore.Qt.Key.Key_Escape)
+        self.assertFalse(view.isVisible())
+        self.assertTrue(search.isVisible())
+        self.assertEqual(search.text(), 'Beta')
+        self.assertFalse(window._practice_in_foreground())
+
+        tabs = window._workspace_tabs
+        QtTest.QTest.mouseClick(tabs, QtCore.Qt.MouseButton.LeftButton, pos=tabs.tabRect(1).center())
+        self.assertIs(window._practice, view)
+        self.assertEqual(view._tabs.currentIndex(), page)
+        self.assertEqual(quiz._current['id'], question)
+        self.assertEqual(practice_stats.snapshot(self._service.db)['totals']['shown'], 1)
+        QtTest.QTest.keyClick(view, QtCore.Qt.Key.Key_Escape)
+        QtTest.QTest.keyClick(search, QtCore.Qt.Key.Key_R, modifiers)
+        self.assertTrue(view.isVisible())
+
+        window.showMaximized()
         self._app.processEvents()
-        self.assertGreater(dialog._tabs.currentWidget().verticalScrollBar().maximum(), 0)
-        practice = next(action for action in menu.actions() if action.text() == "Practice…")
-        practice.trigger()
-        self.assertIs(self._window._practice_dialog, dialog)
-        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.WORD_NL_EN)
-        tray = next(action for action in self._window._tray_menu.actions() if action.text() == "Practice activity…")
-        tray.trigger()
-        self.assertIs(self._window._practice_dialog, dialog)
-        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.ACTIVITY)
-        dialog.close()
-        QtCore.QThreadPool.globalInstance().waitForDone(5000)
+        window.hide()
+        activity.trigger()
+        self.assertTrue(window.isVisible())
+        self.assertTrue(window.isMaximized())
+        self.assertIs(window._practice, view)
+        self.assertEqual(view._tabs.currentIndex(), library_practice.Page.ACTIVITY)
 
     def test_clicking_practice_reminder_opens_the_saved_full_practice_mode(self) -> None:
         """Route reminder text to the sequence cursor rather than the manually last used tab."""
@@ -478,11 +504,11 @@ class TrayNotificationTests(unittest.TestCase):
              mock.patch.object(library_practice.library_word_quiz.WordQuiz, 'enter_sequence'):
             QtTest.QTest.mouseClick(balloon._practice._message, QtCore.Qt.MouseButton.LeftButton)
             self._app.processEvents()
-        dialog = self._window._practice_dialog
-        self.assertIsNotNone(dialog)
+        view = self._window._practice
+        self.assertIs(view.window(), self._window)
         self.assertFalse(balloon.isVisible())
-        self.assertEqual(dialog._tabs.currentIndex(), library_practice.Page.WORD_EN_NL)
-        self.assertIn('2/11', dialog._sequence._status.text())
+        self.assertEqual(view._tabs.currentIndex(), library_practice.Page.WORD_EN_NL)
+        self.assertIn('2/11', view._sequence._status.text())
         self.assertIsNone(db.practice_last_answer(time.time()))
 
     def test_large_batch_is_scrollable_and_keeps_all_titles(self) -> None:

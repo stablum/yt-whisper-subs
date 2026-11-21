@@ -3,6 +3,8 @@
 Example: `window.setStyleSheet(library_theme.STYLE)`.
 """
 
+SIDEBAR_WIDTH = 245
+
 STYLE = """
 QMainWindow, QDialog { background: #171a21; color: #eef2f7; }
 QDialog#trayBalloon { border: 1px solid #4b617c; border-radius: 10px; }
@@ -15,9 +17,17 @@ QGroupBox#notificationSettings, QGroupBox#practiceReminderSettings { border: 1px
 QGroupBox#notificationSettings::title, QGroupBox#practiceReminderSettings::title { subcontrol-origin: margin; left: 10px; color: #f1c75b; }
 QLabel#practiceDay { font-size: 15pt; font-weight: 600; color: #ffffff; }
 QWidget { color: #eef2f7; font-family: "Segoe UI"; font-size: 10pt; }
-QFrame#sidebar { background: #11141a; border-right: 1px solid #2a303b; }
-QLabel#appTitle { font-size: 18pt; font-weight: 700; color: #ffffff; }
-QLabel#appSubtitle, QLabel#statLabel, QLabel#settingsNote { color: #8f9aaa; }
+QFrame#sidebar, QScrollArea#practiceNav { background: #11141a; border: 0; border-right: 1px solid #2a303b; }
+QWidget#practiceNavItems { background: #11141a; }
+QLabel#statLabel, QLabel#settingsNote { color: #8f9aaa; }
+QTabBar#workspaceTabs { background: #11141a; border-bottom: 1px solid #303844; }
+QTabBar#workspaceTabs::tab {
+  background: #11141a; color: #aeb8c6; font-weight: 600;
+  padding: 9px 22px; border-bottom: 3px solid transparent;
+}
+QTabBar#workspaceTabs::tab:hover { background: #20252e; color: #ffffff; }
+QTabBar#workspaceTabs::tab:selected { background: #222b38; color: #ffffff; border-color: #63adfa; }
+QTabBar#workspaceTabs::tab:focus { color: #8fc7ff; }
 QListWidget { background: transparent; border: 0; outline: 0; padding: 4px; }
 QListWidget::item { padding: 9px 10px; margin: 2px 0; border-radius: 6px; }
 QListWidget::item:selected { background: #26364d; color: #8fc7ff; }
@@ -33,6 +43,10 @@ QPushButton:disabled, QToolButton#dangerButton:disabled, QToolButton#watchedButt
 QPushButton#primaryButton { background: #2474c6; border-color: #328be2; color: white; font-weight: 600; }
 QPushButton#primaryButton:hover { background: #2b83db; }
 QPushButton#primaryButton:disabled { color: #697381; background: #22262d; border-color: #343b47; }
+QPushButton#practicePageButton { background: transparent; border-color: transparent; text-align: left; padding: 3px 9px; }
+QPushButton#practicePageButton:hover { background: #202936; }
+QPushButton#practicePageButton:checked { background: #26364d; color: #8fc7ff; }
+QPushButton#practicePageButton:focus { border-color: #649bd0; }
 QPushButton#dangerButton, QToolButton#dangerButton { background: #49292d; border-color: #87434b; color: #ffd9dc; font-weight: 600; }
 QPushButton#dangerButton:hover, QToolButton#dangerButton:hover { background: #633238; border-color: #b65661; color: white; }
 QPushButton#dangerButton:disabled, QToolButton#dangerButton:disabled { color: #8b676a; background: #2d2427; border-color: #493136; }

@@ -35,7 +35,6 @@ from yt_whisper_subs import library_comprehension_progress
 
 
 _STYLE = """
-QLabel#practiceTitle { font-size: 24pt; font-weight: 700; color: #ffffff; }
 QLabel#practicePrompt { font-size: 30pt; font-weight: 600; color: #ffd166; padding: 10px; }
 QLabel#practiceContext { font-size: 13pt; color: #b8c7d9; padding: 6px; }
 QLabel#practiceResult { font-size: 15pt; font-weight: 600; color: #dce6f2; padding: 8px 0; }
@@ -73,8 +72,8 @@ class Page(enum.IntEnum):
         return cls(list(practice_tracks.Track).index(track))
 
 
-class PracticeDialog(QtWidgets.QDialog):
-    """Compose independent direction-bound panels without owning their rounds; e.g. navigating to tracking cannot start hidden practice."""
+class PracticeView(QtWidgets.QWidget):
+    """Compose the library's embedded practice page; e.g. leaving it preserves the current exercise."""
 
     activity_changed = QtCore.Signal()
     voice_changed = QtCore.Signal()
@@ -84,9 +83,6 @@ class PracticeDialog(QtWidgets.QDialog):
         """Construct direct practice destinations with one native page state; e.g. each direction keeps its draft when another is selected."""
 
         super().__init__(parent)
-        self.setWindowTitle(i18n.tr('Practice · vocabulary, verbs, sentences and comprehension'))
-        self.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.resize(1160, 900)
         self._db = service.db
         self._quizzes = {direction: library_word_quiz.WordQuiz(self._db, direction, engine=engine) for direction in practice.Direction}
         self._sentences = {direction: library_sentences.SentencePanel(self._db, direction=direction)
@@ -138,24 +134,23 @@ class PracticeDialog(QtWidgets.QDialog):
             (i18n.tr('Tracking'), (Page.PROGRESS, Page.ACTIVITY)),
         ), short_labels)
         self._tabs.currentChanged.connect(self._tab_changed)
-        title = QtWidgets.QLabel(i18n.tr('Practice'))
-        title.setObjectName("practiceTitle")
-        heading = QtWidgets.QHBoxLayout()
-        heading.addWidget(title)
-        heading.addWidget(self._sequence, 1)
-        navigation = QtWidgets.QHBoxLayout()
-        navigation.addWidget(self._nav, 1)
-        audio_controls = QtWidgets.QVBoxLayout()
+        audio_controls = QtWidgets.QHBoxLayout()
+        audio_controls.setSpacing(16)
         audio_controls.addWidget(self._voice_bar)
         audio_controls.addWidget(self._pronunciation)
         audio_controls.addStretch()
-        navigation.addLayout(audio_controls)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addLayout(heading)
-        layout.addLayout(navigation)
-        layout.addWidget(self._tabs, 1)
+        content = QtWidgets.QVBoxLayout()
+        content.setContentsMargins(22, 12, 22, 12)
+        content.addWidget(self._sequence)
+        content.addLayout(audio_controls)
+        content.addWidget(self._tabs, 1)
+        layout = QtWidgets.QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._nav)
+        layout.addLayout(content, 1)
         self.setStyleSheet(_STYLE)
-        QtWidgets.QApplication.instance().aboutToQuit.connect(self.reject)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self._shutdown)
 
     def _arrange_tracking(self) -> None:
         """Keep analytics separate from exercise controllers; e.g. progress reads all directions without generating questions."""
@@ -273,23 +268,36 @@ class PracticeDialog(QtWidgets.QDialog):
                 self._panels[page].enter_sequence()
 
     def showEvent(self, event) -> None:
-        """Open the guided mode after the dialog becomes visible from the tray."""
+        """Refresh the returned page; e.g. Activity includes answers saved while browsing the Library."""
 
         super().showEvent(event)
+        idx = self._tabs.currentIndex()
+        if idx == Page.ACTIVITY:
+            self._activity.refresh()
+        elif idx == Page.PROGRESS:
+            self._refresh_progress()
+        elif idx in self._spoken:
+            track = list(practice_tracks.Track)[idx]
+            self._pronunciation.bind_round(track, self._panels[idx].round_id)
         QtCore.QTimer.singleShot(0, self, self._enter_sequence_track)
 
+    def hideEvent(self, event) -> None:
+        """Stop playback when leaving Practice or minimizing the main window."""
+
+        self._stop_audio()
+        super().hideEvent(event)
+
     def show_page(self, activity: bool = False, *, sequence: bool = False) -> None:
-        """Route menu and reminder entry points directly; e.g. Activity opens without starting any practice destination."""
+        """Route initial and reminder entry points directly; e.g. Activity opens without starting a round."""
 
         if sequence and not activity:
             self._sequence.start()
             return
         page = Page.ACTIVITY if activity else Page.for_track(self._last_track())
-        self._tabs.setCurrentIndex(page)
-        if page == Page.ACTIVITY:
-            self._activity.refresh()
+        if self._tabs.currentIndex() == page:
+            self._tab_changed(page)
         else:
-            self._panels[page].activate()
+            self._tabs.setCurrentIndex(page)
 
     def _refresh_progress(self, *_args) -> None:
         """Refresh only visible analytics; e.g. sentence writing history remains independent of word-choice state."""
@@ -298,17 +306,15 @@ class PracticeDialog(QtWidgets.QDialog):
                   *self._comprehension_progress.values(), *self._order_progress.values())
         panels[self._progress_tabs.currentIndex()].refresh()
 
-    def reject(self) -> None:
-        """Pause all destinations without losing drafts or queued corrections; e.g. closing one dialog does not discard the reverse direction."""
+    def _shutdown(self) -> None:
+        """Release view-owned work at exit while retaining drafts and queued corrections."""
 
         self._stop_audio()
         for panel in self._panels.values():
             panel.shutdown()
-        super().reject()
 
-    def changeEvent(self, event) -> None:
-        """Silence the current clip when minimizing via the title bar."""
+    def closeEvent(self, event) -> None:
+        """Release the page when its owner closes it; e.g. cancel a pending preparation."""
 
-        if event.type() == QtCore.QEvent.Type.WindowStateChange and self.isMinimized():
-            self._stop_audio()
-        super().changeEvent(event)
+        self._shutdown()
+        super().closeEvent(event)

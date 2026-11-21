@@ -126,7 +126,7 @@ class TrayNotifications(QtCore.QObject):
 
     def __init__(
         self, db: library_db.LibraryDb, tray: QtWidgets.QSystemTrayIcon, *,
-        practice_window: Callable[[], QtWidgets.QWidget | None] = lambda: None,
+        practicing: Callable[[], bool] = lambda: False,
     ) -> None:
         """Tie both schedules and popup actions to the tray's lifetime."""
 
@@ -139,7 +139,7 @@ class TrayNotifications(QtCore.QObject):
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._show_pending)
         self._stopped = False
-        self._practice_window = practice_window
+        self._practicing = practicing
         self._practice = library_practice_reminders.PracticeReminders(db)
         self._reminder: library_practice_reminders.Reminder | None = None
         self._balloon = library_balloon.TrayBalloon(tray.parent())
@@ -246,10 +246,8 @@ class TrayNotifications(QtCore.QObject):
         if self._timer.isActive() and self._reminder is None:
             # Let a new reminder join the video alert when its grouping window ends.
             return False
-        window = self._practice_window()
-        practicing = window is not None and window.isVisible() and window.isActiveWindow()
         modal = QtWidgets.QApplication.activeModalWidget() is not None
-        reminder = None if practicing or modal else self._practice.due()
+        reminder = None if self._practicing() or modal else self._practice.due()
         changed = reminder is not self._reminder
         self._reminder = reminder
         return changed

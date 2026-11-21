@@ -6,7 +6,7 @@ Example: `LibraryWindow(service).show()` starts the desktop companion.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import NamedTuple
+from typing import NamedTuple, TYPE_CHECKING
 
 from PySide6 import QtCore
 from PySide6 import QtGui
@@ -36,6 +36,10 @@ from yt_whisper_subs import pipeline_progress as progress
 
 
 WINDOW_TITLE = i18n.mark("YouTube Library · yt-whisper-subs v{version}")
+_LIBRARY_TAB, _PRACTICE_TAB = range(2)
+
+if TYPE_CHECKING:
+    from yt_whisper_subs import library_practice
 
 
 def _metadata_status_text(state: library_metadata_db.MetadataQueueState) -> str:
@@ -154,7 +158,7 @@ class LibraryWindow(
         self._playback_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._quitting = False
         self._vocabulary_dialog: library_vocabulary.VocabularyDialog | None = None
-        self._practice_dialog: QtWidgets.QDialog | None = None
+        self._practice: library_practice.PracticeView | None = None
         self._ui = self._build_ui()
         self._layout_timer = QtCore.QTimer(self)
         self._layout_timer.setSingleShot(True)
@@ -169,7 +173,7 @@ class LibraryWindow(
         self._ui.trace.append_message(i18n.tr('Library started · output root: {out_dir}', out_dir=self._service.out_dir))
         self._tray = self._build_tray()
         self._notifications = library_notifications.TrayNotifications(
-            service.db, self._tray, practice_window=lambda: self._practice_dialog,
+            service.db, self._tray, practicing=self._practice_in_foreground,
         )
         self._notifications.video_requested.connect(self._notification_video)
         self._notifications.settings_requested.connect(self._notification_settings)
@@ -239,7 +243,23 @@ class LibraryWindow(
         content_layout.addWidget(catalog.filters)
         content_layout.addWidget(catalog.splitter, 1)
         root.addWidget(content, 1)
-        self.setCentralWidget(central)
+        self._workspaces = QtWidgets.QStackedWidget()
+        self._workspaces.addWidget(central)
+        self._workspace_tabs = QtWidgets.QTabBar()
+        self._workspace_tabs.setObjectName("workspaceTabs")
+        self._workspace_tabs.setExpanding(False)
+        self._workspace_tabs.setDrawBase(False)
+        self._workspace_tabs.addTab(i18n.tr('YouTube Library'))
+        self._workspace_tabs.addTab(i18n.tr('Practice'))
+        self._workspace_tabs.setTabToolTip(_PRACTICE_TAB, 'Ctrl+Shift+R')
+        self._workspace_tabs.currentChanged.connect(self._workspace_changed)
+        shell = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(shell)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._workspace_tabs)
+        layout.addWidget(self._workspaces, 1)
+        self.setCentralWidget(shell)
 
         trace = library_widgets.ActivityTrace(self)
         self.addDockWidget(QtCore.Qt.DockWidgetArea.BottomDockWidgetArea, trace)
@@ -265,23 +285,14 @@ class LibraryWindow(
 
         sidebar = QtWidgets.QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(245)
+        sidebar.setFixedWidth(library_theme.SIDEBAR_WIDTH)
         layout = QtWidgets.QVBoxLayout(sidebar)
         layout.setContentsMargins(16, 20, 16, 16)
-        title = QtWidgets.QLabel(i18n.tr('YouTube Library'))
-        title.setWordWrap(True)
-        title.setObjectName("appTitle")
-        subtitle = QtWidgets.QLabel(i18n.tr('Watch · track · subtitle'))
-        subtitle.setWordWrap(True)
-        subtitle.setObjectName("appSubtitle")
         channels = library_channels.ChannelList()
         channels.setObjectName("channelList")
         add = QtWidgets.QPushButton(i18n.tr('＋  Track channel'))
         add.setObjectName("primaryButton")
         add.clicked.connect(self._add_channel)
-        layout.addWidget(title)
-        layout.addWidget(subtitle)
-        layout.addSpacing(14)
         layout.addWidget(channels, 1)
         layout.addWidget(add)
         return sidebar, channels
@@ -395,6 +406,7 @@ class LibraryWindow(
         header.sectionMoved.connect(self._schedule_layout_store)
         header.sectionResized.connect(self._schedule_layout_store)
         self._ui.catalog.splitter.splitterMoved.connect(self._schedule_layout_store)
+        QtGui.QShortcut(QtGui.QKeySequence("Ctrl+Shift+R"), self, self._show_practice)
         app = QtWidgets.QApplication.instance()
         if app:
             app.aboutToQuit.connect(self._store_ui_layout)
@@ -405,30 +417,69 @@ class LibraryWindow(
         if self._vocabulary_dialog is None:
             self._vocabulary_dialog = library_vocabulary.VocabularyDialog(self._service, self)
             self._vocabulary_dialog.play_requested.connect(self._play_word)
+            self._vocabulary_dialog.practice_requested.connect(self._vocabulary_dialog.hide)
             self._vocabulary_dialog.practice_requested.connect(self._show_practice)
             self._vocabulary_dialog.destroyed.connect(lambda: setattr(self, "_vocabulary_dialog", None))
         self._vocabulary_dialog.show()
         self._vocabulary_dialog.raise_()
         self._vocabulary_dialog.activateWindow()
 
+    def _workspace_changed(self, idx: int) -> None:
+        """Handle the top tabs without rebuilding either page; e.g. retain the catalog search."""
+
+        if idx == _LIBRARY_TAB:
+            self._show_library()
+        else:
+            self._show_practice()
+
+    def _select_workspace(self, idx: int) -> None:
+        """Keep tab selection and content aligned, including when opened from the tray."""
+
+        with QtCore.QSignalBlocker(self._workspace_tabs):
+            self._workspace_tabs.setCurrentIndex(idx)
+        self._workspaces.setCurrentIndex(idx)
+        self._ui.metadata_status.setVisible(idx == _LIBRARY_TAB)
+        self._ui.check_status.setVisible(idx == _LIBRARY_TAB)
+        if not self.isActiveWindow() or not self.isVisible() or self.isMinimized():
+            self._show_window()
+
+    def _show_library(self) -> None:
+        """Return to the same catalog view; e.g. Escape leaves the current practice round in place."""
+
+        self._select_workspace(_LIBRARY_TAB)
+
     def _show_practice(self, activity: bool = False, *, sequence: bool = False) -> None:
-        """Reuse one adaptive practice window; e.g. open it from Vocabulary or the Library menu."""
+        """Open the embedded page, optionally routing a reminder to Activity or Full practice."""
 
         self._notifications.snooze_practice()
-        # Construct practice widgets on demand; background preparation shares the same durable catalog.
-        from yt_whisper_subs import library_practice
+        if self._practice is None:
+            # Import and build on first use to keep quiet startup and Library browsing light.
+            from yt_whisper_subs import library_practice
 
-        if self._practice_dialog is None:
-            self._practice_dialog = library_practice.PracticeDialog(self._service, self)
-            self._practice_dialog.destroyed.connect(lambda: setattr(self, "_practice_dialog", None))
-            self._practice_dialog.activity_changed.connect(self._notifications.check_practice)
-            self._practice_dialog.activity_changed.connect(self.practice_changed)
-            self._practice_dialog.audio_preparation_requested.connect(self.practice_changed)
-            self._practice_dialog.voice_changed.connect(self.voice_changed)
-        self._practice_dialog.show_page(activity, sequence=sequence)
-        self._practice_dialog.show()
-        self._practice_dialog.raise_()
-        self._practice_dialog.activateWindow()
+            self._practice = library_practice.PracticeView(self._service, self._workspaces)
+            self._workspaces.addWidget(self._practice)
+            self._practice.activity_changed.connect(self._notifications.check_practice)
+            self._practice.activity_changed.connect(self.practice_changed)
+            self._practice.audio_preparation_requested.connect(self.practice_changed)
+            self._practice.voice_changed.connect(self.voice_changed)
+            self._practice.show_page(activity, sequence=sequence)
+        elif activity or sequence:
+            self._practice.show_page(activity, sequence=sequence)
+        self._select_workspace(_PRACTICE_TAB)
+
+    def _practice_in_foreground(self) -> bool:
+        """Defer reminders only while the Practice tab is visible in the foreground window."""
+
+        return self._workspaces.currentIndex() == _PRACTICE_TAB and self.isActiveWindow() and not self.isMinimized()
+
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        """Let Escape return to Library after the focused practice control handles its own keys."""
+
+        if event.key() == QtCore.Qt.Key.Key_Escape and self._workspaces.currentIndex() == _PRACTICE_TAB:
+            self._show_library()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     def _play_word(self, event: dict) -> None:
         """Replay the captured event independently of table selection; e.g. from another video."""
@@ -492,6 +543,7 @@ class LibraryWindow(
         Example: View → Focus search makes keyboard filtering immediate.
         """
 
+        self._show_library()
         self._ui.header.search.setFocus()
         self._ui.header.search.selectAll()
 

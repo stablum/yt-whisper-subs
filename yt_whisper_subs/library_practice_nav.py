@@ -8,9 +8,11 @@ import textwrap
 from PySide6 import QtCore
 from PySide6 import QtWidgets
 
+from yt_whisper_subs import library_theme
 
-class PracticeNav(QtWidgets.QWidget):
-    """Expose two clear groups while the native tab widget owns page state; e.g. Ctrl+Tab and direct buttons stay synchronized."""
+
+class PracticeNav(QtWidgets.QScrollArea):
+    """Keep exercise destinations in a scrollable sidebar, e.g. Ctrl+Tab keeps its selection in sync."""
 
     def __init__(self, tabs: QtWidgets.QTabWidget, groups: tuple, short_labels: dict) -> None:
         """Build one exclusive set of page buttons; e.g. selecting Tracking cannot leave a Practice button selected too."""
@@ -21,41 +23,38 @@ class PracticeNav(QtWidgets.QWidget):
         self._buttons.idClicked.connect(tabs.setCurrentIndex)
         tabs.currentChanged.connect(self._selected)
         tabs.tabBar().hide()
-        row = QtWidgets.QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 4)
-        row.setSpacing(8)
+        self.setObjectName('practiceNav')
+        self.setFixedWidth(library_theme.SIDEBAR_WIDTH)
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sidebar = QtWidgets.QWidget()
+        sidebar.setObjectName('practiceNavItems')
+        self.setWidget(sidebar)
+        layout = QtWidgets.QVBoxLayout(sidebar)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(3)
         for group_idx, (title, indices) in enumerate(groups):
             if group_idx:
-                divider = QtWidgets.QFrame()
-                divider.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-                divider.setStyleSheet("color:#465368;margin:0 5px;")
-                row.addWidget(divider)
-            group = QtWidgets.QVBoxLayout()
-            group.setSpacing(5)
-            group.setAlignment(QtCore.Qt.AlignmentFlag.AlignTop)
+                layout.addSpacing(10)
             label = QtWidgets.QLabel(title.upper())
-            label.setStyleSheet("color:#9cacc1;font-size:9pt;font-weight:600;padding-left:3px;")
-            group.addWidget(label)
-            buttons = QtWidgets.QVBoxLayout()
-            buttons.setSpacing(4)
+            label.setStyleSheet("color:#9cacc1;font-size:9pt;font-weight:600;padding-left:9px;")
+            layout.addWidget(label)
             for idx in indices:
                 title_text = tabs.tabText(idx)
                 caption = short_labels.get(idx, title_text)
-                lines = [textwrap.fill(line, width=22, break_long_words=False) for line in caption.splitlines()]
-                button = QtWidgets.QPushButton("\n".join(lines))
+                caption = textwrap.fill(caption, width=28, break_long_words=False)
+                button = QtWidgets.QPushButton(caption, sidebar)
                 button.setObjectName("practicePageButton")
-                button.setAccessibleName(f"{tabs.tabText(idx)} · {title}")
+                button.setAccessibleName(f"{title_text} · {title}")
                 button.setCheckable(True)
                 button.setAutoDefault(False)
-                button.setMinimumHeight(30)
+                button.ensurePolished()
+                lines = caption.count('\n') + 1
+                button.setMinimumHeight(max(28, lines * button.fontMetrics().lineSpacing() + 8))
                 button.setToolTip(title_text)
                 self._buttons.addButton(button, int(idx))
-                buttons.addWidget(button)
-            group.addLayout(buttons)
-            row.addLayout(group)
-        row.addStretch()
-        self.setStyleSheet("QPushButton#practicePageButton {padding:3px 8px;border-radius:6px;} "
-                          "QPushButton#practicePageButton:checked {background:#284b70;border-color:#649bd0;color:#ffffff;}")
+                layout.addWidget(button)
+        layout.addStretch()
         self._selected(tabs.currentIndex())
 
     @QtCore.Slot(int)
@@ -64,3 +63,4 @@ class PracticeNav(QtWidgets.QWidget):
 
         if button := self._buttons.button(idx):
             button.setChecked(True)
+            self.ensureWidgetVisible(button, 0, 8)

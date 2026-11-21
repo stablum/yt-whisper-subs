@@ -14,8 +14,8 @@ subtitles and chapter navigation.
 downloaded and remote channel videos in a searchable library, persists YouTube
 metadata, tracks channel uploads, optionally runs the existing subtitle
 pipeline for new videos, and opens downloaded entries through the same `mpv`
-dual-subtitle playback implementation. It is a PySide6 desktop application,
-not a web UI and not a local web server.
+dual-subtitle playback implementation. It is a PySide6 desktop application
+with YouTube Library and Practice tabs in one maximizable window.
 
 This README is intentionally extensive. It is meant both as user documentation
 and as a design handoff for future Codex sessions that need to modify the
@@ -854,7 +854,14 @@ downloads.
 ## Native YouTube Library
 
 The desktop library is a native PySide6/Qt application with a dark Windows UI.
-It contains:
+Use **YouTube Library** and **Practice** at the top to switch between the video
+catalog and your exercises. Both use the full main window and keep their place
+when you switch, including the catalog filters and the open practice question.
+**Ctrl+Shift+R** opens Practice and **Escape** returns from Practice to the
+catalog. Tray actions and reminders reuse the same window and preserve its
+maximized state. Practice widgets load on the first visit.
+
+The library contains:
 
 - counted smart views for All, On device, Available, Removed, Pipeline, Unwatched,
   Continue, Watched, and Issues;
@@ -1065,7 +1072,7 @@ use the actual local answer dates. The reminder checks shortly after startup
 and once per minute while the library is open or
 in the system tray, including after waking from sleep. Opening Practice alone
 does not count; one submitted answer, correct or wrong, stops that day's reminder.
-The reminder waits while the Practice window is active in the foreground or
+The reminder waits while the Practice tab is visible in the foreground or
 while a modal dialog is open. When videos are already being grouped, a newly
 due reminder joins them when the grouping timer finishes.
 
@@ -1077,7 +1084,7 @@ practice credit. The reminder stays visible until acted on or until you
 practice. The catalog saves the snooze deadline across restarts and midnight.
 When that deadline arrives, the reminder can reappear if you're still due for
 practice. A change to the snooze duration takes effect on the next snooze.
-Opening Practice or Activity from the menu/tray also snoozes a visible reminder.
+Opening the Practice tab or using a practice action in the tray also snoozes a visible reminder.
 **Practice now**, the reminder text and its chart open or resume **Full practice**.
 In a combined balloon, the video titles still open their videos and
 **Activity & calendar** opens the activity page.
@@ -2576,7 +2583,7 @@ python -m unittest tests.test_vocabulary_accretion -v
 
 ### Full Practice
 
-Open **Library → Practice…** and choose **Full practice** above the mode buttons,
+Open the **Practice** tab and choose **Full practice** at the top,
 or click the practice reminder. The session visits one round of each mode in
 the order shown in Practice:
 
@@ -2648,13 +2655,13 @@ caches approved choices and the selected voice’s target recordings.
 
 ### Adaptive Vocabulary Practice
 
-Choose **Library → Practice…** (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
+Choose the **Practice** tab (`Ctrl+Shift+R`), or **Practice…** in the Vocabulary
 window, then choose **Word quiz** for the three-choice vocabulary exercise.
 The navigation exposes both Word quiz directions, Dutch verb transformations,
 Sound alike, both Sentences directions, Word order, Phrase and clause order,
-Dutch dictation, Leesbegrip and Luisterbegrip as **eleven top-level Practice buttons**, with
-**Tracking** (Progress, Activity) separated by a labelled group and divider.
-Each page remains one click away; existing menu/tray shortcuts and native page
+Dutch dictation, Leesbegrip and Luisterbegrip as **eleven buttons in the Practice
+sidebar**, alongside the separate **Tracking** group for Progress and Activity.
+Each page remains one click away; tray shortcuts and native page
 navigation select the same grouped controls.
 Question content scrolls independently while the main Next and Report actions
 stay available at the bottom; the word quiz keeps a stable block of three choices.
@@ -2753,14 +2760,15 @@ unless **Include words not due yet** is enabled. Model predictions are estimates
 for these shared word skills, not measured language fluency. FSRS uses its
 standard parameters; this release does not fit personalized model weights.
 
-Answers are committed immediately. Closing Practice or pressing **Escape** leaves
-an unfinished round resumable with identical choices and no extra presentation
-count; opening Practice resumes it automatically. **Round options → End this
-round** stores partial results without treating unanswered questions as failures.
-Cancelling preparation waits cooperatively for the current API call; closing or
-Escape remains immediate. A failed replacement preparation preserves the old
-round and offers **Resume round**. A failed preparation creates no partial round,
-though already approved question content remains cached.
+Answers are committed immediately. Switch to **YouTube Library** or press
+**Escape** to leave the current question in place. Returning to **Practice**
+restores the same choices without counting another presentation.
+**Round options → End this round** stores partial results without treating
+unanswered questions as failures. Preparation can finish while you browse the
+catalog, and a ready question waits until you return. Cancelling preparation
+waits cooperatively for the current API call. A failed replacement preparation
+preserves the old round and offers **Resume round**. A failed preparation creates
+no partial round, though already approved question content remains cached.
 
 Opening **Activity** directly never starts generation or counts a question. If
 you switch to statistics during preparation, the ready round waits until the
@@ -2785,9 +2793,9 @@ both vocabulary direction counts, verb and sentence submissions (including both
 sentence directions), and valid-answer accuracy. Browse earlier months with the
 native calendar controls or use **Today** to return. Empty days remain visible.
 The page scrolls on smaller screens and refreshes its local date after midnight.
-Open it directly through **Library → Practice activity…**, the tray's
-**Practice activity…**, or **Activity & calendar** in the reminder. All paths
-reuse the same Practice window, alongside its existing Progress tab.
+Open it from **Tracking → Activity** in Practice, **Practice activity…** in the
+tray, or **Activity & calendar** in the reminder. All paths select the Activity
+page inside the main window.
 
 Activity counts actual submitted choices, typed verb answers and sentence translations, including wrong answers and answers
 to questions reported later. Reporting an unanswered question, merely showing
@@ -2836,7 +2844,7 @@ questions without losing prior answers or silently falling back to another polic
 
 ### Verb Transformation Practice
 
-Open **Library → Practice… → Verbs**. The first sentence appears automatically
+Open **Practice → Sentences → Verbs**. The first sentence appears automatically
 after checked content is ready. Read the original Dutch sentence and the
 requested subject, tense/mood and situation, type the **whole transformed Dutch
 sentence**, then press **Enter** or **Check sentence**. Capitalization, ordinary
@@ -3012,7 +3020,7 @@ transformed-sentence English and the main Progress statistics entry point.
 
 ### Whole-Sentence Translation Practice
 
-Open **Library → Practice…** and choose the top-level **Sentences · English →
+Open the **Practice** tab and choose **Sentences · English →
 Dutch** or **Sentences · Dutch → English** button. The first question appears automatically.
 Translate the complete English sentence into Dutch, then press **Enter** or
 **Submit & next**. Your first attempt is saved immediately and the next question
@@ -3020,9 +3028,11 @@ opens while correction runs in the background. Direction comes from the selected
 top-level page; **Sentence round options** selects 1–50 sentences (default 10), 1–3 saved target
 words per sentence (default 2), a life context and optional early review.
 Preferences apply to the next round; **New sentence round** prepares and checks
-replacement content before ending an unfinished round. Closing or Escape pauses
-the current round. Submitted corrections continue while the practice window is
-closed or another tab is open. The most recently used destination and direction open again next time.
+replacement content before ending an unfinished round. Switching back to the
+library or pressing **Escape** keeps the current round and draft available.
+Submitted corrections continue while you browse the catalog or another exercise.
+The most recently used exercise direction opens when you first visit Practice
+after restarting the app.
 
 A narrow question overview stays on the left: **○** unanswered, amber **…**
 queued, blue **↻** checking, green **✓** correct, red **✕** to revisit, orange
@@ -4006,7 +4016,7 @@ High-level groups:
 | `yt_whisper_subs.library_video_queue` | Visible duplicate-safe FIFO admission for selected video pipelines above the single worker lane. |
 | `yt_whisper_subs.library_window_support` | Serialized controllable heavy-work scheduling, recovery UI, independent playback, metadata pacing, tray, and shutdown. |
 | `yt_whisper_subs.library_theme` | Central native dark stylesheet and chapter-pane presentation. |
-| `yt_whisper_subs.library_gui` | Main native window construction, widget wiring, and user interaction. |
+| `yt_whisper_subs.library_gui` | Main native window, Library and Practice tab routing, catalog layout, and widget wiring. |
 | `yt_whisper_subs.library_bootstrap` / `library_app` | Interruptible managed Qt runtime bootstrap and desktop entry point. |
 | `yt_whisper_subs.windows_startup` | Exact per-user HKCU Run registration and safely quoted quiet-tray launch command. |
 
@@ -4169,15 +4179,17 @@ Practice reminder tests cover snooze/restart persistence, close/Escape/stop,
 the 24-hour practice interval across midnight/restart, vocabulary, verb and sentence credit,
 long local days, inactivity wording, first practice, both sections in the same
 balloon, grouping delay, independent video timeout and practice snooze,
-opening without completion credit, settings, and reuse
-of the existing Practice window. Activity tests exercise real SQLite answers,
+opening without completion credit, settings, and routing into the embedded
+Practice tab. Workspace tests cover tab switching with the same catalog search
+and quiz question, and reopening Practice from the tray while maximized.
+Activity tests exercise real SQLite answers,
 both directions, mistakes, idempotency, reported/unanswered questions, local
 answer dates, zero days, streaks, and native calendar navigation.
 Practice-flow tests cover automatic start/resume, stable answer positions,
 double-click and held-key guards, card/answer/keyboard continuation, explanations
 and reports, settings-entry isolation, round completion, healthy empty states,
 one-round early review, cached opening without variant replenishment, safe
-replacement failure, Escape cancellation, and no hidden exposures on analytics.
+replacement failure, cancellation on close, and no hidden exposures on analytics.
 The progress tests additionally cover protocol round trips, opt-in CLI behavior,
 phase weighting, tool percentage recognition, GUI-child scoping, and terminal
 failure reporting.

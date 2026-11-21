@@ -126,7 +126,7 @@ msgstr " · langue correcte"
 msgid " · language errors corrected"
 msgstr " · erreurs de langue corrigées"
 
-#: yt_whisper_subs/library_gui.py:50
+#: yt_whisper_subs/library_gui.py:54
 #, python-brace-format
 msgid " · {deferred:,} deferred"
 msgstr " · {deferred:,} différées"
@@ -175,7 +175,7 @@ msgstr "Précision %"
 msgid "Actions for all videos matching the current filters"
 msgstr "Actions pour toutes les vidéos correspondant aux filtres"
 
-#: yt_whisper_subs/library_practice.py:182
+#: yt_whisper_subs/library_practice.py:177
 msgid "Activity"
 msgstr "Activité"
 
@@ -193,7 +193,7 @@ msgstr ""
 "ensuite. Ouvrir une série ou signaler avant de répondre ne compte pas. La précision exclut les "
 "questions signalées. Les jours suivent votre calendrier local."
 
-#: yt_whisper_subs/library_widgets.py:341 yt_whisper_subs/library_window_menus.py:79
+#: yt_whisper_subs/library_widgets.py:341 yt_whisper_subs/library_window_menus.py:77
 msgid "Activity trace"
 msgstr "Journal d’activité"
 
@@ -213,7 +213,7 @@ msgstr "Ajouter une voix"
 msgid "Added as an unassessed constituent; no independent mistake was recorded."
 msgstr "Ajouté comme composant non évalué ; aucune erreur indépendante enregistrée."
 
-#: yt_whisper_subs/library_gui.py:589
+#: yt_whisper_subs/library_gui.py:641
 #, python-brace-format
 msgid "Adding {title}…"
 msgstr "Ajout de {title}…"
@@ -335,11 +335,11 @@ msgstr "Évalué"
 msgid "Auto-read Dutch"
 msgstr "Lecture automatique du néerlandais"
 
-#: yt_whisper_subs/library_window_support.py:674
+#: yt_whisper_subs/library_window_support.py:675
 msgid "Automatic channel checks continue in the tray."
 msgstr "Les vérifications automatiques continuent dans la zone de notification."
 
-#: yt_whisper_subs/library_gui.py:620
+#: yt_whisper_subs/library_gui.py:672
 msgid "Automatic download"
 msgstr "Téléchargement automatique"
 
@@ -411,7 +411,7 @@ msgstr "Calme"
 msgid "Cancel"
 msgstr "Annuler"
 
-#: yt_whisper_subs/library_window_menus.py:50
+#: yt_whisper_subs/library_window_menus.py:48
 msgid "Cancel current operation"
 msgstr "Annuler l’opération en cours"
 
@@ -445,7 +445,7 @@ msgstr "Enregistrez des mots néerlandais dans mpv et attendez leurs traductions
 msgid "Cause and effect"
 msgstr "Cause et conséquence"
 
-#: yt_whisper_subs/library_model.py:223 yt_whisper_subs/library_window_menus.py:32
+#: yt_whisper_subs/library_model.py:223 yt_whisper_subs/library_window_menus.py:30
 msgid "Channel"
 msgstr "Chaîne"
 
@@ -484,7 +484,7 @@ msgstr ""
 "Cochez les voix souhaitées. Chaque préréglage activé dispose de son bouton pour la même phrase. "
 "La première voix activée est lue automatiquement."
 
-#: yt_whisper_subs/library_window_menus.py:98
+#: yt_whisper_subs/library_window_menus.py:100
 msgid "Check now"
 msgstr "Vérifier maintenant"
 
@@ -566,7 +566,7 @@ msgctxt "voice style"
 msgid "Clear"
 msgstr "Clair"
 
-#: yt_whisper_subs/library_window_menus.py:71
+#: yt_whisper_subs/library_window_menus.py:69
 msgid "Clear filters"
 msgstr "Effacer les filtres"
 
@@ -963,7 +963,7 @@ msgstr "Fermer la notification (Échap)"
 msgid "Double-click a chapter to jump to that moment"
 msgstr "Double-cliquez sur un chapitre pour y accéder"
 
-#: yt_whisper_subs/library_window_menus.py:39
+#: yt_whisper_subs/library_window_menus.py:37
 msgid "Download or repair selected"
 msgstr "Télécharger ou réparer la sélection"
 
@@ -971,7 +971,7 @@ msgstr "Télécharger ou réparer la sélection"
 msgid "Download this video to create chapters"
 msgstr "Téléchargez cette vidéo pour créer des chapitres"
 
-#: yt_whisper_subs/library_gui.py:303
+#: yt_whisper_subs/library_gui.py:314
 msgid "Download, repair, or queue the selected video"
 msgstr "Télécharger, réparer ou mettre en attente la vidéo sélectionnée"
 
@@ -1178,7 +1178,7 @@ msgstr "Finalisation"
 msgid "Focus"
 msgstr "Objectif"
 
-#: yt_whisper_subs/library_window_menus.py:68
+#: yt_whisper_subs/library_window_menus.py:66
 msgid "Focus search"
 msgstr "Aller à la recherche"
 
@@ -1268,7 +1268,7 @@ msgstr "Futur antérieur · zullen + infinitif passé"
 msgid "Future · zullen + infinitive"
 msgstr "Futur · zullen + infinitif"
 
-#: yt_whisper_subs/library_window_menus.py:41
+#: yt_whisper_subs/library_window_menus.py:39
 msgid "Generate chapters"
 msgstr "Créer les chapitres"
 
@@ -1400,7 +1400,7 @@ msgstr "Langue de l’interface enregistrée"
 msgid "Interrupted · ready to resume"
 msgstr "Interrompu · prêt à reprendre"
 
-#: yt_whisper_subs/library_gui.py:514 yt_whisper_subs/library_window_support.py:440
+#: yt_whisper_subs/library_gui.py:566 yt_whisper_subs/library_window_support.py:440
 #, python-brace-format
 msgid "Interrupted · {label} · click Resume"
 msgstr "Interrompu · {label} · cliquez sur Reprendre"
@@ -1481,7 +1481,7 @@ msgstr "Retirez « {block} ». {reason}"
 msgid "Leave this much output level below clipping. Higher values are quieter."
 msgstr "Garder cette marge sous l’écrêtage. Les valeurs élevées réduisent le volume."
 
-#: yt_whisper_subs/library_window_menus.py:21
+#: yt_whisper_subs/library_window_menus.py:22
 msgid "Library"
 msgstr "Bibliothèque"
 
@@ -1493,7 +1493,7 @@ msgstr "La bibliothèque est déjà ouverte"
 msgid "Library settings"
 msgstr "Paramètres de la bibliothèque"
 
-#: yt_whisper_subs/library_gui.py:169
+#: yt_whisper_subs/library_gui.py:173
 #, python-brace-format
 msgid "Library started · output root: {out_dir}"
 msgstr "Bibliothèque démarrée · dossier de sortie : {out_dir}"
@@ -1538,7 +1538,7 @@ msgstr "Écoutez le texte"
 msgid "Listen to the text and answer the questions."
 msgstr "Écoutez le texte et répondez aux questions."
 
-#: yt_whisper_subs/library_practice.py:171 yt_whisper_subs/library_practice_activity.py:59
+#: yt_whisper_subs/library_practice.py:166 yt_whisper_subs/library_practice_activity.py:59
 #: yt_whisper_subs/library_sentences.py:171 yt_whisper_subs/practice_tracks.py:94
 msgid "Listening"
 msgstr "Écoute"
@@ -1551,7 +1551,7 @@ msgstr ""
 "Écoute\n"
 "Dictée en néerlandais"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:173
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:168
 msgid "Listening comprehension"
 msgstr "Compréhension orale"
 
@@ -1605,11 +1605,11 @@ msgstr "Échec de l’analyse des médias locaux · {message}"
 msgid "Main and subordinate clause order"
 msgstr "Ordre des propositions principales et subordonnées"
 
-#: yt_whisper_subs/library_window_menus.py:43
+#: yt_whisper_subs/library_window_menus.py:41
 msgid "Mark as watched"
 msgstr "Marquer comme vue"
 
-#: yt_whisper_subs/library_window_menus.py:45
+#: yt_whisper_subs/library_window_menus.py:43
 msgid "Mark the selected video watched without changing its playback percentage"
 msgstr "Marquer la vidéo sélectionnée comme vue sans changer son pourcentage de lecture"
 
@@ -1652,7 +1652,7 @@ msgstr "Secondes médianes"
 msgid "Median time"
 msgstr "Temps médian"
 
-#: yt_whisper_subs/library_gui.py:48
+#: yt_whisper_subs/library_gui.py:52
 msgid "Metadata lookup queue: empty"
 msgstr "File de métadonnées : vide"
 
@@ -1671,12 +1671,12 @@ msgstr "Métadonnées · nouvel essai de {released:,} éléments différés avec
 msgid "Metadata · {message}"
 msgstr "Métadonnées · {message}"
 
-#: yt_whisper_subs/library_gui.py:54
+#: yt_whisper_subs/library_gui.py:58
 #, python-brace-format
 msgid "Metadata: {deferred:,} deferred · retry {retry}"
 msgstr "Métadonnées : {deferred:,} différées · nouvel essai {retry}"
 
-#: yt_whisper_subs/library_gui.py:51
+#: yt_whisper_subs/library_gui.py:55
 #, python-brace-format
 msgid "Metadata: {ready:,} queued{deferred} · ≤1/min"
 msgstr "Métadonnées : {ready:,} en attente{deferred} · ≤1/min"
@@ -1894,7 +1894,7 @@ msgstr "M’avertir des nouvelles vidéos"
 msgid "Number"
 msgstr "Nombre"
 
-#: yt_whisper_subs/library_gui.py:543
+#: yt_whisper_subs/library_gui.py:595
 msgid "OTHER CHANNELS"
 msgstr "AUTRES CHAÎNES"
 
@@ -1922,7 +1922,7 @@ msgstr "Ouverte"
 msgid "Open library"
 msgstr "Ouvrir la bibliothèque"
 
-#: yt_whisper_subs/library_window_menus.py:42
+#: yt_whisper_subs/library_window_menus.py:40
 msgid "Open on YouTube"
 msgstr "Ouvrir sur YouTube"
 
@@ -1947,7 +1947,7 @@ msgstr "Ouverture du chapitre dans mpv…"
 msgid "Opening mpv…"
 msgstr "Ouverture de mpv…"
 
-#: yt_whisper_subs/library_gui.py:441
+#: yt_whisper_subs/library_gui.py:492
 msgid "Opening saved word in mpv…"
 msgstr "Ouverture du mot enregistré dans mpv…"
 
@@ -2030,7 +2030,7 @@ msgstr "Participe"
 msgid "Partly understood"
 msgstr "Partiellement compris"
 
-#: yt_whisper_subs/library_practice.py:137
+#: yt_whisper_subs/library_practice.py:133
 msgid "Passages"
 msgstr "Textes"
 
@@ -2054,7 +2054,7 @@ msgstr "Passé"
 msgid "Pattern"
 msgstr "Structure"
 
-#: yt_whisper_subs/library_window_actions.py:401 yt_whisper_subs/library_window_menus.py:48
+#: yt_whisper_subs/library_window_actions.py:401 yt_whisper_subs/library_window_menus.py:46
 msgid "Pause current pipeline"
 msgstr "Mettre le traitement en cours en pause"
 
@@ -2079,7 +2079,7 @@ msgstr "Temps composés"
 msgid "Phrase and clause order"
 msgstr "Ordre des groupes et des propositions"
 
-#: yt_whisper_subs/library_window_actions.py:409 yt_whisper_subs/library_window_menus.py:34
+#: yt_whisper_subs/library_window_actions.py:409 yt_whisper_subs/library_window_menus.py:32
 msgid "Pin selected channel"
 msgstr "Épingler la chaîne sélectionnée"
 
@@ -2129,7 +2129,7 @@ msgstr "Prévu"
 msgid "Play occurrence"
 msgstr "Lire l’occurrence"
 
-#: yt_whisper_subs/library_window_menus.py:40
+#: yt_whisper_subs/library_window_menus.py:38
 msgid "Play selected"
 msgstr "Lire la sélection"
 
@@ -2176,7 +2176,7 @@ msgstr "Pluriel"
 msgid "Possessives"
 msgstr "Possessifs"
 
-#: yt_whisper_subs/library_practice.py:141
+#: yt_whisper_subs/library_gui.py:253
 msgid "Practice"
 msgstr "Entraînement"
 
@@ -2188,7 +2188,7 @@ msgstr "Calendrier d’entraînement, un turquoise plus intense indique davantag
 msgid "Practice activity over the last seven days, in questions answered"
 msgstr "Activité des sept derniers jours, en questions répondues"
 
-#: yt_whisper_subs/library_window_menus.py:28 yt_whisper_subs/library_window_menus.py:97
+#: yt_whisper_subs/library_window_menus.py:99
 msgid "Practice activity…"
 msgstr "Activité d’entraînement…"
 
@@ -2208,12 +2208,7 @@ msgstr "Entraînement en pause"
 msgid "Practice voices"
 msgstr "Voix d’entraînement"
 
-#: yt_whisper_subs/library_practice.py:87
-msgid "Practice · vocabulary, verbs, sentences and comprehension"
-msgstr "Entraînement · vocabulaire, verbes, phrases et compréhension"
-
-#: yt_whisper_subs/library_vocabulary.py:77 yt_whisper_subs/library_window_menus.py:26
-#: yt_whisper_subs/library_window_menus.py:96
+#: yt_whisper_subs/library_vocabulary.py:77 yt_whisper_subs/library_window_menus.py:98
 msgid "Practice…"
 msgstr "Entraînement…"
 
@@ -2369,7 +2364,7 @@ msgstr "Vocabulaire précédent"
 msgid "Previously removed"
 msgstr "Supprimé auparavant"
 
-#: yt_whisper_subs/library_practice.py:181
+#: yt_whisper_subs/library_practice.py:176
 msgid "Progress"
 msgstr "Progression"
 
@@ -2428,7 +2423,7 @@ msgstr "En attente · n°{position}"
 msgid "Queued · next"
 msgstr "En attente · suivant"
 
-#: yt_whisper_subs/library_window_menus.py:30 yt_whisper_subs/library_window_menus.py:100
+#: yt_whisper_subs/library_window_menus.py:28 yt_whisper_subs/library_window_menus.py:102
 msgid "Quit"
 msgstr "Quitter"
 
@@ -2448,7 +2443,7 @@ msgstr "Lire le texte à voix haute"
 msgid "Reading"
 msgstr "Lecture"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:172
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:167
 msgid "Reading comprehension"
 msgstr "Compréhension écrite"
 
@@ -2456,7 +2451,7 @@ msgstr "Compréhension écrite"
 msgid "Reading time pauses while the pointer is over the balloon."
 msgstr "Le délai est suspendu lorsque le pointeur survole la notification."
 
-#: yt_whisper_subs/library_gui.py:257 yt_whisper_subs/library_practice_labels.py:11
+#: yt_whisper_subs/library_gui.py:277 yt_whisper_subs/library_practice_labels.py:11
 #: yt_whisper_subs/library_vocabulary.py:144 yt_whisper_subs/library_window_support.py:326
 #: yt_whisper_subs/library_window_support.py:502
 msgid "Ready"
@@ -2541,11 +2536,11 @@ msgstr "Supprimer"
 msgid "Remove download and yields?"
 msgstr "Supprimer le téléchargement et les fichiers générés ?"
 
-#: yt_whisper_subs/library_window_menus.py:52
+#: yt_whisper_subs/library_window_menus.py:50
 msgid "Remove download and yields…"
 msgstr "Supprimer le téléchargement et les fichiers générés…"
 
-#: yt_whisper_subs/library_window_menus.py:64
+#: yt_whisper_subs/library_window_menus.py:62
 msgid ""
 "Remove downloads and generated files for all current filter matches. Choose Watched to reclaim "
 "space while keeping watch history."
@@ -2570,11 +2565,11 @@ msgstr "Supprimer les téléchargements filtrés"
 msgid "Remove filtered downloads?"
 msgstr "Supprimer les téléchargements filtrés ?"
 
-#: yt_whisper_subs/library_window_menus.py:61
+#: yt_whisper_subs/library_window_menus.py:59
 msgid "Remove filtered downloads…"
 msgstr "Supprimer les téléchargements filtrés…"
 
-#: yt_whisper_subs/library_window_menus.py:56
+#: yt_whisper_subs/library_window_menus.py:54
 msgid ""
 "Remove the selected download and all generated files (Shift+Delete). Download and watch history "
 "stay in the catalog."
@@ -2591,7 +2586,7 @@ msgstr "Supprimé"
 msgid "Removed {videos} download(s) and {files} file(s)."
 msgstr "{videos} téléchargements et {files} fichiers supprimés."
 
-#: yt_whisper_subs/library_window_menus.py:54
+#: yt_whisper_subs/library_window_menus.py:52
 msgid "Remove…"
 msgstr "Supprimer…"
 
@@ -2648,7 +2643,7 @@ msgstr "Signaler le texte ou une question"
 msgid "Reported"
 msgstr "Signalé"
 
-#: yt_whisper_subs/library_window_menus.py:75
+#: yt_whisper_subs/library_window_menus.py:73
 msgid "Reset column layout"
 msgstr "Réinitialiser les colonnes"
 
@@ -2660,7 +2655,7 @@ msgstr "Réinitialiser ce réglage à neutre"
 msgid "Reset this group"
 msgstr "Réinitialiser ce groupe"
 
-#: yt_whisper_subs/library_window_menus.py:76
+#: yt_whisper_subs/library_window_menus.py:74
 msgid "Reset video inspector size"
 msgstr "Réinitialiser la taille de l’inspecteur vidéo"
 
@@ -2859,7 +2854,7 @@ msgstr ""
 "anciennes entrées distantes sans activité sont retirées ; les historiques de téléchargement, "
 "visionnage et suppression sont toujours conservés."
 
-#: yt_whisper_subs/library_gui.py:298
+#: yt_whisper_subs/library_gui.py:309
 msgid "Search title, channel, or YouTube ID…"
 msgstr "Rechercher un titre, une chaîne ou un identifiant YouTube…"
 
@@ -2882,7 +2877,7 @@ msgstr "Aller à → {timestamp} · {title}"
 msgid "Select a downloaded video"
 msgstr "Sélectionnez une vidéo téléchargée"
 
-#: yt_whisper_subs/library_gui.py:599 yt_whisper_subs/library_gui.py:620
+#: yt_whisper_subs/library_gui.py:651 yt_whisper_subs/library_gui.py:672
 #: yt_whisper_subs/library_window_actions.py:419
 msgid "Select a tracked channel first."
 msgstr "Sélectionnez d’abord une chaîne suivie."
@@ -2907,7 +2902,7 @@ msgstr "Options de la série de phrases"
 msgid "Sentence translations"
 msgstr "Traduction de phrases"
 
-#: yt_whisper_subs/library_practice.py:135 yt_whisper_subs/library_practice.py:170
+#: yt_whisper_subs/library_practice.py:131 yt_whisper_subs/library_practice.py:165
 #: yt_whisper_subs/library_practice_activity.py:59 yt_whisper_subs/library_sentence_progress.py:36
 #: yt_whisper_subs/library_sentences.py:53 yt_whisper_subs/practice_tracks.py:82
 msgid "Sentences"
@@ -2929,7 +2924,7 @@ msgstr "Verbes à particule séparable"
 msgid "Settings changed. Preview again to hear the new version."
 msgstr "Paramètres modifiés. Relancez l’aperçu pour entendre la nouvelle version."
 
-#: yt_whisper_subs/library_balloon.py:81 yt_whisper_subs/library_window_menus.py:22
+#: yt_whisper_subs/library_balloon.py:81 yt_whisper_subs/library_window_menus.py:23
 msgid "Settings…"
 msgstr "Paramètres…"
 
@@ -2942,15 +2937,15 @@ msgstr "Achats"
 msgid "Show English · Alt+E"
 msgstr "Afficher l’anglais · Alt+E"
 
-#: yt_whisper_subs/library_window_menus.py:95
+#: yt_whisper_subs/library_window_menus.py:97
 msgid "Show library"
 msgstr "Afficher la bibliothèque"
 
-#: yt_whisper_subs/library_gui.py:550
+#: yt_whisper_subs/library_gui.py:602
 msgid "Show videos from other channels"
 msgstr "Afficher les vidéos des autres chaînes"
 
-#: yt_whisper_subs/library_gui.py:549
+#: yt_whisper_subs/library_gui.py:601
 msgid "Show videos from pinned channels"
 msgstr "Afficher les vidéos des chaînes épinglées"
 
@@ -3114,16 +3109,16 @@ msgstr "État"
 msgid "Stop"
 msgstr "Arrêter"
 
-#: yt_whisper_subs/library_gui.py:599 yt_whisper_subs/library_window_actions.py:447
-#: yt_whisper_subs/library_window_menus.py:37
+#: yt_whisper_subs/library_gui.py:651 yt_whisper_subs/library_window_actions.py:447
+#: yt_whisper_subs/library_window_menus.py:35
 msgid "Stop tracking"
 msgstr "Ne plus suivre"
 
-#: yt_whisper_subs/library_gui.py:603
+#: yt_whisper_subs/library_gui.py:655
 msgid "Stop tracking channel?"
 msgstr "Ne plus suivre cette chaîne ?"
 
-#: yt_whisper_subs/library_gui.py:604
+#: yt_whisper_subs/library_gui.py:656
 #, python-brace-format
 msgid "Stop tracking {title}? Downloaded videos remain in the library."
 msgstr "Ne plus suivre {title} ? Les vidéos téléchargées restent dans la bibliothèque."
@@ -3312,7 +3307,7 @@ msgstr "À revoir"
 msgid "Today"
 msgstr "Aujourd’hui"
 
-#: yt_whisper_subs/library_window_menus.py:36
+#: yt_whisper_subs/library_window_menus.py:34
 msgid "Toggle automatic download"
 msgstr "Basculer le téléchargement automatique"
 
@@ -3324,15 +3319,15 @@ msgstr "Ton et intention"
 msgid "Track a YouTube channel"
 msgstr "Suivre une chaîne YouTube"
 
-#: yt_whisper_subs/library_gui.py:580
+#: yt_whisper_subs/library_gui.py:632
 msgid "Track channel"
 msgstr "Suivre une chaîne"
 
-#: yt_whisper_subs/library_window_menus.py:33
+#: yt_whisper_subs/library_window_menus.py:31
 msgid "Track channel…"
 msgstr "Suivre une chaîne…"
 
-#: yt_whisper_subs/library_practice.py:138
+#: yt_whisper_subs/library_practice.py:134
 msgid "Tracking"
 msgstr "Suivi"
 
@@ -3500,7 +3495,7 @@ msgstr "Précision des transformations verbales"
 msgid "Verb transformations"
 msgstr "Transformations verbales"
 
-#: yt_whisper_subs/library_practice.py:170 yt_whisper_subs/library_practice_activity.py:58
+#: yt_whisper_subs/library_practice.py:165 yt_whisper_subs/library_practice_activity.py:58
 #: yt_whisper_subs/library_verb_controls.py:54 yt_whisper_subs/library_verb_progress.py:35
 #: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:82
 msgid "Verbs"
@@ -3514,7 +3509,7 @@ msgstr ""
 "Verbes\n"
 "Transformations en néerlandais"
 
-#: yt_whisper_subs/library_window_menus.py:38
+#: yt_whisper_subs/library_window_menus.py:36
 msgid "Video"
 msgstr "Vidéo"
 
@@ -3551,7 +3546,7 @@ msgstr "Vidéos dont le fichier local et les fichiers générés ont été suppr
 msgid "Videos without a local download, including removed videos"
 msgstr "Vidéos sans téléchargement local, y compris celles supprimées"
 
-#: yt_whisper_subs/library_window_menus.py:67
+#: yt_whisper_subs/library_window_menus.py:65
 msgid "View"
 msgstr "Affichage"
 
@@ -3563,7 +3558,7 @@ msgstr "Afficher la transcription"
 msgid "Views"
 msgstr "Vues"
 
-#: yt_whisper_subs/library_practice.py:170
+#: yt_whisper_subs/library_practice.py:165
 msgid "Vocabulary"
 msgstr "Vocabulaire"
 
@@ -3575,7 +3570,7 @@ msgstr "Révision du vocabulaire : "
 msgid "Vocabulary · subtitles and practice"
 msgstr "Vocabulaire · sous-titres et entraînement"
 
-#: yt_whisper_subs/library_window_menus.py:24
+#: yt_whisper_subs/library_window_menus.py:25
 msgid "Vocabulary…"
 msgstr "Vocabulaire…"
 
@@ -3607,10 +3602,6 @@ msgstr "En attente de corrections"
 #: yt_whisper_subs/library_sentence_session.py:295
 msgid "Waiting…"
 msgstr "En attente…"
-
-#: yt_whisper_subs/library_gui.py:274
-msgid "Watch · track · subtitle"
-msgstr "Regarder · suivre · sous-titrer"
 
 #: yt_whisper_subs/library_model.py:221 yt_whisper_subs/library_views.py:70
 #: yt_whisper_subs/library_window_support.py:558
@@ -3718,7 +3709,7 @@ msgstr ""
 msgid "Word-order patterns"
 msgstr "Structures syntaxiques"
 
-#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_practice.py:134
+#: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_practice.py:130
 #: yt_whisper_subs/library_practice_progress.py:129 yt_whisper_subs/library_sentence_progress.py:37
 msgid "Words"
 msgstr "Mots"
@@ -3770,11 +3761,11 @@ msgstr "Vous êtes à jour"
 msgid "YouTube ID {video_id}"
 msgstr "Identifiant YouTube {video_id}"
 
-#: yt_whisper_subs/library_gui.py:271
+#: yt_whisper_subs/library_gui.py:252
 msgid "YouTube Library"
 msgstr "Bibliothèque YouTube"
 
-#: yt_whisper_subs/library_window_support.py:673
+#: yt_whisper_subs/library_window_support.py:674
 msgid "YouTube Library is still running"
 msgstr "La bibliothèque YouTube fonctionne toujours"
 
@@ -3899,7 +3890,7 @@ msgstr "lent"
 msgid "u (polite)"
 msgstr "u (politesse)"
 
-#: yt_whisper_subs/library_window_menus.py:93
+#: yt_whisper_subs/library_window_menus.py:95
 msgid "yt-whisper-subs YouTube Library"
 msgstr "Bibliothèque YouTube yt-whisper-subs"
 
@@ -4243,7 +4234,7 @@ msgstr[1] "{visible:,} sur {count:,} vidéos"
 msgid "{words} distinct words"
 msgstr "{words} mots distincts"
 
-#: yt_whisper_subs/library_gui.py:311 yt_whisper_subs/library_window_actions.py:395
+#: yt_whisper_subs/library_gui.py:322 yt_whisper_subs/library_window_actions.py:395
 msgid "Ⅱ  Pause"
 msgstr "Ⅱ  Mettre en pause"
 
@@ -4251,11 +4242,11 @@ msgstr "Ⅱ  Mettre en pause"
 msgid "Ⅱ Pipeline paused"
 msgstr "Ⅱ Traitement en pause"
 
-#: yt_whisper_subs/library_gui.py:302 yt_whisper_subs/library_window_actions.py:387
+#: yt_whisper_subs/library_gui.py:313 yt_whisper_subs/library_window_actions.py:387
 msgid "↓  Download"
 msgstr "↓  Télécharger"
 
-#: yt_whisper_subs/library_gui.py:301
+#: yt_whisper_subs/library_gui.py:312
 msgid "↻  Check now"
 msgstr "↻  Vérifier maintenant"
 
@@ -4267,7 +4258,7 @@ msgstr "↻  Recréer"
 msgid "↻  Repair"
 msgstr "↻  Réparer"
 
-#: yt_whisper_subs/library_gui.py:313
+#: yt_whisper_subs/library_gui.py:324
 msgid "■  Cancel"
 msgstr "■  Annuler"
 
@@ -4280,11 +4271,11 @@ msgstr "■ Annulation demandée"
 msgid "■ Cancelled · {label}"
 msgstr "■ Annulé · {label}"
 
-#: yt_whisper_subs/library_gui.py:533
+#: yt_whisper_subs/library_gui.py:585
 msgid "▦  All videos"
 msgstr "▦  Toutes les vidéos"
 
-#: yt_whisper_subs/library_gui.py:304
+#: yt_whisper_subs/library_gui.py:315
 msgid "▶  Play"
 msgstr "▶  Lire"
 
@@ -4335,7 +4326,7 @@ msgstr "○ Traitement en attente · n°{position} · {title}"
 msgid "●  Processing"
 msgstr "●  En cours"
 
-#: yt_whisper_subs/library_gui.py:543
+#: yt_whisper_subs/library_gui.py:595
 msgid "★  PINNED"
 msgstr "★  ÉPINGLÉES"
 
@@ -4353,6 +4344,6 @@ msgstr "✗ Maintenance des métadonnées · {message}"
 msgid "✦  Generate"
 msgstr "✦  Créer"
 
-#: yt_whisper_subs/library_gui.py:279
+#: yt_whisper_subs/library_gui.py:293
 msgid "＋  Track channel"
 msgstr "＋  Suivre une chaîne"

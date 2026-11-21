@@ -64,7 +64,9 @@ class PracticeFlowTests(unittest.TestCase):
 
         opts = practice.RoundOptions(direction=practice.Direction.NL_EN, count=count)
         self.db.set_setting("practice_options", opts.model_dump_json())
-        self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=self.engine)
+        self.dialog = library_practice.PracticeView(SimpleNamespace(db=self.db), engine=self.engine)
+        self.dialog.resize(1160, 900)
+        self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.quiz = self.dialog._quizzes[practice.Direction.NL_EN]
         self.dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
@@ -315,15 +317,15 @@ class PracticeFlowTests(unittest.TestCase):
         self.assertEqual(self.quiz._current["id"], first["id"])
         self.assertEqual(self.quiz._current["choices"], first["choices"])
 
-    def test_escape_cancels_autostart_without_recording_a_hidden_question(self) -> None:
-        """Treat Escape like closing the window during preparation; e.g. stop at the next cooperative checkpoint."""
+    def test_close_cancels_autostart_without_recording_a_hidden_question(self) -> None:
+        """Closing the practice view stops at the next cooperative preparation checkpoint."""
 
         entered, release = threading.Event(), threading.Event()
         self.addCleanup(release.set)
         generate = self.generator.generate
 
         def blocked(rows, direction):
-            """Hold an in-flight request until Escape is delivered; e.g. cancellation stays independent of HTTP latency."""
+            """Hold an in-flight request until close; e.g. cancellation stays independent of HTTP latency."""
 
             entered.set()
             release.wait(3)
@@ -335,7 +337,7 @@ class PracticeFlowTests(unittest.TestCase):
         task = self.quiz._task
         cancelled = []
         task.signals.cancelled.connect(lambda: cancelled.append(True))
-        QtTest.QTest.keyClick(self.dialog, QtCore.Qt.Key.Key_Escape)
+        self.dialog.close()
         self.assertTrue(task.cancel_requested)
         release.set()
         self._wait(lambda: bool(cancelled))

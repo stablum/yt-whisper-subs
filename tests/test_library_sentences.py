@@ -73,7 +73,9 @@ class SentenceFlowTests(unittest.TestCase):
         """Inject providers before selecting the automatic practice tab; e.g. no real model is contacted."""
 
         vocab = practice_service.PracticeService(self.db, practice_fixtures.FakeGenerator())
-        self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=vocab)
+        self.dialog = library_practice.PracticeView(SimpleNamespace(db=self.db), engine=vocab)
+        self.dialog.resize(1160, 900)
+        self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         opts = fixtures.options().model_validate_json(self.db.setting("sentence_options", fixtures.options().model_dump_json()))
         self.panel = self.dialog._sentences[opts.direction]
         self.panel._engine = self.engine

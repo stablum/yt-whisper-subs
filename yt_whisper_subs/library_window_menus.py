@@ -1,8 +1,9 @@
 """Own translated menu and tray actions separately from runtime scheduling.
 
-Example: the library window shares the same practice actions in its menu and tray.
+Example: Settings is available in either workspace and the tray can open Practice directly.
 """
 
+from PySide6 import QtCore
 from PySide6 import QtGui
 from PySide6 import QtWidgets
 
@@ -23,9 +24,6 @@ class MenusMixin:
         settings.triggered.connect(self._edit_settings)
         vocabulary = file_menu.addAction(i18n.tr('Vocabulary…'), self._show_vocabulary)
         vocabulary.setShortcut(QtGui.QKeySequence("Ctrl+Shift+W"))
-        practice_action = file_menu.addAction(i18n.tr('Practice…'), self._show_practice)
-        practice_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+R"))
-        file_menu.addAction(i18n.tr('Practice activity…'), lambda: self._show_practice(True))
         file_menu.addSeparator()
         quit_action = file_menu.addAction(i18n.tr('Quit'))
         quit_action.triggered.connect(self._quit)
@@ -79,7 +77,11 @@ class MenusMixin:
         trace_action.setText(i18n.tr('Activity trace'))
         trace_action.setShortcut(QtGui.QKeySequence("Ctrl+Shift+L"))
         view_menu.addAction(trace_action)
-
+        # Alt+P plays dictation in Practice, and catalog edit keys belong to the catalog.
+        catalog = self._workspaces.widget(0)
+        for action in (self._pin_channel_action, self._remove_action, clear_filters):
+            action.setShortcutContext(QtCore.Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            catalog.addAction(action)
 
     def _build_tray(self) -> QtWidgets.QSystemTrayIcon:
         """Create the system-tray lifetime needed for unattended checks.
@@ -92,7 +94,7 @@ class MenusMixin:
         tray = QtWidgets.QSystemTrayIcon(icon, self)
         tray.setToolTip(i18n.tr('yt-whisper-subs YouTube Library'))
         menu = QtWidgets.QMenu(self)
-        menu.addAction(i18n.tr('Show library'), self._show_window)
+        menu.addAction(i18n.tr('Show library'), self._show_library)
         menu.addAction(i18n.tr('Practice…'), self._show_practice)
         menu.addAction(i18n.tr('Practice activity…'), lambda: self._show_practice(True))
         menu.addAction(i18n.tr('Check now'), self.check_now)

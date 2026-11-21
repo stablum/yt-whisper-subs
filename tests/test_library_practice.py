@@ -38,7 +38,7 @@ from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import pronunciation
 
 
-class PracticeDialogTests(unittest.TestCase):
+class PracticeViewTests(unittest.TestCase):
     """Exercise large native buttons and saved outcomes rather than implementation-only layout assertions."""
 
     @classmethod
@@ -73,7 +73,9 @@ class PracticeDialogTests(unittest.TestCase):
     def _dialog(self):
         """Render actual native widgets without showing desktop windows; e.g. use Windows font rendering for previews."""
 
-        dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=self.engine)
+        dialog = library_practice.PracticeView(SimpleNamespace(db=self.db), engine=self.engine)
+        dialog.resize(1160, 900)
+        dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.quiz = dialog._quizzes[practice.Direction.NL_EN]
         dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)
         dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)

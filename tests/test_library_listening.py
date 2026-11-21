@@ -55,7 +55,9 @@ class ListeningFlowTests(unittest.TestCase):
         self.db.set_setting(practice_tracks.Track.LISTENING.settings_key, opts.model_dump_json())
         self.engine.start(opts, lambda _: None, background=True)
         with mock.patch.object(library_listening, "WavePlayer", audio.Player):
-            self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db))
+            self.dialog = library_practice.PracticeView(SimpleNamespace(db=self.db))
+            self.dialog.resize(1160, 900)
+            self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.addCleanup(self._close)
         self.panel = self.dialog._listening
         self.panel._engine = self.engine

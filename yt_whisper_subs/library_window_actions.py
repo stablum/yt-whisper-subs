@@ -192,7 +192,7 @@ class WindowActionsMixin:
         Example: clicking a balloon title clears stale filters and selects it.
         """
 
-        self._show_window()
+        self._show_library()
         self._filter_key = ("pinned", None)
         self._clear_filters()
         self.refresh()

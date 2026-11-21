@@ -1148,6 +1148,9 @@ class TrayLifetimeTests(unittest.TestCase):
             def _show_practice(self, activity: bool = False) -> None:
                 """Stand in for practice navigation; e.g. the tray owns both study actions."""
 
+            def _show_library(self) -> None:
+                """Stand in for catalog navigation; e.g. the tray can select the Library tab."""
+
         window = Window()
         tray = window._build_tray()
 

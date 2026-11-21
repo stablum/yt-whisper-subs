@@ -75,7 +75,9 @@ class VerbFlowTests(unittest.TestCase):
         """Inject both providers before showing; e.g. automatic question preparation cannot reach the network."""
 
         vocab = practice_service.PracticeService(self.db, practice_fixtures.FakeGenerator())
-        self.dialog = library_practice.PracticeDialog(SimpleNamespace(db=self.db), engine=vocab)
+        self.dialog = library_practice.PracticeView(SimpleNamespace(db=self.db), engine=vocab)
+        self.dialog.resize(1160, 900)
+        self.dialog.setAttribute(QtCore.Qt.WidgetAttribute.WA_DeleteOnClose)
         self.panel = self.dialog._verbs
         self.panel._engine = self.engine
         self.dialog.setStyleSheet(library_theme.STYLE + library_practice._STYLE)

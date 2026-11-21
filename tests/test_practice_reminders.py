@@ -56,9 +56,6 @@ class ReminderTests(unittest.TestCase):
         self.owner.setStyleSheet(library_theme.STYLE)
         self.tray = QtWidgets.QSystemTrayIcon(self.owner)
         self.available = True
-        self.practice_window = mock.Mock()
-        self.practice_window.isVisible.return_value = True
-        self.practice_window.isActiveWindow.side_effect = lambda: not self.available
         self._start_notifier()
         self.addCleanup(self._cleanup)
 
@@ -66,7 +63,7 @@ class ReminderTests(unittest.TestCase):
         """Recreate the coordinator with the same catalog and clock, as on tray restart."""
 
         self.notifier = library_notifications.TrayNotifications(
-            self.db, self.tray, practice_window=lambda: self.practice_window,
+            self.db, self.tray, practicing=lambda: not self.available,
         )
         self.notifier._practice._clock = lambda: self.now
         self.balloon = self.notifier._balloon

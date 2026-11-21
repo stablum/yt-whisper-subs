@@ -607,7 +607,8 @@ class WindowRuntimeMixin(library_window_menus.MenusMixin):
 
         # Windows startup flags can hide the native window while Qt thinks it is visible.
         self.hide()
-        self.showNormal()
+        self.setWindowState(self.windowState() & ~QtCore.Qt.WindowState.WindowMinimized)
+        self.show()
         self.raise_()
         self.activateWindow()
 
