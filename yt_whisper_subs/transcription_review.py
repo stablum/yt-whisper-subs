@@ -9,6 +9,7 @@ import argparse
 import json
 import re
 from collections import Counter
+from functools import cached_property
 from pathlib import Path
 from typing import NamedTuple
 
@@ -76,8 +77,10 @@ repair the WHOLE compound span in that one edit, including its incorrectly separ
 Do not propose a partial word fix that leaves the recognized compound split incorrectly.
 If two adjacent words instead look like one misheard word and there is a close-sounding
 replacement that fits the context, propose the exact two words and the single replacement
-with confidence "needs_audio". This only requests an audio check. In every cue, explicitly
-look for an indefinite article followed by a malformed or contextually unlikely noun where
+with confidence "needs_audio". This only requests an audio check. Check the neighboring
+token even when it is normally a real word: in 'heel stoïs zijn urenlang', 'zijn' may be
+the misrecognized ending of the same word. Flag 'stoïs zijn' -> 'stoïcijns' as one span.
+Also look for an indefinite article followed by a malformed or contextually unlikely noun where
 a similar-sounding adverb makes sense. For example, in a discussion about having very little
 time to play, flag 'een hamper' -> 'amper' in 'we hebben eigenlijk een hamper kunnen spelen'.
 Flag plausible hypotheses even when the exact wording needs confirmation. Never suggest a
@@ -166,6 +169,17 @@ def _distance(left: str, right: str) -> int:
     return row[-1]
 
 
+def _retains_ending(parts: list[str], replacement: str) -> bool:
+    """Recognize a retained Dutch split ending, e.g. zijn represented by cijns."""
+
+    if len(parts) != 2 or parts[1] != "zijn":
+        return False
+    first, ending = parts
+    stem = replacement.removesuffix("s")
+    prefix, suffix = stem[:-len(ending)], stem[-len(ending):]
+    return len(first) >= 4 and len(prefix) >= 4 and suffix[1:] == ending[1:] and _distance(first, prefix) <= 1
+
+
 def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> str | None:
     """Explain local ineligibility for verification; e.g. a correction touches a protected pronoun."""
 
@@ -198,12 +212,14 @@ def _word_rejection(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> 
             or any(not part.isalpha() or len(part) < 2 for part in [*old_parts, *new_parts])
             or any(len(word.replace("-", "")) < 3 for word in [*word_core, *new_words])):
         return "expected whole words or a compound with one internal separator"
-    if any(part in _PROTECTED for part in [*old_parts, *new_parts]):
-        return "contains a protected word"
     old_letters, new_letters = "".join(old_parts), "".join(new_parts)
     length = max(len(old_letters), len(new_letters))
     if length > 40:
         return "word span exceeds 40 letters"
+    retained = audio and _retains_ending(old_parts, new_letters)
+    protected_parts = old_parts[:-1] if retained else old_parts
+    if any(part in _PROTECTED for part in [*protected_parts, *new_parts]):
+        return "contains a protected word"
     text = cues[edit.cue - 1].text
     if (span := _span(text, edit)) is None:
         return "original text does not match the indexed word span"
@@ -235,6 +251,25 @@ def _span(text: str, edit: Edit, *, match_case: bool = True) -> tuple[int, int] 
     return start, end
 
 
+def _complete_split(edit: Edit, cues: list[srt.SubtitleCue], targets: range) -> Edit:
+    """Send a partial split-word proposal to audio, e.g. include the recognized final syllable."""
+
+    if not 1 <= edit.cue <= len(cues) or edit.cue not in targets or edit.confidence not in {"very_high", _AUDIO_REQUIRED}:
+        return edit
+    if not edit.replacement.isalpha() or not edit.replacement.islower() or len(edit.replacement) > 40:
+        return edit
+    text = cues[edit.cue - 1].text
+    parts = edit.original.split(" ")
+    if len(parts) == 1 and _span(text, edit) is not None:
+        words = _WORD.findall(text)
+        parts = words[edit.word - 1:edit.word + 1]
+    if _retains_ending(parts, edit.replacement):
+        repaired = edit._replace(original=" ".join(parts), confidence=_AUDIO_REQUIRED)
+        if _word_rejection(repaired, cues, targets) is None:
+            return repaired
+    return edit
+
+
 def _audio_match(cue: srt.SubtitleCue, edit: Edit) -> transcription_audio.Match | None:
     """Anchor a two-to-one repair on unchanged words on both sides of the span."""
 
@@ -243,7 +278,18 @@ def _audio_match(cue: srt.SubtitleCue, edit: Edit) -> transcription_audio.Match 
     end = start + 2
     if not 0 < start < end < len(words) or not 0 < cue.end_ms - cue.start_ms <= transcription_audio.MAX_CUE_MS:
         return None
-    phrase = (*words[max(0, start - 2):start], edit.replacement, *words[end:end + 2])
+    retained = _retains_ending(edit.original.split(" "), edit.replacement)
+    if retained and start < 2:
+        return None
+    # A focused raw cue can finish just before the second following word.
+    after = 1 if retained else 2
+    left, right = max(0, start - 2), min(len(words), end + after)
+    if retained:
+        source = words[left:right]
+        occurrences = sum(words[idx:idx + len(source)] == source for idx in range(len(words) - len(source) + 1))
+        if occurrences != 1:
+            return None
+    phrase = (*words[left:start], edit.replacement, *words[end:right])
     return transcription_audio.Match(cue, phrase)
 
 
@@ -368,7 +414,7 @@ class TranscriptionReview:
     def _policy(self) -> dict:
         """Fingerprint settings that affect cached decisions; e.g. switching models restarts the audit."""
 
-        return {"version": 5, "batch_cues": BATCH_CUES,
+        return {"version": 6, "batch_cues": BATCH_CUES,
                 "model": getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
                 "reasoning": getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
                 "language": self._args.language,
@@ -542,19 +588,28 @@ class TranscriptionReview:
         proposed = _edits(_parse(output, "edits"), Edit)
         formatting = _edits(_parse(output, "formatting"), FormatEdit)
         eligible = []
+        audio_spans = set()
         for edit in proposed:
+            edit = _complete_split(edit, cues, targets)
             change = f"transcription cue {edit.cue}: {edit.original!r} → {edit.replacement!r}"
             if reason := _word_rejection(edit, cues, targets):
                 print(f"Rejected {change} ({reason}).", flush=True)
             else:
+                if edit.confidence == _AUDIO_REQUIRED:
+                    span = (edit.cue, edit.word, edit.original, edit.replacement)
+                    if span in audio_spans:
+                        continue
+                    audio_spans.add(span)
                 print(f"Proposed {change}", flush=True)
                 eligible.append(edit)
-        counts = Counter(edit.cue for edit in eligible)
-        for cue, count in counts.items():
+        counts = Counter((edit.cue, edit.confidence) for edit in eligible)
+        for (cue, _), count in counts.items():
             if count > 1:
                 print(f"Rejected transcription cue {cue}: multiple eligible word edits.", flush=True)
-        eligible = [edit for edit in eligible if counts[edit.cue] == 1]
+        eligible = [edit for edit in eligible if counts[edit.cue, edit.confidence] == 1]
         eligible = self._check_audio(cues, eligible, audio_checks)
+        supported_cues = {edit.cue for edit in eligible if edit.confidence == _AUDIO_REQUIRED}
+        eligible = [edit for edit in eligible if edit.cue not in supported_cues or edit.confidence == _AUDIO_REQUIRED]
         fmt_counts = Counter(fmt.cue for fmt in formatting)
         eligible_fmt = [fmt for fmt in formatting if fmt_counts[fmt.cue] == 1 and _format_safe(fmt, cues, targets)]
         candidates = [*eligible, *eligible_fmt]
@@ -564,6 +619,32 @@ class TranscriptionReview:
             print("Rejected verified word corrections: batch edit limit exceeded.", flush=True)
             words = []
         return words, [fmt for fmt in verified if isinstance(fmt, FormatEdit)]
+
+    @cached_property
+    def _raw_cues(self) -> list[srt.SubtitleCue]:
+        """Read uncompacted timings only when a split ending needs a tighter clip."""
+
+        path = subtitle_files.uncompacted_backup_path(self._pair.archive)
+        try:
+            return srt.parse_srt(path.read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            return []
+
+    def _focused_match(self, match: transcription_audio.Match, edit: Edit) -> transcription_audio.Match:
+        """Use one raw cue that contains the exact split phrase inside the displayed cue."""
+
+        parts = edit.original.split(" ")
+        if not _retains_ending(parts, edit.replacement):
+            return match
+        bounds = []
+        for raw in self._raw_cues:
+            if raw.start_ms < match.cue.start_ms or raw.end_ms > match.cue.end_ms:
+                continue
+            if not 0 < raw.end_ms - raw.start_ms <= transcription_audio.MAX_FOCUS_MS:
+                continue
+            words = _WORD.findall(raw.text)
+            bounds.extend((raw.start_ms, raw.end_ms) for i in range(len(words) - 1) if words[i:i + 2] == parts)
+        return match._replace(focus=bounds[0]) if len(bounds) == 1 else match
 
     def _check_audio(self, cues: list[srt.SubtitleCue], edits: list[Edit],
                      audio_checks: dict[str, str | None]) -> list[Edit]:
@@ -580,7 +661,7 @@ class TranscriptionReview:
             if match is None:
                 print(f"Skipped audio check for cue {edit.cue}: unsuitable timing or missing anchors.", flush=True)
                 continue
-            matches[edit.cue] = match
+            matches[edit.cue] = self._focused_match(match, edit)
         if matches:
             print(f"Checking local audio for {len(matches)} subtitle cue(s).", flush=True)
             confirmed = self._audio.confirm(matches)

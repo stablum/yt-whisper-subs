@@ -10,6 +10,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import NamedTuple
 
+from yt_whisper_subs import media
 from yt_whisper_subs import proc
 from yt_whisper_subs import srt
 from yt_whisper_subs import whisper_local
@@ -18,6 +19,9 @@ from yt_whisper_subs import whisper_local
 MAX_CHECKS = 6
 MAX_CUE_MS = 12_000
 _PAD_MS = 300
+_FOCUS_LEAD_MS = 240
+_FOCUS_TRAIL_MS = 600
+MAX_FOCUS_MS = 3_500
 
 
 class Match(NamedTuple):
@@ -25,6 +29,7 @@ class Match(NamedTuple):
 
     cue: srt.SubtitleCue
     words: tuple[str, ...]
+    focus: tuple[int, int] | None = None
 
 
 def _confirmed(document: dict, match: Match, offset_ms: int) -> bool:
@@ -53,10 +58,11 @@ def _confirmed(document: dict, match: Match, offset_ms: int) -> bool:
 class Probe:
     """Decode short clips with the configured cached Whisper model, e.g. on a forced review."""
 
-    def __init__(self, media: Path, paths: dict[str, Path], args: argparse.Namespace) -> None:
+    def __init__(self, video: Path, paths: dict[str, Path], args: argparse.Namespace, *, audio: Path | None = None) -> None:
         """Bind the final video's audio and the pipeline's local Whisper settings."""
 
-        self._media = media
+        self._media = video
+        self._audio = audio
         self._paths = paths
         self._args = args
 
@@ -87,20 +93,26 @@ class Probe:
             return {}
 
     def _decode(self, matches: dict[int, Match], root: Path) -> dict[int, str]:
-        """Extract short clips and decode all candidates in one Whisper process."""
+        """Decode the regular and focused windows in one Whisper process per batch."""
 
-        offsets = {}
+        source = media.cached_audio(self._media, self._audio)
+        clips = {}
         for idx, match in matches.items():
-            start = max(0, match.cue.start_ms - _PAD_MS)
-            duration = match.cue.end_ms + _PAD_MS - start
-            clip = root / f"{idx}.wav"
-            copy = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", f"{start / 1000:.3f}",
-                    "-i", self._media, "-t", f"{duration / 1000:.3f}", "-vn", "-ac", "1", "-ar", "16000", clip]
-            if proc.run(copy, check=False, timeout=30).returncode == 0:
-                offsets[idx] = start
-        if not offsets:
+            cue = match.cue
+            windows = [(max(0, cue.start_ms - _PAD_MS), cue.end_ms + _PAD_MS)]
+            if match.focus is not None:
+                start, end = match.focus
+                focused = (max(0, start - _FOCUS_LEAD_MS), min(cue.end_ms, end + _FOCUS_TRAIL_MS))
+                if focused[1] - focused[0] < windows[0][1] - windows[0][0]:
+                    windows.append(focused)
+            for n, (start, end) in enumerate(windows):
+                clip = root / f"{idx}-{n}.wav"
+                copy = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", f"{start / 1000:.3f}",
+                        "-i", source, "-t", f"{(end - start) / 1000:.3f}", "-vn", "-ac", "1", "-ar", "16000", clip]
+                if proc.run(copy, check=False, timeout=30).returncode == 0:
+                    clips[clip] = (idx, start)
+        if not clips:
             return {}
-        clips = [root / f"{idx}.wav" for idx in offsets]
         args = self._args
         command = [
             self._paths["whisper"], *clips, "--model", self._model, "--task", "transcribe",
@@ -113,9 +125,11 @@ class Probe:
         proc.run(command, timeout=180)
 
         confirmed = {}
-        for idx, start in offsets.items():
+        for clip, (idx, start) in clips.items():
+            if idx in confirmed:
+                continue
             try:
-                document = json.loads((root / f"{idx}.json").read_text(encoding="utf-8"))
+                document = json.loads(clip.with_suffix(".json").read_text(encoding="utf-8"))
                 if _confirmed(document, matches[idx], start):
                     confirmed[idx] = " ".join(matches[idx].words)
             except (OSError, ValueError, TypeError, KeyError):

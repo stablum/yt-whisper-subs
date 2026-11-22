@@ -1802,10 +1802,16 @@ with local validation of the permitted edits:
   proposed text. A correction needs one confident match of the replacement
   between unchanged neighboring words inside the cue, followed by an independent
   Luna approval. This can correct a spurious article as part of a near-match,
-  such as `een hamper` → `amper` when the audio supports it. Bare article deletions
-  and edits to negation, pronouns or quantities are excluded. The pass checks
-  at most six clips per video, each from a cue up to 12 seconds long with
-  surrounding padding. It uses local audio and skips unsupported proposals when
+  such as `een hamper` → `amper` when the audio supports it. It can also complete
+  a partial proposal for a split word such as `stoïs zijn` → `stoïcijns` when
+  the proposed word closely preserves the sound and spelling of the ending.
+  This specific ending is only eligible for an audio check. Bare article deletions
+  and edits to standalone pronouns, negation or quantities are excluded.
+  An audio-confirmed split takes priority over a competing text-only edit in the
+  same cue. The pass checks at most six cues per video, each up to 12 seconds
+  long with surrounding padding. For a retained split ending, it also checks a
+  tighter clip when the uncompacted subtitle identifies one matching span.
+  Audio checks prefer the validated cached Whisper input and skip the proposal when
   the audio or cached model is unavailable. The audit records each checked cue
   and any matching phrase. The GUI shows “Checking transcription” during the retry.
 - Punctuation and capitalization are checked separately. These edits must
@@ -1847,6 +1853,8 @@ allowance for longer cues.
 Version `0.6.39` allows a tightly bounded spelling correction to include the
 conventional initial capital of a clearly identified title.
 Version `0.6.40` adds local audio confirmation for suspected two-to-one word errors.
+Version `0.6.47` completes eligible split-word proposals and uses uncompacted cue
+timings for a tightly focused audio check.
 Unfinished reviews from an older policy restart their audit using the stored
 original text. Completed older reviews remain cached until explicitly requested
 again. Logs give specific reasons for locally rejected word edits and record

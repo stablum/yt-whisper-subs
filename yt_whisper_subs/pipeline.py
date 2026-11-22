@@ -229,7 +229,7 @@ class PipelineRunner:
             print()
             print("Subtitle file already exists. Use --force to regenerate.")
 
-        audio_probe = transcription_audio.Probe(run_yields.video, self._paths, self._args)
+        audio_probe = transcription_audio.Probe(run_yields.video, self._paths, self._args, audio=run_yields.audio)
         review = transcription_review.TranscriptionReview(run_yields.primary, self._args, audio_probe)
         if review_requested and not need_primary_generation:
             review.begin()

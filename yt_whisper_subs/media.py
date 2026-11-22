@@ -113,6 +113,14 @@ def _audio_is_current(audio_path: Path, source_stamp: list[str | int]) -> bool:
         return False
 
 
+def cached_audio(video: Path, audio: Path | None) -> Path:
+    """Prefer the validated Whisper input, e.g. use video audio if the Opus cache was removed."""
+
+    if audio is not None and _audio_is_current(audio, _file_stamp(video)):
+        return audio
+    return video
+
+
 def remove_audio(audio_path: Path) -> None:
     """Discard a cache and its validation evidence together.
 

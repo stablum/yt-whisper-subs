@@ -335,12 +335,59 @@ class TranscriptionReviewTests(unittest.TestCase):
             ("een hamper", "amper", "very_high"),
             ("een hamper kunnen", "amper", "needs_audio"),
             ("hamper", "amper", "needs_audio"),
+            ("stoïs zijn", "stoïs", "needs_audio"),
+            ("stoïs zijn", "stoïcijns", "very_high"),
+            ("stoïs geen", "stoïcijns", "needs_audio"),
         )
         for original, replacement, confidence in candidates:
             with self.subTest(original=original, confidence=confidence):
                 cues = [srt.SubtitleCue(0, 1000, f"We hebben {original} gespeeld.")]
                 candidate = review.Edit(**edit(word=3, original=original, replacement=replacement, confidence=confidence))
                 self.assertIsNotNone(review._word_rejection(candidate, cues, range(1, 2)))
+
+    def test_audio_completes_partial_split_and_prioritizes_verified_span(self) -> None:
+        """Finish an incomplete proposal using raw timing, while a text-only rival waits."""
+
+        source = ("1\n00:04:12,440 --> 00:04:18,780\n"
+                  "eigenlijk niks zei en vooral heel stoïs zijn\nurenlang voor schuit kon staren.\n\n")
+        raw = "1\n00:04:12,440 --> 00:04:14,400\neigenlijk niks zei en vooral heel stoïs zijn\n\n"
+        partial = edit(word=7, original="stoïs", replacement="stoïcijns")
+        whole = {**partial, "original": "stoïs zijn", "confidence": "needs_audio"}
+        other = edit(word=11, original="schuit", replacement="zich uit")
+        exact = "vooral heel stoïcijns urenlang"
+        for confirmed in (False, True):
+            with self.subTest(confirmed=confirmed):
+                self._pair.sidecar.write_text(source, encoding="utf-8")
+                self._pair.sync_archive()
+                raw_path = subtitle_files.uncompacted_backup_path(self._pair.archive)
+                raw_path.write_text(raw, encoding="utf-8")
+                probe = mock.Mock(spec=transcription_audio.Probe)
+                probe.confirm.return_value = {1: exact} if confirmed else {}
+                self._review = review.TranscriptionReview(self._pair, self._args, probe)
+                self._review.begin()
+                api = self._run({"edits": [partial, whole, other]}, verdict(confirmed))
+                match = probe.confirm.call_args.args[0][1]
+                self.assertEqual(match.focus, (252440, 254400))
+                self.assertEqual(" ".join(match.words), exact)
+                candidate = json.loads(api.call_args.args[1]["input"])["candidates"][0]
+                self.assertEqual(candidate["original"], "stoïs zijn" if confirmed else "schuit")
+                expected = source.replace("stoïs zijn", "stoïcijns") if confirmed else source
+                self.assertEqual(self._pair.sidecar.read_text(encoding="utf-8"), expected)
+
+    def test_partial_proposal_does_not_cross_punctuation(self) -> None:
+        """Scope expansion stays within a single exact split phrase."""
+
+        cues = [srt.SubtitleCue(0, 3000, "vooral heel stoïs, zijn urenlang op pad")]
+        proposal = review.Edit(**edit(word=3, original="stoïs", replacement="stoïcijns"))
+        self.assertEqual(review._complete_split(proposal, cues, range(1, 2)), proposal)
+
+    def test_focused_repair_cannot_pick_between_identical_anchors(self) -> None:
+        """Abstain if the audio window could point to another instance of the same split."""
+
+        phrase = "vooral heel stoïs zijn urenlang"
+        cue = srt.SubtitleCue(0, 6000, f"{phrase}, {phrase}")
+        proposal = review.Edit(**edit(word=3, original="stoïs zijn", replacement="stoïcijns", confidence="needs_audio"))
+        self.assertIsNone(review._audio_match(cue, proposal))
 
     def test_resume_preserves_audio_evidence_and_budget(self) -> None:
         """Resume after a verified batch without decoding its audio twice."""
