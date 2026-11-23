@@ -41,7 +41,6 @@ FROM vocab_audit_sources a JOIN vocab_audits j ON j.id=a.audit_id
 LEFT JOIN practice_presentations p ON p.id=a.practice_id
 LEFT JOIN practice_sessions ps ON ps.id=p.session_id
 LEFT JOIN sentence_presentations s ON s.id=a.sentence_id
-LEFT JOIN sentence_sessions ss ON ss.id=s.session_id
 LEFT JOIN vocab_lookups root ON root.id=a.lookup_id
 """
 MISTAKE_VALID = "COALESCE(p.outcome,s.outcome)='wrong'"
@@ -77,11 +76,8 @@ WHERE {VALID}
 # Collapse multiple error annotations of one identity into one failed observation per answer.
 REVIEWS = f"""
 SELECT 'accretion' AS origin,MIN(d.id) AS event_id,l.word_id,d.lookup_id,
-       CASE WHEN ss.direction='listen_nl' THEN 'nl_en' ELSE ps.direction END AS direction,
-       COALESCE(p.answered_at,s.answered_at) AS answered_at,COALESCE(p.elapsed_ms,s.elapsed_ms) AS elapsed_ms,
-       0 AS correct,0 AS unsure,COALESCE(ps.scheduler_json,ss.scheduler_json) AS scheduler_json,
-       COALESCE(ps.include_early,json_extract(ss.options_json,'$.include_early')) AS include_early,
+       ps.direction,p.answered_at,p.elapsed_ms,0 AS correct,0 AS unsure,ps.scheduler_json,ps.include_early,
        CASE WHEN {MISTAKE_VALID} THEN 'wrong' ELSE 'invalid' END AS outcome,l.lemma AS word
 {SOURCE} JOIN vocab_additions d ON d.source_id=a.id JOIN vocab_lookups l ON l.id=d.lookup_id
-WHERE d.review=1 GROUP BY a.id,l.word_id
+WHERE d.review=1 AND a.practice_id IS NOT NULL GROUP BY a.id,l.word_id
 """

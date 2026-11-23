@@ -221,7 +221,7 @@ class AccretionDbMixin:
             conn.execute("INSERT OR IGNORE INTO vocab_additions(source_id,lookup_id,role,parent,review) VALUES(?,?,'component',?,0)",
                          (source["id"], lookup_id, parent))
         conn.execute("UPDATE vocab_audit_sources SET applied=1 WHERE id=?", (source["id"],))
-        direction = "nl_en" if document.get("direction") == "listen_nl" else document.get("direction", "nl_en")
+        direction = document.get("direction", "nl_en")
         ids = conn.execute("SELECT DISTINCT l.word_id FROM vocab_additions d JOIN vocab_lookups l ON l.id=d.lookup_id "
                            "WHERE d.source_id=? AND d.review=1", (source["id"],)).fetchall()
         for row in ids:
@@ -240,13 +240,14 @@ class AccretionDbMixin:
                 if word is None or not self._word_allowed(conn, "nl", word.lemma):
                     continue
                 lookup_id = self._learning_lookup(conn, fix, role, capture)
-                word_id = conn.execute("SELECT word_id FROM vocab_lookups WHERE id=?", (lookup_id,)).fetchone()[0]
-                observed = conn.execute("SELECT correct FROM word_transfers WHERE sentence_id=? AND word_id=? UNION ALL "
-                                        "SELECT 0 FROM practice_questions q JOIN practice_presentations p ON p.question_id=q.id "
-                                        "JOIN vocab_lookups l ON l.id=q.lookup_id WHERE p.id=? AND l.word_id=?",
-                                        (source["sentence_id"], word_id, source["practice_id"], word_id)).fetchone()
+                # Dictation can discover a dictionary entry without testing its English meaning.
+                review = source["practice_id"] is not None and conn.execute(
+                    "SELECT l.word_id<>x.word_id FROM practice_presentations p "
+                    "JOIN practice_questions q ON q.id=p.question_id JOIN vocab_lookups l ON l.id=q.lookup_id "
+                    "JOIN vocab_lookups x ON x.id=? WHERE p.id=?", (lookup_id, source["practice_id"])
+                ).fetchone()[0]
                 conn.execute("INSERT OR IGNORE INTO vocab_additions(source_id,lookup_id,role,review) VALUES(?,?,?,?)",
-                             (source["id"], lookup_id, role, int(observed is None or observed[0])))
+                             (source["id"], lookup_id, role, int(review)))
                 added.append(lookup_id)
         return added
 

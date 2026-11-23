@@ -106,11 +106,19 @@ class SentenceTests(unittest.TestCase):
         features = {word["feature"]: word for word in stats["forms"]}
         self.assertEqual(features["superlative"]["failures"], 1)
         self.assertEqual(features["adjective_ending"]["failures"], 0)
-        rows = self.db.word_candidates("en_nl")
-        selector = sentence_select.Selector(practice.ReviewPolicy())
-        weights = selector.weights(rows, time.time())
-        scored = {word["surface"]: weight for word, weight in zip(rows, weights)}
-        self.assertGreater(scored["slim"], scored["fiets"])
+        word = next(word for word in self.db.word_candidates("en_nl") if word["lemma"] == "slim")
+        self.assertEqual((word["attempts"], word["failures"]), (1, 0))
+        with self.db._connect() as conn:
+            rating = conn.execute("SELECT rating FROM word_transfers WHERE sentence_id=? AND word_id=?",
+                                  (row["id"], word["word_id"])).fetchone()[0]
+            conn.execute("UPDATE word_transfers SET correct=0,rating=1 WHERE sentence_id=? AND word_id=?",
+                         (row["id"], word["word_id"]))
+            self.db._word_replay(conn, word["word_id"], "en_nl")
+            conn.execute("DELETE FROM settings WHERE key='practice_skill_reviews_rebuilt'")
+        self.assertEqual(rating, 3)
+        self.db.initialize()
+        rebuilt = next(item for item in self.db.word_candidates("en_nl") if item["word_id"] == word["word_id"])
+        self.assertEqual((rebuilt["failures"], rebuilt["card_json"]), (0, word["card_json"]))
 
     def test_valid_dutch_synonym_earns_sentence_credit_without_advancing_saved_target(self) -> None:
         """Preserve vocabulary-learning purpose alongside natural phrasing; e.g. intelligentste does not certify recall of slimste."""

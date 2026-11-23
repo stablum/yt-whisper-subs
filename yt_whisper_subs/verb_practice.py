@@ -230,6 +230,14 @@ class Grade(practice.Content):
     errors: list[Error] = pd.Field(max_length=12)
     vocabulary: list[learning.Correction] = pd.Field(max_length=10)
 
+    @property
+    def grammar_correct(self) -> bool | None:
+        """Rate the transformation separately, e.g. a word substitution alone may leave the target unassessed."""
+
+        if any(error.kind != "meaning" for error in self.errors):
+            return False
+        return True if all(item.correct for item in self.axes) else None
+
     def check(self, answer: str) -> None:
         """Reject contradictory or fabricated feedback; e.g. an error quote must appear in the submitted sentence."""
 
@@ -248,7 +256,7 @@ class Grade(practice.Content):
         for error in self.errors:
             if error.evidence and error.evidence.casefold() not in answer.casefold():
                 raise ValueError("The grader quoted text absent from your answer")
-            if axes[error.axis]:
+            if axes[error.axis] and error.kind != "meaning":
                 raise ValueError("An error contradicts its dimension assessment")
         if not self.confident:
             raise ValueError("The correction was uncertain. Retry checking or report this question; no failure was recorded.")

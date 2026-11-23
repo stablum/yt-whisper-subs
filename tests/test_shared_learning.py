@@ -289,13 +289,23 @@ class SharedLearningTests(unittest.TestCase):
         fix = self._fix().model_copy(update={"english":["more safely"]})
         provider.grade_result = verbs.Grade(confident=True,correct=False,corrected="Jij werkt vandaag veiliger.",
                                              corrected_english="You work more safely today.", explanation="Certain and safe differ.",
-                                             axes=[verbs.Axis(axis=key,correct=key!="verb") for key in verbs.AXES],
+                                             axes=[verbs.Axis(axis=key,correct=True) for key in verbs.AXES],
                                              errors=[verbs.Error(kind="meaning",axis="verb",evidence="zekerder",correction="veiliger",
                                                                 explanation="The intended word expresses safety.")],vocabulary=[fix])
         self.db.verb_submit(row["id"],"Jij werkt vandaag zekerder.",1600)
-        engine.check(row["id"],lambda _:None)
+        result = engine.check(row["id"],lambda _:None)
+        self.assertEqual((result["outcome"], result["rating"]), ("wrong", 3))
         self.assertEqual({word["lemma"] for word in self.db.word_candidates("en_nl") if word["failures"]}, {"veilig","zeker"})
         self.assertEqual(practice_activity.read(self.db).answers,1)
+        with self.db._connect() as conn:
+            conn.execute("UPDATE verb_presentations SET rating=1 WHERE id=?", (row["id"],))
+            conn.execute("UPDATE verb_assessments SET correct=0 WHERE presentation_id=? AND axis='verb'", (row["id"],))
+            conn.execute("DELETE FROM settings WHERE key='practice_skill_reviews_rebuilt'")
+        self.db.initialize()
+        saved = self.db.verb_get(row["id"])
+        self.assertEqual((saved["outcome"], saved["rating"]), ("wrong", None))
+        with self.db._connect() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM verb_states WHERE target_id=?", (row["target_id"],)).fetchone())
         self.db.verb_flag(row["id"])
         self.assertNotIn("veilig",{word["lemma"] for word in self.db.word_candidates("en_nl")})
 

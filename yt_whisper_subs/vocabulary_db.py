@@ -98,7 +98,7 @@ WITH ready AS (
     {READY_LOOKUPS}
 ), counts AS (
     SELECT l.word_id,SUM(e.origin='click') AS clicks,COUNT(DISTINCT e.source_id) AS videos,
-           SUM(e.origin NOT IN ('click','component')) AS mistakes,SUM(e.origin='component') AS components
+           SUM(e.origin NOT IN ('click','component','listening')) AS mistakes,SUM(e.origin='component') AS components
     FROM ({OCCURRENCES}) e JOIN vocab_lookups l ON l.id=e.lookup_id GROUP BY l.word_id
 ) SELECT r.id AS lookup_id,r.word_id,r.surface,r.meaning,r.note,r.context_json,r.lemma,r.lemma_meaning,r.part_of_speech,
          c.clicks,c.videos,c.mistakes,c.components FROM ready r JOIN counts c ON c.word_id=r.word_id WHERE r.n=1
@@ -219,7 +219,7 @@ class VocabularyDbMixin(learning.LearningDbMixin, cleanup.CleanupDbMixin):
                 SELECT *, {group} AS word_key FROM events
             ), counts AS (
                 SELECT language,word_key,SUM(origin='click') AS clicks,COUNT(DISTINCT source_id) AS videos,
-                       SUM(origin NOT IN ('click','component')) AS mistakes,SUM(origin='component') AS components,
+                       SUM(origin NOT IN ('click','component','listening')) AS mistakes,SUM(origin='component') AS components,
                        SUM(state='failed') AS failed,SUM(state IN ('pending','working')) AS pending
                 FROM grouped GROUP BY language,word_key
             ), recent AS (

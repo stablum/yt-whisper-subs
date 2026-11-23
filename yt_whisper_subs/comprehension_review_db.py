@@ -61,10 +61,6 @@ class ComprehensionReviewDbMixin:
                 feedback = dict(correct=correct, corrected=question.choices[question.correct_idx].text,
                                 explanation=question.choices[idx].explanation, evidence=[e.model_dump() for e in question.evidence])
                 self._comprehension_result(conn, row, feedback, float(correct), None, {'model': 'audited_choice', 'reasoning': 'none', 'version': 1})
-                for word_id in question.word_ids:
-                    lookup = conn.execute('SELECT lookup_id FROM comprehension_targets WHERE passage_id=? AND word_id=?', (row['passage_id'], word_id)).fetchone()
-                    self._comprehension_observe(conn, row, lookup[0], correct, 'target', 'nl_en')
-                self._comprehension_replay(conn, presentation_id)
             else:
                 conn.execute("INSERT INTO comprehension_checks(presentation_id,state) VALUES(?,'queued')", (presentation_id,))
             self._comprehension_complete(conn)

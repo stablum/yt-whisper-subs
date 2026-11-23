@@ -17,7 +17,8 @@ _ASSESSMENTS = (
     "SELECT a.axis,a.correct,t.tense,t.subject,t.structure,CAST(t.verb_id AS TEXT) AS verb "
     "FROM verb_assessments a JOIN verb_presentations p ON p.id=a.presentation_id "
     "JOIN verb_questions q ON q.id=p.question_id JOIN verb_targets t ON t.id=q.target_id "
-    "WHERE p.outcome IN ('correct','wrong')"
+    "WHERE p.outcome IN ('correct','wrong') AND (a.correct=1 OR EXISTS ("
+    "SELECT 1 FROM verb_errors e WHERE e.presentation_id=a.presentation_id AND e.axis=a.axis AND e.kind<>'meaning'))"
 )
 
 

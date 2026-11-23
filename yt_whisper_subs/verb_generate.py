@@ -15,7 +15,7 @@ from yt_whisper_subs import verb_practice as verbs
 
 
 PROMPT_VERSION = 2
-GRADE_VERSION = 3
+GRADE_VERSION = 4
 LEXICON_VERSION = 1
 TRANSLATION_VERSION = 1
 _RULES = (
@@ -145,6 +145,9 @@ class VerbGenerator(learning.LearningGenerator):
             "Return exactly four axes: tense (tense/mood), subject (person/number/agreement), structure "
             "(voice/order/negation), verb (lexical verb spelling, stem, participle, auxiliary/particle/reflexive). "
             "Assess dimensions independently: a tense error need not make subject or structure wrong. "
+            "Use kind=meaning for changes in word choice. Keep a grammar axis correct if an unrelated word-choice error "
+            "leaves that skill demonstrated. For example, replacing veiliger with zekerder does not affect a correctly formed werkt. "
+            "If the target verb itself was replaced and its form cannot be assessed, mark the verb axis false with a meaning error. "
             "Every failed axis needs at least one error on that axis. Every error's evidence must be an EXACT "
             "substring of learner_answer, or empty ONLY for omitted text. correction supplies the replacement "
             "or insertion. Each explanation briefly teaches the precise mistake in English. correct=true ONLY "

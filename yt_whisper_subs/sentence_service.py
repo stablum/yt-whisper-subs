@@ -37,7 +37,7 @@ class SentenceService:
         """Prepare approved new sentences and due writing reviews before replacing a round; e.g. a provider outage preserves old progress."""
 
         policy, now = practice.ReviewPolicy(), time.time()
-        vocab = self._db.word_candidates(sentences.Direction(opts.direction).word_direction.value)
+        vocab = self._db.word_candidates(opts.direction.value)
         rows = self._db.practice_spare_candidates("sentence", opts, vocab) if background else vocab
         if not rows:
             raise practice_round.NothingToPractice("no_words", i18n.tr('Save and translate some Dutch vocabulary words before sentence practice.'))

@@ -232,7 +232,7 @@ These defaults live in `cfg.py` and the feature modules or preference types that
 | Optional Dutch pronunciation | **Read aloud** in text-based exercises; **Auto-read Dutch** is off initially and remembered across practice modes |
 | Comprehension | Reading/listening comprehension (Leesbegrip/Luisterbegrip in Dutch UI); A1, A2, B1, B2 (default), or C1; 5 paragraphs, 5 four-choice and 3 open questions by default; learning content and feedback in Dutch |
 | Comprehension narration | local Piper/Zonos presets; normal and slow clips prepared in the background for the selected voice, live switching on the same passage; transcript and feedback concealed until all listening answers are submitted |
-| Shared vocabulary learning | word quiz, verbs, translation, dictation and comprehension share lexical reviews and import intended/genuinely confused dictionary words; saved compounds also add verified constituents as unassessed vocabulary |
+| Shared vocabulary learning | word quizzes, translation, verb word-choice corrections and evidenced open comprehension answers share meaning reviews; dictation has its own review schedule and can discover unassessed vocabulary |
 | Vocabulary accretion | independent background lane; up to 12 discoveries per batch; cached positive/negative analyses; positive proposals independently verified before publication |
 | OpenAI timeout | `900` seconds |
 | OpenAI transient retries | `3` |
@@ -2480,8 +2480,8 @@ remains resumable while background work is pending or has failed.
 
 ### Shared Vocabulary Learning Across Practice Modes
 
-Vocabulary choices, sentence translation, dictation, verb transformation and comprehension exchange learning
-signals. Words have **one shared FSRS review state per Dutch vocabulary identity
+Vocabulary choices, sentence translation, verb word-choice corrections and open
+comprehension answers can provide evidence about word meaning. Words have **one shared FSRS review state per Dutch vocabulary identity
 and translation direction**. The word quiz and sentence vocabulary selection read
 that state and use the same NumPy selection implementation. A success in one can
 defer the word in the other; a failure brings it back through the same **Again**
@@ -2500,11 +2500,17 @@ manufacture another dictionary word. Pure article, agreement, tense and word-ord
 problems remain in the relevant grammar metrics.
 
 Saved targets are assessed independently: correctly translated targets can receive
-shared successes while an unrelated supporting word fails. Future-due words are
+shared successes even when the target's inflection is wrong or an unrelated
+supporting word fails. Future-due words are
 not repeatedly upgraded by incidental grammar retries unless early practice was
 requested. A correct Dutch synonym earns sentence credit while the saved lexeme
 remains to practise. Multiple mistakes involving one word in the same answer
 produce one shared review, with failure taking priority over incidental success.
+
+Starting with version `0.6.48`, startup recalculates the affected review cards
+from saved evidence. Dictation outcomes, passage choices and form-only failures
+are removed from meaning failures. Vocabulary-only verb failures are removed
+from grammar reviews. Submitted answers, feedback and activity history are retained.
 
 The common probability uses a Beta-smoothed failure estimate **p=(f+1)/(n+3)**,
 shared review counts, FSRS forgetting probability and bounded click/video/mistake
@@ -2566,10 +2572,11 @@ split must reconstruct its whole dictionary form and pass an independent
 linguistic check. Multiword expressions and ambiguous lookups are not blindly split.
 
 Components enter as **new, unassessed words**, retaining any existing review state.
-Failing a whole compound does not establish a failure on any constituent. Actual
-quiz/listening lexical confusions do produce shared failed word reviews in the
+Failing a whole compound does not establish a failure on any constituent.
+Verified word-quiz confusions can produce shared failed word reviews in the
 tested direction; an original target already assessed by that answer receives
-only one failure. Typos and invented forms do not manufacture a confused word;
+only one failure. Dictation can discover words with their verified meanings
+without assessing those meanings. Typos and invented forms do not manufacture a confused word;
 pure grammar errors do not add lexical mistakes. Every source remains linked to
 its immutable answer or parent lookup. Reporting a question removes its additions
 from eligibility and rebuilds affected reviews while preserving independent sources.
@@ -2612,8 +2619,8 @@ report of corrections, removals and supporting evidence.
 
 `vocab_audits`, `vocab_audit_sources` and `vocab_additions` retain cached analyses,
 verification checkpoints, native source foreign keys and intended/confused/component
-roles. These sources feed the existing vocabulary eligibility and shared review
-ledger, rather than maintaining a second vocabulary or scheduler.
+roles. These sources feed vocabulary eligibility and, where the exercise
+assessed meaning, the shared review ledger.
 
 ```powershell
 python -m unittest tests.test_vocabulary_accretion -v
@@ -3035,8 +3042,11 @@ a guarantee; reporting remains available for disputed linguistic judgments.
 
 Adaptation combines FSRS at **90% target retention** for each
 **verb × tense/mood × subject × structure** with independently assessed error
-rates for those four dimensions. A wrong sentence receives **Again**, a correct
-one **Good**; typing speed does not affect mastery. Due reviews take priority,
+rates for those four dimensions. An incorrect grammar target receives **Again**,
+and a demonstrated correct transformation receives **Good**, even when a
+separate word-choice mistake makes the sentence incorrect. If a word choice
+leaves the target's grammar unassessable, the affected grammar dimension and
+review card receive no rating for that answer. Typing speed does not affect mastery. Due reviews take priority,
 with one slot in five reserved for new targets while available. Future reviews
 wait unless early practice is enabled, and are used after due/new targets.
 The marginal error estimate uses a Beta prior, `(failures + 1)/(assessments + 3)`;
@@ -3237,8 +3247,8 @@ while each sentence has its own review state for complete meaning and grammar.
 Detailed word/form observations retain a separate diagnostic cache. A global word-order error can
 bring the sentence back without failing correctly translated vocabulary. Correct
 future-due words do not gain extra scheduled successes merely because a grammar
-review repeats them, unless early review was requested. Per-word meaning and form
-failures from all shared word reviews, click frequency, practice mistakes and
+review repeats them, unless early review was requested. Per-word meaning
+failures from shared word reviews, click frequency, practice mistakes and
 distinct-video counts influence the same weighted selection as the word quiz. Due words get
 priority, with room for new words; mastered future-due targets wait. Observed form
 and context errors bias subsequent exercise plans toward weaker areas.
@@ -3432,8 +3442,9 @@ candidates per allowed target, capped at 50 candidates per passage. The writer
 chooses those that fit the requested level and records the forms actually used.
 The writer uses recent approved titles to vary the context. Reading and
 listening do not deliberately reuse a passage already exposed in either mode.
-Only words a question genuinely tests receive lexical assessment; an inference
-mistake never automatically fails every word in the passage. Real lexical mistakes
+Multiple-choice answers contribute to passage comprehension scores. Open answers
+can contribute a word review when the response demonstrates a specific word's
+meaning. Real lexical mistakes
 in an open answer independently verify and add both the intended dictionary
 concept and any genuine inappropriate Dutch word with its own correct English
 meaning. These receive the same shared failed word review as a wrong word-quiz
@@ -3521,12 +3532,11 @@ Sentence construction and independent quality review use the same configured
 practice model as translation exercises (default `gpt-6-luna`, medium reasoning).
 Saved vocabulary supplies adaptive learning targets, rather than a restrictive
 list of permissible words. Subjects, tenses and other inflections vary, and
-ordinary supporting vocabulary is included naturally. Listening uses the shared
-Dutch-recognition word priorities, with the same weak-word weighting and bounded
-exact-sentence review quota. Target transcription outcomes feed that shared
-review ledger; unrelated supporting-word mistakes do not fail correct targets.
-Listening retains its own sentence, form and context history and does not count
-as English-to-Dutch translation mastery.
+ordinary supporting vocabulary is included naturally. Dictation uses its own
+per-word transcription cards, with weak-word weighting and a bounded
+exact-sentence review quota. Correctly heard targets retain credit when an
+unrelated supporting word is missed. Its sentence, form and context history
+supports future dictation practice.
 
 Dictation grading is local and deterministic against the **actual spoken
 script**, so it needs no correction-model request. Its bounded local correction
@@ -3537,12 +3547,12 @@ punctuation and extra whitespace are ignored. Spelling, missing/extra words and
 word order count; a synonym can be a good translation but is not the word spoken.
 Word-level edit similarity gives partial credit even when the complete sentence
 is wrong. The English meaning comes from the already audited bilingual pair.
-Saved-target credit measures transcription, not a separate test of English
-meaning. Mistakes on existing targets affect shared word review; this local
-grader does not guess new dictionary entries for unknown misheard words. Failed
+Saved-target credit measures transcription and updates dictation review dates.
+The local grader does not guess new dictionary entries for unknown misheard words. Failed
 dictations then enter the separate cached vocabulary-enrichment lane described
 above, which can verify and import genuine intended/confused dictionary words
-without delaying feedback or rerunning the local grade.
+without delaying feedback or rerunning the local grade. These discoveries enter
+Vocabulary without meaning-review credit.
 
 The cached **Qwen3-TTS-12Hz-1.7B-VoiceDesign** checkpoint was investigated, but
 Dutch is absent from its [official supported language list](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign).
@@ -3692,8 +3702,8 @@ each occurred before answering and the exact recording actually played. Listenin
 the transactional schema upgrade preserves existing translations, drafts, queued
 corrections and foreign keys. Metrics are derived from events. Only submitting an
 answer contributes to daily reminders, seven-day bars and calendar activity;
-preparation and replay do not inflate effort. Translation progress excludes
-dictation, while vocabulary priorities remain shared.
+preparation and replay do not inflate effort. Dictation and translation use
+independent word review priorities.
 
 ```powershell
 python -m unittest tests.test_listening tests.test_listening_voices tests.test_library_listening tests.test_practice_ready -v
@@ -4045,7 +4055,7 @@ High-level groups:
 | `yt_whisper_subs.vocabulary_db` | Relational click history, context caches, leased requests, and derived word/video counts. |
 | `yt_whisper_subs.vocabulary_translate` | Strict contextual English glosses through the existing OpenAI client. |
 | `yt_whisper_subs.vocabulary_accretion`, `vocabulary_accretion_worker` | Batched lexical discovery, exact compound structure checks, independent positive-proposal verification and resumable background execution. |
-| `yt_whisper_subs.vocabulary_accretion_db`, `vocabulary_accretion_schema` | Cached audit stages, source validity, derived-word provenance and transferred quiz/listening failures without duplicate target reviews. |
+| `yt_whisper_subs.vocabulary_accretion_db`, `vocabulary_accretion_schema` | Cached audit stages, source validity, derived-word provenance, transferred quiz failures and unassessed dictation discoveries. |
 | `yt_whisper_subs.vocabulary_cleanup` | Reviewed spelling repairs, reversible exclusions, independently retained constituents and retirement of affected cached teaching material. |
 | `yt_whisper_subs.listening_tts` / `listening_synth` | Verified Dutch voice assets, content-addressed speech cache and isolated batch synthesis. |
 | `yt_whisper_subs.listening_voices` / `zonos_speech` / `zonos_install` | Named sound presets, full native Zonos steering strategy and shared verified source/model installation. |

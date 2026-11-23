@@ -203,8 +203,9 @@ class AccretionTests(unittest.TestCase):
                                                note="The script says neighbour; the written word means friend.")
         self._drain()
         terms = {word["lemma"]: word for word in self.db.word_candidates("nl_en")}
-        self.assertEqual((terms["buurman"]["failures"], terms["vriend"]["failures"]), (1, 1))
-        self.assertEqual((terms["slim"]["failures"], terms["fiets"]["failures"], terms["lopen"]["failures"]), (0, 0, 0))
+        self.assertIn("buurman", terms)
+        self.assertIn("vriend", terms)
+        self.assertTrue(all(word["attempts"] == word["mistakes"] == 0 for word in terms.values()))
         self.assertEqual(self.db.word_history("nl", "vriend")[0]["origin"], "listening")
         self.assertEqual(practice_activity.read(self.db).answers, 1)
         self.db.sentence_flag(row["id"])
@@ -212,27 +213,28 @@ class AccretionTests(unittest.TestCase):
         with self.db._connect() as conn:
             self.assertIsNone(conn.execute("SELECT * FROM practice_states WHERE word_id=?", (terms["vriend"]["word_id"],)).fetchone())
 
-    def test_listening_target_synonym_is_a_real_transcription_confusion_without_duplicate_failure(self) -> None:
-        """Distinguish translation synonyms from the actual spoken wording; e.g. intelligentste was not pronounced slimste."""
+    def test_listening_target_synonym_fails_only_the_spoken_target(self) -> None:
+        """Distinguish synonyms from the spoken wording, e.g. quarantine the meaning schedule from a slimste lapse."""
 
         self._listening("slimste", "intelligentste")
         self.provider.fix = learning.Correction(typed="intelligentste", dutch=["slimste"], english=["cleverest"],
                                                intended=lexeme("slim", "clever"), confused=lexeme("intelligent", "intelligent"),
                                                note="Both are real words; only slimste was spoken.")
         self._drain()
-        terms = {word["lemma"]: word for word in self.db.word_candidates("nl_en")}
-        self.assertEqual((terms["slim"]["failures"], terms["intelligent"]["failures"]), (1, 1))
+        terms = {word["lemma"]: word for word in self.db.word_candidates("listen_nl")}
+        self.assertEqual((terms["slim"]["failures"], terms["intelligent"]["failures"]), (1, 0))
+        self.assertTrue(all(word["card_json"] is None for word in self.db.word_candidates("nl_en")))
 
-    def test_listening_confusion_overrides_incidental_success_for_the_same_word(self) -> None:
-        """Prefer actual lexical failure to another correct occurrence; e.g. writing fiets for buurman still fails fiets once."""
+    def test_listening_discovery_preserves_direct_target_evidence(self) -> None:
+        """Keep word discoveries distinct from direct target evidence, e.g. preserve a correctly heard occurrence of fiets."""
 
         self._listening("buurman", "fiets")
         self.provider.fix = learning.Correction(typed="fiets", dutch=["buurman"], english=["neighbour"],
                                                intended=lexeme("buurman", "neighbour"), confused=lexeme("fiets", "bicycle"),
                                                note="Fiets was substituted for neighbour, despite another correct bicycles occurrence.")
         self._drain()
-        word = next(word for word in self.db.word_candidates("nl_en") if word["lemma"] == "fiets")
-        self.assertEqual((word["attempts"], word["failures"]), (1, 1))
+        word = next(word for word in self.db.word_candidates("listen_nl") if word["lemma"] == "fiets")
+        self.assertEqual((word["attempts"], word["failures"]), (1, 0))
 
     def test_imported_compound_reuses_embedded_splits_without_duplicate_component_events(self) -> None:
         """Use one combined request for new words and their components; e.g. buurman adds buur/man once each."""

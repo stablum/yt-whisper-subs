@@ -44,12 +44,6 @@ class Direction(str, enum.Enum):
 
         return i18n.tr('Dutch dictation') if self == self.LISTEN else practice.Direction(self.value).label
 
-    @property
-    def word_direction(self) -> practice.Direction:
-        """Share recognition priorities for listening; e.g. a missed spoken target also returns in Dutch word recognition."""
-
-        return practice.Direction.NL_EN if self == self.LISTEN else practice.Direction(self.value)
-
 
 class Options(pd.BaseModel):
     """Configure whole-sentence recall; e.g. ten questions with up to two saved words each."""

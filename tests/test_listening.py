@@ -99,11 +99,13 @@ class ListeningTests(unittest.TestCase):
         self.assertEqual(sentence_stats.snapshot(self.db)["graded"], 0)
         self.engine.check(row["id"], lambda _: None)
         with self.db._connect() as conn:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM word_transfers").fetchone()[0], 3)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM word_transfers").fetchone()[0], 0)
             self.assertFalse(conn.execute("PRAGMA foreign_key_check").fetchall())
+        self.assertEqual(sum(word["attempts"] for word in self.db.word_candidates("listen_nl")), 3)
+        self.assertTrue(all(word["card_json"] is None for word in self.db.word_candidates("nl_en")))
 
-    def test_misheard_word_updates_shared_recognition_without_failing_other_targets(self) -> None:
-        """Treat a synonym as different spoken wording and retain partial progress; e.g. intelligentste was not the pronounced slimste."""
+    def test_misheard_word_updates_dictation_recognition_only(self) -> None:
+        """Retain partial listening credit without failing meanings, e.g. intelligentste differs from spoken slimste."""
 
         row = self._row()
         answer = fixtures.DUTCH.replace("slimste", "intelligentste")
@@ -111,14 +113,16 @@ class ListeningTests(unittest.TestCase):
         result = self.engine.check(row["id"], lambda _: None)
         failed = [word for word in result["grade"]["words"] if not word["meaning_correct"]]
         self.assertEqual(len(failed), 1)
-        candidates = {row["word_id"]: row for row in self.db.word_candidates("nl_en")}
+        candidates = {row["word_id"]: row for row in self.db.word_candidates("listen_nl")}
         self.assertEqual(candidates[failed[0]["word_id"]]["failures"], 1)
         self.assertTrue(all(row["failures"] == 0 for key, row in candidates.items() if key != failed[0]["word_id"]))
         score = sentence_stats.snapshot(self.db, listening=True)["partial_score"]
         self.assertGreater(score, 0.8)
         self.assertLess(score, 1)
+        for direction in ("nl_en", "en_nl", "sound_nl"):
+            self.assertTrue(all(word["attempts"] == 0 for word in self.db.word_candidates(direction)))
         self.db.sentence_flag(row["id"])
-        self.assertTrue(all(row["failures"] == 0 for row in self.db.word_candidates("nl_en")))
+        self.assertTrue(all(word["card_json"] is None for word in self.db.word_candidates("listen_nl")))
 
     def test_alignment_handles_omissions_additions_and_supporting_word_changes(self) -> None:
         """Retain precise target evidence across different transcription errors; e.g. mishearing buurman does not fail slimste."""
@@ -134,20 +138,30 @@ class ListeningTests(unittest.TestCase):
         grade = listening_grade.grade(fixtures.DUTCH.replace("buurman", "vriend"), content)
         self.assertTrue(all(word.correct for word in grade.words))
 
-    def test_startup_rebuilds_shared_listening_reviews_in_the_recognition_direction(self) -> None:
-        """Recover derived shared review state from immutable dictation evidence; e.g. a startup replay must not invent a third quiz direction."""
+    def test_startup_removes_legacy_dictation_reviews_from_meaning_cards(self) -> None:
+        """Upgrade recorded answers, e.g. preserve the dictation lapse while removing it from English meaning review."""
 
         row = self._row()
         self.db.sentence_submit(row["id"], fixtures.DUTCH.replace("slimste", "slimmere"), 1100)
         self.engine.check(row["id"], lambda _: None)
         with self.db._connect() as conn:
-            conn.execute("DELETE FROM word_transfers")
-            conn.execute("DELETE FROM practice_states")
+            conn.execute("DELETE FROM settings WHERE key='practice_skill_reviews_rebuilt'")
+            conn.execute("""
+                INSERT INTO word_transfers(word_id,lookup_id,direction,sentence_id,correct,answered_at,elapsed_ms,
+                                           scheduler_json,include_early,scheduled)
+                SELECT l.word_id,l.id,'nl_en',p.id,a.meaning_correct,p.answered_at,p.elapsed_ms,s.scheduler_json,0,1
+                FROM sentence_assessments a JOIN vocab_lookups l ON l.id=a.lookup_id
+                JOIN sentence_presentations p ON p.id=a.presentation_id JOIN sentence_sessions s ON s.id=p.session_id
+            """)
+            conn.execute("INSERT INTO practice_states SELECT word_id,'nl_en',card_json,due_at FROM sentence_states")
+        self.assertTrue(any(word["card_json"] for word in self.db.word_candidates("nl_en")))
         self.db.initialize()
-        candidates = self.db.word_candidates("nl_en")
+        self.db.initialize()
+        candidates = self.db.word_candidates("listen_nl")
         self.assertEqual(sum(row["failures"] for row in candidates), 1)
         self.assertEqual(sum(row["attempts"] for row in candidates), 3)
-        self.assertEqual(self.db.word_candidates("en_nl")[0]["attempts"], 0)
+        self.assertTrue(all(word["card_json"] is None for word in self.db.word_candidates("nl_en")))
+        self.assertEqual(self.db.sentence_get(row["id"])["outcome"], "wrong")
 
     def test_speech_failure_and_deleted_cache_reuse_approved_question_text(self) -> None:
         """Repair audio without purchasing a replacement question; e.g. a failed download cannot strand its unused approvals."""

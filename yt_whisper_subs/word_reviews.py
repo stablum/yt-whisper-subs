@@ -43,7 +43,7 @@ FROM practice_presentations p JOIN practice_questions q ON q.id=p.question_id
 JOIN practice_sessions s ON s.id=p.session_id JOIN vocab_lookups l ON l.id=q.lookup_id
 WHERE p.selected_idx IS NOT NULL
 UNION ALL
-SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' WHEN q.direction='listen_nl' THEN 'listening' ELSE 'sentence' END,
+SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' ELSE 'sentence' END,
        r.id,r.word_id,r.lookup_id,r.direction,
        r.answered_at,r.elapsed_ms,r.correct,0,r.scheduler_json,r.include_early,
        CASE WHEN COALESCE(s.outcome,v.outcome)='invalid' THEN 'invalid'
@@ -51,15 +51,20 @@ SELECT CASE WHEN r.sentence_id IS NULL THEN 'verb' WHEN q.direction='listen_nl' 
 FROM word_transfers r JOIN vocab_lookups l ON l.id=r.lookup_id
 LEFT JOIN sentence_presentations s ON s.id=r.sentence_id LEFT JOIN verb_presentations v ON v.id=r.verb_id
 LEFT JOIN sentence_questions q ON q.id=s.question_id
-WHERE NOT EXISTS (
-    SELECT 1 FROM vocab_additions d JOIN vocab_audit_sources a ON a.id=d.source_id
-    JOIN vocab_lookups x ON x.id=d.lookup_id
-    WHERE a.sentence_id=r.sentence_id AND x.word_id=r.word_id AND d.review=1 AND s.outcome='wrong'
-)
+WHERE q.direction IS NOT 'listen_nl'
 UNION ALL
 {accretion.REVIEWS}
 UNION ALL
 {comprehension_schema.REVIEWS}
+"""
+
+# Dictation has its own per-word cards in sentence_states.
+DICTATION_REVIEWS = """
+SELECT l.word_id,s.direction,CASE a.meaning_correct WHEN 1 THEN 'correct' ELSE 'wrong' END AS outcome
+FROM sentence_assessments a JOIN vocab_lookups l ON l.id=a.lookup_id
+JOIN sentence_presentations p ON p.id=a.presentation_id
+JOIN sentence_sessions s ON s.id=p.session_id
+WHERE s.direction='listen_nl' AND p.outcome IN ('correct','wrong')
 """
 
 
@@ -67,17 +72,20 @@ class WordReviewDbMixin:
     """Own shared lexical scheduling without manufacturing quiz answers; e.g. one typed answer remains one activity event."""
 
     def word_candidates(self, direction: str) -> list[dict]:
-        """Supply identical word skills to quiz and sentence selectors; e.g. veilig has the same due date in both modes."""
+        """Read the requested skill's evidence, e.g. veilig has independent translation and dictation dates."""
 
         from yt_whisper_subs import vocabulary_db
 
+        dictation = direction == sentence_practice.Direction.LISTEN
+        reviews = DICTATION_REVIEWS if dictation else REVIEWS
+        states = "sentence_states" if dictation else "practice_states"
         sql = f"""
-        WITH history AS ({REVIEWS}), totals AS (
+        WITH history AS ({reviews}), totals AS (
             SELECT word_id,COUNT(*) AS attempts,SUM(outcome='wrong') AS failures
             FROM history WHERE direction=:direction AND outcome IN ('correct','wrong') GROUP BY word_id
         ) SELECT r.*,s.card_json,s.due_at,COALESCE(t.attempts,0) AS attempts,COALESCE(t.failures,0) AS failures
           FROM ({vocabulary_db.READY_WORDS}) r
-          LEFT JOIN practice_states s ON s.word_id=r.word_id AND s.direction=:direction
+          LEFT JOIN {states} s ON s.word_id=r.word_id AND s.direction=:direction
           LEFT JOIN totals t ON t.word_id=r.word_id
         """
         with self._connect() as conn:
@@ -89,7 +97,7 @@ class WordReviewDbMixin:
         from yt_whisper_subs import practice
 
         word_id = conn.execute("SELECT word_id FROM vocab_lookups WHERE id=?", (lookup_id,)).fetchone()[0]
-        direction = sentence_practice.Direction(row.get("direction", "en_nl")).word_direction.value
+        direction = row.get("direction", "en_nl")
         source = "sentence_id" if kind == "sentence" else "verb_id"
         if conn.execute(f"SELECT 1 FROM word_transfers WHERE {source}=? AND word_id=? AND direction=?",
                         (row["id"], word_id, direction)).fetchone():
@@ -113,25 +121,59 @@ class WordReviewDbMixin:
         if historical:
             self._word_replay(conn, word_id, direction)
 
-    def _word_sync(self, conn) -> None:
+    @staticmethod
+    def _word_repair_skills(conn) -> set[tuple[int, str]]:
+        """Drop misclassified derived reviews, e.g. keep a dictation answer without its translation rating."""
+
+        transfers = conn.execute("""
+            DELETE FROM word_transfers AS r
+            WHERE EXISTS (
+                SELECT 1 FROM sentence_presentations p JOIN sentence_sessions s ON s.id=p.session_id
+                WHERE p.id=r.sentence_id AND s.direction='listen_nl'
+            ) OR (
+                r.correct=0 AND EXISTS (
+                    SELECT 1 FROM sentence_assessments a JOIN vocab_lookups l ON l.id=a.lookup_id
+                    WHERE a.presentation_id=r.sentence_id AND l.word_id=r.word_id AND a.meaning_correct=1 AND a.form_correct=0
+                ) AND NOT EXISTS (
+                    SELECT 1 FROM vocab_enrichments x JOIN vocab_errors e ON e.enrichment_id=x.id
+                    JOIN vocab_error_words w ON w.error_id=e.id JOIN vocab_lookups l ON l.id=w.lookup_id
+                    WHERE x.sentence_id=r.sentence_id AND l.word_id=r.word_id
+                )
+            )
+            RETURNING word_id,direction
+        """).fetchall()
+        choices = conn.execute("""
+            DELETE FROM comprehension_assessments
+            WHERE presentation_id IN (
+                SELECT p.id FROM comprehension_presentations p JOIN comprehension_questions q ON q.id=p.question_id
+                WHERE q.kind='mc'
+            )
+            RETURNING word_id,direction
+        """).fetchall()
+        dictation = conn.execute("""
+            SELECT DISTINCT l.word_id,'nl_en' FROM vocab_additions d
+            JOIN vocab_audit_sources a ON a.id=d.source_id JOIN vocab_lookups l ON l.id=d.lookup_id
+            WHERE a.sentence_id IS NOT NULL AND d.review=1
+        """).fetchall()
+        return {tuple(row) for row in (*transfers, *choices, *dictation)}
+
+    def _word_sync(self, conn, affected: set[tuple[int, str]]) -> None:
         """Bring recorded sentence word assessments into the common ledger once; e.g. earlier typed successes are retained without regrading."""
 
         rows = conn.execute(
             "SELECT p.id,p.answered_at,p.elapsed_ms,s.direction,s.options_json,s.scheduler_json,a.lookup_id,l.word_id,"
-            "a.meaning_correct,a.form_correct,a.target_used FROM sentence_assessments a "
+            "a.meaning_correct FROM sentence_assessments a "
             "JOIN sentence_presentations p ON p.id=a.presentation_id JOIN sentence_sessions s ON s.id=p.session_id "
             "JOIN vocab_lookups l ON l.id=a.lookup_id WHERE p.outcome IN ('correct','wrong') "
-            "AND (a.target_used=1 OR a.meaning_correct=0 OR a.form_correct=0) "
+            "AND s.direction<>'listen_nl' AND (a.target_used=1 OR a.meaning_correct=0) "
             "AND NOT EXISTS(SELECT 1 FROM word_transfers r WHERE r.sentence_id=p.id AND r.word_id=l.word_id) "
             "ORDER BY p.answered_at,p.id").fetchall()
-        affected = set()
         for row in rows:
-            correct = bool(row["meaning_correct"]) and row["form_correct"] != 0
-            direction = sentence_practice.Direction(row["direction"]).word_direction.value
+            direction = row["direction"]
             early = json.loads(row["options_json"])["include_early"]
             conn.execute("INSERT INTO word_transfers(word_id,lookup_id,direction,sentence_id,correct,answered_at,elapsed_ms,"
                          "scheduler_json,include_early,scheduled) VALUES(?,?,?,?,?,?,?,?,?,0)",
-                         (row["word_id"],row["lookup_id"],direction,row["id"],int(correct),row["answered_at"],row["elapsed_ms"],
+                         (row["word_id"],row["lookup_id"],direction,row["id"],row["meaning_correct"],row["answered_at"],row["elapsed_ms"],
                           row["scheduler_json"],int(early)))
             affected.add((row["word_id"], direction))
         for word_id, direction in affected:

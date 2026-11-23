@@ -194,10 +194,20 @@ class VerbDbMixin:
                      "AND NOT EXISTS(SELECT 1 FROM verb_presentations p WHERE p.session_id=verb_sessions.id "
                      "AND p.outcome IS NULL)", (time.time(),))
 
-    def verb_grade(self, presentation_id: int, grade: verbs.Grade | verb_forms.Grade, provenance: dict) -> dict:
-        """Commit one verified correction, its error evidence and FSRS update together; e.g. double callbacks cannot add reviews."""
+    def _verb_review(self, conn, row, correct: bool, card: str | None) -> dict:
+        """Advance one grammar card, e.g. rebuild the same review after a disputed answer is removed."""
 
         from yt_whisper_subs import practice
+
+        target_id, now = row["target_id"], row["answered_at"]
+        policy = practice.ReviewPolicy(row["scheduler_json"])
+        card = card or policy.new_card(target_id, now)
+        result = policy.answer(card, correct=correct, unsure=False, now=now, elapsed_ms=row["elapsed_ms"])
+        self._verb_state(conn, target_id, result)
+        return result
+
+    def verb_grade(self, presentation_id: int, grade: verbs.Grade | verb_forms.Grade, provenance: dict) -> dict:
+        """Commit one verified correction, its error evidence and FSRS update together; e.g. double callbacks cannot add reviews."""
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -211,16 +221,16 @@ class VerbDbMixin:
             if row["status"] != "active":
                 raise ValueError("This verb round has ended")
             grade.check(row["answer_text"])
-            state = conn.execute("SELECT card_json FROM verb_states WHERE target_id=?", (row["target_id"],)).fetchone()
-            card = state[0] if state else practice.ReviewPolicy.new_card(row["target_id"], row["answered_at"])
-            result = practice.ReviewPolicy(row["scheduler_json"]).answer(
-                card, correct=grade.correct, unsure=False, now=row["answered_at"], elapsed_ms=row["elapsed_ms"])
-            self._verb_state(conn, row["target_id"], result)
+            grammar = grade.correct if row["variant"] else grade.grammar_correct
+            result = {}
+            if grammar is not None:
+                state = conn.execute("SELECT card_json FROM verb_states WHERE target_id=?", (row["target_id"],)).fetchone()
+                result = self._verb_review(conn, row, grammar, state[0] if state else None)
+            schedule = ("rating", "recall", "due_at", "before_json", "after_json", "log_json")
             conn.execute("UPDATE verb_presentations SET outcome=?,grade_json=?,grader_model=?,grader_reasoning=?,"
                          "grade_version=?,graded_at=?,rating=?,recall=?,due_at=?,before_json=?,after_json=?,log_json=? WHERE id=?",
                          ("correct" if grade.correct else "wrong", grade.model_dump_json(), provenance["model"],
-                          provenance["reasoning"], provenance["grade_version"], time.time(), result["rating"],
-                          result["recall"], result["due_at"], result["before_json"], result["after_json"], result["log_json"],
+                          provenance["reasoning"], provenance["grade_version"], time.time(), *(result.get(key) for key in schedule),
                           presentation_id))
             if not row["variant"]:
                 self._verb_diagnostics(conn, row, grade, provenance)
@@ -240,10 +250,38 @@ class VerbDbMixin:
         completed = {**dict(row), "grade": grade.model_dump()}
         self._learning_save(conn, "verb", completed, vocabulary_learning.Corrections(vocabulary=grade.vocabulary), provenance)
 
+    def _verb_repair_skills(self, conn) -> None:
+        """Remove legacy lexical-only failures from grammar cards, e.g. preserve the original rewrite and its feedback."""
+
+        questions = conn.execute("""
+            UPDATE verb_presentations AS p
+            SET rating=NULL,recall=NULL,due_at=NULL,before_json=NULL,after_json=NULL,log_json=NULL
+            WHERE outcome='wrong' AND rating=1
+              AND EXISTS (SELECT 1 FROM verb_errors e WHERE e.presentation_id=p.id AND e.kind='meaning')
+              AND NOT EXISTS (SELECT 1 FROM verb_errors e WHERE e.presentation_id=p.id AND e.kind<>'meaning')
+            RETURNING question_id
+        """).fetchall()
+        targets = {conn.execute("SELECT target_id FROM verb_questions WHERE id=?", (row[0],)).fetchone()[0]
+                   for row in questions}
+        for target_id in targets:
+            self._verb_replay(conn, target_id)
+
+    def _verb_replay(self, conn, target_id: int) -> None:
+        """Rebuild a grammar card from assessed results, e.g. skip answers with only legacy meaning failures."""
+
+        reviews = conn.execute(PRESENTATION + " WHERE q.target_id=? AND p.outcome IN ('correct','wrong') "
+                               "AND p.rating IS NOT NULL ORDER BY p.answered_at,p.id", (target_id,)).fetchall()
+        conn.execute("DELETE FROM verb_states WHERE target_id=?", (target_id,))
+        card = None
+        for row in reviews:
+            # Verb reviews use only Again (1) and Good (3).
+            result = self._verb_review(conn, row, row["rating"] == 3, card)
+            card = result["after_json"]
+            conn.execute("UPDATE verb_presentations SET recall=?,due_at=?,before_json=?,after_json=?,log_json=? WHERE id=?",
+                         (result["recall"], result["due_at"], result["before_json"], card, result["log_json"], row["id"]))
+
     def verb_flag(self, presentation_id: int) -> None:
         """Quarantine all uses and replay valid reviews; e.g. a faulty AI correction cannot keep punishing a tense."""
-
-        from yt_whisper_subs import practice
 
         with self._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
@@ -253,17 +291,7 @@ class VerbDbMixin:
             conn.execute("UPDATE verb_questions SET flagged_at=? WHERE id=?", (time.time(), row["question_id"]))
             conn.execute("UPDATE verb_presentations SET outcome='invalid' WHERE question_id=?", (row["question_id"],))
             self._word_unlink(conn, "verb", row["question_id"])
-            reviews = conn.execute(PRESENTATION + " WHERE q.target_id=? AND p.outcome IN ('correct','wrong') "
-                                   "ORDER BY p.answered_at,p.id", (row["target_id"],)).fetchall()
-            conn.execute("DELETE FROM verb_states WHERE target_id=?", (row["target_id"],))
-            card = None
-            for review in reviews:
-                card = card or practice.ReviewPolicy.new_card(row["target_id"], review["answered_at"])
-                result = practice.ReviewPolicy(review["scheduler_json"]).answer(
-                    card, correct=review["outcome"] == "correct", unsure=False,
-                    now=review["answered_at"], elapsed_ms=review["elapsed_ms"])
-                card = result["after_json"]
-                self._verb_state(conn, row["target_id"], result)
+            self._verb_replay(conn, row["target_id"])
             self._verb_complete(conn)
 
     def verb_summary(self, session_id: str) -> dict:

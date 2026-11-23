@@ -165,12 +165,13 @@ class ReadyTests(unittest.TestCase):
                 card = practice.ReviewPolicy.new_card(target, stamp)
                 conn.execute("INSERT INTO verb_states VALUES(?,?,?)", (target, card, stamp))
             else:
-                direction = opts.direction.word_direction.value if kind == "sentence" else opts.direction.value
+                direction = opts.direction.value
                 key = "word_id" if kind == "sentence" else "lookup_id"
                 approved = {row["anchor_word_id" if kind == "sentence" else "lookup_id"] for row in stock}
                 target = next(row["word_id"] for row in db.word_candidates(direction) if row[key] not in approved)
                 card = practice.ReviewPolicy.new_card(target, stamp)
-                conn.execute("INSERT INTO practice_states(word_id,direction,card_json,due_at) VALUES(?,?,?,?)",
+                states = "sentence_states" if direction == "listen_nl" else "practice_states"
+                conn.execute(f"INSERT INTO {states}(word_id,direction,card_json,due_at) VALUES(?,?,?,?)",
                              (target, direction, card, stamp))
         speech_count = len(speech.calls)
         smaller = opts.model_copy(update={"count": 1})

@@ -344,8 +344,8 @@ class ComprehensionTests(unittest.TestCase):
         self.assertEqual(self.db.comprehension_active('listen'), active)
         self.assertEqual(len(self.provider.generated), 2)
 
-    def test_choices_are_local_immutable_and_feed_the_shared_word_schedule(self):
-        """Use one actual answer event with the same failed-word treatment; e.g. retries do not create duplicate quiz activity."""
+    def test_choices_are_local_immutable_and_do_not_rate_tagged_words(self):
+        """A passage choice measures comprehension, e.g. a wrong inference leaves the tagged word unassessed."""
 
         row = self._open(self._start())
         wrong = (row['content']['correct_idx'] + 1) % 4
@@ -354,9 +354,17 @@ class ComprehensionTests(unittest.TestCase):
         self.assertEqual(first['answer_text'], again['answer_text'])
         self.assertEqual(again['outcome'], 'wrong')
         word = next(w for w in self.db.word_candidates('nl_en') if w['word_id'] == row['content']['word_ids'][0])
-        self.assertEqual((word['attempts'], word['failures']), (1, 1))
+        self.assertEqual((word['attempts'], word['failures'], word['card_json']), (0, 0, None))
         self.assertEqual(practice_activity.read(self.db).answers, 1)
         self.assertEqual(self.provider.graded, [])
+        with self.db._connect() as conn:
+            conn.execute("DELETE FROM settings WHERE key='practice_skill_reviews_rebuilt'")
+            self.db._comprehension_observe(conn, row, word["lookup_id"], False, "target", "nl_en")
+            self.db._comprehension_replay(conn, row["id"])
+        self.assertTrue(any(w["card_json"] for w in self.db.word_candidates("nl_en")))
+        self.db.initialize()
+        self.assertTrue(all(w["card_json"] is None for w in self.db.word_candidates("nl_en")))
+        self.assertEqual(self.db.comprehension_get(row["id"])["outcome"], "wrong")
 
     def test_open_partial_credit_and_queue_failure_do_not_invent_zeroes(self):
         """Persist before correction and compute content points locally; e.g. a pending answer has no accuracy score."""

@@ -81,8 +81,8 @@ class SentenceReviewDbMixin:
                 "SELECT l.word_id,w.lookup_id FROM sentence_question_words w JOIN vocab_lookups l ON l.id=w.lookup_id "
                 "WHERE w.question_id=?", (row["question_id"],))}
             for word in grade.words:
-                if word.target_used or not word.correct:
-                    self._word_observe(conn, "sentence", row, lookups[word.word_id], word.correct)
+                if row["direction"] != "listen_nl" and (word.target_used or not word.meaning_correct):
+                    self._word_observe(conn, "sentence", row, lookups[word.word_id], word.meaning_correct)
                 self._sentence_replay(conn, word.word_id, row["direction"])
             latest = self._sentence_question_reviews(conn, row["question_id"])
             conn.execute("UPDATE sentence_question_states SET card_json=?,due_at=? WHERE question_id=?",

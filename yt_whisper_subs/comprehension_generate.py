@@ -94,7 +94,7 @@ class Generator(practice_ai.StructuredGenerator):
             'answer and 1–5 distinct rubric criteria with stable short keys; accept other accurate formulations. Every question '
             'has evidence: paragraph numbers (1-based) and short EXACT verbatim quotes supporting the answer. Questions must be '
             'answerable independently, without another question giving away their answer. word_ids lists ONLY supplied targets '
-            'whose lexical meaning this question genuinely tests; use [] for purely discourse/inference questions. '
+            'whose lexical meaning this open question genuinely tests; use [] for multiple choice and purely discourse/inference questions. '
             'Choose a different fact or inference for each question, even in a short passage. A correct option, distractor, or '
             'open-question prompt must not reveal the answer to another question. Prefer word_ids=[] unless the question explicitly '
             'tests the meaning of that word. When previous_rejection is supplied, write a fresh exercise with a different '

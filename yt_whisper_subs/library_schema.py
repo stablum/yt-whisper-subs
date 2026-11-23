@@ -213,5 +213,11 @@ class SchemaDbMixin:
                 ON videos(metadata_checked_at, metadata_attempted_at, discovered_at DESC)
                 """
             )
-            self._word_sync(conn)
+            key = "practice_skill_reviews_rebuilt"
+            affected = set()
+            if not conn.execute("SELECT 1 FROM settings WHERE key=?", (key,)).fetchone():
+                affected = self._word_repair_skills(conn)
+                self._verb_repair_skills(conn)
+                conn.execute("INSERT INTO settings VALUES(?, '1')", (key,))
+            self._word_sync(conn, affected)
             self._practice_check_rounds(conn)
