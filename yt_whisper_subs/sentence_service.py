@@ -13,6 +13,7 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import practice_round
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_generate
 from yt_whisper_subs import sentence_practice as sentences
 from yt_whisper_subs import sentence_select
@@ -105,7 +106,7 @@ class SentenceService:
         """Find missing recordings in the round the learner will resume; e.g. a newly enabled voice needs audio for questions already shown."""
 
         direction = sentences.Direction.LISTEN.value
-        session = self._db.sentence_active(direction) or self._db.sentence_unseen_session(direction)
+        session = self._db.sentence_active(direction) or self._db.written_unseen_session(practice_tracks.Track.LISTENING)
         questions = self._db.listening_questions(session) if session else []
         return questions if questions and not self.audio.ready(questions) else []
 

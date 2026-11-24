@@ -16,6 +16,7 @@ import psutil
 
 from tests import sentence_fixtures as fixtures
 from yt_whisper_subs import correction_queue
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
@@ -48,7 +49,7 @@ class SentenceQueueTests(unittest.TestCase):
         again = self.db.sentence_submit(self.row["id"], "Another attempt", 2000)
         self.assertEqual(again["answer_text"], first["answer_text"])
         self.assertEqual(practice_activity.read(self.db).answers, 1)
-        self.assertEqual(self.db.sentence_history(self.session)[0]["state"], "queued")
+        self.assertEqual(self.db.written_history("sentence", self.session)[0]["state"], "queued")
         with self.db._connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM sentence_checks").fetchone()[0], 1)
 
@@ -115,27 +116,27 @@ class SentenceQueueTests(unittest.TestCase):
     def test_drafts_do_not_count_as_activity_and_cannot_overwrite_submission(self):
         """Persist navigation drafts separately from attempts; e.g. a late autosave cannot alter a submitted sentence."""
 
-        self.db.sentence_save_draft(self.row["id"], "Mijn concept", 3000)
-        self.assertEqual(self.db.sentence_draft(self.row["id"])["text"], "Mijn concept")
+        self.db.written_save_draft("sentence", self.row["id"], "Mijn concept", 3000)
+        self.assertEqual(self.db.written_draft("sentence", self.row["id"])["text"], "Mijn concept")
         self.assertEqual(practice_activity.read(self.db).answers, 0)
         self.db.sentence_submit(self.row["id"], fixtures.DUTCH, 4000)
-        self.db.sentence_save_draft(self.row["id"], "A stale draft", 5000)
+        self.db.written_save_draft("sentence", self.row["id"], "A stale draft", 5000)
         self.assertEqual(self.db.sentence_get(self.row["id"])["answer_text"], fixtures.DUTCH)
-        self.assertEqual(self.db.sentence_draft(self.row["id"])["text"], "")
+        self.assertEqual(self.db.written_draft("sentence", self.row["id"])["text"], "")
 
     def test_feedback_consultation_is_durable_idempotent_and_not_practice(self):
         """Track actual feedback views separately from submissions; e.g. a pending answer cannot be marked consulted."""
 
         self.db.sentence_submit(self.row["id"], fixtures.DUTCH, 1000)
-        self.assertIsNone(self.db.sentence_seen(self.row["id"]))
+        self.assertIsNone(self.db.written_seen("sentence", self.row["id"]))
         self.engine.check(self.row["id"], lambda _: None)
         self.assertIsNone(self.db.sentence_get(self.row["id"])["viewed_at"])
-        self.assertEqual(self.db.sentence_unseen_session(self.opts.direction.value), self.session)
-        viewed_at = self.db.sentence_seen(self.row["id"])
+        self.assertEqual(self.db.written_unseen_session(practice_tracks.Track.SENTENCE_EN_NL), self.session)
+        viewed_at = self.db.written_seen("sentence", self.row["id"])
         self.assertIsNotNone(viewed_at)
-        with mock.patch("yt_whisper_subs.sentence_queue_db.time.time", return_value=time.time() + 3600):
-            self.assertEqual(self.db.sentence_seen(self.row["id"]), viewed_at)
+        with mock.patch("yt_whisper_subs.written_review_db.time.time", return_value=time.time() + 3600):
+            self.assertEqual(self.db.written_seen("sentence", self.row["id"]), viewed_at)
         self.db.initialize()
-        self.assertEqual(self.db.sentence_history(self.session)[0]["viewed_at"], viewed_at)
-        self.assertIsNone(self.db.sentence_unseen_session(self.opts.direction.value))
+        self.assertEqual(self.db.written_history("sentence", self.session)[0]["viewed_at"], viewed_at)
+        self.assertIsNone(self.db.written_unseen_session(practice_tracks.Track.SENTENCE_EN_NL))
         self.assertEqual(practice_activity.read(self.db).answers, 1)

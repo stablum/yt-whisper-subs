@@ -12,7 +12,7 @@ from yt_whisper_subs import vocabulary_db
 from yt_whisper_subs import practice_db
 from yt_whisper_subs import verb_schema
 from yt_whisper_subs import sentence_schema
-from yt_whisper_subs import sentence_queue_db
+from yt_whisper_subs import written_review_db
 from yt_whisper_subs import practice_ready
 from yt_whisper_subs import practice_stock
 from yt_whisper_subs import vocabulary_learning_db
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS video_history (
 {verb_schema.SCHEMA}
 
 {sentence_schema.SCHEMA}
-{sentence_queue_db.SCHEMA}
+{written_review_db.SCHEMA}
 {listening_db.SCHEMA}
 {practice_ready.SCHEMA}
 {practice_stock.SCHEMA}

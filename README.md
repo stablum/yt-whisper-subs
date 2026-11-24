@@ -2928,13 +2928,24 @@ spaces, and final periods, exclamation marks and question marks are ignored.
 Open **Practice → Verbs → Verb transformations**. The first sentence appears automatically
 after checked content is ready. Read the original Dutch sentence and the
 requested subject, tense/mood and situation, type the **whole transformed Dutch
-sentence**, then press **Enter** or **Check sentence**. Capitalization, ordinary
+sentence**, then press **Enter** or **Submit & next**. Your answer is saved and the
+next exercise opens while correction runs in the background. **Shift+Enter**
+inserts a line break. Capitalization, ordinary
 sentence punctuation and extra spaces do not count as mistakes; verb spelling
-does. The answer stays hidden until submission. Feedback highlights the corrected
-sentence in green and explains specific mistakes with the original text and its
-replacement. Read it, then use a separate **Continue →** click, **Enter**, or a
-click in the card background. Double-click and held-key guards prevent accidental
-advancement. **Shift+Enter** remains available for a line break while typing.
+does.
+
+The question list on the left uses the same markers as sentence translation.
+Amber **…** means queued, blue **↻** means checking, green **✓** means correct,
+red **✕** means to revisit, and orange **!** means retry. A **•** marks unread
+feedback. Hover for details or select an earlier answer to review it. Drafts
+are saved as you move between exercises and tabs.
+
+After the last answer, the round opens the first unread correction or waits
+for one to arrive. Feedback shows the corrected sentence in green and explains
+specific mistakes with the original text and its replacement. Use **Next
+correction →**, **Enter**, or a click in the card background to continue to
+**Round reviewed**. In Full practice, continuing past the last correction
+opens the next mode.
 
 Use **Show English** or **Alt+E** to reveal/hide the original sentence's meaning
 without submitting an answer or losing the draft/focus. The requested transformed
@@ -2955,8 +2966,9 @@ combinations produce an inline explanation. **Conditionals** and **Subjunctives*
 are separate focus groups, each including present/simple and perfect/past forms
 where Dutch actually has them. The window remembers whether you last practised
 vocabulary, verbs or sentences; Activity remains directly accessible without starting a round.
-An unfinished round resumes automatically. Closing pauses immediately; **End this
-verb round** saves partial results without penalizing unanswered questions.
+An unfinished round resumes automatically, including drafts and unread corrections.
+Background checks continue while you use other parts of the app. **End this verb
+round** saves partial results and lets submitted corrections finish.
 
 New rounds incorporate verbs from **saved Dutch vocabulary**, retaining the
 **36 curated starter verbs**. Ready, unambiguous word translations supply their
@@ -3029,11 +3041,11 @@ checks send only the relevant saved Dutch occurrences, linguistic context and
 dictionary evidence, in batches of at most **12**, with separate extraction and
 audit calls. Neither path sends video paths, source URLs or past learning history.
 
-Every **first submitted attempt is committed before correction starts**. A
-timeout, cancellation or uncertain/contradictory correction leaves it pending,
-with no invented failure or scheduling update. **Retry checking** grades that
-same saved sentence; repeated activation cannot add attempts. Pending submissions
-survive restart and already count toward daily effort. **Report exercise /
+Every **first submitted attempt and its correction job are committed together**
+before grading starts. Verb transformations have their own correction worker.
+Pending submissions survive restart and count toward daily effort. A failed or
+uncertain check offers **Retry correction** for the same saved sentence.
+**Report exercise /
 correction** works before or after answering: it quarantines all uses of that
 question, removes their grading influence, and rebuilds the exact target's
 schedule from remaining valid reviews. Original sentences, submissions and
@@ -3074,10 +3086,11 @@ one shared study streak. A submitted verb answer also completes today's reminder
 even if correction is pending; users practising only verbs receive reminders once
 they have started a verb round.
 
-Ten related tables share the existing catalog SQLite database: `verb_lemmas`,
+Verb practice shares the existing catalog SQLite database. Its tables include `verb_lemmas`,
 `verb_targets`, `verb_questions`, `verb_sessions`, `verb_presentations`,
 `verb_assessments`, `verb_errors`, rebuildable `verb_states`, `verb_vocab_links`,
-and `verb_source_translations`. Lookup links retain source-update stamps, local
+`verb_source_translations`, `verb_checks`, `verb_drafts`, and `verb_feedback_views`.
+Lookup links retain source-update stamps, local
 versus model-audited provenance, extraction/quality evidence and exact model policy.
 Stale or newly ambiguous lookups cannot keep feeding new rounds. Unique target
 keys, foreign keys, immutable question/grade snapshots, first-display/submission/
@@ -4066,7 +4079,8 @@ High-level groups:
 | `yt_whisper_subs.comprehension_schema`, `comprehension_db`, `comprehension_review_db`, `comprehension_stats` | Relational passage stock, immutable answers, partial content credit, lexical evidence and Polars trends. |
 | `yt_whisper_subs.comprehension_audio`, `library_comprehension_audio` | Cached bounded narration, sequential playback, paragraph navigation and asynchronous speech repair. |
 | `yt_whisper_subs.library_comprehension`, `library_comprehension_view`, `library_comprehension_controls`, `library_comprehension_progress` | Native reading/listening destinations, concealed transcripts, mixed questions, review rail, options and analytics. |
-| `yt_whisper_subs.correction_queue`, `library_checks` | Shared durable leases and independent correction lanes for remote translation, local dictation and open comprehension. |
+| `yt_whisper_subs.correction_queue`, `library_checks` | Shared durable leases and independent correction lanes for verb transformations, remote translation, local dictation and open comprehension. |
+| `yt_whisper_subs.library_queued_writing`, `written_review_db` | Shared submit-and-advance flow, correction sidebar, saved drafts and unread review for verb transformations, translations and dictation. |
 | `yt_whisper_subs.vocabulary_worker` | Independent durable-save and translation lanes with restart recovery. |
 | `yt_whisper_subs.vocabulary_playback` | Launch-bound word selection validation and Lua/SQLite acknowledgements. |
 | `yt_whisper_subs.library_vocabulary` | Native searchable vocabulary, grouping, complete occurrence history, and replay. |

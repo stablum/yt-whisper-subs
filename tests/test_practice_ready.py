@@ -519,10 +519,10 @@ class ReadyTests(unittest.TestCase):
         row = db.sentence_current(session)
         cursor = json.dumps({"session": session, "id": row["id"]})
         db.set_setting("sentence_cursor", cursor)
-        db.sentence_save_draft(row["id"], "Mijn bestaande concept", 1000)
+        db.written_save_draft("sentence", row["id"], "Mijn bestaande concept", 1000)
         db.initialize()
         self.assertEqual(db.setting("sentence:en_nl_cursor", ""), cursor)
-        self.assertEqual(db.sentence_draft(row["id"])["text"], "Mijn bestaande concept")
+        self.assertEqual(db.written_draft("sentence", row["id"])["text"], "Mijn bestaande concept")
 
     def test_unanswered_current_round_does_not_generate_an_unused_spare(self) -> None:
         """Require actual practice before stocking another round; e.g. merely browsing a destination cannot keep spending on untouched questions."""

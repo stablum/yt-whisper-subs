@@ -71,7 +71,7 @@ class Stock:
         get_active = getattr(self._db, f'{kind}_active')
         scope = track.session_filter
         active_id = get_active(scope[1]) if scope else get_active()
-        review_id = self._db.sentence_unseen_session(track.direction.value) if kind == 'sentence' else None
+        review_id = self._db.written_unseen_session(track) if kind == 'sentence' or track == tracks.Track.VERBS else None
         if track.variant and active_id is None:
             review_id = self._db.word_order_resume(track.variant)
         texts = self._session_texts(track, (active_id, review_id))

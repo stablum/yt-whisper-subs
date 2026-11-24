@@ -140,6 +140,25 @@ class VerbTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM verb_states").fetchone()[0], 0)
         self.assertIsNone(self.db.verb_active())
 
+    def test_late_correction_replays_newer_review_of_the_same_target(self) -> None:
+        """Submit a replacement round before the original correction finishes."""
+
+        first = self.db.verb_current(self._round(1))
+        original = self._submit(first, wrong=True)
+        policy = practice.ReviewPolicy()
+        session = self.db.verb_create(verb_fixtures.options(1), [{"id": first["question_id"]}], policy.document())
+        second = self.db.verb_current(session)
+        self._submit(second)
+        self.engine.check(second["id"], lambda _: None)
+        self.engine.check(first["id"], lambda _: None)
+
+        card = policy.new_card(first["target_id"], original["answered_at"])
+        expected = policy.answer(card, correct=False, unsure=False, now=original["answered_at"], elapsed_ms=original["elapsed_ms"])
+        corrected = self.db.verb_get(second["id"])
+        self.assertEqual(json.loads(corrected["before_json"]), json.loads(expected["after_json"]))
+        review = self.db.verb_get(first["id"])
+        self.assertEqual((review["status"], review["outcome"], corrected["outcome"]), ("stopped", "wrong", "correct"))
+
     def test_unanswered_report_does_not_count_as_activity(self) -> None:
         """Reporting an exposed defective exercise is not a typed attempt; e.g. the daily reminder stays due."""
 

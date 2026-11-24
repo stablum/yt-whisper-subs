@@ -231,13 +231,13 @@ class QuestionRail(QtWidgets.QListWidget):
 
     chosen = QtCore.Signal(int)
 
-    def __init__(self, *, comprehension: bool = False) -> None:
+    def __init__(self, *, comprehension: bool = False, name: str | None = None) -> None:
         """Keep the overview beside the question; e.g. fifty answers scroll independently of their feedback."""
 
         super().__init__()
         self.setFixedWidth(82)
         self._comprehension = comprehension
-        self.setAccessibleName(i18n.tr('Questions and corrections') if comprehension else i18n.tr('Sentence question history'))
+        self.setAccessibleName(name or (i18n.tr('Questions and corrections') if comprehension else i18n.tr('Sentence question history')))
         self.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setStyleSheet("QListWidget {background:#171e29;border:0;border-radius:8px;font-size:12pt;} "

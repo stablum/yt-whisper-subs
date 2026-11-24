@@ -96,7 +96,7 @@ class SentenceFlowTests(unittest.TestCase):
             QtTest.QTest.qWait(10)
         if not predicate():
             session = self.panel._run.session
-            history = self.db.sentence_history(session) if session else []
+            history = self.db.written_history("sentence", session) if session else []
             self.fail(f"Sentence state did not arrive: {history}")
 
     def _answer(self, text: str) -> None:
@@ -224,7 +224,7 @@ class SentenceFlowTests(unittest.TestCase):
         second._view.card.editor.setPlainText("My other draft")
         self.dialog._nav._buttons.button(library_practice.Page.SENTENCE_EN_NL).click()
         self.assertEqual(first._view.card.editor.toPlainText(), "Mijn eerste concept")
-        self.assertEqual(self.db.sentence_draft(second._run.row["id"])["text"], "My other draft")
+        self.assertEqual(self.db.written_draft("sentence", second._run.row["id"])["text"], "My other draft")
         self.assertEqual(self.db.sentence_active("en_nl"), first._run.session)
         self.assertEqual(self.db.sentence_active("nl_en"), second._run.session)
 
@@ -237,7 +237,7 @@ class SentenceFlowTests(unittest.TestCase):
         self.provider.available = False
         text = fixtures.DUTCH.replace("slimste", "slimmere")
         self._answer(text)
-        self._wait(lambda: self.db.sentence_history(self.panel._run.session)[0]["state"] == "failed")
+        self._wait(lambda: self.db.written_history("sentence", self.panel._run.session)[0]["state"] == "failed")
         self.panel._jump(first)
         self.assertEqual(self.panel._view.action.text(), "Retry correction")
         self.assertEqual(sentence_stats.snapshot(self.db)["wrong"], 0)
@@ -278,7 +278,7 @@ class SentenceFlowTests(unittest.TestCase):
         self.assertNotEqual(self.panel._run.row["id"], first)
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 20)
         self._answer(fixtures.DUTCH)
-        self.assertEqual([row["state"] for row in self.db.sentence_history(session)][:2], ["checking", "queued"])
+        self.assertEqual([row["state"] for row in self.db.written_history("sentence", session)][:2], ["checking", "queued"])
         self.panel._view.card.editor.setPlainText("Een bewaard concept")
         self.dialog.close()
         self.app.processEvents()

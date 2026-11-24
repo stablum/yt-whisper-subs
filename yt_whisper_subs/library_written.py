@@ -1,6 +1,6 @@
 """Shared native lifecycle for durable typed practice, using injected domain operations.
 
-Example: verbs and full-sentence translation share deliberate submit/feedback/continue behavior.
+Example: verb forms grade locally, while full-sentence modes use a background queue.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class _Run(pd.BaseModel):
 
 
 class WrittenPanel(QtWidgets.QWidget):
-    """Coordinate durable typed practice; e.g. verbs and translations share separate correction/continue gestures."""
+    """Coordinate round preparation and typed input, with immediate feedback for verb forms."""
 
     activity_changed = QtCore.Signal()
     round_reviewed = QtCore.Signal()

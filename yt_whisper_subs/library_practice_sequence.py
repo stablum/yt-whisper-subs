@@ -41,8 +41,8 @@ class Cursor(pd.BaseModel):
         track = self.track
         if not track or not self.round_id:
             return False
-        if track.kind == 'sentence':
-            rows = db.sentence_history(self.round_id)
+        if track.kind == 'sentence' or track == practice_tracks.Track.VERBS:
+            rows = db.written_history(track.kind, self.round_id)
             return bool(rows) and all(r['outcome'] == 'invalid' or (r['outcome'] and r['viewed_at'] is not None) for r in rows)
         summary = getattr(db, f'{track.kind}_summary')(self.round_id)
         return (summary['planned'] > 0 and summary['planned'] == summary['correct'] + summary['wrong'] + summary['invalid']

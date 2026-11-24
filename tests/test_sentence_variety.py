@@ -62,8 +62,8 @@ class SentenceVarietyTests(unittest.TestCase):
 
         session = self.engine.start(self.opts, lambda _: None)
         rows = []
-        for item in self.db.sentence_history(session):
-            row = self.db.sentence_open(item["id"])
+        for item in self.db.written_history("sentence", session):
+            row = self.db.written_open("sentence", item["id"])
             self.db.sentence_submit(row["id"], row["content"]["dutch"], 1500)
             rows.append(self.engine.check(row["id"], lambda _: None))
         with self.db._connect() as conn:
@@ -77,7 +77,7 @@ class SentenceVarietyTests(unittest.TestCase):
         previous, rows = self._past_round()
         old = {row["question_id"] for row in rows}
         session = self.engine.start(self.opts, lambda _: None)
-        following = [self.db.sentence_get(item["id"]) for item in self.db.sentence_history(session)]
+        following = [self.db.sentence_get(item["id"]) for item in self.db.written_history("sentence", session)]
         self.assertEqual(len(following), 10)
         self.assertEqual(sum(row["question_id"] in old for row in following), 2)
         self.assertEqual(len({row["anchor_word_id"] for row in following}), 10)
@@ -107,7 +107,7 @@ class SentenceVarietyTests(unittest.TestCase):
         candidates = [row for row in self.db.word_candidates("en_nl") if row["word_id"] in ids]
         with mock.patch.object(self.db, "word_candidates", return_value=candidates):
             session = self.engine.start(self.opts, lambda _: None, cached_first=True)
-        following = [self.db.sentence_get(item["id"]) for item in self.db.sentence_history(session)]
+        following = [self.db.sentence_get(item["id"]) for item in self.db.written_history("sentence", session)]
         self.assertEqual(sum(row["question_id"] in old for row in following), 2)
         self.assertEqual(sum(len(call.args[0]) for call in self.provider.generate.call_args_list), 8)
         self.assertTrue(all(call.args[0][0]["recent_sentences"] for call in self.provider.generate.call_args_list))

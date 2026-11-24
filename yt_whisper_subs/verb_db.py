@@ -10,6 +10,8 @@ import time
 import uuid
 from typing import TYPE_CHECKING
 
+from yt_whisper_subs import written_review_db
+
 if TYPE_CHECKING:
     from yt_whisper_subs import verb_forms
     from yt_whisper_subs import verb_practice as verbs
@@ -17,10 +19,11 @@ if TYPE_CHECKING:
 
 PRESENTATION = """
 SELECT p.*,q.body_json,q.target_id,q.flagged_at,t.verb_id,t.tense,t.subject,t.structure,
-       v.lemma,v.family,v.transitive,s.status,s.scheduler_json,s.options_json,s.variant
+       v.lemma,v.family,v.transitive,s.status,s.scheduler_json,s.options_json,s.variant,f.viewed_at
 FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id
 JOIN verb_targets t ON t.id=q.target_id JOIN verb_lemmas v ON v.id=t.verb_id
 JOIN verb_sessions s ON s.id=p.session_id
+LEFT JOIN verb_feedback_views f ON f.presentation_id=p.id
 """
 
 
@@ -176,6 +179,8 @@ class VerbDbMixin:
                 raise ValueError("This verb round has ended")
             conn.execute("UPDATE verb_presentations SET answer_text=?,answered_at=?,elapsed_ms=? WHERE id=?",
                          (answer, time.time(), elapsed_ms, presentation_id))
+            if not row["variant"]:
+                written_review_db.enqueue(conn, "verb", presentation_id)
             return self._verb_row(conn.execute(PRESENTATION + " WHERE p.id=?", (presentation_id,)).fetchone())
 
     @staticmethod
@@ -218,20 +223,31 @@ class VerbDbMixin:
                 return self._verb_row(row)
             if row["flagged_at"] is not None:
                 raise ValueError("This question has been reported")
-            if row["status"] != "active":
+            if row["variant"] and row["status"] != "active":
                 raise ValueError("This verb round has ended")
             grade.check(row["answer_text"])
             grammar = grade.correct if row["variant"] else grade.grammar_correct
             result = {}
             if grammar is not None:
-                state = conn.execute("SELECT card_json FROM verb_states WHERE target_id=?", (row["target_id"],)).fetchone()
-                result = self._verb_review(conn, row, grammar, state[0] if state else None)
+                # A retry can finish after a newer review of the same target.
+                prev = conn.execute(
+                    "SELECT p.after_json FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id "
+                    "WHERE q.target_id=? AND p.outcome IN ('correct','wrong') AND p.rating IS NOT NULL "
+                    "AND (p.answered_at,p.id)<(?,?) ORDER BY p.answered_at DESC,p.id DESC LIMIT 1",
+                    (row["target_id"], row["answered_at"], presentation_id)).fetchone()
+                result = self._verb_review(conn, row, grammar, prev[0] if prev else None)
             schedule = ("rating", "recall", "due_at", "before_json", "after_json", "log_json")
             conn.execute("UPDATE verb_presentations SET outcome=?,grade_json=?,grader_model=?,grader_reasoning=?,"
                          "grade_version=?,graded_at=?,rating=?,recall=?,due_at=?,before_json=?,after_json=?,log_json=? WHERE id=?",
                          ("correct" if grade.correct else "wrong", grade.model_dump_json(), provenance["model"],
                           provenance["reasoning"], provenance["grade_version"], time.time(), *(result.get(key) for key in schedule),
                           presentation_id))
+            if result and conn.execute(
+                "SELECT 1 FROM verb_presentations p JOIN verb_questions q ON q.id=p.question_id "
+                "WHERE q.target_id=? AND p.outcome IN ('correct','wrong') AND p.rating IS NOT NULL "
+                "AND (p.answered_at,p.id)>(?,?) LIMIT 1", (row["target_id"], row["answered_at"], presentation_id)
+            ).fetchone():
+                self._verb_replay(conn, row["target_id"])
             if not row["variant"]:
                 self._verb_diagnostics(conn, row, grade, provenance)
             self._verb_complete(conn)

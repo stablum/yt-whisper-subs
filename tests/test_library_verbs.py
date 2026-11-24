@@ -28,6 +28,7 @@ from tests import verb_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import library_listening
 from yt_whisper_subs import library_practice
+from yt_whisper_subs import library_practice_sequence
 from yt_whisper_subs import library_pronunciation
 from yt_whisper_subs import library_theme
 from yt_whisper_subs import listening_tts
@@ -44,7 +45,7 @@ from yt_whisper_subs import verb_stats
 
 
 class VerbFlowTests(unittest.TestCase):
-    """Exercise actual native input transitions; e.g. correction is a separate action from continuation."""
+    """Exercise the native typing and correction review flow."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -92,6 +93,8 @@ class VerbFlowTests(unittest.TestCase):
         if not activity:
             self.dialog._tabs.setCurrentIndex(library_practice.Page.VERBS)
         self.dialog.show()
+        self.dialog.activateWindow()
+        self.app.setActiveWindow(self.dialog)
         self.app.processEvents()
 
     def _wait(self, predicate) -> None:
@@ -164,6 +167,7 @@ class VerbFlowTests(unittest.TestCase):
     def test_verb_answer_speech_is_ready_before_the_question_appears(self) -> None:
         """Reveal a correction from cache even when grading displays the learner's variant."""
 
+        self.db.set_setting("verb_options", verb_fixtures.options(count=1).model_dump_json())
         entered, release = threading.Event(), threading.Event()
         self.addCleanup(release.set)
 
@@ -211,49 +215,97 @@ class VerbFlowTests(unittest.TestCase):
             self.assertEqual(len(speaker.calls), calls)
             self.assertFalse(controls._status.text())
 
-    def test_auto_first_question_submit_feedback_and_separate_continue(self) -> None:
-        """Require no Start round action and no automatic advancement; e.g. Enter checks, then a fresh gesture continues."""
+    def test_submit_advances_while_grading_then_requires_review(self) -> None:
+        """Move past a blocked provider and bring unread results back at the end of writing."""
 
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        original = self.provider.grade
+
+        def delayed(document):
+            """Hold question one's correction while question two is being answered."""
+
+            entered.set()
+            if not release.wait(10):
+                raise TimeoutError("Test did not release the correction")
+            return original(document)
+
+        self.provider.grade = delayed
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
         first = self.panel._run.row["id"]
         self.assertFalse(self.panel._view.action.isEnabled())
         self._answer(wrong=True)
-        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
-        self.assertEqual(self.panel._run.row["id"], first)
-        self.assertIn("→", self.panel._view.card._details.text())
-        self.assertIn(self.panel._run.row["grade"]["corrected"], self.panel._view.card._correction.text())
-        self.assertEqual(practice_activity.read(self.db).week[-1].verbs, 1)
-        self.panel._view.action.click()
-        self.assertEqual(self.panel._run.row["id"], first)
-        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
-        QtTest.QTest.keyClick(self.panel._view.action, QtCore.Qt.Key.Key_Return)
-        self.assertNotEqual(self.panel._run.row["id"], first)
-        self.assertEqual(self.panel._view.card.editor.toPlainText(), "")
+        second = self.panel._run.row["id"]
+        self.assertNotEqual(second, first)
+        card, rail = self.panel._view.card, self.panel._rail
+        self.assertEqual(card.editor.toPlainText(), "")
+        self.assertFalse(card.editor.isReadOnly())
+        self._wait(entered.is_set)
+        self.assertIn("↻", rail.item(0).text())
+
+        card.editor.setPlainText(self.panel._run.row["content"]["answer"])
         repeat = QtGui.QKeyEvent(QtCore.QEvent.Type.KeyPress, QtCore.Qt.Key.Key_Return,
                                  QtCore.Qt.KeyboardModifier.NoModifier, "", True, 1)
-        self.app.sendEvent(self.panel._view.card.editor, repeat)
+        self.app.sendEvent(card.editor, repeat)
         self.assertEqual(practice_activity.read(self.db).answers, 1)
+        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
+        self._answer()
+        self.assertEqual(card._source.text(), "Waiting for corrections")
+        self.assertIn("…", rail.item(1).text())
+
+        session = self.panel._run.session
+        cursor = library_practice_sequence.Cursor(completed=3, round_id=session)
+        reviewed = []
+        self.panel.round_reviewed.connect(lambda: reviewed.append(True))
+        release.set()
+        self._wait(lambda: self.panel._run.row is not None and self.panel._run.row["id"] == first)
+        self._wait(lambda: "✓•" in rail.item(1).text())
+        self.assertIn("✕", rail.item(0).text())
+        self.assertNotIn("•", rail.item(0).text())
+        self.assertIn("→", card._details.text())
+        self.assertIn(self.db.verb_get(first)["grade"]["corrected"], card._correction.text())
+        self.assertFalse(cursor.round_reviewed(self.db))
+        self.assertFalse(reviewed)
+
+        for expected in (second, None):
+            QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
+            QtTest.QTest.keyClick(self.panel._view.action, QtCore.Qt.Key.Key_Return)
+            current = self.panel._run.row
+            self.assertEqual(current["id"] if current else None, expected)
+        self.assertEqual(card._source.text(), "Round reviewed")
+        self.assertNotIn("•", rail.item(1).text())
+        self.assertTrue(cursor.round_reviewed(self.db))
+        self.assertEqual(reviewed, [True])
+        self.assertEqual(practice_activity.read(self.db).week[-1].verbs, 2)
 
     def test_grade_failure_retry_and_resume_preserve_first_attempt(self) -> None:
         """A network failure is not an incorrect answer; e.g. reopening offers the identical saved sentence to check again."""
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
         self.provider.available = False
         self._answer(wrong=True)
-        self._wait(lambda: self.panel._task is None)
-        saved = self.panel._run.row
-        self.assertTrue(self.panel._view.card.editor.isReadOnly())
-        self.assertEqual(self.panel._view.action.text(), "Retry checking")
+        second = self.panel._run.row["id"]
+        self.panel._view.card.editor.setPlainText("Mijn concept")
+        self._wait(lambda: "!" in self.panel._rail.item(0).text())
+        saved = self.db.verb_get(first)
         self.assertEqual(verb_stats.snapshot(self.db)["wrong"], 0)
         self._close()
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
+        self.assertEqual(self.panel._run.row["id"], second)
+        self.assertEqual(self.panel._view.card.editor.toPlainText(), "Mijn concept")
+        self.panel._rail.chosen.emit(first)
         self.assertEqual(self.panel._run.row["answer_text"], saved["answer_text"])
+        self.assertTrue(self.panel._view.card.editor.isReadOnly())
+        self.assertEqual(self.panel._view.action.text(), "Retry correction")
         self.provider.available = True
         self.panel._view.action.click()
         self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        self.panel._rail.chosen.emit(second)
+        self.assertEqual(self.panel._view.card.editor.toPlainText(), "Mijn concept")
         self.assertEqual(practice_activity.read(self.db).answers, 1)
 
     def test_activity_and_hidden_ready_round_do_not_expose_questions(self) -> None:
@@ -303,8 +355,9 @@ class VerbFlowTests(unittest.TestCase):
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
+        first = self.panel._run.row["id"]
         self._answer(wrong=True)
-        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        self._wait(lambda: self.db.verb_get(first)["outcome"] == "wrong")
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
         self.assertEqual(self.dialog._progress_tabs.currentIndex(), 1)
         self.assertEqual(self.dialog._verb_progress._tables["Forms"].rowCount(), 4)
@@ -331,9 +384,10 @@ class VerbFlowTests(unittest.TestCase):
 
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
-        self._answer(wrong=True)
-        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
         first = self.panel._run.row["id"]
+        self._answer(wrong=True)
+        self._wait(lambda: "✕" in self.panel._rail.item(0).text())
+        self.panel._rail.chosen.emit(first)
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
         menu = self.panel._view.options.menu
         menu.setAttribute(QtCore.Qt.WidgetAttribute.WA_DontShowOnScreen)
@@ -346,9 +400,10 @@ class VerbFlowTests(unittest.TestCase):
         self.assertEqual(practice_activity.read(self.db).answers, 1)
         menu.close()
 
-    def test_close_during_grading_keeps_a_pending_attempt(self) -> None:
-        """Cancel without waiting for the provider; e.g. a late HTTP result cannot create an unwanted review after closing."""
+    def test_close_during_grading_keeps_unseen_feedback(self) -> None:
+        """Finish grading in the background and review the saved correction on return."""
 
+        self.db.set_setting("verb_options", verb_fixtures.options(count=1).model_dump_json())
         self._open()
         self._wait(lambda: self.panel._run.row is not None)
         entered, release = threading.Event(), threading.Event()
@@ -371,8 +426,13 @@ class VerbFlowTests(unittest.TestCase):
         self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(5000))
         saved = self.db.verb_get(row_id)
         self.assertIsNotNone(saved["answer_text"])
-        self.assertIsNone(saved["outcome"])
+        self.assertEqual(saved["outcome"], "wrong")
+        self.assertIsNone(saved["viewed_at"])
         self.assertEqual(practice_activity.read(self.db).answers, 1)
+        self._open()
+        self._wait(lambda: self.panel._run.row is not None)
+        self.assertEqual(self.panel._run.row["id"], row_id)
+        self.assertIsNotNone(self.db.verb_get(row_id)["viewed_at"])
 
     def test_source_english_reveal_is_instant_scoped_and_preserves_typing(self) -> None:
         """Use cached English without revealing the transformed answer; e.g. Alt+E never consumes ordinary typed e."""
@@ -404,7 +464,8 @@ class VerbFlowTests(unittest.TestCase):
         self._wait(lambda: self.panel._run.row is not None)
         first = self.panel._run.row["id"]
         self._answer(wrong=True)
-        self._wait(lambda: self.panel._run.row["outcome"] == "wrong")
+        self._wait(lambda: "✕" in self.panel._rail.item(0).text())
+        self.panel._rail.chosen.emit(first)
         card = self.panel._view.card
         self.assertEqual(card._translation.text(), self.panel._run.row["grade"]["corrected_english"])
         QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
@@ -453,7 +514,7 @@ class VerbFlowTests(unittest.TestCase):
         self.assertIsNone(self.db.verb_active())
 
     def test_late_source_english_cannot_overwrite_the_next_question(self) -> None:
-        """Tag and cancel background help at question boundaries; e.g. a slow translation is never shown beneath another sentence."""
+        """Apply background help only to its source question."""
 
         session = self.engine.start(verb_fixtures.options(), lambda _: None)
         row = self.db.verb_current(session)
@@ -478,10 +539,8 @@ class VerbFlowTests(unittest.TestCase):
         self._wait(entered.is_set)
         first = self.panel._run.row["id"]
         self._answer()
-        self._wait(lambda: self.panel._run.row["outcome"] == "correct")
-        QtTest.QTest.qWait(QtWidgets.QApplication.doubleClickInterval() + 30)
-        self.panel._view.action.click()
         self.assertNotEqual(self.panel._run.row["id"], first)
+        self._wait(lambda: self.db.verb_get(first)["outcome"] == "correct")
         release.set()
         self.assertTrue(QtCore.QThreadPool.globalInstance().waitForDone(5000))
         self.app.processEvents()

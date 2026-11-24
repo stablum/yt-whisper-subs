@@ -14,7 +14,7 @@ class Queue:
     def __init__(self, db, kind="sentence", *, local=False) -> None:
         """Choose the immutable answer family once; e.g. local=True selects only dictation answers."""
 
-        if kind not in {"sentence", "comprehension"} or local and kind != "sentence":
+        if kind not in {"sentence", "comprehension", "verb"} or local and kind != "sentence":
             raise ValueError("Unknown correction lane")
         self._db, self._kind, self._local = db, kind, local
 
@@ -22,19 +22,23 @@ class Queue:
         """Claim the oldest unanswered grade and recover dead owners; e.g. reopening a dialog cannot duplicate an in-flight correction."""
 
         kind, now = self._kind, time.time()
+        pending = "p.answer_text IS NOT NULL AND p.outcome IS NULL"
+        if kind == "verb":
+            pending += " AND s.variant=''"
+        scope = {"sentence": "(q.direction='listen_nl')=?", "comprehension": "q.kind='open'", "verb": "s.variant=''"}[kind]
         with self._db._connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            conn.execute(f"INSERT OR IGNORE INTO {kind}_checks(presentation_id,state) SELECT id,'queued' "
-                         f"FROM {kind}_presentations WHERE answer_text IS NOT NULL AND outcome IS NULL")
+            conn.execute(f"INSERT OR IGNORE INTO {kind}_checks(presentation_id,state) SELECT p.id,'queued' "
+                         f"FROM {kind}_presentations p JOIN {kind}_sessions s ON s.id=p.session_id WHERE {pending}")
             conn.execute(f"UPDATE {kind}_checks SET state='done',owner=NULL,lease_until=0 WHERE state<>'done' AND EXISTS "
                          f"(SELECT 1 FROM {kind}_presentations p WHERE p.id=presentation_id AND p.outcome IS NOT NULL)")
             for row in conn.execute(f"SELECT presentation_id,owner,lease_until FROM {kind}_checks WHERE state='checking'").fetchall():
                 if row['lease_until'] <= now or not practice_ready.owner_alive(row['owner']):
                     conn.execute(f"UPDATE {kind}_checks SET state='queued',owner=NULL,lease_until=0 WHERE presentation_id=?", (row['presentation_id'],))
-            scope = "(q.direction='listen_nl')=?" if kind == 'sentence' else "q.kind='open'"
             params = (self._local,) if kind == 'sentence' else ()
             row = conn.execute(f"SELECT p.id FROM {kind}_presentations p JOIN {kind}_checks c ON c.presentation_id=p.id "
-                               f"JOIN {kind}_questions q ON q.id=p.question_id WHERE c.state='queued' AND p.outcome IS NULL "
+                               f"JOIN {kind}_questions q ON q.id=p.question_id JOIN {kind}_sessions s ON s.id=p.session_id "
+                               "WHERE c.state='queued' AND p.outcome IS NULL "
                                f"AND {scope} ORDER BY p.answered_at,p.id LIMIT 1", params).fetchone()
             if row is None:
                 return None

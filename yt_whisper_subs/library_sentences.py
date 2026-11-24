@@ -12,7 +12,7 @@ from yt_whisper_subs import i18n
 from yt_whisper_subs import library_written
 from yt_whisper_subs import library_written_controls as written
 from yt_whisper_subs import library_sentence_review
-from yt_whisper_subs import library_sentence_session
+from yt_whisper_subs import library_queued_writing
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import sentence_practice as sentences
@@ -150,7 +150,7 @@ class SentenceCard(written.WritingCard):
             self._source.annotate(row)
 
 
-class SentencePanel(library_sentence_session.SentenceSession):
+class SentencePanel(library_queued_writing.QueuedWriting):
     """Bind sentences to the common typed-practice flow; e.g. reopening retries the same pending translation."""
 
     def __init__(self, db, *, direction: sentences.Direction = sentences.Direction.EN_NL,
@@ -171,4 +171,4 @@ class SentencePanel(library_sentence_session.SentenceSession):
                                     label=i18n.tr('Listening') if direction == sentences.Direction.LISTEN else i18n.tr('Sentence translations'), tab_name=track.label.replace("\n", " · "),
                                     intro=i18n.tr('Use your saved vocabulary to understand and write natural sentences in everyday situations.'),
                                     view=view, ops=library_written.SessionOps.for_db(db, "sentence", direction.value))
-        super().__init__(db, mode, engine=engine or sentence_service.SentenceService(db))
+        super().__init__(db, mode, track=track, engine=engine or sentence_service.SentenceService(db))

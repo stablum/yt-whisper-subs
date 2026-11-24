@@ -24,6 +24,7 @@ from yt_whisper_subs import practice_db
 from yt_whisper_subs import verb_db
 from yt_whisper_subs import verb_catalog_db
 from yt_whisper_subs import sentence_db
+from yt_whisper_subs import written_review_db
 from yt_whisper_subs import listening_db
 from yt_whisper_subs import comprehension_db
 from yt_whisper_subs import practice_ready
@@ -81,6 +82,7 @@ class LibraryDb(
     verb_db.VerbDbMixin,
     verb_catalog_db.VerbCatalogDbMixin,
     sentence_db.SentenceDbMixin,
+    written_review_db.WrittenReviewDbMixin,
     listening_db.ListeningDbMixin,
 ):
     """Own catalog SQL while opening one SQLite connection per worker thread.

@@ -339,7 +339,7 @@ class VoiceTests(unittest.TestCase):
 
         session = self.engine.start(self.options, lambda _: None)
         row = self.db.sentence_current(session)
-        self.db.sentence_open(row['id'])
+        self.db.written_open("sentence", row['id'])
         track = practice_tracks.Track.LISTENING
         ready = self._own(library_practice_ready.PracticeReady(self.db, modes={"sentence": (self.options, self.engine)}))
         self.assertFalse(ready._needed(track, self.options, self.engine))

@@ -45,6 +45,10 @@ class Checks(QtCore.QObject):
             from yt_whisper_subs import comprehension_service
 
             self._engine = comprehension_service.ComprehensionService(db)
+        elif kind == "verb":
+            from yt_whisper_subs import verb_service
+
+            self._engine = verb_service.VerbService(db)
         else:
             self._engine = sentence_service.SentenceService(db)
         self._owner = f"{os.getpid()}:{psutil.Process().create_time()}:{uuid.uuid4().hex}"

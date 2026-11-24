@@ -8,13 +8,15 @@ from __future__ import annotations
 from PySide6 import QtCore
 
 from yt_whisper_subs import i18n
+from yt_whisper_subs import library_queued_writing
 from yt_whisper_subs import library_written
 from yt_whisper_subs import library_verb_controls as controls
 from yt_whisper_subs import library_workers
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import verb_service
 
 
-class VerbPanel(library_written.WrittenPanel):
+class VerbPanel(library_queued_writing.QueuedWriting):
     """Keep verb-only options and source help outside the generic submission lifecycle."""
 
     def __init__(self, db, *, engine: verb_service.VerbService | None = None) -> None:
@@ -24,19 +26,9 @@ class VerbPanel(library_written.WrittenPanel):
                                     intro=i18n.tr('Rewrite a Dutch sentence for a new subject, tense or situation.'),
                                     view=controls.VerbView(db.setting("verb_options", "")),
                                     ops=library_written.SessionOps.for_db(db, "verb"))
-        super().__init__(db, mode, engine=engine or verb_service.VerbService(db))
+        super().__init__(db, mode, track=practice_tracks.Track.VERBS, engine=engine or verb_service.VerbService(db))
         self._help_tasks: dict[int, library_workers.BackgroundTask] = {}
         self._view.card.meaning.requested.connect(self._english)
-
-    def _advance(self, *, guard: bool = False) -> None:
-        """Cancel help at a question boundary; e.g. an old meaning cannot appear under a new source sentence."""
-
-        if not self._active or not self._run.session or self._task:
-            return
-        for task in self._help_tasks.values():
-            task.cancel()
-        self._help_tasks.clear()
-        super()._advance(guard=guard)
 
     def _english(self) -> None:
         """Fetch supplemental help only for the source sentence; e.g. an older resumable round remains usable."""
