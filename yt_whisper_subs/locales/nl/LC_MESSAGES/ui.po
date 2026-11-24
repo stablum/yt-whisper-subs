@@ -117,11 +117,11 @@ msgstr " · fragment "
 msgid " · copy"
 msgstr " · kopie"
 
-#: yt_whisper_subs/library_comprehension_controls.py:146
+#: yt_whisper_subs/library_comprehension_controls.py:163
 msgid " · language correct"
 msgstr " · taal correct"
 
-#: yt_whisper_subs/library_comprehension_controls.py:146
+#: yt_whisper_subs/library_comprehension_controls.py:163
 msgid " · language errors corrected"
 msgstr " · taalfouten gecorrigeerd"
 
@@ -148,7 +148,7 @@ msgstr "0 video's"
 msgid "1 / 2 / 3 to answer · Close anytime to pause"
 msgstr "1 / 2 / 3 om te antwoorden · Sluit gerust om te pauzeren"
 
-#: yt_whisper_subs/library_comprehension_controls.py:55
+#: yt_whisper_subs/library_comprehension_controls.py:64
 msgid ""
 "1–30 questions in total. Each multiple-choice question has one correct answer.\n"
 "Open answers also receive partial comprehension credit."
@@ -284,15 +284,15 @@ msgstr "Nog een zinsronde"
 msgid "Another {key} round"
 msgstr "Nog een ronde {key}"
 
-#: yt_whisper_subs/library_comprehension_controls.py:167
+#: yt_whisper_subs/library_comprehension_controls.py:184
 msgid "Answer saved · correction queued."
 msgstr "Antwoord opgeslagen · beoordeling staat in de wachtrij."
 
-#: yt_whisper_subs/library_comprehension_controls.py:164
+#: yt_whisper_subs/library_comprehension_controls.py:181
 msgid "Answer saved. Explanations appear after all answers are submitted."
 msgstr "Antwoord opgeslagen. Je ziet de uitleg nadat alle antwoorden zijn ingediend."
 
-#: yt_whisper_subs/library_comprehension_controls.py:127
+#: yt_whisper_subs/library_comprehension_controls.py:144
 msgid "Answer the question in Dutch. You may use your own wording."
 msgstr "Beantwoord de vraag in het Nederlands. Een eigen formulering mag."
 
@@ -552,7 +552,7 @@ msgstr "Kies een kleinere ronde"
 msgid "Choose an answer"
 msgstr "Kies een antwoord"
 
-#: yt_whisper_subs/library_comprehension_controls.py:127
+#: yt_whisper_subs/library_comprehension_controls.py:144
 msgid "Choose one answer."
 msgstr "Kies één antwoord."
 
@@ -652,14 +652,14 @@ msgstr "Samenstellingen"
 msgid "Comprehension"
 msgstr "Begrip"
 
-#: yt_whisper_subs/library_comprehension.py:416
+#: yt_whisper_subs/library_comprehension.py:419
 #, python-brace-format
 msgid ""
 "Comprehension {score} · {correct} fully correct. Choose an earlier question on the left or start "
 "a new text."
 msgstr "Begrip {score} · {correct} volledig goed. Kies links een eerdere vraag of begin een nieuwe tekst."
 
-#: yt_whisper_subs/library_comprehension.py:299
+#: yt_whisper_subs/library_comprehension.py:302
 #, python-brace-format
 msgid "Comprehension {score} · {correct}/{graded} fully correct · {unseen} unseen corrections"
 msgstr "Begrip {score} · {correct}/{graded} volledig goed · {unseen} beoordelingen nog niet bekeken"
@@ -756,7 +756,7 @@ msgstr "Juiste volgorde"
 msgid "Correction"
 msgstr "Correctie"
 
-#: yt_whisper_subs/library_comprehension_controls.py:166
+#: yt_whisper_subs/library_comprehension_controls.py:183
 msgid "Correction failed. Your answer is saved; retry the correction."
 msgstr "Beoordeling mislukt. Je antwoord is bewaard; probeer de beoordeling opnieuw."
 
@@ -1048,7 +1048,7 @@ msgstr "Automatisch downloaden inschakelen"
 msgid "End this listening round"
 msgstr "Deze luisterronde beëindigen"
 
-#: yt_whisper_subs/library_comprehension_controls.py:67
+#: yt_whisper_subs/library_comprehension_controls.py:76
 #: yt_whisper_subs/library_practice_controls.py:139
 msgid "End this round"
 msgstr "Deze ronde beëindigen"
@@ -1372,7 +1372,7 @@ msgstr "Bezig"
 msgid "Include forms not due yet"
 msgstr "Ook vormen oefenen die nog niet aan herhaling toe zijn"
 
-#: yt_whisper_subs/library_comprehension_controls.py:52
+#: yt_whisper_subs/library_comprehension_controls.py:61
 #: yt_whisper_subs/library_practice_controls.py:119 yt_whisper_subs/library_sentences.py:48
 #: yt_whisper_subs/library_word_order.py:89
 msgid "Include words not due yet"
@@ -1445,7 +1445,7 @@ msgstr "Taal"
 msgid "Language correct"
 msgstr "Taal correct"
 
-#: yt_whisper_subs/library_comprehension_controls.py:44
+#: yt_whisper_subs/library_comprehension_controls.py:53
 msgid "Language level"
 msgstr "Taalniveau"
 
@@ -1650,7 +1650,7 @@ msgstr "Als bekeken gemarkeerd · {title}"
 msgid "Maximum saved words per sentence"
 msgstr "Maximumaantal opgeslagen woorden per zin"
 
-#: yt_whisper_subs/library_comprehension_controls.py:46
+#: yt_whisper_subs/library_comprehension_controls.py:55
 msgid "Maximum words from your vocabulary"
 msgstr "Maximumaantal woorden uit je woordenschat"
 
@@ -1704,7 +1704,7 @@ msgstr "Metadata: {deferred:,} uitgesteld · opnieuw {retry}"
 msgid "Metadata: {ready:,} queued{deferred} · ≤1/min"
 msgstr "Metadata: {ready:,} in wachtrij{deferred} · ≤1/min"
 
-#: yt_whisper_subs/library_comprehension_controls.py:151
+#: yt_whisper_subs/library_comprehension_controls.py:168
 msgid "Missing"
 msgstr "Ontbreekt"
 
@@ -1749,7 +1749,7 @@ msgstr "Omhoog"
 msgid "Multiple choice"
 msgstr "Meerkeuze"
 
-#: yt_whisper_subs/library_comprehension_controls.py:45
+#: yt_whisper_subs/library_comprehension_controls.py:54
 msgid "Multiple-choice questions"
 msgstr "Meerkeuzevragen"
 
@@ -1794,7 +1794,7 @@ msgstr "Nieuwe ronde"
 msgid "New sentence round"
 msgstr "Nieuwe zinsronde"
 
-#: yt_whisper_subs/library_comprehension.py:422
+#: yt_whisper_subs/library_comprehension.py:425
 msgid "New text"
 msgstr "Nieuwe tekst"
 
@@ -1814,7 +1814,7 @@ msgstr "Nieuwe video's van vastgezette kanalen"
 msgid "News and public life"
 msgstr "Nieuws en samenleving"
 
-#: yt_whisper_subs/library_comprehension.py:261
+#: yt_whisper_subs/library_comprehension.py:262
 msgid "Next"
 msgstr "Volgende"
 
@@ -1949,7 +1949,7 @@ msgstr "Bibliotheek openen"
 msgid "Open on YouTube"
 msgstr "Openen op YouTube"
 
-#: yt_whisper_subs/library_comprehension_controls.py:46
+#: yt_whisper_subs/library_comprehension_controls.py:55
 #: yt_whisper_subs/library_comprehension_progress.py:75
 msgid "Open questions"
 msgstr "Open vragen"
@@ -2008,12 +2008,12 @@ msgstr "Totale expressie"
 msgid "Paragraph {paragraph}"
 msgstr "Alinea {paragraph}"
 
-#: yt_whisper_subs/library_comprehension_controls.py:152
+#: yt_whisper_subs/library_comprehension_controls.py:169
 #, python-brace-format
 msgid "Paragraph {paragraph}: ‘{quote}’"
 msgstr "Alinea {paragraph}: ‘{quote}’"
 
-#: yt_whisper_subs/library_comprehension_controls.py:45
+#: yt_whisper_subs/library_comprehension_controls.py:54
 msgid "Paragraphs"
 msgstr "Alinea's"
 
@@ -2053,7 +2053,7 @@ msgstr "Deelscore zin"
 msgid "Participle"
 msgstr "Deelwoord"
 
-#: yt_whisper_subs/library_comprehension_controls.py:145
+#: yt_whisper_subs/library_comprehension_controls.py:162
 msgid "Partly understood"
 msgstr "Gedeeltelijk begrepen"
 
@@ -2269,7 +2269,7 @@ msgstr "Voorbereiding gepauzeerd"
 msgid "Prepare new round"
 msgstr "Nieuwe ronde voorbereiden"
 
-#: yt_whisper_subs/library_comprehension_controls.py:58
+#: yt_whisper_subs/library_comprehension_controls.py:67
 msgid "Prepare new text"
 msgstr "Nieuwe tekst voorbereiden"
 
@@ -2317,7 +2317,7 @@ msgstr "{len} zinsparen voorbereiden en controleren…"
 msgid "Preparing and checking {len} verb exercises…"
 msgstr "{len} werkwoordoefeningen voorbereiden en controleren…"
 
-#: yt_whisper_subs/library_comprehension_controls.py:165
+#: yt_whisper_subs/library_comprehension_controls.py:182
 msgid "Preparing correction…"
 msgstr "De beoordeling wordt voorbereid…"
 
@@ -2662,7 +2662,7 @@ msgstr "Oefening / correctie melden"
 msgid "Report question"
 msgstr "Vraag melden"
 
-#: yt_whisper_subs/library_comprehension.py:461 yt_whisper_subs/library_comprehension_view.py:166
+#: yt_whisper_subs/library_comprehension.py:464 yt_whisper_subs/library_comprehension_view.py:166
 msgid "Report text or question"
 msgstr "Tekst of vraag melden"
 
@@ -2776,7 +2776,7 @@ msgstr "Correcties bekijken"
 msgid "Review pending corrections"
 msgstr "Wachtende correcties bekijken"
 
-#: yt_whisper_subs/library_comprehension_controls.py:145
+#: yt_whisper_subs/library_comprehension_controls.py:162
 msgid "Review the explanation"
 msgstr "Bekijk de uitleg"
 
@@ -2788,7 +2788,7 @@ msgstr "Vragen uit de onafhankelijke controle worden aangepast…"
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr "Herschrijf een Nederlandse zin voor een nieuw onderwerp, een andere tijd of situatie."
 
-#: yt_whisper_subs/library_comprehension.py:415 yt_whisper_subs/library_word_order.py:227
+#: yt_whisper_subs/library_comprehension.py:418 yt_whisper_subs/library_word_order.py:227
 #: yt_whisper_subs/library_word_quiz.py:472
 msgid "Round complete"
 msgstr "Ronde afgerond"
@@ -2797,7 +2797,7 @@ msgstr "Ronde afgerond"
 msgid "Round length"
 msgstr "Rondelengte"
 
-#: yt_whisper_subs/library_comprehension_controls.py:72
+#: yt_whisper_subs/library_comprehension_controls.py:81
 #: yt_whisper_subs/library_practice_controls.py:145 yt_whisper_subs/library_word_order.py:93
 msgid "Round options"
 msgstr "Ronde-opties"
@@ -2947,6 +2947,10 @@ msgstr "Scheidbare werkwoorden"
 #: yt_whisper_subs/library_voice_config.py:271
 msgid "Settings changed. Preview again to hear the new version."
 msgstr "Instellingen gewijzigd. Speel opnieuw een voorbeeld af om de nieuwe versie te horen."
+
+#: yt_whisper_subs/library_comprehension_controls.py:47
+msgid "Settings for new text"
+msgstr "Instellingen voor nieuwe tekst"
 
 #: yt_whisper_subs/library_balloon.py:81 yt_whisper_subs/library_window_menus.py:23
 msgid "Settings…"
@@ -3206,7 +3210,7 @@ msgstr "Indienen en verder →"
 msgid "Submit answer"
 msgstr "Antwoord indienen"
 
-#: yt_whisper_subs/library_comprehension.py:261
+#: yt_whisper_subs/library_comprehension.py:262
 msgid "Submit answer and continue"
 msgstr "Antwoord indienen en verder"
 
@@ -3243,11 +3247,11 @@ msgstr "Tijd"
 msgid "Text and questions"
 msgstr "Tekst en vragen"
 
-#: yt_whisper_subs/library_comprehension.py:467
+#: yt_whisper_subs/library_comprehension.py:470
 msgid "Text reported"
 msgstr "Tekst gemeld"
 
-#: yt_whisper_subs/library_comprehension_controls.py:43
+#: yt_whisper_subs/library_comprehension_controls.py:52
 msgid "Text type"
 msgstr "Tekstsoort"
 
@@ -3304,6 +3308,11 @@ msgstr "Deze bibliotheek is al geopend. Gebruik het venster of het systeemvakpic
 #: yt_whisper_subs/library_word_order.py:282
 msgid "This order also works."
 msgstr "Deze volgorde is ook goed."
+
+#: yt_whisper_subs/library_comprehension_controls.py:106
+#, python-brace-format
+msgid "This round · {mc} multiple-choice · {open} open"
+msgstr "Deze ronde · {mc} meerkeuzevragen · {open} open vragen"
 
 #: yt_whisper_subs/library_practice_activity.py:245
 #, python-brace-format
@@ -3403,7 +3412,7 @@ msgstr "Vertaling in wachtrij"
 msgid "Travel and directions"
 msgstr "Reizen en de weg vinden"
 
-#: yt_whisper_subs/library_comprehension.py:224 yt_whisper_subs/library_word_quiz.py:275
+#: yt_whisper_subs/library_comprehension.py:225 yt_whisper_subs/library_word_quiz.py:275
 #: yt_whisper_subs/library_word_quiz.py:289 yt_whisper_subs/library_word_quiz.py:297
 #: yt_whisper_subs/library_written.py:216 yt_whisper_subs/library_written.py:355
 msgid "Try again"
@@ -3669,11 +3678,11 @@ msgstr "Bekeken: meer dan {percent:g}% bereikt of mpv meldde het einde"
 msgid "Watching · {fraction:.0%}"
 msgstr "Bekeken · {fraction:.0%}"
 
-#: yt_whisper_subs/library_comprehension_controls.py:145 yt_whisper_subs/library_sentence_review.py:258
+#: yt_whisper_subs/library_comprehension_controls.py:162 yt_whisper_subs/library_sentence_review.py:258
 msgid "Well understood"
 msgstr "Goed begrepen"
 
-#: yt_whisper_subs/library_comprehension.py:461
+#: yt_whisper_subs/library_comprehension.py:464
 msgid "What is wrong?"
 msgstr "Wat klopt er niet?"
 
@@ -3763,7 +3772,7 @@ msgstr "Werk en studie"
 msgid "Write the complete Dutch sentence. You can listen again or slow it down."
 msgstr "Schrijf de volledige Nederlandse zin. Je kunt opnieuw of langzamer luisteren."
 
-#: yt_whisper_subs/library_comprehension_controls.py:112
+#: yt_whisper_subs/library_comprehension_controls.py:129
 msgid "Write your answer in Dutch…"
 msgstr "Schrijf je antwoord in het Nederlands…"
 
@@ -3819,7 +3828,7 @@ msgstr "Jouw Nederlandse werkwoordsvorm"
 msgid "Your answer"
 msgstr "Jouw antwoord"
 
-#: yt_whisper_subs/library_comprehension.py:415
+#: yt_whisper_subs/library_comprehension.py:418
 msgid "Your answers are saved"
 msgstr "Je antwoorden zijn opgeslagen"
 
@@ -3836,7 +3845,7 @@ msgstr "Je volledige vertaling in het {target}"
 msgid "Your first attempt is saved. Retry checking it to get the correction."
 msgstr "Je eerste poging is opgeslagen. Controleer opnieuw om de correctie te krijgen."
 
-#: yt_whisper_subs/library_comprehension_controls.py:113
+#: yt_whisper_subs/library_comprehension_controls.py:130
 msgid "Your open answer"
 msgstr "Jouw open antwoord"
 
@@ -3872,7 +3881,7 @@ msgstr ""
 "Je zinsoefeningen en schrijfherhalingen zijn nog niet aan de beurt. Probeer eventueel vroeg "
 "oefenen."
 
-#: yt_whisper_subs/library_comprehension.py:467
+#: yt_whisper_subs/library_comprehension.py:470
 msgid "Your submitted answers remain in your activity but no longer count toward scores."
 msgstr ""
 "Je ingediende antwoorden blijven in je activiteit staan, maar tellen niet meer mee voor de "
@@ -4214,7 +4223,7 @@ msgstr ""
 "{submitted} ingediend · {correct} goed · {wrong} opnieuw oefenen · {accuracy} nauwkeurigheid · "
 "{due} vormen te herhalen · {pending} wachtend op correctie"
 
-#: yt_whisper_subs/library_comprehension.py:307
+#: yt_whisper_subs/library_comprehension.py:310
 #, python-brace-format
 msgid "{submitted}/{planned} submitted · {value} pending · {unseen} unseen corrections"
 msgstr "{submitted}/{planned} ingediend · {value} wachtend · {unseen} beoordelingen nog niet bekeken"
@@ -4238,7 +4247,7 @@ msgstr ""
 "{title}\n"
 "Controleren…"
 
-#: yt_whisper_subs/library_comprehension_controls.py:147
+#: yt_whisper_subs/library_comprehension_controls.py:164
 #, python-brace-format
 msgid "{title} · comprehension {score:.0%}{language}"
 msgstr "{title} · begrip {score:.0%}{language}"

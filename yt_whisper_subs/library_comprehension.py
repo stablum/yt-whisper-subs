@@ -214,6 +214,7 @@ class Panel(QtWidgets.QWidget):
         self._view.status.clear()
         self.speech_changed.emit(0, '')
         self._view.card.idle(title, message)
+        self._view.options.set_round_counts(None)
         self._view.options.setEnabled(True)
         self._view.cancel.hide()
         self._view.bar.hide()
@@ -282,6 +283,8 @@ class Panel(QtWidgets.QWidget):
             return
         rows = self._db.comprehension_history(self._run.session)
         summary = self._db.comprehension_summary(self._run.session)
+        mc = sum(row['kind'] == 'mc' for row in rows)  # Multiple-choice questions.
+        self._view.options.set_round_counts((mc, len(rows) - mc) if rows else None)
         hidden = self._direction == comp.Direction.LISTEN and summary['submitted'] < summary['planned']
         rail = []
         for row in rows:

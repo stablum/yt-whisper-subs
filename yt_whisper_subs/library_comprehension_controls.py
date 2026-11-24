@@ -40,6 +40,15 @@ class Options(QtWidgets.QWidget):
         self._numbers = {}
         panel = QtWidgets.QWidget()
         form = QtWidgets.QFormLayout(panel)
+        self._current = QtWidgets.QLabel()
+        self._current.setWordWrap(True)
+        self._current.hide()
+        form.addRow(self._current)
+        heading = QtWidgets.QLabel(i18n.tr('Settings for new text'))
+        font = heading.font()
+        font.setBold(True)
+        heading.setFont(font)
+        form.addRow(heading)
         form.addRow(i18n.tr('Text type'), self._genre)
         form.addRow(i18n.tr('Language level'), self._level)
         for key, label, low, high in (('paragraphs', i18n.tr('Paragraphs'), 2, 10), ('mc', i18n.tr('Multiple-choice questions'), 0, 20),
@@ -88,6 +97,14 @@ class Options(QtWidgets.QWidget):
 
         self.menu.close()
         self.restart_requested.emit()
+
+    def set_round_counts(self, counts: tuple[int, int] | None) -> None:
+        """Show the displayed question mix independently of editable settings, e.g. when resuming an older round."""
+
+        if counts is not None:
+            mc, open_count = counts  # Multiple-choice and open questions.
+            self._current.setText(i18n.tr('This round · {mc} multiple-choice · {open} open', mc=mc, open=open_count))
+        self._current.setVisible(counts is not None)
 
     def set_active(self, active: bool) -> None:
         """Offer ending only for an actual active round; e.g. a prepared spare does not count as started practice."""

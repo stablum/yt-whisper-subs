@@ -3427,7 +3427,10 @@ questions, answers, explanations and writing corrections. The controls follow
 the library language. Both modes use the configured practice model
 (`gpt-6-luna`, reasoning `medium`).
 
-**Round options** (**Ronde-opties** in Dutch) configures each mode independently:
+**Round options** (**Ronde-opties** in Dutch) shows the question mix for the
+displayed round above the settings for the next text. A resumed round keeps its
+original questions and submitted answers. Select **Prepare new text** to apply
+the settings to a new round. Each mode has its own settings:
 
 - Text type: varied, story, explicitly fictional news article, or reflective essay.
 - Language level: A1, A2, B1, B2 (default), or C1.

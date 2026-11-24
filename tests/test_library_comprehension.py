@@ -136,6 +136,36 @@ class ComprehensionFlowTests(unittest.TestCase):
                 reopened = type(control)(self.db, direction)
                 self.assertEqual(reopened.options().level, level)
 
+    def test_resumed_listening_round_shows_its_own_counts_in_round_options(self):
+        """An eight-question round keeps its answer while the next text uses the saved four-question mix."""
+
+        direction = comp.Direction.LISTEN
+        previous = self.engine.start(fixtures.options(direction=direction, mc=5, open=3), lambda _: None)
+        first = self.db.comprehension_history(previous)[0]
+        self.db.comprehension_open(first['id'])
+        self.db.comprehension_submit(first['id'], first['content']['correct_idx'], 1000)
+        panel = self._panel(direction=direction, mc=2, open=2, prefetch=False)
+        panel.enter_sequence()
+        view = panel._view
+        control = view.options
+        self.assertEqual(panel.round_id, previous)
+        self.assertIn('1/8 submitted', view.status.text())
+        control.menu.popup(control.mapToGlobal(QtCore.QPoint(0, control.height())))
+        self.app.processEvents()
+        labels = control.menu.findChildren(QtWidgets.QLabel)
+        visible = [label.text() for label in labels if label.isVisible()]
+        self.assertIn('This round · 5 multiple-choice · 3 open', visible)
+        self.assertIn('Settings for new text', visible)
+        self.assertEqual((control.options().mc, control.options().open), (2, 2))
+
+        prepare = next(button for button in control.menu.findChildren(QtWidgets.QPushButton)
+                       if button.text() == 'Prepare new text')
+        prepare.click()
+        self._wait(lambda: panel._run.row is not None and panel.round_id != previous)
+        self.assertIn('0/4 submitted', view.status.text())
+        self.assertIn('This round · 2 multiple-choice · 2 open', [label.text() for label in labels])
+        self.assertEqual(self.db.comprehension_summary(previous)['submitted'], 1)
+
     def test_reading_opens_immediately_and_review_walks_in_order(self):
         """Retain explicit feedback transitions and a fixed footer; e.g. a long correction cannot hide the primary action."""
 
