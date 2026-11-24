@@ -2831,7 +2831,21 @@ you switch to statistics during preparation, the ready round waits until the
 Word quiz page is visible before recording its first presentation. The round
 page scrolls for long context/explanations and smaller windows.
 
-The **Progress** tab shows daily accuracy separately by direction and for Sound alike,
+**Tracking → Progress → Overall** charts the **Daily practice score** on a 0–100%
+scale using saved graded answers from all twelve practice types. Each answer
+earns full credit when correct, zero for a binary mistake, or the type's usual
+partial credit for sentence translation, dictation, ordering, and comprehension.
+The score averages credit within each type, then averages the types with grades
+that day. For example, an 80% word quiz and a 60% dictation yield 70%, even with
+different numbers of answers.
+
+Hover a point to see which types contributed, their scores, and how many
+answers were graded. Days with no graded answers have gaps. Pending, skipped,
+and reported answers are excluded. A grade that arrives later updates the
+local day the answer was submitted. The mix of exercises and their difficulty
+can vary from day to day, so use the breakdown when comparing scores.
+
+**Progress → Vocabulary** shows daily accuracy separately by direction and for Sound alike,
 cumulative distinct words encountered, actual presentation and answer counts,
 correct/incorrect totals, median response time, due reviews, and a study-day
 streak. Hover an accuracy or score point for its percentage and sample size,

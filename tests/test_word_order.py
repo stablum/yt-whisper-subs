@@ -18,6 +18,7 @@ from yt_whisper_subs import library_word_order
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
 from yt_whisper_subs import practice_ready
+from yt_whisper_subs import practice_score
 from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import word_order
 from yt_whisper_subs import word_order_service
@@ -105,6 +106,8 @@ class OrderTests(unittest.TestCase):
         self.assertEqual(grade.excluded, [5])
         self.assertEqual(grade.omitted, [4])
         self.assertAlmostEqual(grade.partial, 0.6)
+        day, = practice_score.daily(self.db)
+        self.assertEqual((day.score, day.answers, day.modes[0].track), (0.6, 1, practice_tracks.Track.WORD_ORDER))
         verdict = word_order.Verdict.model_validate_json(row["validation_json"])
         verdict.orders.append([0, 1, 2, 3, 5])
         with self.assertRaises(ValueError):

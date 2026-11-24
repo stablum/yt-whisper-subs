@@ -146,8 +146,9 @@ class PracticeView(QtWidgets.QWidget):
         self._nav_timer.setTimerType(QtCore.Qt.TimerType.PreciseTimer)
         self._nav_timer.timeout.connect(self._refresh_nav)
         self._sequence.position_changed.connect(self._schedule_nav_refresh)
-        # A queued comprehension correction may finish before its page has been visited in this window.
-        library_checks.Checks.shared(self._db, kind='comprehension').changed.connect(self._schedule_nav_refresh)
+        # Corrections can arrive while Progress is open and the exercise page is inactive.
+        for checks in library_checks.Checks.for_catalog(self._db):
+            checks.changed.connect(self._schedule_nav_refresh)
         self._tabs.currentChanged.connect(self._tab_changed)
         audio_controls = QtWidgets.QHBoxLayout()
         audio_controls.setSpacing(16)
@@ -170,6 +171,7 @@ class PracticeView(QtWidgets.QWidget):
     def _arrange_tracking(self) -> None:
         """Keep analytics separate from exercise controllers; e.g. progress reads all directions without generating questions."""
 
+        self._overall = library_practice_progress.OverallProgress(self._db)
         self._progress = library_practice_progress.ProgressPanel(self._db)
         self._verb_progress = library_verb_progress.VerbProgress(self._db)
         self._sentence_progress = library_sentence_progress.SentenceProgress(self._db)
@@ -177,7 +179,8 @@ class PracticeView(QtWidgets.QWidget):
         self._order_progress = {variant: library_order_progress.Progress(self._db, variant) for variant in word_order.Variant}
         self._comprehension_progress = {direction: library_comprehension_progress.Progress(self._db, direction) for direction in comprehension.Direction}
         self._progress_tabs = QtWidgets.QTabWidget()
-        for panel, label in ((self._progress, i18n.tr('Vocabulary')), (self._verb_progress, i18n.tr('Verbs')), (self._sentence_progress, i18n.tr('Sentences')),
+        for panel, label in ((self._overall, i18n.tr('Overall')), (self._progress, i18n.tr('Vocabulary')),
+                             (self._verb_progress, i18n.tr('Verbs')), (self._sentence_progress, i18n.tr('Sentences')),
                              (self._listening_progress, i18n.tr('Listening')),
                              (self._comprehension_progress[comprehension.Direction.READ], i18n.tr('Reading comprehension')),
                              (self._comprehension_progress[comprehension.Direction.LISTEN], i18n.tr('Listening comprehension')),
@@ -210,20 +213,31 @@ class PracticeView(QtWidgets.QWidget):
                 self._pronunciation.bind_round(track, self._panels[idx].round_id)
             self._panels[idx].activate()
         elif idx == Page.PROGRESS:
-            track = self._last_track()
-            mode = {"practice": 0, "verb": 1, "sentence": 2, 'comprehension': 4, "word_order": 6}[track.kind]
-            if track == practice_tracks.Track.LISTENING:
-                mode = 3
-            elif track == practice_tracks.Track.LISTEN_COMPREHENSION:
-                mode = 5
-            elif track.variant:
-                mode = self._progress_tabs.indexOf(self._order_progress[track.variant])
-            if self._progress_tabs.currentIndex() == mode:
-                self._refresh_progress()
-            else:
-                self._progress_tabs.setCurrentIndex(mode)
+            self._open_progress()
         else:
             self._activity.refresh()
+
+    def _open_progress(self) -> None:
+        """Keep Overall selected, or follow the last exercise when viewing detailed progress."""
+
+        current = self._progress_tabs.currentWidget()
+        if current is self._overall:
+            self._overall.refresh()
+            return
+        track = self._last_track()
+        if track.kind == "comprehension":
+            target = self._comprehension_progress[track.direction]
+        elif track.variant:
+            target = self._order_progress[track.variant]
+        elif track == practice_tracks.Track.LISTENING:
+            target = self._listening_progress
+        else:
+            target = {"practice": self._progress, "verb": self._verb_progress,
+                      "sentence": self._sentence_progress}[track.kind]
+        if current is target:
+            target.refresh()
+        else:
+            self._progress_tabs.setCurrentWidget(target)
 
     def _offer_pronunciation(self, page: Page, ident: int, text: str) -> None:
         """Keep playback on the visible page, e.g. background grading cannot interrupt another exercise."""
@@ -282,6 +296,8 @@ class PracticeView(QtWidgets.QWidget):
         statuses = {Page.for_track(track): status for track, status in practice_activity.day_states(self._db, now).items()}
         resume = self._sequence.refresh_position()
         self._nav.mark(statuses, Page.for_track(resume) if resume else None)
+        if self._tabs.currentIndex() == Page.PROGRESS and self._progress_tabs.currentWidget() is self._overall:
+            self._overall.refresh()
         midnight = datetime.combine(now.date() + timedelta(days=1), time.min)
         delay_ms = int((midnight.timestamp() - now.timestamp()) * 1000) + 1
         self._nav_timer.start(delay_ms)
@@ -337,9 +353,9 @@ class PracticeView(QtWidgets.QWidget):
     def _refresh_progress(self, *_args) -> None:
         """Refresh only visible analytics; e.g. sentence writing history remains independent of word-choice state."""
 
-        panels = (self._progress, self._verb_progress, self._sentence_progress, self._listening_progress,
-                  *self._comprehension_progress.values(), *self._order_progress.values())
-        panels[self._progress_tabs.currentIndex()].refresh()
+        panel = self._progress_tabs.currentWidget()
+        if panel is not None:
+            panel.refresh()
 
     def _shutdown(self) -> None:
         """Release view-owned work at exit while retaining drafts and queued corrections."""

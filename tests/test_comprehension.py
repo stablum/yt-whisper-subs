@@ -24,6 +24,8 @@ from yt_whisper_subs import comprehension_stats
 from yt_whisper_subs import correction_queue
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import practice_score
+from yt_whisper_subs import practice_tracks
 from yt_whisper_subs import vocabulary_learning as learning
 
 
@@ -374,6 +376,7 @@ class ComprehensionTests(unittest.TestCase):
         pending = comprehension_stats.snapshot(self.db, 'read')
         self.assertIsNone(pending['score'])
         self.assertEqual(pending['pending'], 1)
+        self.assertEqual(practice_score.daily(self.db), [])
         queue = correction_queue.Queue(self.db, 'comprehension')
         owner = f'{os.getpid()}:{psutil.Process().create_time()}:fixture'
         self.assertEqual(queue.claim(owner)['id'], row['id'])
@@ -384,6 +387,9 @@ class ComprehensionTests(unittest.TestCase):
         graded = self.engine.check(row['id'], lambda _: None)
         queue.done(row['id'], owner)
         self.assertEqual(graded['score'], .5)
+        daily, = practice_score.daily(self.db)
+        self.assertEqual((daily.score, daily.answers, daily.modes[0].track),
+                         (.5, 1, practice_tracks.Track.READ_COMPREHENSION))
         self.assertTrue(graded['language_correct'])
         self.assertEqual(practice_activity.read(self.db).answers, 1)
         self.assertEqual(practice_activity.read(self.db).week[-1].comprehension_read, 1)

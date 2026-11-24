@@ -15,20 +15,21 @@ from PySide6 import QtWidgets
 from yt_whisper_subs import library_practice_labels as labels
 from yt_whisper_subs import i18n
 from yt_whisper_subs import practice
+from yt_whisper_subs import practice_score
 from yt_whisper_subs import practice_stats
 from yt_whisper_subs import library_practice_tables as tables
-
-
 
 
 class TrendChart(QtWidgets.QWidget):
     """Draw dated series with inspectable points; e.g. hover daily accuracy to see its sample size."""
 
-    def __init__(self, title: str, percent: bool, parent=None, *, empty_text: str | None = None) -> None:
+    def __init__(self, title: str, percent: bool, parent=None, *, empty_text: str | None = None,
+                 connect_gaps: bool = True) -> None:
         """Keep plotting independent from SQL; e.g. cumulative coverage shares this renderer."""
 
         super().__init__(parent)
         self._title, self._percent = title, percent
+        self._connect_gaps = connect_gaps
         self._empty_text = empty_text if empty_text is not None else i18n.tr('Your practice history will appear here')
         self._series: list[dict] = []
         self._hits: list[tuple[QtCore.QPointF, str]] = []
@@ -42,8 +43,11 @@ class TrendChart(QtWidgets.QWidget):
         self._series = []
         for line in series:
             if self._percent:
-                points = [(day, value, f"{hint} ({i18n.number(value / 100, '.1%')})")
-                          for day, value, hint in line["points"]]
+                points = []
+                for day, value, hint in line["points"]:
+                    summary, newline, details = hint.partition("\n")
+                    percent = i18n.number(value / 100, '.1%')
+                    points.append((day, value, f"{summary} ({percent}){newline}{details}"))
                 line = {**line, "points": points}
             self._series.append(line)
         self.update()
@@ -88,10 +92,16 @@ class TrendChart(QtWidgets.QWidget):
             painter.drawText(legend_x, 46, series["label"])
             legend_x += painter.fontMetrics().horizontalAdvance(series["label"]) + 24
             path = QtGui.QPainterPath()
-            for idx, (day, value, hint) in enumerate(series["points"]):
-                x = plot.center().x() if hi == lo else plot.left() + plot.width() * (stamps[day] - lo) / (hi - lo)
+            prev = None
+            for day, value, hint in series["points"]:
+                stamp = stamps[day]
+                x = plot.center().x() if hi == lo else plot.left() + plot.width() * (stamp - lo) / (hi - lo)
                 point = QtCore.QPointF(x, plot.bottom() - plot.height() * value / top)
-                path.moveTo(point) if idx == 0 else path.lineTo(point)
+                if prev is None or (not self._connect_gaps and stamp - prev > 1):
+                    path.moveTo(point)
+                else:
+                    path.lineTo(point)
+                prev = stamp
                 painter.drawEllipse(point, 3.5, 3.5)
                 self._hits.append((point, f"{day} · {series['label']}\n{hint}"))
             painter.drawPath(path)
@@ -99,11 +109,60 @@ class TrendChart(QtWidgets.QWidget):
     def mouseMoveEvent(self, event) -> None:
         """Expose the denominator behind each point; e.g. 100% can mean one answer or fifty."""
 
-        for point, text in self._hits:
-            if (point - event.position()).manhattanLength() < 16:
+        pos = event.position()
+        if self._hits:
+            point, text = min(self._hits, key=lambda hit: (hit[0] - pos).manhattanLength())
+            if (point - pos).manhattanLength() < 16:
                 QtWidgets.QToolTip.showText(event.globalPosition().toPoint(), text, self)
                 return
         QtWidgets.QToolTip.hideText()
+
+
+class OverallProgress(QtWidgets.QWidget):
+    """Plot the daily score across all practice modes, with each point's sample on hover."""
+
+    def __init__(self, db) -> None:
+        """Read only saved grades, e.g. opening Overall leaves resumable rounds alone."""
+
+        super().__init__()
+        self._db = db
+        self._latest = QtWidgets.QLabel()
+        self._latest.setObjectName("practiceStats")
+        self._latest.setWordWrap(True)
+        self._chart = TrendChart(i18n.tr('Daily practice score'), True, connect_gaps=False)
+        note = QtWidgets.QLabel(i18n.tr(
+            'Each practice type with graded answers contributes equally to the day’s score. '
+            'Partial credit counts where available. Hover a point to see the types and answer counts.',
+        ))
+        note.setObjectName("settingsNote")
+        note.setWordWrap(True)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(self._latest)
+        layout.addWidget(self._chart, 1)
+        layout.addWidget(note)
+
+    def refresh(self) -> None:
+        """Show history by submission day, e.g. a grade finished after midnight updates the previous day."""
+
+        history = practice_score.daily(self._db)
+        points = []
+        for day in history:
+            answers = i18n.nt('{count} graded answer', '{count} graded answers', day.answers)
+            modes = i18n.nt('{count} practice type', '{count} practice types', len(day.modes))
+            details = [f"{answers} · {modes}"]
+            for mode in day.modes:
+                label = mode.track.label.replace("\n", " · ")
+                percent = i18n.number(mode.score, '.1%')
+                count = i18n.nt('{count} graded answer', '{count} graded answers', mode.answers)
+                details.append(f"{label} · {percent} · {count}")
+            points.append((day.day.isoformat(), day.score * 100, "\n".join(details)))
+        if history:
+            latest = history[-1]
+            day = i18n.date_text(latest.day, '%d %b %Y')
+            score = i18n.number(latest.score, '.1%')
+            self._latest.setText(i18n.tr('Latest score · {day} · {score}', day=day, score=score))
+        self._latest.setVisible(bool(history))
+        self._chart.set_series([{"label": i18n.tr('Overall'), "color": "#66d9ef", "points": points}])
 
 
 class ProgressPanel(QtWidgets.QWidget):

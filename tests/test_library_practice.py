@@ -118,6 +118,7 @@ class PracticeViewTests(unittest.TestCase):
         self.quiz._controls.finish_requested.emit()
         self.assertIn("Round saved", self.quiz._prompt.text())
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
+        self.dialog._progress_tabs.setCurrentWidget(self.dialog._progress)
         self.assertGreater(self.dialog._progress._terms.rowCount(), 0)
 
     def test_insufficient_targets_offer_options_without_a_partial_round(self) -> None:
@@ -149,6 +150,9 @@ class PracticeViewTests(unittest.TestCase):
         buttons = self.dialog._nav._buttons
         buttons.button(library_practice.Page.PROGRESS).click()
         self.assertEqual(self.dialog._tabs.currentIndex(), library_practice.Page.PROGRESS)
+        self.assertEqual(self.dialog._progress_tabs.tabText(0), "Overall")
+        self.assertIs(self.dialog._progress_tabs.currentWidget(), self.dialog._overall)
+        self.assertFalse(self.dialog._overall._latest.isVisible())
         self.assertIsNone(self.quiz._current)
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 0)
         QtTest.QTest.keyClick(self.dialog._tabs, QtCore.Qt.Key.Key_Tab, QtCore.Qt.KeyboardModifier.ControlModifier)
@@ -512,6 +516,12 @@ class PracticeViewTests(unittest.TestCase):
         self.quiz._answers._buttons[self.quiz._current["correct_idx"]].click()
         self.assertIn(self.quiz._current["content"]["surface"], self.quiz._result.text())
         self.dialog._tabs.setCurrentIndex(library_practice.Page.PROGRESS)
+        self.app.processEvents()
+        overall = self.dialog._overall
+        self.assertIn("100.0%", overall._latest.text())
+        self.assertIn("8 graded answers · 2 practice types (75.0%)", overall._chart._hits[0][1])
+        self.assertIn("Word quiz · Dutch → English · 75.0% · 4 graded answers", overall._chart._hits[0][1])
+        self.dialog._progress_tabs.setCurrentWidget(self.dialog._progress)
         self.app.processEvents()
         accuracy = self.dialog._progress._accuracy
         point, _ = accuracy._hits[0]

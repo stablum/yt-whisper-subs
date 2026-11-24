@@ -85,6 +85,13 @@ _DAY_SOURCES = (
     ('comprehension', "'comprehension:' || s.direction", 'answer_text'),
 )
 
+# Reuse the grading evidence exposed by each exercise's own progress page.
+_PARTIAL = {
+    'sentence': ("NULL", "json_extract(p.grade_json,'$.corrected')"),
+    'word_order': ("json_extract(p.grade_json,'$.partial')", "NULL"),
+    'comprehension': ("p.score", "NULL"),
+}
+
 class PracticeDbMixin:
     """Keep immutable question/answer evidence alongside a rebuildable scheduling cache."""
 
@@ -161,6 +168,23 @@ class PracticeDbMixin:
             rows = conn.execute(f"SELECT track, MAX(completed) FROM ({events}) GROUP BY track",
                                 {'since': since, 'until': until})
             return {track: bool(completed) for track, completed in rows}
+
+    def practice_score_rows(self, until: float) -> list[dict]:
+        """Return one row per graded submission; e.g. an assessed vocabulary word adds no second answer."""
+
+        queries = []
+        for kind, track, answer in _DAY_SOURCES:
+            partial, corrected = _PARTIAL.get(kind, ("NULL", "NULL"))
+            queries.append(f"""
+                SELECT p.answered_at, {track} AS track, p.outcome, p.{answer} AS answer,
+                       {partial} AS partial, {corrected} AS corrected
+                FROM {kind}_presentations p JOIN {kind}_sessions s ON s.id=p.session_id
+                WHERE p.answered_at <= :until AND p.{answer} IS NOT NULL
+                  AND p.outcome IN ('correct', 'wrong')
+            """)
+        with self._connect() as conn:
+            rows = conn.execute("\nUNION ALL\n".join(queries), {'until': until})
+            return [dict(row) for row in rows]
 
     def practice_cached(self, lookup_id: int, direction: str, policy: dict) -> list[dict]:
         """Reuse only the requested generation policy; e.g. a model upgrade cannot silently serve older choices."""

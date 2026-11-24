@@ -9,12 +9,18 @@ import tempfile
 import unittest
 from unittest import mock
 
+from tests import listening_fixtures
 from tests import practice_fixtures
+from tests import sentence_fixtures
 from yt_whisper_subs import library_db
 from yt_whisper_subs import practice
 from yt_whisper_subs import practice_activity
+from yt_whisper_subs import practice_score
 from yt_whisper_subs import practice_service
 from yt_whisper_subs import practice_stats
+from yt_whisper_subs import practice_tracks
+from yt_whisper_subs import sentence_practice
+from yt_whisper_subs import sentence_service
 
 
 class ActivityTests(unittest.TestCase):
@@ -89,6 +95,38 @@ class ActivityTests(unittest.TestCase):
             self.db.practice_answer(row["id"], row["correct_idx"], False, 120_000)
         data = practice_activity.read(self.db, now=self.now)
         self.assertEqual([(day.day, day.answers) for day in data.days], [(after.date(), 1)])
+
+    def test_daily_score_balances_modes_and_uses_the_original_submission_day(self) -> None:
+        """Weight a four-answer quiz and a one-answer dictation equally, even when grading happens later."""
+
+        at = self.now - timedelta(days=2)
+        self._round(at, 4)
+        self._round(self.now - timedelta(hours=1), direction=practice.Direction.EN_NL)
+        sentence_fixtures.seed(self.db)
+        engine = sentence_service.SentenceService(
+            self.db, sentence_fixtures.SimpleSentenceProvider(), speech=listening_fixtures.Speech(),
+        )
+        opts = sentence_fixtures.options(direction=sentence_practice.Direction.LISTEN)
+        with mock.patch("yt_whisper_subs.sentence_db.time.time", return_value=at.timestamp()):
+            session = engine.start(opts, lambda _: None)
+            row = self.db.sentence_current(session)
+            words = row["content"]["dutch"].split()
+            self.db.sentence_submit(row["id"], " ".join(words[:-1]), 1000)
+        pending = practice_score.daily(self.db, now=self.now)
+        self.assertEqual([(d.day, d.score, d.answers) for d in pending], [(at.date(), .5, 4), (self.now.date(), 0, 1)])
+
+        engine.check(row["id"], lambda _: None)
+        day, later = practice_score.daily(self.db, now=self.now)
+        partial = (len(words) - 1) / len(words)
+        self.assertEqual((day.day, day.answers), (at.date(), 5))
+        self.assertAlmostEqual(day.score, (.5 + partial) / 2)
+        self.assertEqual({m.track: m.answers for m in day.modes},
+                         {practice_tracks.Track.WORD_NL_EN: 4, practice_tracks.Track.LISTENING: 1})
+        self.assertEqual(later, pending[-1])
+
+        self.db.sentence_flag(row["id"])
+        self.assertEqual(practice_score.daily(self.db, now=self.now), pending)
+        self.assertEqual(practice_activity.read(self.db, now=self.now).answers, 6)
 
     def test_rolling_week_zero_fills_and_keeps_older_last_practice(self) -> None:
         """A quiet week still reports the real inactivity gap; e.g. the last answer was nine calendar days ago."""

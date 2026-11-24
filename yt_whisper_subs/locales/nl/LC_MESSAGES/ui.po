@@ -19,7 +19,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
 
-#: yt_whisper_subs/library_sentence_session.py:299
+#: yt_whisper_subs/library_queued_writing.py:306
 msgid ""
 "\n"
 "All available corrections have been viewed. Select an answer on the left to revisit it."
@@ -27,7 +27,7 @@ msgstr ""
 "\n"
 "Alle beschikbare correcties zijn bekeken. Kies links een antwoord om het opnieuw te bekijken."
 
-#: yt_whisper_subs/library_sentence_session.py:292
+#: yt_whisper_subs/library_queued_writing.py:298
 msgid ""
 "\n"
 "Corrections marked • on the left have not been viewed."
@@ -46,7 +46,7 @@ msgstr ""
 "{listens} luisterbeurten · {slow_listens} langzame luisterbeurten voor beoordeelde antwoorden · "
 "{first} goed na één normale luisterbeurt"
 
-#: yt_whisper_subs/library_sentence_session.py:296
+#: yt_whisper_subs/library_queued_writing.py:302
 #, python-brace-format
 msgid ""
 "\n"
@@ -55,12 +55,12 @@ msgstr ""
 "\n"
 "{pending} wachtend op correctie. Nieuwe feedback verschijnt hier zodra die beschikbaar is."
 
-#: yt_whisper_subs/library_sentence_session.py:221
+#: yt_whisper_subs/library_queued_writing.py:224
 #, python-brace-format
 msgid "  ·  {pending} awaiting correction"
 msgstr "  ·  {pending} wachtend op correctie"
 
-#: yt_whisper_subs/library_sentence_session.py:222
+#: yt_whisper_subs/library_queued_writing.py:225
 #, python-brace-format
 msgid "  ·  {unseen} unseen"
 msgstr "  ·  {unseen} niet bekeken"
@@ -160,7 +160,7 @@ msgstr ""
 msgid "A correct guess gets a shorter review interval. Response speed does not affect grading."
 msgstr "Een goede gok krijgt een korter herhaalinterval. Antwoordsnelheid beïnvloedt de beoordeling niet."
 
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_practice_progress.py:188
 msgid "Accuracy"
 msgstr "Nauwkeurigheid"
 
@@ -174,7 +174,7 @@ msgstr "Nauwkeurigheid %"
 msgid "Actions for all videos matching the current filters"
 msgstr "Acties voor alle video's die aan de filters voldoen"
 
-#: yt_whisper_subs/library_practice.py:192
+#: yt_whisper_subs/library_practice.py:195
 msgid "Activity"
 msgstr "Activiteit"
 
@@ -275,7 +275,7 @@ msgstr "Er loopt al een andere bibliotheektaak"
 msgid "Another round"
 msgstr "Nog een ronde"
 
-#: yt_whisper_subs/library_sentence_session.py:298
+#: yt_whisper_subs/library_queued_writing.py:305
 msgid "Another sentence round"
 msgstr "Nog een zinsronde"
 
@@ -296,7 +296,7 @@ msgstr "Antwoord opgeslagen. Je ziet de uitleg nadat alle antwoorden zijn ingedi
 msgid "Answer the question in Dutch. You may use your own wording."
 msgstr "Beantwoord de vraag in het Nederlands. Een eigen formulering mag."
 
-#: yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:188
 msgid "Answer time"
 msgstr "Antwoordtijd"
 
@@ -515,7 +515,7 @@ msgstr "Kanaal controleren op nieuwe video's…"
 msgid "Checking channels…"
 msgstr "Kanalen controleren…"
 
-#: yt_whisper_subs/sentence_service.py:193
+#: yt_whisper_subs/sentence_service.py:194
 msgid "Checking your Dutch transcription…"
 msgstr "Je Nederlandse transcriptie controleren…"
 
@@ -527,7 +527,7 @@ msgstr "Je antwoord en de betekenis van gebruikte woorden beoordelen…"
 msgid "Checking your sentence…"
 msgstr "Je zin controleren…"
 
-#: yt_whisper_subs/sentence_service.py:201
+#: yt_whisper_subs/sentence_service.py:202
 msgid "Checking your translation…"
 msgstr "Je vertaling controleren…"
 
@@ -738,7 +738,7 @@ msgstr "Alles kopiëren"
 
 #: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_order_progress.py:24
 #: yt_whisper_subs/library_order_progress.py:48 yt_whisper_subs/library_practice_labels.py:12
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_practice_progress.py:188
 #: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
 #: yt_whisper_subs/library_sentence_progress.py:42 yt_whisper_subs/library_verb_progress.py:35
 #: yt_whisper_subs/library_verb_progress.py:36 yt_whisper_subs/library_verb_progress.py:39
@@ -773,7 +773,7 @@ msgstr ""
 msgid "Correction in progress"
 msgstr "Beoordeling bezig"
 
-#: yt_whisper_subs/library_sentence_session.py:206
+#: yt_whisper_subs/library_queued_writing.py:209
 msgid "Correction in progress…"
 msgstr "Beoordeling bezig…"
 
@@ -785,7 +785,7 @@ msgstr "Correctie opnieuw proberen"
 msgid "Correction queued"
 msgstr "Beoordeling in wachtrij"
 
-#: yt_whisper_subs/library_sentence_session.py:206
+#: yt_whisper_subs/library_queued_writing.py:209
 msgid "Correction queued…"
 msgstr "Correctie in wachtrij…"
 
@@ -805,7 +805,7 @@ msgstr "Correctie klaar · Opnieuw oefenen"
 msgid "Correction saved · read it, then click Continue or press Enter"
 msgstr "Correctie opgeslagen · lees deze en klik op Doorgaan of druk op Enter"
 
-#: yt_whisper_subs/library_sentence_session.py:206
+#: yt_whisper_subs/library_queued_writing.py:209
 msgid "Correction unavailable · your answer is saved."
 msgstr "Correctie niet beschikbaar · je antwoord is opgeslagen."
 
@@ -831,7 +831,7 @@ msgstr ""
 msgid "Could not initialize channel"
 msgstr "Kanaal kon niet worden geïnitialiseerd"
 
-#: yt_whisper_subs/library_app.py:80
+#: yt_whisper_subs/library_app.py:79
 msgid "Could not open YouTube Library"
 msgstr "YouTube-bibliotheek kon niet worden geopend"
 
@@ -883,7 +883,7 @@ msgstr "Hoofdstukken maken"
 msgid "Cue time"
 msgstr "Ondertiteltijd"
 
-#: yt_whisper_subs/library_practice_progress.py:121
+#: yt_whisper_subs/library_practice_progress.py:180
 msgid "Cumulative distinct words practiced"
 msgstr "Cumulatief aantal unieke geoefende woorden"
 
@@ -895,13 +895,17 @@ msgstr "Huidige beschikbaarheid kon niet worden bevestigd. Dubbelklik om opnieuw
 msgid "Current or previous downloads not watched yet"
 msgstr "Huidige of eerdere downloads die nog niet zijn bekeken"
 
-#: yt_whisper_subs/library_practice_progress.py:120
+#: yt_whisper_subs/library_practice_progress.py:179
 msgid "Daily answer accuracy"
 msgstr "Dagelijkse antwoordnauwkeurigheid"
 
 #: yt_whisper_subs/library_practice_reminders.py:60
 msgid "Daily practice reminder"
 msgstr "Dagelijkse oefenherinnering"
+
+#: yt_whisper_subs/library_practice_progress.py:132
+msgid "Daily practice score"
+msgstr "Dagelijkse oefenscore"
 
 #: yt_whisper_subs/library_comprehension_progress.py:39
 #: yt_whisper_subs/library_comprehension_progress.py:42 yt_whisper_subs/library_sentence_progress.py:36
@@ -939,7 +943,7 @@ msgid "Direct command"
 msgstr "Direct bevel"
 
 #: yt_whisper_subs/library_comprehension_progress.py:41
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_practice_progress.py:188
 #: yt_whisper_subs/library_sentence_progress.py:36 yt_whisper_subs/library_sentence_progress.py:37
 #: yt_whisper_subs/library_sentence_progress.py:39 yt_whisper_subs/library_sentence_progress.py:40
 #: yt_whisper_subs/library_sentence_progress.py:41 yt_whisper_subs/library_sentence_progress.py:42
@@ -1022,6 +1026,15 @@ msgstr "Nederlandse tekst"
 #: yt_whisper_subs/practice.py:31
 msgid "Dutch → English"
 msgstr "Nederlands → Engels"
+
+#: yt_whisper_subs/library_practice_progress.py:133
+msgid ""
+"Each practice type with graded answers contributes equally to the day’s score. Partial credit "
+"counts where available. Hover a point to see the types and answer counts."
+msgstr ""
+"Elk oefentype met beoordeelde antwoorden telt even zwaar mee voor de dagscore. Deelpunten tellen "
+"mee waar die worden toegekend. Beweeg over een punt om de oefentypen en aantallen antwoorden te "
+"zien."
 
 #: yt_whisper_subs/word_order.py:21
 msgid "Embedded and relative clauses"
@@ -1120,7 +1133,7 @@ msgstr "Uitgesloten van beoordeling en adaptieve herhaling. Je ingediende inspan
 msgid "Exercise reported"
 msgstr "Oefening gemeld"
 
-#: yt_whisper_subs/library_sentence_session.py:138
+#: yt_whisper_subs/library_queued_writing.py:138
 msgid "Exercise reported · excluded from learning statistics"
 msgstr "Oefening gemeld · uitgesloten van leerstatistieken"
 
@@ -1465,6 +1478,11 @@ msgstr "Laatste fout: {download_error}"
 msgid "Last seen"
 msgstr "Laatst gezien"
 
+#: yt_whisper_subs/library_practice_progress.py:163
+#, python-brace-format
+msgid "Latest score · {day} · {score}"
+msgstr "Laatste score · {day} · {score}"
+
 #: yt_whisper_subs/library_order_replay.py:171
 msgid "Leave out"
 msgstr "Weglaten"
@@ -1482,7 +1500,7 @@ msgstr "Houd deze reserve onder oversturing. Hogere waarden klinken zachter."
 msgid "Library"
 msgstr "Bibliotheek"
 
-#: yt_whisper_subs/library_app.py:75
+#: yt_whisper_subs/library_app.py:74
 msgid "Library is already running"
 msgstr "De bibliotheek is al geopend"
 
@@ -1535,7 +1553,7 @@ msgstr "Luister naar de tekst"
 msgid "Listen to the text and answer the questions."
 msgstr "Luister naar de tekst en beantwoord de vragen."
 
-#: yt_whisper_subs/library_practice.py:181 yt_whisper_subs/library_practice_activity.py:61
+#: yt_whisper_subs/library_practice.py:184 yt_whisper_subs/library_practice_activity.py:61
 #: yt_whisper_subs/library_sentences.py:171 yt_whisper_subs/practice_tracks.py:102
 msgid "Listening"
 msgstr "Luisteren"
@@ -1548,7 +1566,7 @@ msgstr ""
 "Luisteren\n"
 "Nederlands dictee"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:183
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:186
 msgid "Listening comprehension"
 msgstr "Luisterbegrip"
 
@@ -1653,7 +1671,7 @@ msgstr "De betekenis is dubbelzinnig in deze context."
 msgid "Median seconds"
 msgstr "Mediane seconden"
 
-#: yt_whisper_subs/library_practice_progress.py:123
+#: yt_whisper_subs/library_practice_progress.py:182
 msgid "Median time"
 msgstr "Mediane tijd"
 
@@ -1784,7 +1802,7 @@ msgstr "Nieuwe tekst"
 msgid "New variation"
 msgstr "Nieuwe variatie"
 
-#: yt_whisper_subs/library_verb_controls.py:67
+#: yt_whisper_subs/library_queued_writing.py:305 yt_whisper_subs/library_verb_controls.py:67
 msgid "New verb round"
 msgstr "Nieuwe werkwoordronde"
 
@@ -1800,7 +1818,7 @@ msgstr "Nieuws en samenleving"
 msgid "Next"
 msgstr "Volgende"
 
-#: yt_whisper_subs/library_sentence_session.py:213
+#: yt_whisper_subs/library_queued_writing.py:216
 msgid "Next correction →"
 msgstr "Volgende correctie →"
 
@@ -1808,13 +1826,13 @@ msgstr "Volgende correctie →"
 msgid "Next question"
 msgstr "Volgende vraag"
 
-#: yt_whisper_subs/library_sentence_session.py:140 yt_whisper_subs/library_sentence_session.py:208
-#: yt_whisper_subs/library_sentence_session.py:214
+#: yt_whisper_subs/library_queued_writing.py:140 yt_whisper_subs/library_queued_writing.py:211
+#: yt_whisper_subs/library_queued_writing.py:217
 msgid "Next question →"
 msgstr "Volgende vraag →"
 
 #: yt_whisper_subs/library_comprehension_progress.py:41
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_sentence_progress.py:38
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_sentence_progress.py:38
 msgid "Next review"
 msgstr "Volgende herhaling"
 
@@ -1871,7 +1889,7 @@ msgstr "Nog geen woorden klaar"
 msgid "Not answered"
 msgstr "Nog niet beantwoord"
 
-#: yt_whisper_subs/library_practice_progress.py:201
+#: yt_whisper_subs/library_practice_progress.py:260
 msgid "Not graded"
 msgstr "Niet beoordeeld"
 
@@ -1976,6 +1994,10 @@ msgstr "Overig"
 #: yt_whisper_subs/library_voice_controls.py:216
 msgid "Output headroom"
 msgstr "Uitstuurreserve"
+
+#: yt_whisper_subs/library_practice.py:182 yt_whisper_subs/library_practice_progress.py:165
+msgid "Overall"
+msgstr "Totaal"
 
 #: yt_whisper_subs/library_voice_controls.py:134
 msgid "Overall expression"
@@ -2285,7 +2307,7 @@ msgstr "Je oefeningen worden voorbereid en gecontroleerd."
 msgid "Preparing and checking {len} choices…"
 msgstr "{len} antwoordopties voorbereiden en controleren…"
 
-#: yt_whisper_subs/sentence_service.py:132
+#: yt_whisper_subs/sentence_service.py:133
 #, python-brace-format
 msgid "Preparing and checking {len} sentence pairs…"
 msgstr "{len} zinsparen voorbereiden en controleren…"
@@ -2379,7 +2401,7 @@ msgstr "Eerdere woordenschat"
 msgid "Previously removed"
 msgstr "Eerder verwijderd"
 
-#: yt_whisper_subs/library_practice.py:191
+#: yt_whisper_subs/library_practice.py:194
 msgid "Progress"
 msgstr "Voortgang"
 
@@ -2413,7 +2435,7 @@ msgstr "Vraag {ordinal} · {title}{consulted}"
 msgid "Questions"
 msgstr "Vragen"
 
-#: yt_whisper_subs/library_sentence_review.py:240
+#: yt_whisper_subs/library_queued_writing.py:29 yt_whisper_subs/library_sentence_review.py:240
 msgid "Questions and corrections"
 msgstr "Vragen en beoordelingen"
 
@@ -2458,7 +2480,7 @@ msgstr "Tekst voorlezen"
 msgid "Reading"
 msgstr "Lezen"
 
-#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:182
+#: yt_whisper_subs/comprehension.py:28 yt_whisper_subs/library_practice.py:185
 msgid "Reading comprehension"
 msgstr "Leesbegrip"
 
@@ -2724,8 +2746,8 @@ msgstr "Opnieuw proberen om {when}"
 msgid "Retry checking"
 msgstr "Opnieuw controleren"
 
-#: yt_whisper_subs/library_comprehension_view.py:164 yt_whisper_subs/library_sentence_review.py:259
-#: yt_whisper_subs/library_sentence_session.py:208
+#: yt_whisper_subs/library_comprehension_view.py:164 yt_whisper_subs/library_queued_writing.py:211
+#: yt_whisper_subs/library_sentence_review.py:259
 msgid "Retry correction"
 msgstr "Beoordeling opnieuw proberen"
 
@@ -2746,11 +2768,11 @@ msgstr "Keer terug om te beginnen."
 msgid "Return to {tab_name} to continue."
 msgstr "Keer terug naar {tab_name} om door te gaan."
 
-#: yt_whisper_subs/library_sentence_session.py:291
+#: yt_whisper_subs/library_queued_writing.py:297
 msgid "Review corrections"
 msgstr "Correcties bekijken"
 
-#: yt_whisper_subs/library_sentence_session.py:295
+#: yt_whisper_subs/library_queued_writing.py:301
 msgid "Review pending corrections"
 msgstr "Wachtende correcties bekijken"
 
@@ -2762,7 +2784,7 @@ msgstr "Bekijk de uitleg"
 msgid "Revising questions flagged by the independent review…"
 msgstr "Vragen uit de onafhankelijke controle worden aangepast…"
 
-#: yt_whisper_subs/library_verbs.py:24
+#: yt_whisper_subs/library_verbs.py:26
 msgid "Rewrite a Dutch sentence for a new subject, tense or situation."
 msgstr "Herschrijf een Nederlandse zin voor een nieuw onderwerp, een andere tijd of situatie."
 
@@ -2780,16 +2802,16 @@ msgstr "Rondelengte"
 msgid "Round options"
 msgstr "Ronde-opties"
 
-#: yt_whisper_subs/library_sentence_session.py:298
+#: yt_whisper_subs/library_queued_writing.py:304
 msgid "Round reviewed"
 msgstr "Ronde nagekeken"
 
-#: yt_whisper_subs/library_sentence_session.py:298 yt_whisper_subs/library_word_quiz.py:472
+#: yt_whisper_subs/library_queued_writing.py:304 yt_whisper_subs/library_word_quiz.py:472
 msgid "Round saved"
 msgstr "Ronde opgeslagen"
 
 #: yt_whisper_subs/library_comprehension_progress.py:43
-#: yt_whisper_subs/library_practice_progress.py:136 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_practice_progress.py:195 yt_whisper_subs/library_sentence_progress.py:42
 #: yt_whisper_subs/library_verb_progress.py:39
 msgid "Rounds"
 msgstr "Rondes"
@@ -2798,7 +2820,7 @@ msgstr "Rondes"
 msgid "SHOW"
 msgstr "TOON"
 
-#: yt_whisper_subs/sentence_service.py:43
+#: yt_whisper_subs/sentence_service.py:44
 msgid "Save and translate some Dutch vocabulary words before sentence practice."
 msgstr "Sla Nederlandse woorden met vertaling op voordat je zinnen gaat oefenen."
 
@@ -2830,7 +2852,7 @@ msgstr "Gecontroleerde werkwoorden opslaan…"
 msgid "Saving correction…"
 msgstr "Correctie opslaan…"
 
-#: yt_whisper_subs/sentence_service.py:217
+#: yt_whisper_subs/sentence_service.py:218
 msgid "Saving sentence and vocabulary feedback…"
 msgstr "Feedback over zin en woordenschat opslaan…"
 
@@ -2904,7 +2926,7 @@ msgstr "Opties voor zinsronde"
 msgid "Sentence translations"
 msgstr "Zinnen vertalen"
 
-#: yt_whisper_subs/library_practice.py:139 yt_whisper_subs/library_practice.py:180
+#: yt_whisper_subs/library_practice.py:139 yt_whisper_subs/library_practice.py:183
 #: yt_whisper_subs/library_practice_activity.py:61 yt_whisper_subs/library_sentence_progress.py:36
 #: yt_whisper_subs/library_sentences.py:53 yt_whisper_subs/practice_tracks.py:88
 msgid "Sentences"
@@ -2951,7 +2973,7 @@ msgstr "Toon video's van overige kanalen"
 msgid "Show videos from pinned channels"
 msgstr "Toon video's van vastgezette kanalen"
 
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_practice_progress.py:188
 #: yt_whisper_subs/library_sentence_progress.py:37 yt_whisper_subs/library_verb_progress.py:36
 msgid "Shown"
 msgstr "Getoond"
@@ -3008,7 +3030,7 @@ msgstr "Oefenherinnering {snooze_hours} uur uitstellen"
 msgid "Snooze {snooze_hours}h"
 msgstr "{snooze_hours} uur uitstellen"
 
-#: yt_whisper_subs/library_sentence_session.py:294
+#: yt_whisper_subs/library_queued_writing.py:300
 msgid "Some corrections need a retry"
 msgstr "Sommige correcties moeten opnieuw worden geprobeerd"
 
@@ -3071,7 +3093,7 @@ msgid "Start quietly in the system tray when I sign in"
 msgstr "Bij aanmelden stil in het systeemvak starten"
 
 #: yt_whisper_subs/library_comprehension_progress.py:43 yt_whisper_subs/library_model.py:128
-#: yt_whisper_subs/library_practice_progress.py:129 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_practice_progress.py:188 yt_whisper_subs/library_sentence_progress.py:42
 #: yt_whisper_subs/library_verb_progress.py:39
 msgid "Started"
 msgstr "Begonnen"
@@ -3105,7 +3127,7 @@ msgid "Statement"
 msgstr "Mededeling"
 
 #: yt_whisper_subs/library_comprehension_progress.py:43
-#: yt_whisper_subs/library_practice_progress.py:129 yt_whisper_subs/library_sentence_progress.py:42
+#: yt_whisper_subs/library_practice_progress.py:188 yt_whisper_subs/library_sentence_progress.py:42
 #: yt_whisper_subs/library_verb_progress.py:39
 msgid "Status"
 msgstr "Status"
@@ -3176,7 +3198,7 @@ msgstr ""
 msgid "Subjunctives · present and past"
 msgstr "Aanvoegende wijzen · tegenwoordig en verleden"
 
-#: yt_whisper_subs/library_sentence_session.py:135
+#: yt_whisper_subs/library_queued_writing.py:135
 msgid "Submit & next →"
 msgstr "Indienen en verder →"
 
@@ -3275,7 +3297,7 @@ msgstr "Deze filters leveren geen geldige Nederlandse vormen op. Wijzig de ronde
 msgid "These verb forms are not due yet. Try other forms or practise early."
 msgstr "Deze werkwoordsvormen zijn nog niet aan herhaling toe. Probeer andere vormen of oefen vroeg."
 
-#: yt_whisper_subs/library_app.py:76
+#: yt_whisper_subs/library_app.py:75
 msgid "This library is already open. Use its window or system tray icon."
 msgstr "Deze bibliotheek is al geopend. Gebruik het venster of het systeemvakpictogram."
 
@@ -3513,13 +3535,13 @@ msgstr "Opties voor werkwoordronde"
 msgid "Verb spelling"
 msgstr "Werkwoordspelling"
 
-#: yt_whisper_subs/library_verbs.py:23 yt_whisper_subs/practice_tracks.py:98
+#: yt_whisper_subs/library_verbs.py:25 yt_whisper_subs/practice_tracks.py:98
 msgid "Verb transformations"
 msgstr "Werkwoordtransformaties"
 
-#: yt_whisper_subs/library_practice.py:138 yt_whisper_subs/library_practice.py:180
+#: yt_whisper_subs/library_practice.py:138 yt_whisper_subs/library_practice.py:183
 #: yt_whisper_subs/library_practice_activity.py:60 yt_whisper_subs/library_verb_controls.py:55
-#: yt_whisper_subs/library_verb_progress.py:36 yt_whisper_subs/library_verbs.py:23
+#: yt_whisper_subs/library_verb_progress.py:36 yt_whisper_subs/library_verbs.py:25
 #: yt_whisper_subs/practice_tracks.py:88
 msgid "Verbs"
 msgstr "Werkwoorden"
@@ -3581,7 +3603,7 @@ msgstr "Transcript bekijken"
 msgid "Views"
 msgstr "Weergaven"
 
-#: yt_whisper_subs/library_gui.py:258 yt_whisper_subs/library_practice.py:180
+#: yt_whisper_subs/library_gui.py:258 yt_whisper_subs/library_practice.py:182
 msgid "Vocabulary"
 msgstr "Woordenschat"
 
@@ -3610,11 +3632,11 @@ msgstr "Stem klaar: {value}. Kies Luisteren om af te spelen."
 msgid "Voices available during practice"
 msgstr "Beschikbare stemmen bij het oefenen"
 
-#: yt_whisper_subs/library_sentence_session.py:294
+#: yt_whisper_subs/library_queued_writing.py:300
 msgid "Waiting for corrections"
 msgstr "Wachten op correcties"
 
-#: yt_whisper_subs/library_sentence_session.py:295
+#: yt_whisper_subs/library_queued_writing.py:301
 msgid "Waiting…"
 msgstr "Wachten…"
 
@@ -3686,7 +3708,7 @@ msgid "Windows"
 msgstr "Windows"
 
 #: yt_whisper_subs/library_comprehension_progress.py:41
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_sentence_progress.py:37
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_sentence_progress.py:37
 #: yt_whisper_subs/library_vocabulary.py:49
 msgid "Word"
 msgstr "Woord"
@@ -3707,7 +3729,7 @@ msgstr "Woordvolgorde"
 msgid "Word quiz"
 msgstr "Woordquiz"
 
-#: yt_whisper_subs/library_practice_progress.py:137
+#: yt_whisper_subs/library_practice_progress.py:196
 msgid ""
 "Word reviews combine vocabulary choices with assessed words and lexical mistakes from typed "
 "practice. Activity counts each submitted exercise once. Accuracy reflects changing review "
@@ -3725,11 +3747,11 @@ msgid "Word-order patterns"
 msgstr "Woordvolgorde per constructie"
 
 #: yt_whisper_subs/library_comprehension_progress.py:41 yt_whisper_subs/library_practice.py:137
-#: yt_whisper_subs/library_practice_progress.py:135 yt_whisper_subs/library_sentence_progress.py:37
+#: yt_whisper_subs/library_practice_progress.py:194 yt_whisper_subs/library_sentence_progress.py:37
 msgid "Words"
 msgstr "Woorden"
 
-#: yt_whisper_subs/library_practice_progress.py:189
+#: yt_whisper_subs/library_practice_progress.py:248
 msgid "Words explored"
 msgstr "Verkende woorden"
 
@@ -3745,7 +3767,7 @@ msgstr "Schrijf de volledige Nederlandse zin. Je kunt opnieuw of langzamer luist
 msgid "Write your answer in Dutch…"
 msgstr "Schrijf je antwoord in het Nederlands…"
 
-#: yt_whisper_subs/library_practice_progress.py:123 yt_whisper_subs/library_practice_progress.py:129
+#: yt_whisper_subs/library_practice_progress.py:182 yt_whisper_subs/library_practice_progress.py:188
 msgid "Wrong"
 msgstr "Fout"
 
@@ -3819,7 +3841,7 @@ msgid "Your open answer"
 msgstr "Jouw open antwoord"
 
 #: yt_whisper_subs/library_comprehension_progress.py:36
-#: yt_whisper_subs/library_comprehension_progress.py:37 yt_whisper_subs/library_practice_progress.py:32
+#: yt_whisper_subs/library_comprehension_progress.py:37 yt_whisper_subs/library_practice_progress.py:33
 msgid "Your practice history will appear here"
 msgstr "Je oefengeschiedenis verschijnt hier."
 
@@ -3844,7 +3866,7 @@ msgstr "Je opgeslagen woorden staan klaar voor je eerste oefening."
 msgid "Your sentence"
 msgstr "Jouw zin"
 
-#: yt_whisper_subs/sentence_service.py:61
+#: yt_whisper_subs/sentence_service.py:62
 msgid "Your sentence targets and writing reviews are not due yet. Try early practice if you wish."
 msgstr ""
 "Je zinsoefeningen en schrijfherhalingen zijn nog niet aan de beurt. Probeer eventueel vroeg "
@@ -3965,7 +3987,7 @@ msgstr "{correct} goed van de {total}"
 msgid "{correct} correct · {wrong} to revisit"
 msgstr "{correct} goed · {wrong} opnieuw oefenen"
 
-#: yt_whisper_subs/library_sentence_session.py:289
+#: yt_whisper_subs/library_queued_writing.py:295
 #, python-brace-format
 msgid "{correct} correct · {wrong} to revisit · {submitted} answers"
 msgstr "{correct} goed · {wrong} opnieuw oefenen · {submitted} antwoorden"
@@ -3975,7 +3997,7 @@ msgstr "{correct} goed · {wrong} opnieuw oefenen · {submitted} antwoorden"
 msgid "{correct} correct · {wrong} to revisit · {submitted} submitted"
 msgstr "{correct} goed · {wrong} opnieuw oefenen · {submitted} ingediend"
 
-#: yt_whisper_subs/library_practice_progress.py:175 yt_whisper_subs/library_sentence_progress.py:133
+#: yt_whisper_subs/library_practice_progress.py:234 yt_whisper_subs/library_sentence_progress.py:133
 #: yt_whisper_subs/library_verb_progress.py:116
 #, python-brace-format
 msgid "{correct}/{attempts} correct"
@@ -4003,6 +4025,7 @@ msgstr[0] "{count} gecontroleerde zin"
 msgstr[1] "{count} gecontroleerde zinnen"
 
 #: yt_whisper_subs/library_comprehension_progress.py:81 yt_whisper_subs/library_order_progress.py:46
+#: yt_whisper_subs/library_practice_progress.py:150 yt_whisper_subs/library_practice_progress.py:156
 #, python-brace-format
 msgid "{count} graded answer"
 msgid_plural "{count} graded answers"
@@ -4020,6 +4043,13 @@ msgid "{count} new video · Pinned channels"
 msgid_plural "{count} new videos · Pinned channels"
 msgstr[0] "{count} nieuwe video · Vastgezette kanalen"
 msgstr[1] "{count} nieuwe video's · Vastgezette kanalen"
+
+#: yt_whisper_subs/library_practice_progress.py:151
+#, python-brace-format
+msgid "{count} practice type"
+msgid_plural "{count} practice types"
+msgstr[0] "{count} oefentype"
+msgstr[1] "{count} oefentypen"
 
 #: yt_whisper_subs/library_practice_activity.py:300
 #, python-brace-format
@@ -4112,7 +4142,7 @@ msgstr ""
 "{len:,} woorden · {sum:,} klikken · {sum3:,} woordverwarringen · verrijking: {pending} wachtend, "
 "{failed} mislukt"
 
-#: yt_whisper_subs/sentence_service.py:93
+#: yt_whisper_subs/sentence_service.py:94
 #, python-brace-format
 msgid "{len} checked sentences ready"
 msgstr "{len} gecontroleerde zinnen klaar"
@@ -4155,12 +4185,12 @@ msgstr ""
 "{question_due} zinnen te herhalen · {word_due} woordvaardigheden te herhalen · {pending} wachtend"
 " op correctie"
 
-#: yt_whisper_subs/library_practice_progress.py:184
+#: yt_whisper_subs/library_practice_progress.py:243
 #, python-brace-format
 msgid "{saved}/{total} current saved Dutch words ({share:.1%})"
 msgstr "{saved}/{total} momenteel opgeslagen Nederlandse woorden ({share:.1%})"
 
-#: yt_whisper_subs/library_practice_progress.py:161
+#: yt_whisper_subs/library_practice_progress.py:220
 #, python-brace-format
 msgid ""
 "{shown} presentations    ·    {attempts} graded answers    ·    {accuracy} correct    ·    {due} "
@@ -4170,7 +4200,7 @@ msgstr ""
 "{due} herhalingen te doen    ·    {established} gevestigde woorden (per richting)    ·    reeks "
 "van {streak} dagen"
 
-#: yt_whisper_subs/library_sentence_session.py:215
+#: yt_whisper_subs/library_queued_writing.py:218
 #, python-brace-format
 msgid "{submitted} / {planned} answered  ·  {correct} correct"
 msgstr "{submitted} / {planned} beantwoord  ·  {correct} goed"
@@ -4218,7 +4248,7 @@ msgstr "{title} · begrip {score:.0%}{language}"
 msgid "{title} · {role} concept"
 msgstr "{title} · {role} begrip"
 
-#: yt_whisper_subs/library_sentence_session.py:291
+#: yt_whisper_subs/library_queued_writing.py:297
 #, python-brace-format
 msgid "{unseen} corrections to review"
 msgstr "{unseen} correcties te bekijken"
@@ -4257,7 +4287,7 @@ msgid_plural "{visible:,} of {count:,} videos"
 msgstr[0] "{visible:,} van {count:,} video"
 msgstr[1] "{visible:,} van {count:,} video's"
 
-#: yt_whisper_subs/library_practice_progress.py:182
+#: yt_whisper_subs/library_practice_progress.py:241
 #, python-brace-format
 msgid "{words} distinct words"
 msgstr "{words} unieke woorden"

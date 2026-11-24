@@ -22,6 +22,13 @@ class Checks(QtCore.QObject):
     changed = QtCore.Signal(int)
 
     @classmethod
+    def for_catalog(cls, db) -> tuple["Checks", ...]:
+        """Expose the correction lanes together, e.g. startup resumes them and Progress observes them."""
+
+        lanes = (("sentence", False), ("sentence", True), ("comprehension", False), ("verb", False))
+        return tuple(cls.shared(db, kind=kind, local=local) for kind, local in lanes)
+
+    @classmethod
     def shared(cls, db, *, kind: str = "sentence", local: bool = False):
         """Keep lifetime with QApplication rather than a dialog; e.g. submitted answers continue correcting while practice is closed."""
 

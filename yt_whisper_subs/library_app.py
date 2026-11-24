@@ -59,10 +59,8 @@ def main(argv: list[str] | None = None) -> int:
             backup = library_backup.StartupBackup(service.db.path, qt_app)
             backup.message.connect(window._ui.trace.append_message)
             qt_app.aboutToQuit.connect(backup.stop)
-            library_checks.Checks.shared(service.db).resume()
-            library_checks.Checks.shared(service.db, local=True).resume()
-            library_checks.Checks.shared(service.db, kind='comprehension').resume()
-            library_checks.Checks.shared(service.db, kind='verb').resume()
+            for checks in library_checks.Checks.for_catalog(service.db):
+                checks.resume()
             preparation = library_practice_ready.PracticeReady(service.db, qt_app)
             window.practice_changed.connect(preparation.check)
             window.voice_changed.connect(preparation.voice_changed)
