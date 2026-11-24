@@ -21,14 +21,16 @@ class DayStatus(enum.Enum):
     UNTRIED = enum.auto()
     STARTED = enum.auto()
     COMPLETED = enum.auto()
+    REPEATED = enum.auto()
 
 
 def day_states(db, now: datetime) -> dict[practice_tracks.Track, DayStatus]:
     """Read the current local day's submitted answers and completed rounds for the sidebar."""
 
     start = datetime.combine(now.date(), time.min, now.tzinfo)
-    return {practice_tracks.Track(key): DayStatus.COMPLETED if complete else DayStatus.STARTED
-            for key, complete in db.practice_day_states(start.timestamp(), now.timestamp()).items()}
+    completed_by_track = db.practice_day_states(start.timestamp(), now.timestamp())
+    statuses = (DayStatus.STARTED, DayStatus.COMPLETED, DayStatus.REPEATED)
+    return {practice_tracks.Track(key): statuses[min(count, 2)] for key, count in completed_by_track.items()}
 
 
 class Day(pd.BaseModel):

@@ -34,6 +34,7 @@ class _ModeButton(QtWidgets.QPushButton):
             activity.DayStatus.UNTRIED: i18n.tr('Not tried today'),
             activity.DayStatus.STARTED: i18n.tr('Started today'),
             activity.DayStatus.COMPLETED: i18n.tr('Completed today'),
+            activity.DayStatus.REPEATED: i18n.tr('Completed at least two rounds today'),
         }[status]
         if resume:
             description += '\n' + i18n.tr('Full practice resumes here')
@@ -52,9 +53,11 @@ class _ModeButton(QtWidgets.QPushButton):
         if self._resume:
             painter.setPen(QtGui.QPen(QtGui.QColor('#8fc7ff'), 2))
             painter.drawPolyline([point(9, y - 4), point(13, y), point(9, y + 4)])
-        if self._status is activity.DayStatus.COMPLETED:
+        if self._status in (activity.DayStatus.COMPLETED, activity.DayStatus.REPEATED):
             painter.setPen(QtGui.QPen(QtGui.QColor('#75dba4'), 2))
-            painter.drawPolyline([point(x - 5, y), point(x - 1, y + 4), point(x + 5, y - 4)])
+            centers = (x - 3.5, x + 3.5) if self._status is activity.DayStatus.REPEATED else (x,)
+            for center in centers:
+                painter.drawPolyline([point(center - 5, y), point(center - 1, y + 4), point(center + 5, y - 4)])
             return
         started = self._status is activity.DayStatus.STARTED
         color = QtGui.QColor('#f1c75b' if started else '#77879b')

@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: yt-whisper-subs VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-11-24 02:29+0100\n"
+"POT-Creation-Date: 2026-11-24 20:32+0100\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -602,6 +602,10 @@ msgstr ""
 
 #: yt_whisper_subs/library_practice_labels.py:10
 msgid "Completed"
+msgstr ""
+
+#: yt_whisper_subs/library_practice_nav.py:37
+msgid "Completed at least two rounds today"
 msgstr ""
 
 #: yt_whisper_subs/library_comprehension.py:208 yt_whisper_subs/library_word_order.py:200
@@ -1214,7 +1218,7 @@ msgstr ""
 msgid "Full practice finished · {completed} completed · {skipped} skipped"
 msgstr ""
 
-#: yt_whisper_subs/library_practice_nav.py:39
+#: yt_whisper_subs/library_practice_nav.py:40
 msgid "Full practice resumes here"
 msgstr ""
 
@@ -3247,7 +3251,7 @@ msgstr ""
 msgid "To revisit"
 msgstr ""
 
-#: yt_whisper_subs/library_practice_activity.py:200 yt_whisper_subs/library_practice_nav.py:100
+#: yt_whisper_subs/library_practice_activity.py:200 yt_whisper_subs/library_practice_nav.py:103
 msgid "Today"
 msgstr ""
 

@@ -2711,12 +2711,13 @@ Sound alike, both Sentences directions, Word order, Phrase and clause order,
 Dutch dictation, Leesbegrip and Luisterbegrip as **twelve buttons in the Practice
 sidebar**, alongside the separate **Tracking** group for Progress and Activity.
 The **Today** column shows a grey ring before the first submission, a half-filled
-amber ring once you submit an answer, and a green check once you complete a round.
+amber ring once you submit an answer, one green check after your first completed
+round, and a green double check after two or more completed rounds in that mode.
 Opening a question, preparing a round, and skipping a mode leave the daily mark
-as it was. Ending a partial round keeps its submitted activity. A check remains
-for the rest of the day even if you start another round. The marks use your local
-calendar date, so they reset at midnight while the saved Full practice position
-persists. Hover over a mode to read its status.
+as it was. Ending a partial round keeps its submitted activity. Completion marks
+stay visible for the rest of the day, including while you start another round.
+The marks reset at local midnight while the saved Full practice position persists.
+Hover over a mode to read its status.
 Each page remains one click away; tray shortcuts and native page
 navigation select the same grouped controls.
 Question content scrolls independently while the main Next and Report actions

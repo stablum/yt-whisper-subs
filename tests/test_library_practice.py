@@ -184,7 +184,7 @@ class PracticeViewTests(unittest.TestCase):
         self.assertEqual(practice_stats.snapshot(self.db)["totals"]["shown"], 1)
 
     def test_sidebar_tracks_today_independently_of_the_selected_exercise(self) -> None:
-        """Distinguish previews, partial and finished rounds, including after local midnight."""
+        """Distinguish previews, partial rounds and repeat completions across local midnight."""
 
         self.quiz._controls.count.setValue(2)
         self.dialog.show_page()
@@ -200,12 +200,23 @@ class PracticeViewTests(unittest.TestCase):
         self.quiz._answer(self.quiz._current['correct_idx'])
         self.app.processEvents()
         self.assertEqual(mode.accessibleDescription(), 'Completed today')
+        self.quiz._advance()
+        self.quiz._controls.early.setChecked(True)
+        self.quiz._controls.restart_requested.emit()
+        self._wait_ready()
+        self.quiz._answer(self.quiz._current['correct_idx'])
+        self.app.processEvents()
+        self.assertEqual(mode.accessibleDescription(), 'Completed today')
+        self.quiz._advance()
+        self.quiz._answer(self.quiz._current['correct_idx'])
+        self.app.processEvents()
+        self.assertEqual(mode.accessibleDescription(), 'Completed at least two rounds today')
         self.assertEqual(reverse.accessibleDescription(), 'Not tried today')
         self.dialog.show_page(activity=True)
         self.dialog.hide()
         self.dialog.show()
         self.app.processEvents()
-        self.assertEqual(mode.accessibleDescription(), 'Completed today')
+        self.assertEqual(mode.accessibleDescription(), 'Completed at least two rounds today')
         tomorrow = datetime.combine(datetime.now().date() + timedelta(days=1), day_time.min)
         with mock.patch.object(library_practice, 'datetime', wraps=datetime) as clock:
             clock.now.return_value = tomorrow

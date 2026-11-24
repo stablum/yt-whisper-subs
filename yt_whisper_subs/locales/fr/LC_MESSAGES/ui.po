@@ -630,6 +630,10 @@ msgstr "Comparatifs"
 msgid "Completed"
 msgstr "Terminé"
 
+#: yt_whisper_subs/library_practice_nav.py:37
+msgid "Completed at least two rounds today"
+msgstr "Au moins deux séries terminées aujourd’hui"
+
 #: yt_whisper_subs/library_comprehension.py:208 yt_whisper_subs/library_word_order.py:200
 msgid "Completed parts remain available."
 msgstr "Les éléments terminés restent disponibles."
@@ -1260,7 +1264,7 @@ msgstr "Entraînement complet"
 msgid "Full practice finished · {completed} completed · {skipped} skipped"
 msgstr "Entraînement complet terminé · {completed} terminés · {skipped} passés"
 
-#: yt_whisper_subs/library_practice_nav.py:39
+#: yt_whisper_subs/library_practice_nav.py:40
 msgid "Full practice resumes here"
 msgstr "L’entraînement complet reprend ici"
 
@@ -3351,7 +3355,7 @@ msgstr "Titre"
 msgid "To revisit"
 msgstr "À revoir"
 
-#: yt_whisper_subs/library_practice_activity.py:200 yt_whisper_subs/library_practice_nav.py:100
+#: yt_whisper_subs/library_practice_activity.py:200 yt_whisper_subs/library_practice_nav.py:103
 msgid "Today"
 msgstr "Aujourd’hui"
 

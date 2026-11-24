@@ -151,8 +151,8 @@ class PracticeDbMixin:
                                 (since, until, since, until, since, until, since, until, since, until))
             return [dict(row) for row in rows]
 
-    def practice_day_states(self, since: float, until: float) -> dict[str, bool]:
-        """Read attempted tracks and whether they finished a round in the interval; e.g. ignore previews and early stops."""
+    def practice_day_states(self, since: float, until: float) -> dict[str, int]:
+        """Count finished rounds by attempted track; e.g. answers in an early stop contribute zero completions."""
 
         events = '\nUNION ALL\n'.join(f"""
             SELECT {track} AS track, 0 AS completed
@@ -165,9 +165,9 @@ class PracticeDbMixin:
                          WHERE p.session_id=s.id AND p.{answer} IS NOT NULL)
         """ for kind, track, answer in _DAY_SOURCES)
         with self._connect() as conn:
-            rows = conn.execute(f"SELECT track, MAX(completed) FROM ({events}) GROUP BY track",
+            rows = conn.execute(f"SELECT track, SUM(completed) FROM ({events}) GROUP BY track",
                                 {'since': since, 'until': until})
-            return {track: bool(completed) for track, completed in rows}
+            return dict(rows)
 
     def practice_score_rows(self, until: float) -> list[dict]:
         """Return one row per graded submission; e.g. an assessed vocabulary word adds no second answer."""
