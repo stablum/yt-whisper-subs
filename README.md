@@ -2832,7 +2832,8 @@ Word quiz page is visible before recording its first presentation. The round
 page scrolls for long context/explanations and smaller windows.
 
 **Tracking → Progress → Overall** charts the **Daily practice score** on a 0–100%
-scale using saved graded answers from all twelve practice types. Each answer
+scale using saved graded answers from all twelve practice types. Overall is the
+default view when you first open Progress. Each answer
 earns full credit when correct, zero for a binary mistake, or the type's usual
 partial credit for sentence translation, dictation, ordering, and comprehension.
 The score averages credit within each type, then averages the types with grades
