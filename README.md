@@ -1786,10 +1786,13 @@ with local validation of the permitted edits:
   A single internal space or hyphen can be repaired in a compound. Each word
   must have at least three letters in total. General phrase replacements and
   spans containing other punctuation are rejected.
-  At most one eligible word edit per cue goes to verification. The batch and
-  transcript limits count only approved edits and allow one span per started
-  group of 100 words. Suspiciously dense batches are rejected. The prompt
-  excludes guesses about personal or place names, substitutions that change the
+  Each cue can carry one lexical repair. If the same one-word recognition error
+  repeats within a cue, each proposed occurrence is verified at its own word
+  index. The batch and transcript limits allow one corrected cue per started
+  group of 100 words. Suspiciously dense batches are rejected. The prompt asks
+  the reviewer to consider regional vocabulary, such as Surinamese Dutch
+  `pinaren` (to go without) for `binaren` when the context supports that reading.
+  It excludes guesses about personal or place names, substitutions that change the
   named entity, and edits to numbers, quantities, pronouns, negation and modal
   verbs. Local guards protect capitalized source words and common Dutch/English negation,
   pronouns, number words and modals. A lowercase misrecognition can become one
@@ -1855,6 +1858,8 @@ conventional initial capital of a clearly identified title.
 Version `0.6.40` adds local audio confirmation for suspected two-to-one word errors.
 Version `0.6.47` completes eligible split-word proposals and uses uncompacted cue
 timings for a tightly focused audio check.
+Version `0.6.54` checks regional sound-alikes and can repair repeated instances of
+the same word error within a cue.
 Unfinished reviews from an older policy restart their audit using the stored
 original text. Completed older reviews remain cached until explicitly requested
 again. Logs give specific reasons for locally rejected word edits and record
@@ -4357,7 +4362,8 @@ repair, cue swaps, sparse correction spans, review coverage, bounded failure,
 whole-file mode, and resuming only reviewed checkpoints. They also check the
 Luna defaults and model-specific reasoning validation.
 
-Transcription tests cover verified sound-alike replacements, lexical limits,
+Transcription tests cover verified sound-alike replacements, repeated regional
+word repairs, lexical limits,
 the reported `middelig gebruik` compound confusion, joins/splits inside one cue,
 strict cue coverage and restarting an unfinished older-policy review,
 punctuation/case isolation, quantity/whitespace protection, doubtful candidate

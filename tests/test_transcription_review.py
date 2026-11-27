@@ -136,11 +136,35 @@ class TranscriptionReviewTests(unittest.TestCase):
             self.assertIsNotNone(review._word_rejection(candidate, cues, range(1, 2)))
 
     def test_duplicate_cue_edits_are_all_rejected(self) -> None:
-        """Limit each cue to one replacement; e.g. two copies of a suggestion cannot compound."""
+        """Reject duplicate proposals for the same word index, e.g. two copies of leiden → lijden."""
 
         self._review.begin()
         self._run({"edits": [edit(), edit()]})
         self.assertEqual(self._pair.sidecar.read_text(), self._source)
+
+    def test_repeated_regional_word_repair_survives_verification_and_resume(self) -> None:
+        """Repair both AT5 occurrences under one cue allowance, including after a failed publish."""
+
+        source = "1\n00:04:17,140 --> 00:04:19,440\nAls jij gaat binaren,\nga ik ook binaren klaar.\n\n"
+        self._pair.sidecar.write_text(source, encoding="utf-8")
+        self._pair.sync_archive()
+        self._review.begin()
+        first = edit(word=4, original="binaren", replacement="pinaren",
+                     context_reason="Pinaren means to go without in Surinamese Dutch.",
+                     sound_reason="The initial consonants differ only in voicing.")
+        second = {**first, "word": 8}
+        decisions = verdict()["decisions"]
+        decisions.append({**decisions[0], "index": 2})
+        with mock.patch.object(self._review, "_publish", side_effect=OSError("File locked")):
+            with self.assertRaisesRegex(OSError, "File locked"):
+                self._run({"edits": [first, second]}, {"decisions": decisions})
+        self.assertEqual(self._pair.sidecar.read_text(), source)
+        with mock.patch.object(openai_client, "responses_api_request") as api:
+            self._review.run()
+        api.assert_not_called()
+        expected = source.replace("binaren", "pinaren")
+        self.assertEqual(self._pair.sidecar.read_text(), expected)
+        self.assertEqual(self._pair.archive.read_text(), expected)
 
     def test_reported_compound_error_is_fixed_without_rewriting_speech(self) -> None:
         """Cover the screenshot's real failure; e.g. keep disfluency but repair middelig gebruik."""

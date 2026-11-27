@@ -58,6 +58,15 @@ fix the word while preserving all surrounding disfluency and grammar. Plausible 
 wording is not enough for a text-only edit. Abstain from text-only edits if the original
 could reasonably have been spoken. Keep unusual but plausible speech, dialect,
 grammar mistakes, repetitions, fragments and spelling style.
+Consider regional and contact varieties of the source language when a malformed
+word has no close standard-language match. An unfamiliar word may be the best
+phonetic and contextual fit. For example, in a discussion about whether to stock
+emergency supplies, Surinamese Dutch 'pinaren' (go without, struggle) can explain
+'binaren' in 'als jij gaat binaren, ga ik ook binaren'. Check the meaning against
+the surrounding remarks rather than assuming the speaker said 'stock up'.
+If the same recognition error occurs more than once in one cue, propose the same
+one-word correction separately at each affected word index. Check each occurrence
+in context and preserve the speaker's repetition.
 Never guess or substitute a person's or place's name. Never change which entity the speaker
 refers to. If nearby cues unambiguously identify an established title, such as a named law,
 repair its malformed near-homophone and use its conventional initial capital in that same
@@ -387,6 +396,18 @@ def _edit_limit(cues: list[srt.SubtitleCue]) -> int:
     return max(1, (words + 99) // 100)
 
 
+def _compatible_word_edits(edits: list[Edit]) -> bool:
+    """Allow one repair or the same single-word repair at distinct positions, e.g. repeated binaren."""
+
+    if len(edits) <= 1:
+        return True
+    first = edits[0]
+    if first.confidence != "very_high" or any(" " in word for word in (first.original, first.replacement)):
+        return False
+    forms = {(edit.original, edit.replacement, edit.confidence) for edit in edits}
+    return len(forms) == 1 and len({edit.word for edit in edits}) == len(edits)
+
+
 class TranscriptionReview:
     """Own sparse review, checkpoints and publication; e.g. resume without running Whisper again."""
 
@@ -414,7 +435,7 @@ class TranscriptionReview:
     def _policy(self) -> dict:
         """Fingerprint settings that affect cached decisions; e.g. switching models restarts the audit."""
 
-        return {"version": 6, "batch_cues": BATCH_CUES,
+        return {"version": 7, "batch_cues": BATCH_CUES,
                 "model": getattr(self._args, "openai_translation_model", cfg.DEFAULT_OPENAI_TRANSLATION_MODEL),
                 "reasoning": getattr(self._args, "openai_reasoning_effort", cfg.DEFAULT_OPENAI_TRANSLATION_REASONING),
                 "language": self._args.language,
@@ -491,7 +512,8 @@ class TranscriptionReview:
         for start in range(state["next_cue"], len(cues) + 1, BATCH_CUES):
             targets = range(start, min(start + BATCH_CUES, len(cues) + 1))
             batch, fmt_batch = self._batch(cues, targets, audio_checks)
-            if len(edits) + len(batch) > _edit_limit(cues):
+            corrected_cues = {edit.cue for edit in [*edits, *batch]}
+            if len(corrected_cues) > _edit_limit(cues):
                 print("Rejected verified word corrections: transcript edit limit exceeded.", flush=True)
                 batch = []
             for change in [*batch, *fmt_batch]:
@@ -551,7 +573,11 @@ class TranscriptionReview:
             raise RuntimeError("Invalid transcription checkpoint progress")
         if next_cue != len(cues) + 1 and (next_cue - 1) % BATCH_CUES:
             raise RuntimeError("Invalid transcription checkpoint batch boundary")
-        if (len(edits) > _edit_limit(cues) or len({edit.cue for edit in edits}) != len(edits)
+        by_cue: dict[int, list[Edit]] = {}
+        for edit in edits:
+            by_cue.setdefault(edit.cue, []).append(edit)
+        if (len(by_cue) > _edit_limit(cues)
+                or any(not _compatible_word_edits(group) for group in by_cue.values())
                 or any(_word_rejection(edit, cues, range(1, next_cue)) for edit in edits)):
             raise RuntimeError("Unsafe transcription checkpoint edits")
         if (len({fmt.cue for fmt in formatting}) != len(formatting)
@@ -587,7 +613,7 @@ class TranscriptionReview:
             raise RuntimeError("Transcription review did not cover every requested cue exactly once")
         proposed = _edits(_parse(output, "edits"), Edit)
         formatting = _edits(_parse(output, "formatting"), FormatEdit)
-        eligible = []
+        groups: dict[tuple[int, str], list[Edit]] = {}
         audio_spans = set()
         for edit in proposed:
             edit = _complete_split(edit, cues, targets)
@@ -601,12 +627,13 @@ class TranscriptionReview:
                         continue
                     audio_spans.add(span)
                 print(f"Proposed {change}", flush=True)
-                eligible.append(edit)
-        counts = Counter((edit.cue, edit.confidence) for edit in eligible)
-        for (cue, _), count in counts.items():
-            if count > 1:
+                groups.setdefault((edit.cue, edit.confidence), []).append(edit)
+        eligible = []
+        for (cue, _), group in groups.items():
+            if _compatible_word_edits(group):
+                eligible.extend(group)
+            else:
                 print(f"Rejected transcription cue {cue}: multiple eligible word edits.", flush=True)
-        eligible = [edit for edit in eligible if counts[edit.cue, edit.confidence] == 1]
         eligible = self._check_audio(cues, eligible, audio_checks)
         supported_cues = {edit.cue for edit in eligible if edit.confidence == _AUDIO_REQUIRED}
         eligible = [edit for edit in eligible if edit.cue not in supported_cues or edit.confidence == _AUDIO_REQUIRED]
@@ -615,7 +642,7 @@ class TranscriptionReview:
         candidates = [*eligible, *eligible_fmt]
         verified = self._verify(candidates, document, audio_checks) if candidates else []
         words = [edit for edit in verified if isinstance(edit, Edit)]
-        if len(words) > _edit_limit(cues[targets.start - 1:targets.stop - 1]):
+        if len({edit.cue for edit in words}) > _edit_limit(cues[targets.start - 1:targets.stop - 1]):
             print("Rejected verified word corrections: batch edit limit exceeded.", flush=True)
             words = []
         return words, [fmt for fmt in verified if isinstance(fmt, FormatEdit)]
